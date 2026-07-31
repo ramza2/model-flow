@@ -163,3 +163,27 @@ Historical; see D-016.
 - **Context:** Client-only logout leaves a copied bearer token valid until expiry.
 - **Choice:** Logout increments `users.token_version`; token validation rejects every access token carrying an older version.
 - **Consequences:** Logout signs the user out on all devices. This is acceptable for v1.0 self-host and avoids a token denylist.
+
+## D-030: Runtime secrets come from an ignored generated environment file
+
+- **Context:** Checked-in development credentials and permissive Compose defaults can escape into shared deployments.
+- **Choice:** `scripts/init-env.sh` generates `.env` credentials and cryptographic keys; Compose uses required-variable expansion and the repository does not provide working secret defaults.
+- **Consequences:** Operators must initialize `.env` before starting the stack and must back up or rotate its keys deliberately. CI generates isolated test credentials.
+
+## D-031: Registry gates are computed and enforced on the server
+
+- **Context:** Client-supplied gate results could bypass model approval policy.
+- **Choice:** The backend computes gate outcomes from stored run/model evidence and persists the gate version and results. Approval and promotion reject missing or failed server-computed gates.
+- **Consequences:** UI gate displays are advisory views of backend state; clients cannot promote a model by posting a passing result.
+
+## D-032: Verification performs a destructive backup/restore round-trip
+
+- **Context:** Checking that dump files exist does not prove PostgreSQL or MinIO can be restored.
+- **Choice:** Near the end of `scripts/verify.sh`, create a marker project and object on the disposable verification stack, record metadata and checksum, back up both databases and all buckets, delete the markers, restore, and assert metadata, bytes, health, login, and prediction.
+- **Consequences:** `scripts/restore.sh` replaces the application and MLflow databases and mirrors bucket contents. The round-trip must only run against the clean disposable stack created by the verification gate; application services are stopped and restarted during restore.
+
+## D-033: High/Critical dependency findings fail closed with expiring exceptions
+
+- **Context:** Advisory-only dependency scans allowed release verification to pass with serious known vulnerabilities.
+- **Choice:** `pip-audit` and `npm audit` produce JSON artifacts for Python, frontend, and E2E dependencies; `scripts/check-security-audits.py` blocks unallowlisted High/Critical findings and treats scanner/schema failures as gate failures. Exceptions require package, vulnerability ID, reason, and ISO expiry in `security/allowlist.json`; expired entries never suppress.
+- **Consequences:** Dependency updates or a time-bounded, reviewed exception are required to restore the gate. Because `pip-audit` currently omits severity, its findings are treated as High to fail closed.

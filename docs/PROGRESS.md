@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**COMPLETE — ModelFlow v1.0 RC** on branch `cursor/modelflow-v1-rc-71f2`. Draft PR #4. Not merged by agent.
+**RELEASE REVIEW REMEDIATION IN PROGRESS** on branch `cursor/modelflow-v1-rc-71f2` for Draft PR #4. The release candidate is not complete and has not been merged.
 
 ## Baseline
 
@@ -12,17 +12,18 @@
 
 ## Verification
 
-- Local: `docker compose down -v && ./scripts/verify.sh` **PASS** @ `6e344c8`
-- GitHub Actions: run `30609109140` **success**
-- Backend tests: 20 passed
-- Frontend tests: 3 passed
-- Playwright: 2 passed
-- Screenshots: `/opt/cursor/artifacts/v1-*.png` and `artifacts/screenshots/`
+- Historical local result: `docker compose down -v && ./scripts/verify.sh` passed at `6e344c8`; it does not cover subsequent remediation commits.
+- Historical GitHub Actions result: run `30609109140`; it does not establish the current revision.
+- Current-revision full clean-volume verification: **PASS locally** (`scripts/verify.sh`; 37 backend tests, 3 frontend tests, 5 Playwright tests, backup/restore round-trip, and both dependency lockfile audits).
+- Current-revision GitHub Actions result: **PENDING** until the pushed commits complete CI.
+- Acceptance status and required evidence are tracked per item in `docs/ACCEPTANCE_CRITERIA.md`.
+- New review gates include real-role RBAC/project isolation, a destructive PostgreSQL + MinIO backup/restore round-trip, and blocking High/Critical dependency audits.
 
 ## Phase checklist
 
-All Phases 0–12 **COMPLETE**.
+Phases 0–12 are implemented, but release acceptance remains open until the evidence matrix and current full gate are complete.
 
 ## Blockers
 
-None.
+- Current-revision `scripts/verify.sh` and CI results must be recorded.
+- Criteria marked `NOT_VERIFIED` require dedicated evidence before release approval.
