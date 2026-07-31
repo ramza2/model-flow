@@ -10,7 +10,7 @@ cd "$ROOT"
 mkdir -p artifacts/screenshots artifacts/verify
 
 NODE_IMAGE="node:22.17-alpine"
-PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.49.1-jammy"
+PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
 PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
 API_BASE="http://localhost:8000/api/v1"
@@ -436,16 +436,25 @@ docker run --rm -v "$ROOT/frontend:/app" -w /app "$NODE_IMAGE" \
   > artifacts/verify/npm-audit.json \
   2> artifacts/verify/npm-audit.stderr.txt
 NPM_AUDIT_RC=$?
+docker run --rm -v "$ROOT:/app" -w /app "$NODE_IMAGE" \
+  sh -c 'npm ci --silent >/dev/null && npm audit --json' \
+  > artifacts/verify/npm-audit-e2e.json \
+  2> artifacts/verify/npm-audit-e2e.stderr.txt
+E2E_NPM_AUDIT_RC=$?
 set -e
 {
   echo "pip_audit_rc=${PIP_AUDIT_RC}"
   echo "npm_audit_rc=${NPM_AUDIT_RC}"
+  echo "e2e_npm_audit_rc=${E2E_NPM_AUDIT_RC}"
 } > artifacts/verify/security-scan.txt
 if [[ "$PIP_AUDIT_RC" -ne 0 && "$PIP_AUDIT_RC" -ne 1 ]]; then
   fail "pip-audit failed to run (exit=$PIP_AUDIT_RC)"
 fi
 if [[ "$NPM_AUDIT_RC" -ne 0 && "$NPM_AUDIT_RC" -ne 1 ]]; then
   fail "npm audit failed to run (exit=$NPM_AUDIT_RC)"
+fi
+if [[ "$E2E_NPM_AUDIT_RC" -ne 0 && "$E2E_NPM_AUDIT_RC" -ne 1 ]]; then
+  fail "E2E npm audit failed to run (exit=$E2E_NPM_AUDIT_RC)"
 fi
 set +e
 docker run --rm \
@@ -455,6 +464,7 @@ docker run --rm \
   python scripts/check-security-audits.py \
     --pip artifacts/verify/pip-audit.json \
     --npm artifacts/verify/npm-audit.json \
+    --npm artifacts/verify/npm-audit-e2e.json \
     --allowlist security/allowlist.json \
   > artifacts/verify/security-gate.json
 SECURITY_GATE_RC=$?

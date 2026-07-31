@@ -69,7 +69,7 @@ def get_run(run_id: str) -> dict:
 def artifact_exists(
     run_id: str, artifact_path: str, artifacts: list[dict] | None = None
 ) -> bool:
-    """Return whether the exact run artifact path exists in MLflow."""
+    """Return whether a run or its MLflow 3 logged model owns the artifact."""
 
     normalized = artifact_path.strip().strip("/")
     if not normalized:
@@ -77,11 +77,33 @@ def artifact_exists(
     if any(str(item.get("path", "")).strip("/") == normalized for item in artifacts or []):
         return True
     parent = normalized.rsplit("/", 1)[0] if "/" in normalized else None
+    c = client()
     try:
-        listed = client().list_artifacts(run_id, parent)
+        listed = c.list_artifacts(run_id, parent)
+    except Exception:
+        listed = []
+    if any(str(item.path).strip("/") == normalized for item in listed):
+        return True
+
+    # MLflow 3 stores model artifacts under first-class LoggedModels rather
+    # than the run artifact tree. Keep the run ownership check by requiring
+    # both the source run and logged-model name to match.
+    try:
+        experiment_id = c.get_run(run_id).info.experiment_id
+        logged_models = c.search_logged_models(
+            experiment_ids=[str(experiment_id)],
+            max_results=1000,
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
     except Exception:
         return False
-    return any(str(item.path).strip("/") == normalized for item in listed)
+    return any(
+        str(getattr(model, "source_run_id", "")) == run_id
+        and str(getattr(model, "name", "")).strip("/") == normalized
+        and str(getattr(model, "status", "READY")).upper().endswith("READY")
+        for model in logged_models
+    )
 
 
 def register_model(run_id: str, model_name: str, artifact_path: str = "model") -> dict:

@@ -158,13 +158,17 @@ def finding_out(finding: Finding) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pip", required=True, type=Path)
-    parser.add_argument("--npm", required=True, type=Path)
+    parser.add_argument("--npm", required=True, type=Path, action="append")
     parser.add_argument("--allowlist", required=True, type=Path)
     args = parser.parse_args()
     try:
         findings = [
             *pip_findings(load_json(args.pip)),
-            *npm_findings(load_json(args.npm)),
+            *(
+                finding
+                for report_path in args.npm
+                for finding in npm_findings(load_json(report_path))
+            ),
         ]
         allowlist, expired = active_allowlist(args.allowlist)
     except ValueError as exc:
