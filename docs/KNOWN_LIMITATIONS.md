@@ -10,3 +10,9 @@
 - Soft-deleted projects/users are hidden; hard purge follows retention settings.
 - Inference payloads are not stored by default (`store_inference_payloads=false`).
 - Retrain automation never auto-promotes models to PRODUCTION.
+
+## Post-remediation notes
+
+- Rate limit defaults to 120/min; `init-env.sh --non-interactive-test` raises it for CI/verify volume.
+- Logout increments `token_version`, invalidating tokens on all devices for that user (D-029).
+- Dependency High/Critical findings fail verify unless listed in `security/allowlist.json` with reason and expiry.
