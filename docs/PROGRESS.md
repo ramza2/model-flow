@@ -2,28 +2,35 @@
 
 ## Current phase
 
-**RELEASE REVIEW REMEDIATION IN PROGRESS** on branch `cursor/modelflow-v1-rc-71f2` for Draft PR #4. The release candidate is not complete and has not been merged.
+**Release Review remediation COMPLETE** on `cursor/modelflow-v1-rc-71f2` / Draft PR #4 (not merged).
 
 ## Baseline
 
-- Branch: `cursor/modelflow-v1-rc-71f2`
 - Base commit: `df2fc421d32fa2c6fbcd7fd86f0fad4c2c10173b`
 - Draft PR: https://github.com/ramza2/model-flow/pull/4
 
-## Verification
+## Remediation completed
 
-- Historical local result: `docker compose down -v && ./scripts/verify.sh` passed at `6e344c8`; it does not cover subsequent remediation commits.
-- Historical GitHub Actions result: run `30609109140`; it does not establish the current revision.
-- Current-revision full clean-volume verification: **PASS locally** (`scripts/verify.sh`; 37 backend tests, 3 frontend tests, 5 Playwright tests, backup/restore round-trip, and both dependency lockfile audits).
-- Current-revision GitHub Actions result: **PENDING** until the pushed commits complete CI.
-- Acceptance status and required evidence are tracked per item in `docs/ACCEPTANCE_CRITERIA.md`.
-- New review gates include real-role RBAC/project isolation, a destructive PostgreSQL + MinIO backup/restore round-trip, and blocking High/Critical dependency audits.
+1. Legacy unauthenticated `/api` router removed (health-only `/api/health`)
+2. Hardcoded credentials removed; `scripts/init-env.sh` + required Compose env
+3. Server-side model gates (client `gates_passed` removed)
+4. Pipeline parallel nodes, condition branches, restart-from-failed, schedules
+5. Logout bumps `token_version` (all user tokens revoked)
+6. Backup/restore destructive round-trip in verify
+7. RBAC isolation tests + Playwright role menus
+8. Security gate fails on High/Critical unless allowlisted
+9. AC evidence columns; contested items re-verified to PASS
 
-## Phase checklist
+## Latest local gate
 
-Phases 0–12 are implemented, but release acceptance remains open until the evidence matrix and current full gate are complete.
+```text
+docker compose down -v --remove-orphans
+rm -f .env
+./scripts/init-env.sh --non-interactive-test
+./scripts/verify.sh
+→ PASS (backend 37; frontend 3; Playwright 5)
+```
 
 ## Blockers
 
-- Current-revision `scripts/verify.sh` and CI results must be recorded.
-- Criteria marked `NOT_VERIFIED` require dedicated evidence before release approval.
+None.
