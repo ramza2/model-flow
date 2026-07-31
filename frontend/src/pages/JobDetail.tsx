@@ -43,8 +43,6 @@ export default function JobDetail() {
         body: JSON.stringify({
           training_job_id: job.id,
           name: "classifier",
-          gates_passed: true,
-          gate_results: { training_completed: true, metrics_recorded: Object.keys(job.metrics).length > 0 },
         }),
       });
       setSuccess(`Registered ${model.name} v${model.version}.`);

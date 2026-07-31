@@ -19,7 +19,7 @@ from app.core.rbac import Permission
 from app.db.models import JobStatus, ModelLifecycle, ModelVersion, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import ApprovalRequest, ModelRegisterRequest, RollbackRequest
-from app.services import mlflow_service
+from app.services import mlflow_service, registry_service
 
 router = APIRouter(tags=["model-registry"])
 
@@ -109,6 +109,22 @@ def register_model(
     )
     if existing:
         raise friendly(409, "This model version is already registered in ModelFlow.")
+    metadata = dict(body.metadata)
+    metadata.setdefault("artifact_path", body.artifact_path)
+    run_params = run.get("params") or {}
+    feature_names = [
+        name.strip()
+        for name in str(run_params.get("features", "")).split(",")
+        if name.strip()
+    ]
+    if feature_names and not (
+        metadata.get("feature_schema") or metadata.get("features")
+    ):
+        metadata["feature_schema"] = [
+            {"name": name, "required": True} for name in feature_names
+        ]
+    if run_params.get("problem_type"):
+        metadata.setdefault("problem_type", run_params["problem_type"])
     row = ModelVersion(
         project_id=project_id,
         name=body.name,
@@ -119,16 +135,15 @@ def register_model(
         mlflow_run_id=str(run_id),
         model_uri=f"models:/{mlflow_name}/{version}" if registered else model_uri,
         metrics_json=dumps(metrics or run.get("metrics", {})),
-        metadata_json=dumps(body.metadata),
+        metadata_json=dumps(metadata),
         dataset_version_id=dataset_version_id,
         training_job_id=job.id if job else None,
-        gate_results_json=dumps(body.gate_results),
-        gates_passed=body.gates_passed,
         created_by=auth.user.id,
     )
     db.add(row)
     db.flush()
     audit_event(db, auth, "model.register", "model_version", row.id)
+    registry_service.evaluate_gates(db, row, actor_id=auth.user.id)
     db.commit()
     db.refresh(row)
     return model_version_out(row)
@@ -146,6 +161,24 @@ def get_model_version(
     )
 
 
+@router.post("/projects/{project_id}/models/{model_version_id}/evaluate-gates")
+def evaluate_model_gates(
+    project_id: int,
+    model_version_id: int,
+    access=Depends(require_project_perm(Permission.REGISTRY_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    row = get_owned(db, ModelVersion, model_version_id, project_id, "Model version")
+    try:
+        registry_service.evaluate_gates(db, row, actor_id=auth.user.id)
+    except ValueError as exc:
+        raise friendly(409, str(exc)) from exc
+    db.commit()
+    db.refresh(row)
+    return model_version_out(row)
+
+
 @router.post("/projects/{project_id}/models/{model_version_id}/request-approval")
 def request_approval(
     project_id: int,
@@ -157,6 +190,12 @@ def request_approval(
     auth, _, _ = access
     body = body or ApprovalRequest()
     row = get_owned(db, ModelVersion, model_version_id, project_id, "Model version")
+    if not registry_service.server_gates_passed(row):
+        raise friendly(
+            409,
+            "Model approval gates have not passed a server evaluation.",
+            "Review gate_results and rerun validation before requesting approval.",
+        )
     if row.lifecycle not in {
         ModelLifecycle.CANDIDATE,
         ModelLifecycle.VALIDATING,
@@ -183,10 +222,10 @@ def approve_model(
     row = get_owned(db, ModelVersion, model_version_id, project_id, "Model version")
     if row.lifecycle != ModelLifecycle.PENDING_APPROVAL:
         raise friendly(409, "Only a model pending approval can be approved.")
-    if not row.gates_passed:
+    if not registry_service.server_gates_passed(row):
         raise friendly(
             409,
-            "Model approval gates have not passed.",
+            "Model approval gates have not passed a server evaluation.",
             "Review gate_results and rerun validation before approval.",
         )
     row.lifecycle = ModelLifecycle.APPROVED

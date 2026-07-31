@@ -47,8 +47,6 @@ export default function Registry() {
         body: JSON.stringify({
           run_id: runId,
           name: modelName,
-          gates_passed: true,
-          gate_results: { manually_reviewed: true },
         }),
       });
       setMsg(`Registered ${res.name} v${res.version}`);

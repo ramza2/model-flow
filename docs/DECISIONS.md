@@ -95,8 +95,8 @@ Historical; see D-016.
 ## D-018: JWT access tokens + bcrypt passwords (v1.0)
 
 - **Context:** v1.0 requires real multi-user auth without SSO/LDAP.
-- **Choice:** bcrypt password hashes; JWT Bearer access tokens (HS256) with configurable expiry; logout is client-side token discard (+ optional server denylist for password change). Bootstrap admin via env vars only.
-- **Consequences:** Stateless auth suitable for Compose; rotate `MODELFLOW_SECRET_KEY` invalidates tokens.
+- **Choice:** bcrypt password hashes; JWT Bearer access tokens (HS256) with configurable expiry and per-user token versions. Bootstrap admin via env vars only.
+- **Consequences:** Stateless auth suitable for Compose; password changes, logout, or rotating `MODELFLOW_SECRET_KEY` invalidate tokens.
 
 ## D-019: Project roles as membership enum
 
@@ -157,3 +157,9 @@ Historical; see D-016.
 - **Context:** Need real Postgres import tests without external SaaS.
 - **Choice:** Secondary Postgres on port 5433 with sample `customers` table seeded.
 - **Consequences:** Slightly heavier compose; only used when profile/tests enable it.
+
+## D-029: Logout revokes all user tokens
+
+- **Context:** Client-only logout leaves a copied bearer token valid until expiry.
+- **Choice:** Logout increments `users.token_version`; token validation rejects every access token carrying an older version.
+- **Consequences:** Logout signs the user out on all devices. This is acceptable for v1.0 self-host and avoids a token denylist.

@@ -12,7 +12,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import router as legacy_router
 from app.api.v1.auth import bootstrap_admin
 from app.api.v1.router import router as v1_router
 from app.core.config import settings
@@ -150,7 +149,6 @@ async def unhandled(request: Request, exc: Exception):
 
 
 app.include_router(v1_router, prefix="/api/v1")
-app.include_router(legacy_router, prefix="/api", include_in_schema=False)
 
 
 @app.get("/api/health", include_in_schema=False)

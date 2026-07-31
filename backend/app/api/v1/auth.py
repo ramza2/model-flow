@@ -104,9 +104,13 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
 
 @router.post("/logout")
 def logout(auth: AuthContext = Depends(get_auth), db: Session = Depends(get_db)):
+    auth.user.token_version += 1
     audit_event(db, auth, "auth.logout", "user", auth.user.id)
     db.commit()
-    return {"detail": "Logged out.", "hint": "Discard the access token on this client."}
+    return {
+        "detail": "Logged out.",
+        "hint": "All access tokens for this user have been revoked. Sign in again to continue.",
+    }
 
 
 @router.get("/me")

@@ -85,7 +85,7 @@ def get_current_user(
             status_code=401,
             detail={
                 "detail": "Token has been revoked.",
-                "hint": "Sign in again after a password change.",
+                "hint": "Sign in again.",
             },
         )
     return user

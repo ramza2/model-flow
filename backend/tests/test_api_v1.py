@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -11,7 +13,8 @@ from app.core.security import hash_password
 from app.db.models import Base, ModelLifecycle, ModelVersion, User
 from app.db.session import get_db
 from app.main import _rate_windows, app
-from app.services import mlflow_service, storage
+from app.schemas.v1 import ModelRegisterRequest
+from app.services import inference, mlflow_service, registry_service, storage
 
 engine = create_engine(
     "sqlite+pysqlite:///:memory:",
@@ -99,6 +102,18 @@ def test_v1_health_auth_and_security_headers(client, auth_headers):
     unauthenticated = client.get("/api/v1/projects")
     assert unauthenticated.status_code == 401
     assert set(unauthenticated.json()) == {"detail", "hint"}
+
+
+def test_logout_revokes_token(client, auth_headers):
+    assert client.get("/api/v1/auth/me", headers=auth_headers).status_code == 200
+
+    logout = client.post("/api/v1/auth/logout", headers=auth_headers)
+    assert logout.status_code == 200
+    assert "all access tokens" in logout.json()["hint"].lower()
+
+    revoked = client.get("/api/v1/auth/me", headers=auth_headers)
+    assert revoked.status_code == 401
+    assert revoked.json()["detail"] == "Token has been revoked."
 
 
 def test_login_accepts_local_bootstrap_email_format(client):
@@ -216,11 +231,146 @@ def test_dataset_versions_quality_split_job_and_pipeline(
     assert "cycle" in invalid.json()["hint"]
 
 
-def test_registry_approval_enforces_gates(client, auth_headers):
+def test_register_rejects_client_gates_and_runs_server_evaluation(
+    client, auth_headers, monkeypatch
+):
     project = client.post(
         "/api/v1/projects",
         headers=auth_headers,
         json={"name": "registry-test"},
+    ).json()
+
+    assert "gates_passed" not in ModelRegisterRequest.model_fields
+    assert "gate_results" not in ModelRegisterRequest.model_fields
+    rejected = client.post(
+        f"/api/v1/projects/{project['id']}/models/register",
+        headers=auth_headers,
+        json={
+            "name": "classifier",
+            "run_id": "run-1",
+            "gates_passed": True,
+            "gate_results": {"passed": True, "computed_by": "client"},
+        },
+    )
+    assert rejected.status_code == 422
+
+    monkeypatch.setattr(
+        mlflow_service,
+        "get_run",
+        lambda run_id: {
+            "run_id": run_id,
+            "experiment_id": "exp-1",
+            "metrics": {"accuracy": 0.9},
+            "artifacts": [{"path": "model", "is_dir": True}],
+        },
+    )
+    monkeypatch.setattr(
+        mlflow_service,
+        "register_model",
+        lambda run_id, name, artifact_path: {"name": name, "version": "1"},
+    )
+    evaluated: list[int] = []
+
+    def fake_evaluate(db, row, *, actor_id=None, **_):
+        summary = {
+            "passed": True,
+            "computed_by": "server",
+            "gate_version": "1",
+            "evaluated_at": "2026-07-31T00:00:00+00:00",
+            "results": [],
+        }
+        row.gates_passed = True
+        row.gate_results_json = json.dumps(summary)
+        evaluated.append(row.id)
+        return summary
+
+    monkeypatch.setattr(registry_service, "evaluate_gates", fake_evaluate)
+    registered = client.post(
+        f"/api/v1/projects/{project['id']}/models/register",
+        headers=auth_headers,
+        json={
+            "name": "classifier",
+            "run_id": "run-1",
+            "metadata": {"feature_schema": ["feature"]},
+        },
+    )
+    assert registered.status_code == 201
+    assert registered.json()["gates_passed"] is True
+    assert registered.json()["gate_results"]["computed_by"] == "server"
+    assert evaluated == [registered.json()["id"]]
+
+
+def test_server_evaluate_gates_computes_required_checks(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "gate-evaluation-test"},
+    ).json()
+
+    class LoadedModel:
+        def predict(self, frame):
+            assert frame.to_dict(orient="records") == [{"feature": 1.25}]
+            return [1]
+
+    monkeypatch.setattr(
+        mlflow_service,
+        "get_run",
+        lambda run_id: {
+            "run_id": run_id,
+            "experiment_id": "exp-1",
+            "artifacts": [{"path": "model", "is_dir": True}],
+        },
+    )
+    monkeypatch.setattr(inference, "load_model", lambda uri: LoadedModel())
+
+    with TestingSessionLocal() as db:
+        model = ModelVersion(
+            project_id=project["id"],
+            name="classifier",
+            version="1",
+            lifecycle=ModelLifecycle.CANDIDATE,
+            mlflow_model_name=f"project-{project['id']}-classifier",
+            mlflow_version="1",
+            mlflow_run_id="run-1",
+            model_uri=f"models:/project-{project['id']}-classifier/1",
+            metrics_json=json.dumps({"accuracy": 0.9}),
+            metadata_json=json.dumps(
+                {
+                    "artifact_path": "model",
+                    "feature_schema": [
+                        {"name": "feature", "dtype": "float", "example": 1.25}
+                    ],
+                }
+            ),
+        )
+        db.add(model)
+        db.flush()
+
+        summary = registry_service.evaluate_gates(db, model)
+
+        assert summary["passed"] is True
+        assert summary["computed_by"] == "server"
+        assert summary["gate_version"] == "1"
+        assert {result["type"] for result in summary["results"]} == {
+            "mlflow_project",
+            "artifact_exists",
+            "load_model",
+            "schema_present",
+            "test_inference",
+            "metric_threshold",
+            "inference_latency",
+        }
+        assert model.gates_passed is True
+        assert model.lifecycle == ModelLifecycle.CANDIDATE
+
+
+def test_approve_requires_server_gates(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "approval-test"},
     ).json()
     with TestingSessionLocal() as db:
         model = ModelVersion(
@@ -231,7 +381,10 @@ def test_registry_approval_enforces_gates(client, auth_headers):
             mlflow_model_name=f"project-{project['id']}-classifier",
             mlflow_version="1",
             model_uri=f"models:/project-{project['id']}-classifier/1",
-            gates_passed=False,
+            gates_passed=True,
+            gate_results_json=json.dumps(
+                {"passed": True, "computed_by": "client", "gate_version": "1"}
+            ),
         )
         db.add(model)
         db.commit()
@@ -244,12 +397,28 @@ def test_registry_approval_enforces_gates(client, auth_headers):
         json={"comment": "reviewed"},
     )
     assert blocked.status_code == 409
-    assert "gates" in blocked.json()["detail"].lower()
+    assert "server evaluation" in blocked.json()["detail"].lower()
 
-    with TestingSessionLocal() as db:
-        model = db.scalar(select(ModelVersion).where(ModelVersion.id == model_id))
-        model.gates_passed = True
-        db.commit()
+    def fake_evaluate(db, row, *, actor_id=None, **_):
+        summary = {
+            "passed": True,
+            "computed_by": "server",
+            "gate_version": "1",
+            "evaluated_at": "2026-07-31T00:00:00+00:00",
+            "results": [],
+        }
+        row.gates_passed = True
+        row.gate_results_json = json.dumps(summary)
+        return summary
+
+    monkeypatch.setattr(registry_service, "evaluate_gates", fake_evaluate)
+    evaluated = client.post(
+        f"/api/v1/projects/{project['id']}/models/{model_id}/evaluate-gates",
+        headers=auth_headers,
+    )
+    assert evaluated.status_code == 200
+    assert evaluated.json()["gate_results"]["computed_by"] == "server"
+
     approved = client.post(
         f"/api/v1/projects/{project['id']}/models/{model_id}/approve",
         headers=auth_headers,

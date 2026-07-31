@@ -66,6 +66,24 @@ def get_run(run_id: str) -> dict:
     }
 
 
+def artifact_exists(
+    run_id: str, artifact_path: str, artifacts: list[dict] | None = None
+) -> bool:
+    """Return whether the exact run artifact path exists in MLflow."""
+
+    normalized = artifact_path.strip().strip("/")
+    if not normalized:
+        return False
+    if any(str(item.get("path", "")).strip("/") == normalized for item in artifacts or []):
+        return True
+    parent = normalized.rsplit("/", 1)[0] if "/" in normalized else None
+    try:
+        listed = client().list_artifacts(run_id, parent)
+    except Exception:
+        return False
+    return any(str(item.path).strip("/") == normalized for item in listed)
+
+
 def register_model(run_id: str, model_name: str, artifact_path: str = "model") -> dict:
     mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
     model_uri = f"runs:/{run_id}/{artifact_path}"

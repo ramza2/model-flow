@@ -252,8 +252,10 @@ pass "classification training + MLflow run $RUN_ID"
 
 REG=$(api -X POST "$API_BASE/projects/$PID/models/register" \
   -H 'Content-Type: application/json' \
-  -d "{\"name\":\"classifier\",\"training_job_id\":$JID,\"metadata\":{\"feature_schema\":[\"sepal length (cm)\",\"sepal width (cm)\",\"petal length (cm)\",\"petal width (cm)\"]},\"gates_passed\":true,\"gate_results\":{\"passed\":true,\"source\":\"verify\"}}")
+  -d "{\"name\":\"classifier\",\"training_job_id\":$JID,\"metadata\":{\"feature_schema\":[\"sepal length (cm)\",\"sepal width (cm)\",\"petal length (cm)\",\"petal width (cm)\"]}}")
 MVID=$(echo "$REG" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+echo "$REG" \
+  | json_get 'import sys,json; d=json.load(sys.stdin); g=d["gate_results"]; assert d["gates_passed"] and g["passed"] and g["computed_by"] == "server"'
 
 api -X POST "$API_BASE/projects/$PID/models/$MVID/request-approval" \
   -H 'Content-Type: application/json' \

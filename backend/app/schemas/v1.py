@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 from app.db.models import AlertSeverity, DataSourceType, ProjectRole
 
@@ -166,13 +166,13 @@ class PipelineImportRequest(BaseModel):
 
 
 class ModelRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=200)
     training_job_id: int | None = None
     run_id: str | None = None
     artifact_path: str = "model"
     metadata: dict[str, Any] = Field(default_factory=dict)
-    gates_passed: bool = False
-    gate_results: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def source_required(self) -> ModelRegisterRequest:
