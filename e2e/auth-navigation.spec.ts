@@ -1,7 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-const adminEmail = process.env.E2E_ADMIN_EMAIL || "admin@modelflow.local";
-const adminPassword = process.env.E2E_ADMIN_PASSWORD || "ChangeMeAdmin123!";
+function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required. Run Playwright through ./scripts/verify.sh.`);
+  }
+  return value;
+}
+
+const adminEmail = requiredEnv("E2E_ADMIN_EMAIL");
+const adminPassword = requiredEnv("E2E_ADMIN_PASSWORD");
 
 test("login protects routes and restores the authenticated shell", async ({ page }) => {
   await page.goto("/admin");

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,6 +24,7 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 OBJECT_STORE: dict[tuple[str, str], bytes] = {}
+TEST_ADMIN_PASSWORD = secrets.token_urlsafe(24)
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +63,7 @@ def setup_v1(monkeypatch):
             User(
                 email="admin@example.com",
                 full_name="Admin",
-                password_hash=hash_password("password123"),
+                password_hash=hash_password(TEST_ADMIN_PASSWORD),
                 is_active=True,
                 is_system_admin=True,
             )
@@ -81,7 +83,7 @@ def client():
 def auth_headers(client):
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@example.com", "password": "password123"},
+        json={"email": "admin@example.com", "password": TEST_ADMIN_PASSWORD},
     )
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
@@ -119,7 +121,7 @@ def test_logout_revokes_token(client, auth_headers):
 def test_login_accepts_local_bootstrap_email_format(client):
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@modelflow.local", "password": "not-the-password"},
+        json={"email": "admin@localhost.local", "password": "not-the-password"},
     )
     assert response.status_code == 401
 
@@ -132,7 +134,7 @@ def test_login_lockout(client, monkeypatch):
     assert client.post("/api/v1/auth/login", json=payload).status_code == 401
     locked = client.post(
         "/api/v1/auth/login",
-        json={"email": "admin@example.com", "password": "password123"},
+        json={"email": "admin@example.com", "password": TEST_ADMIN_PASSWORD},
     )
     assert locked.status_code == 423
     assert "temporarily locked" in locked.json()["detail"]

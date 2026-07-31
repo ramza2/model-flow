@@ -6,7 +6,7 @@
 - No GPU / distributed training; sklearn tabular models only.
 - Visual pipeline engine is DB-worker DAG execution, not Airflow/Prefect.
 - Dependency advisory scans (`pip-audit`, `npm audit`) are informational in verify/CI and do not fail the gate (avoid breaking upgrades).
-- Default Compose credentials (`minioadmin`, Postgres `modelflow`, bootstrap admin password via env) are for local/self-hosted trust boundaries only — do not expose to the public internet.
+- Compose credentials are generated into an ignored `.env` for local/self-hosted trust boundaries only — do not expose the stack to the public internet.
 - Soft-deleted projects/users are hidden; hard purge follows retention settings.
 - Inference payloads are not stored by default (`store_inference_payloads=false`).
 - Retrain automation never auto-promotes models to PRODUCTION.

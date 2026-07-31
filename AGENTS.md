@@ -16,7 +16,7 @@ Environment is defined by `.cursor/environment.json` → `.cursor/Dockerfile` (U
 
 ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.runner`), React/Vite UI (`frontend`), Postgres, MLflow, MinIO via `docker compose`.
 
-- Preferred full stack: `docker compose up --build -d` (see README). UI http://localhost:3000, API http://localhost:8000/docs.
+- Preferred full stack: run `./scripts/init-env.sh`, then `docker compose up --build -d` (see README). UI http://localhost:3000, API http://localhost:8000/docs.
 - Full gate: `./scripts/verify.sh` (Compose + health + migrations + lint/tests in containers + API flow + Playwright container). Host needs Docker, Compose, curl, bash — not Node/npm/host Python.
 - Same gate runs in GitHub Actions (`.github/workflows/ci.yml`) on PRs to `main`, pushes to `main`, and `workflow_dispatch`. Failure artifacts: `artifacts/verify/`, `artifacts/screenshots/`.
 - External images are pinned (see `docs/DECISIONS.md` D-016). Do not switch back to `latest` without pull/run verification.
@@ -28,8 +28,8 @@ ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.r
 ModelFlow v1 requires bearer authentication under `/api/v1`. On a clean database, set
 `MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` and `MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD` to create the
 first system administrator. `MODELFLOW_SECRET_KEY` signs access tokens;
-`MODELFLOW_ENCRYPTION_KEY` protects data-source secrets (an empty value derives a local
-key from the secret key). Compose uses the development-only administrator
-`admin@modelflow.local` / `ChangeMeAdmin123!` and MinIO credentials `minioadmin`.
-Replace every default outside local development. CI must not depend on production
-secrets or paid external services.
+`MODELFLOW_ENCRYPTION_KEY` protects data-source secrets. Generate all local values with
+`./scripts/init-env.sh`; it writes the ignored `.env` and prints bootstrap login
+credentials once. Sign in with those credentials and change the bootstrap password
+immediately. Compose rejects empty required credentials. CI generates ephemeral values
+and must not depend on production secrets or paid external services.

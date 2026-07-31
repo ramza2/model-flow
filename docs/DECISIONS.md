@@ -24,7 +24,7 @@ Format: Decision — Context — Choice — Consequences.
 
 - **Context:** Need S3-compatible storage without cloud spend.
 - **Choice:** Single MinIO with buckets `datasets`, `mlflow`, `batch-results`, `artifacts`.
-- **Consequences:** Local credentials only (`minioadmin` / `minioadmin`).
+- **Consequences:** Local object-store credentials are generated into an ignored `.env`.
 
 ## D-005: Sklearn trainers for tabular clf/reg
 

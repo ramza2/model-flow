@@ -5,10 +5,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Set MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD first}"
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Set MODELFLOW_BOOTSTRAP_ADMIN_EMAIL in .env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Set MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD in .env}"
 
 API_BASE="${MODELFLOW_API_BASE:-http://localhost:8000/api/v1}"
-ADMIN_EMAIL="${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:-admin@modelflow.local}"
+ADMIN_EMAIL="$MODELFLOW_BOOTSTRAP_ADMIN_EMAIL"
 PROJECT_NAME="${DEMO_PROJECT_NAME:-ModelFlow Demo $(date -u +%Y%m%dT%H%M%SZ)}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.11-slim}"
 

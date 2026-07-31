@@ -5,6 +5,18 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+: "${POSTGRES_USER:?Set POSTGRES_USER in .env}"
+: "${POSTGRES_DB:?Set POSTGRES_DB in .env}"
+: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
+: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <backup-directory>" >&2
   exit 2
@@ -29,7 +41,7 @@ docker compose stop frontend worker backend mlflow >/dev/null 2>&1 || true
 docker compose up -d postgres minio
 
 for attempt in $(seq 1 60); do
-  if docker compose exec -T postgres pg_isready -U modelflow -d postgres >/dev/null \
+  if docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null \
     && curl -sf http://localhost:9000/minio/health/live >/dev/null; then
     break
   fi
@@ -41,14 +53,18 @@ for attempt in $(seq 1 60); do
 done
 
 echo "Restoring PostgreSQL databases"
-for database in modelflow mlflow; do
+for database in "$POSTGRES_DB" mlflow; do
+  dump_name="$database"
+  if [[ "$database" == "$POSTGRES_DB" ]]; then
+    dump_name="modelflow"
+  fi
   docker compose exec -T postgres \
-    dropdb -U modelflow --maintenance-db=postgres --if-exists --force "$database"
+    dropdb -U "$POSTGRES_USER" --maintenance-db=postgres --if-exists --force "$database"
   docker compose exec -T postgres \
-    createdb -U modelflow --owner=modelflow "$database"
+    createdb -U "$POSTGRES_USER" --owner="$POSTGRES_USER" "$database"
   docker compose exec -T postgres \
-    pg_restore -U modelflow -d "$database" --no-owner --no-acl --exit-on-error \
-    < "$BACKUP_DIR/postgres/$database.dump"
+    pg_restore -U "$POSTGRES_USER" -d "$database" --no-owner --no-acl --exit-on-error \
+    < "$BACKUP_DIR/postgres/$dump_name.dump"
 done
 
 echo "Restoring MinIO buckets"
@@ -57,7 +73,7 @@ docker compose run --rm --no-deps \
   --entrypoint /bin/sh \
   minio-init -c '
     set -eu
-    mc alias set local http://minio:9000 minioadmin minioadmin
+    mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
     for bucket in datasets mlflow batch-results artifacts; do
       mc mb -p "local/$bucket" >/dev/null 2>&1 || true
       mc mirror --overwrite --remove "/backup/$bucket" "local/$bucket"

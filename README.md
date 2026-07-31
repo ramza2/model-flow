@@ -16,8 +16,12 @@ Node.js/npm and host Python are **not** required for `./scripts/verify.sh` (fron
 ## Quick start (local)
 
 ```bash
+./scripts/init-env.sh
 docker compose up --build -d
 ```
+
+The initializer creates a mode-`600` `.env` with random credentials and prints the
+bootstrap administrator email and password once. Save them in a password manager.
 
 Open:
 
@@ -25,18 +29,18 @@ Open:
 - API v1: http://localhost:8000/api/v1
 - API docs: http://localhost:8000/docs
 - MLflow: http://localhost:5000
-- MinIO console: http://localhost:9001 (`minioadmin` / `minioadmin`)
+- MinIO console: http://localhost:9001
 
-Sign in to the local stack with `admin@modelflow.local` / `ChangeMeAdmin123!`.
-These are development-only credentials from `docker-compose.yml`; change them for every
-non-local deployment.
+Sign in with the credentials printed by `init-env.sh`, open the user menu, choose
+**Change password**, and replace the bootstrap password immediately. MinIO credentials
+are stored only in the ignored `.env`.
 
 Sample datasets: `samples/iris.csv` (classification target `target`) and `samples/regression.csv` (regression target `target_value`).
 
 Stop and wipe volumes:
 
 ```bash
-docker compose down -v --remove-orphans
+docker compose --profile source down -v --remove-orphans
 ```
 
 ## Full verification
@@ -58,27 +62,25 @@ and service logs under `artifacts/verify/`.
 ## Authentication and bootstrap
 
 The API and UI require authentication. On an empty database, the backend creates one
-system administrator only when a bootstrap password is configured:
+system administrator from the generated environment:
 
 ```bash
-export MODELFLOW_SECRET_KEY='replace-with-a-long-random-secret'
-export MODELFLOW_BOOTSTRAP_ADMIN_EMAIL='admin@example.com'
-export MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD='replace-with-a-strong-password'
-export MODELFLOW_ENCRYPTION_KEY='' # optional Fernet key; empty derives one from SECRET_KEY
+./scripts/init-env.sh
 docker compose up --build -d
 ```
 
 Bootstrap does not overwrite or recreate users once the database contains a user. The
-Compose defaults are intentionally public local-development values and must not be used
-on a shared host. Keep `MODELFLOW_SECRET_KEY`, the bootstrap password, PostgreSQL,
-MinIO, and MLflow credentials in a secret manager for production.
+initializer refuses to overwrite `.env` unless `--force` is supplied. Compose rejects
+missing or empty required settings. Keep `MODELFLOW_SECRET_KEY`,
+`MODELFLOW_ENCRYPTION_KEY`, the bootstrap password, PostgreSQL credentials, and MinIO
+credentials in a secret manager for production.
 
 ## Demo data and PostgreSQL source
 
 Seed a running stack with a demo project and `samples/iris.csv`:
 
 ```bash
-MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD='ChangeMeAdmin123!' ./scripts/seed-demo.sh
+./scripts/seed-demo.sh
 ```
 
 An optional PostgreSQL source on host port `5433` contains
@@ -88,13 +90,13 @@ An optional PostgreSQL source on host port `5433` contains
 docker compose --profile source up -d postgres-source
 ```
 
-Its local-only connection is
-`postgresql://source:source@postgres-source:5432/source` from Compose services, or
-`postgresql://source:source@localhost:5433/source` from the host.
+Use the generated `SOURCE_POSTGRES_USER`, `SOURCE_POSTGRES_PASSWORD`, and
+`SOURCE_POSTGRES_DB` values from `.env`. The host is `postgres-source` from Compose
+services and `localhost:5433` from the host.
 
 ## Backup, restore, and reset
 
-Back up the `modelflow` and `mlflow` PostgreSQL databases plus the `datasets`, `mlflow`,
+Back up the application and `mlflow` PostgreSQL databases plus the `datasets`, `mlflow`,
 `batch-results`, and `artifacts` MinIO buckets:
 
 ```bash
@@ -151,12 +153,15 @@ The badge at the top of this README reflects the latest CI workflow status.
 Backend (requires Compose infra services):
 
 ```bash
+set -a
+source .env
+set +a
+export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
+export MINIO_ACCESS_KEY="$MINIO_ROOT_USER"
+export MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD"
 cd backend
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-export MODELFLOW_SECRET_KEY='local-development-secret'
-export MODELFLOW_BOOTSTRAP_ADMIN_EMAIL='admin@modelflow.local'
-export MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD='ChangeMeAdmin123!'
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 python -m app.workers.runner
@@ -181,8 +186,8 @@ See `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/ACCEPTANCE_CRITERIA.md
 - Data-source passwords and DSNs are encrypted at rest. Set a stable Fernet
   `MODELFLOW_ENCRYPTION_KEY` when rotating `MODELFLOW_SECRET_KEY`.
 - Compose publishes PostgreSQL, MinIO, MLflow, and the API for local development. Do not
-  expose the default Compose configuration to the public internet.
-- Replace all default credentials and use TLS, network controls, external backups, and a
-  secret manager for production.
-- CI and local verification use development credentials only and do not require paid
+  expose this configuration to the public internet.
+- Use generated credentials, TLS, network controls, external backups, and a secret
+  manager for production.
+- CI and local verification generate ephemeral credentials and do not require paid
   external services.

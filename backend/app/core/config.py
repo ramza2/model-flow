@@ -7,11 +7,11 @@ class Settings(BaseSettings):
 
     app_name: str = "ModelFlow"
     app_version: str = "1.0.0-rc"
-    database_url: str = "postgresql+psycopg2://modelflow:modelflow@localhost:5432/modelflow"
+    database_url: str = "sqlite+pysqlite:///./modelflow.db"
     mlflow_tracking_uri: str = "http://localhost:5000"
     minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = "minioadmin"
-    minio_secret_key: str = "minioadmin"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
     minio_secure: bool = False
     minio_datasets_bucket: str = "datasets"
     minio_mlflow_bucket: str = "mlflow"
@@ -25,12 +25,12 @@ class Settings(BaseSettings):
 
     # Auth (never hardcode bootstrap password in code — set via env)
     secret_key: str = Field(
-        default="dev-only-change-me-modelflow-secret-key-32b",
+        default="",
         validation_alias=AliasChoices("MODELFLOW_SECRET_KEY", "SECRET_KEY"),
     )
     access_token_expire_minutes: int = 480
     bootstrap_admin_email: str = Field(
-        default="admin@modelflow.local",
+        default="admin@localhost.local",
         validation_alias=AliasChoices(
             "MODELFLOW_BOOTSTRAP_ADMIN_EMAIL", "BOOTSTRAP_ADMIN_EMAIL"
         ),
@@ -66,3 +66,22 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+INSECURE_SECRET_KEYS = frozenset(
+    {
+        "local-dev-modelflow-secret-key-change-in-prod",
+        "dev-only-change-me-modelflow-secret-key-32b",
+        "ChangeMeAdmin123!",
+        "minioadmin",
+        "modelflow",
+    }
+)
+
+
+def validate_security_settings(config: Settings = settings) -> None:
+    secret_key = config.secret_key.strip()
+    if not secret_key or secret_key in INSECURE_SECRET_KEYS:
+        raise RuntimeError(
+            "MODELFLOW_SECRET_KEY is missing or uses a known insecure default. "
+            "Run scripts/init-env.sh before starting ModelFlow."
+        )

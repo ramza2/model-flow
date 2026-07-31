@@ -2,8 +2,17 @@ import { expect, test } from "@playwright/test";
 import path from "path";
 
 const iris = path.resolve(__dirname, "../samples/iris.csv");
-const adminEmail = process.env.E2E_ADMIN_EMAIL || "admin@modelflow.local";
-const adminPassword = process.env.E2E_ADMIN_PASSWORD || "ChangeMeAdmin123!";
+
+function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required. Run Playwright through ./scripts/verify.sh.`);
+  }
+  return value;
+}
+
+const adminEmail = requiredEnv("E2E_ADMIN_EMAIL");
+const adminPassword = requiredEnv("E2E_ADMIN_PASSWORD");
 
 test("authenticated model lifecycle happy path", async ({ page }) => {
   const projectName = `e2e-${Date.now()}`;

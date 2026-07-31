@@ -25,7 +25,7 @@ describe("authentication and navigation", () => {
   it("redirects unauthenticated users to login", async () => {
     renderApp("/projects");
     expect(await screen.findByRole("heading", { name: "Welcome back" })).toBeInTheDocument();
-    expect(screen.getByTestId("login-email")).toHaveValue("admin@modelflow.local");
+    expect(screen.getByTestId("login-email")).toHaveValue("");
   });
 
   it("shows administration navigation only to system administrators", async () => {
@@ -36,7 +36,7 @@ describe("authentication and navigation", () => {
         const payload = input.endsWith("/auth/me")
           ? {
               id: 1,
-              email: "admin@modelflow.local",
+              email: "admin@example.com",
               full_name: "Administrator",
               is_active: true,
               is_system_admin: true,

@@ -14,9 +14,6 @@ PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.49.1-jammy"
 PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
 API_BASE="http://localhost:8000/api/v1"
-ADMIN_EMAIL="admin@modelflow.local"
-ADMIN_PASSWORD="ChangeMeAdmin123!"
-export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
 VERIFY_EXIT=0
 VERIFY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -28,7 +25,7 @@ info() { echo "[INFO] $*"; }
 # Parse JSON from stdin inside a container (no host Python/Node required for scripting).
 json_get() {
   local code="$1"
-  docker run --rm -i "$PYTHON_IMAGE" python -c "$code"
+  docker run --rm -i -e ADMIN_EMAIL="${ADMIN_EMAIL:-}" "$PYTHON_IMAGE" python -c "$code"
 }
 
 api() {
@@ -101,12 +98,30 @@ assert_services_healthy() {
 
 require_host_tools
 
+if [[ -f "$ROOT/.env" ]]; then
+  info "Stopping stack before rotating verification credentials"
+  docker compose --profile source down -v --remove-orphans || true
+fi
+
+info "Generating isolated verification credentials"
+./scripts/init-env.sh --non-interactive-test --force
+set -a
+# shellcheck disable=SC1091
+source "$ROOT/.env"
+set +a
+: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Missing bootstrap administrator email in .env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Missing bootstrap administrator password in .env}"
+ADMIN_EMAIL="$MODELFLOW_BOOTSTRAP_ADMIN_EMAIL"
+ADMIN_PASSWORD="$MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD"
+export E2E_ADMIN_EMAIL="$ADMIN_EMAIL"
+export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+
 info "1) Docker Compose config"
 docker compose config -q
 pass "compose config"
 
 info "2) Build & start stack (clean volumes — no host volume reuse)"
-docker compose down -v --remove-orphans
+docker compose --profile source down -v --remove-orphans
 docker compose build
 docker compose up -d
 pass "compose up"
@@ -135,7 +150,7 @@ for i in $(seq 1 120); do
 done
 TOKEN="$(echo "$LOGIN" | json_get 'import sys,json; print(json.load(sys.stdin)["access_token"])')"
 api "$API_BASE/auth/me" \
-  | json_get 'import sys,json; d=json.load(sys.stdin); assert d["email"] == "admin@modelflow.local"'
+  | json_get 'import os,sys,json; d=json.load(sys.stdin); assert d["email"] == os.environ["ADMIN_EMAIL"]'
 pass "bootstrap administrator login"
 
 # Give the worker heartbeat a moment after process start.
@@ -191,7 +206,7 @@ RUN_TAG="$(date +%s)-$$"
 
 USER=$(api -X POST "$API_BASE/users" \
   -H 'Content-Type: application/json' \
-  -d "{\"email\":\"verify-$RUN_TAG@example.com\",\"password\":\"VerifyUser123!\",\"full_name\":\"Verify User\"}")
+  -d "{\"email\":\"verify-$RUN_TAG@example.com\",\"password\":\"$ADMIN_PASSWORD\",\"full_name\":\"Verify User\"}")
 echo "$USER" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert d["email"].startswith("verify-")'
 pass "user administration"

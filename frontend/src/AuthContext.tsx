@@ -100,7 +100,7 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 export function LoginPage() {
   const { user, login } = useAuth();
   const location = useLocation();
-  const [email, setEmail] = useState("admin@modelflow.local");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -139,6 +139,7 @@ export function LoginPage() {
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
               required
               data-testid="login-email"
             />
