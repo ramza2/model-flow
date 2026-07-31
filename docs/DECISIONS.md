@@ -50,11 +50,11 @@ Format: Decision — Context — Choice — Consequences.
 - **Choice:** Auto-create experiment per project.
 - **Consequences:** Clear isolation per project.
 
-## D-010: MinIO image tags
+## D-010: MinIO image tags (superseded by D-016)
 
-- **Context:** Dated MinIO/`mc` release tags returned manifest-unknown during Compose pull.
-- **Choice:** Use `minio/minio:latest` and `minio/mc:latest` for MVP reliability.
-- **Consequences:** Less bit-for-bit reproducibility; acceptable for local MVP. Revisit pinned digests later.
+- **Context:** Earlier dated MinIO/`mc` tags returned manifest-unknown during Compose pull.
+- **Choice (historical):** Temporarily used `minio/minio:latest` and `minio/mc:latest`.
+- **Consequences:** Less reproducible. Replaced by verified RELEASE tags in D-016.
 
 ## D-011: Dataset object keys include UUID
 
@@ -83,5 +83,23 @@ Format: Decision — Context — Choice — Consequences.
 ## D-015: verify.sh runs tests in containers
 
 - **Context:** Host Node/npm versions varied; review required reproducible verification.
-- **Choice:** Frontend checks via `node:22-alpine`; E2E via `mcr.microsoft.com/playwright:v1.49.1-jammy`; JSON parsing via `python:3.11-slim`. Host tools: Docker, Compose, curl, bash.
-- **Consequences:** First verify pull is slower; no host Node required.
+- **Choice:** Frontend checks via pinned Node image; E2E via `mcr.microsoft.com/playwright:v1.49.1-jammy`; JSON parsing via `python:3.11-slim`. Host tools: Docker, Compose, curl, bash. EXIT trap collects Compose `ps` and service logs into `artifacts/verify/` on failure.
+- **Consequences:** First verify pull is slower; no host Node/Python required; same gate locally and in CI.
+
+## D-016: Pin external Docker images to pull-verified tags
+
+- **Context:** `latest` tags for MinIO/`mc` and floating minor tags reduce CI reproducibility.
+- **Choice:** After `docker pull` / `docker manifest inspect` and a smoke run, pin:
+  - `minio/minio:RELEASE.2025-04-22T22-12-26Z`
+  - `minio/mc:RELEASE.2025-04-16T18-13-26Z`
+  - `postgres:16.9-alpine`
+  - `node:22.17-alpine` (frontend build + verify)
+  - `nginx:1.27.5-alpine`
+  - Keep existing pins: `python:3.11-slim` / `python:3.11-slim-bookworm`, `ghcr.io/mlflow/mlflow:v2.18.0`, `mcr.microsoft.com/playwright:v1.49.1-jammy`
+- **Consequences:** Tags must be re-verified before upgrades; do not invent unverified tags.
+
+## D-017: GitHub Actions CI runs the same verify.sh gate
+
+- **Context:** Need PR Checks without a second verification path.
+- **Choice:** Single workflow `.github/workflows/ci.yml` on PR→main, push→main, and `workflow_dispatch`; runs `./scripts/verify.sh`; concurrency cancels superseded runs; least-privilege permissions; 60m timeout; failure artifact upload of `artifacts/verify/` + `artifacts/screenshots/`.
+- **Consequences:** CI duration tracks full stack; no production secrets or paid external services.
