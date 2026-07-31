@@ -21,8 +21,15 @@ ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.r
 - Same gate runs in GitHub Actions (`.github/workflows/ci.yml`) on PRs to `main`, pushes to `main`, and `workflow_dispatch`. Failure artifacts: `artifacts/verify/`, `artifacts/screenshots/`.
 - External images are pinned (see `docs/DECISIONS.md` D-016). Do not switch back to `latest` without pull/run verification.
 - Sample CSV: `samples/iris.csv` with target column `target`.
-- Worker claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`) and writes a DB heartbeat for health checks; training uses `SklearnTrainingRunner` (`app/services/training.py`).
+- Worker claims training, pipeline, batch inference, drift, and data-import work from Postgres (`FOR UPDATE SKIP LOCKED`) and writes a DB heartbeat for health checks; training uses `SklearnTrainingRunner` (`app/services/training.py`).
 
 ### Auth / secrets
 
-MVP has no auth. Local MinIO/MLflow credentials are the Compose defaults (`minioadmin`). Do not use production secrets. CI must not depend on production secrets or paid external services.
+ModelFlow v1 requires bearer authentication under `/api/v1`. On a clean database, set
+`MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` and `MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD` to create the
+first system administrator. `MODELFLOW_SECRET_KEY` signs access tokens;
+`MODELFLOW_ENCRYPTION_KEY` protects data-source secrets (an empty value derives a local
+key from the secret key). Compose uses the development-only administrator
+`admin@modelflow.local` / `ChangeMeAdmin123!` and MinIO credentials `minioadmin`.
+Replace every default outside local development. CI must not depend on production
+secrets or paid external services.

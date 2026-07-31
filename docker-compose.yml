@@ -16,6 +16,24 @@ services:
       timeout: 5s
       retries: 20
 
+  postgres-source:
+    image: postgres:16.9-alpine
+    profiles: ["source"]
+    environment:
+      POSTGRES_USER: source
+      POSTGRES_PASSWORD: source
+      POSTGRES_DB: source
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_source_data:/var/lib/postgresql/data
+      - ./scripts/init-source.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U source -d source"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
@@ -43,6 +61,8 @@ services:
       mc alias set local http://minio:9000 minioadmin minioadmin;
       mc mb -p local/datasets || true;
       mc mb -p local/mlflow || true;
+      mc mb -p local/batch-results || true;
+      mc mb -p local/artifacts || true;
       exit 0;
       "
 
@@ -101,6 +121,10 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
       AWS_DEFAULT_REGION: us-east-1
       CORS_ORIGINS: http://localhost:3000,http://localhost:5173,http://localhost
+      MODELFLOW_SECRET_KEY: local-dev-modelflow-secret-key-change-in-prod
+      MODELFLOW_BOOTSTRAP_ADMIN_EMAIL: admin@modelflow.local
+      MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD: ChangeMeAdmin123!
+      MODELFLOW_ENCRYPTION_KEY: ""
     ports:
       - "8000:8000"
     command: >
@@ -135,6 +159,10 @@ services:
       WORKER_POLL_SECONDS: "2"
       WORKER_ID: default
       WORKER_HEARTBEAT_MAX_AGE_SECONDS: "30"
+      MODELFLOW_SECRET_KEY: local-dev-modelflow-secret-key-change-in-prod
+      MODELFLOW_BOOTSTRAP_ADMIN_EMAIL: admin@modelflow.local
+      MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD: ChangeMeAdmin123!
+      MODELFLOW_ENCRYPTION_KEY: ""
     command: python -m app.workers.runner
     healthcheck:
       test: ["CMD-SHELL", "python -m app.workers.healthcheck"]
@@ -159,4 +187,5 @@ services:
 
 volumes:
   postgres_data:
+  postgres_source_data:
   minio_data:

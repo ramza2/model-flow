@@ -1,3 +1,4 @@
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,16 +24,32 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost"
 
     # Auth (never hardcode bootstrap password in code — set via env)
-    secret_key: str = "dev-only-change-me-modelflow-secret-key-32b"
+    secret_key: str = Field(
+        default="dev-only-change-me-modelflow-secret-key-32b",
+        validation_alias=AliasChoices("MODELFLOW_SECRET_KEY", "SECRET_KEY"),
+    )
     access_token_expire_minutes: int = 480
-    bootstrap_admin_email: str = "admin@modelflow.local"
-    bootstrap_admin_password: str = ""  # required on first boot in compose
+    bootstrap_admin_email: str = Field(
+        default="admin@modelflow.local",
+        validation_alias=AliasChoices(
+            "MODELFLOW_BOOTSTRAP_ADMIN_EMAIL", "BOOTSTRAP_ADMIN_EMAIL"
+        ),
+    )
+    bootstrap_admin_password: str = Field(
+        default="",  # required on first boot in compose
+        validation_alias=AliasChoices(
+            "MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD", "BOOTSTRAP_ADMIN_PASSWORD"
+        ),
+    )
     login_max_failures: int = 5
     login_lockout_minutes: int = 15
     rate_limit_per_minute: int = 120
 
     # Crypto for data-source secrets (Fernet key); empty → derived from secret_key
-    encryption_key: str = ""
+    encryption_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_ENCRYPTION_KEY", "ENCRYPTION_KEY"),
+    )
 
     # Defaults
     store_inference_payloads: bool = False

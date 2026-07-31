@@ -101,6 +101,14 @@ def test_v1_health_auth_and_security_headers(client, auth_headers):
     assert set(unauthenticated.json()) == {"detail", "hint"}
 
 
+def test_login_accepts_local_bootstrap_email_format(client):
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@modelflow.local", "password": "not-the-password"},
+    )
+    assert response.status_code == 401
+
+
 def test_login_lockout(client, monkeypatch):
     monkeypatch.setattr(settings, "login_max_failures", 2)
     monkeypatch.setattr(settings, "login_lockout_minutes", 5)

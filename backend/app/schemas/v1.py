@@ -9,7 +9,9 @@ from app.db.models import AlertSeverity, DataSourceType, ProjectRole
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Login must accept the documented local bootstrap identity
+    # (admin@modelflow.local), which EmailStr rejects as a reserved TLD.
+    email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=1, max_length=1024)
 
 
