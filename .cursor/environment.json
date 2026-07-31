@@ -3,12 +3,20 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+<<<<<<< HEAD
   "install": "python3.11 -m pip install --user -r backend/requirements.txt\ncd frontend && npm install",
   "start": "sudo service docker start",
   "ports": [
     { "name": "frontend", "port": 3000 },
     { "name": "fastapi", "port": 8000 },
     { "name": "react-dev", "port": 5173 },
+=======
+  "install": "true",
+  "start": "sudo service docker start",
+  "ports": [
+    { "name": "fastapi", "port": 8000 },
+    { "name": "react", "port": 5173 },
+>>>>>>> origin/main
     { "name": "postgres", "port": 5432 },
     { "name": "mlflow", "port": 5000 },
     { "name": "minio", "port": 9000 },
