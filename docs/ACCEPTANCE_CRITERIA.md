@@ -2,8 +2,8 @@
 
 Existing MVP criteria are retained and v1.0 criteria are additive. Status values are `PASS`, `FAIL`, and `NOT_VERIFIED`. `PASS` requires repeatable evidence for the current revision; implementation alone is not evidence.
 
-**Current tip:** `2723915`  
-**GitHub Actions:** https://github.com/ramza2/model-flow/actions/runs/30620587949 — **success**  
+**Current tip:** `2f028a7`  
+**GitHub Actions:** https://github.com/ramza2/model-flow/actions/runs/30621024795 — **success**  
 **Clean gate:** `docker compose --profile source down -v --remove-orphans && rm -f .env && ./scripts/init-env.sh --non-interactive-test && ./scripts/verify.sh` → **PASS** (`artifacts/verify/RESULT.txt` = OK).
 
 ## MVP criteria (retained)
@@ -36,7 +36,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-24 | Worker health reflects fresh DB heartbeat | PASS | Compose worker healthcheck | `scripts/verify.sh` | `compose-ps.txt` |
 | AC-25 | verify.sh / init-env require only Docker/Compose/curl/bash on host | PASS | Host-tool check; secrets via `python:3.11-slim` container | `scripts/verify.sh`; `scripts/init-env.sh` | script headers |
 | AC-26 | GitHub Actions CI workflow present | PASS | Workflow YAML | `.github/workflows/ci.yml` | Actions UI |
-| AC-27 | PR targeting `main` runs full verification gate | PASS | PR Check on #4 | Actions run `30620587949` | success on tip `2723915` |
+| AC-27 | PR targeting `main` runs full verification gate | PASS | PR Check on #4 | Actions run `30621024795` | success on tip `2f028a7` |
 | AC-28 | CI failure uploads verify/screenshots artifacts | PASS | Workflow upload-artifact step | `.github/workflows/ci.yml` | workflow |
 | AC-29 | External Docker images pinned | PASS | Compose/verify pins | `docker-compose.yml`; D-016 | compose |
 | AC-30 | Clean-volume full verification PASS | PASS | `down -v` + init-env + verify | `scripts/verify.sh` | `RESULT.txt` |
@@ -86,7 +86,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented | PASS | Doc present | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full gate PASS on Draft PR | PASS | Tip workflow success | Actions on `cursor/modelflow-v1-rc-71f2` | run `30620587949` |
+| AC-72 | GitHub Actions Full gate PASS on Draft PR | PASS | Tip workflow success | Actions on `cursor/modelflow-v1-rc-71f2` | run `30621024795` |
 
 ## Additional remediation checks (Release Review)
 
@@ -103,4 +103,4 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 
 ## Remaining NOT_VERIFIED
 
-None for AC-01…AC-72 on tip `2723915` (local clean gate PASS; GitHub Actions run `30620587949` success).
+None for AC-01…AC-72 on tip `2f028a7` (local clean gate PASS; GitHub Actions run `30621024795` success).
