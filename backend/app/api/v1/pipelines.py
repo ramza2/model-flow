@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -31,6 +33,7 @@ from app.schemas.v1 import (
     PipelineRunRequest,
     PipelineUpdate,
 )
+from app.services import pipeline_engine
 
 router = APIRouter(tags=["pipelines"])
 
@@ -408,3 +411,66 @@ def get_pipeline_run(
     return pipeline_run_out(
         get_owned(db, PipelineRun, run_id, project_id, "Pipeline run")
     )
+
+
+@router.post(
+    "/projects/{project_id}/pipeline-runs/{run_id}/rerun-from-failed",
+    status_code=202,
+)
+def rerun_pipeline_from_failed(
+    project_id: int,
+    run_id: int,
+    access=Depends(require_project_perm(Permission.PIPELINE_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    run = get_owned(db, PipelineRun, run_id, project_id, "Pipeline run")
+    if run.status != JobStatus.failed:
+        raise friendly(409, "Only a failed pipeline run can be restarted.")
+    version = db.get(PipelineVersion, run.pipeline_version_id)
+    if version is None:
+        raise friendly(409, "The pipeline version for this run no longer exists.")
+    restarted = pipeline_engine.prepare_rerun_from_failed(
+        run, pipeline_version_out(version)["graph"]
+    )
+    if not restarted:
+        raise friendly(409, "This run does not contain a failed node to restart.")
+    audit_event(
+        db,
+        auth,
+        "pipeline_run.rerun_from_failed",
+        "pipeline_run",
+        run.id,
+        after={"restarted_nodes": restarted},
+    )
+    db.commit()
+    db.refresh(run)
+    return pipeline_run_out(run)
+
+
+@router.post("/projects/{project_id}/pipeline-runs/{run_id}/cancel")
+def cancel_pipeline_run(
+    project_id: int,
+    run_id: int,
+    access=Depends(require_project_perm(Permission.PIPELINE_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    run = get_owned(db, PipelineRun, run_id, project_id, "Pipeline run")
+    states = json.loads(run.node_states_json or "{}")
+    if run.status in {JobStatus.pending, JobStatus.queued}:
+        run.status = JobStatus.cancelled
+        run.finished_at = func.now()
+        for state in states.values():
+            if state.get("status") == "pending":
+                state["status"] = "cancelled"
+        run.node_states_json = dumps(states)
+    elif run.status == JobStatus.running:
+        run.status = JobStatus.cancel_requested
+    else:
+        raise friendly(409, f"A {run.status.value} pipeline run cannot be cancelled.")
+    run.logs = (run.logs or "") + "Cancellation requested.\n"
+    audit_event(db, auth, "pipeline_run.cancel", "pipeline_run", run.id)
+    db.commit()
+    db.refresh(run)
+    return pipeline_run_out(run)

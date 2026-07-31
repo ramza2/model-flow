@@ -333,6 +333,7 @@ def pipeline_run_out(row: PipelineRun) -> dict[str, Any]:
         "status": enum_value(row.status),
         "parameters": loads(row.parameters_json, {}),
         "node_states": loads(row.node_states_json, {}),
+        "node_artifacts": loads(row.node_artifacts_json, {}),
         "logs": row.logs or "",
         "error_message": row.error_message,
         "fail_policy": row.fail_policy,
@@ -459,6 +460,11 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
         errors.append("Every node must have an id")
     if len(set(node_ids)) != len(node_ids):
         errors.append("Node ids must be unique")
+    node_map = {
+        str(node.get("id")): node
+        for node in nodes
+        if isinstance(node, dict) and node.get("id") is not None
+    }
     adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
     indegree = {node_id: 0 for node_id in node_ids}
     for edge in edges:
@@ -471,6 +477,24 @@ def validate_graph(graph: dict[str, Any]) -> list[str]:
             continue
         adjacency[source].append(target)
         indegree[target] += 1
+        source_data = node_map[source].get("data") or {}
+        source_type = (
+            source_data.get("node_type")
+            or source_data.get("nodeType")
+            or source_data.get("type")
+            or node_map[source].get("type")
+        )
+        if source_type == "condition":
+            edge_data = edge.get("data") or {}
+            branch = edge_data.get(
+                "branch",
+                edge.get("branch", edge.get("label", edge_data.get("label", "always"))),
+            )
+            branch = str(branch).lower() if branch is not None else "always"
+            if branch not in {"true", "false", "always"}:
+                errors.append(
+                    f"Condition edge {source}->{target} has unsupported branch '{branch}'"
+                )
     queue = [node_id for node_id, degree in indegree.items() if degree == 0]
     visited = 0
     while queue:

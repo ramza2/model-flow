@@ -382,6 +382,7 @@ class PipelineRun(Base):
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
     parameters_json: Mapped[str] = mapped_column(Text, default="{}")
     node_states_json: Mapped[str] = mapped_column(Text, default="{}")
+    node_artifacts_json: Mapped[str] = mapped_column(Text, default="{}")
     logs: Mapped[str] = mapped_column(Text, default="")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     fail_policy: Mapped[str] = mapped_column(String(50), default="stop")  # stop|continue

@@ -17,6 +17,9 @@ from app.db.models import (
     Endpoint,
     JobStatus,
     ModelVersion,
+    Pipeline,
+    PipelineRun,
+    PipelineVersion,
     Project,
     TrainingJob,
 )
@@ -218,6 +221,53 @@ def test_training_recovery_and_cancellation_create_terminal_states():
         alert = db.scalar(select(Alert).where(Alert.resource_id == str(stale_id)))
         assert alert is not None
         assert alert.alert_type == "training_job_failure"
+
+
+def test_pipeline_claim_respects_schedule_and_limit():
+    with TestingSessionLocal() as db:
+        project = Project(name="pipeline-schedule-test")
+        db.add(project)
+        db.flush()
+        pipeline = Pipeline(project_id=project.id, name="scheduled")
+        db.add(pipeline)
+        db.flush()
+        version = PipelineVersion(
+            pipeline_id=pipeline.id,
+            project_id=project.id,
+            version=1,
+        )
+        db.add(version)
+        db.flush()
+        due = PipelineRun(
+            project_id=project.id,
+            pipeline_id=pipeline.id,
+            pipeline_version_id=version.id,
+            status=JobStatus.pending,
+            scheduled_for=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
+        future = PipelineRun(
+            project_id=project.id,
+            pipeline_id=pipeline.id,
+            pipeline_version_id=version.id,
+            status=JobStatus.pending,
+            scheduled_for=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        db.add_all([due, future])
+        db.commit()
+        due_id, future_id = due.id, future.id
+
+    claimed = runner.claim_pipeline_runs(1)
+    assert [run.id for run in claimed] == [due_id]
+    assert runner.claim_pipeline_runs(1) == []
+
+    with TestingSessionLocal() as db:
+        assert db.get(PipelineRun, due_id).status == JobStatus.running
+        future = db.get(PipelineRun, future_id)
+        assert future.status == JobStatus.pending
+        future.scheduled_for = datetime.now(timezone.utc) - timedelta(seconds=1)
+        db.commit()
+
+    assert [run.id for run in runner.claim_pipeline_runs(1)] == [future_id]
 
 
 def test_import_query_only_allows_table_or_read_only_query():

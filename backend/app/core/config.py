@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     worker_id: str = "default"
     worker_heartbeat_max_age_seconds: int = 30
     worker_max_concurrent_jobs: int = 2
+    pipeline_max_parallel_nodes: int = 4
     cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost"
 
     # Auth (never hardcode bootstrap password in code — set via env)

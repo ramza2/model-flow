@@ -11,7 +11,14 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.db.models import Base, ModelLifecycle, ModelVersion, User
+from app.db.models import (
+    Base,
+    JobStatus,
+    ModelLifecycle,
+    ModelVersion,
+    PipelineRun,
+    User,
+)
 from app.db.session import get_db
 from app.main import _rate_windows, app
 from app.schemas.v1 import ModelRegisterRequest
@@ -231,6 +238,62 @@ def test_dataset_versions_quality_split_job_and_pipeline(
     )
     assert invalid.status_code == 400
     assert "cycle" in invalid.json()["hint"]
+
+
+def test_pipeline_rerun_endpoint_keeps_succeeded_nodes(client, auth_headers):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "pipeline-rerun-api"},
+    ).json()
+    graph = {
+        "nodes": [
+            {"id": "first", "data": {"node_type": "notification"}},
+            {"id": "failed", "data": {"node_type": "notification"}},
+            {"id": "last", "data": {"node_type": "notification"}},
+        ],
+        "edges": [
+            {"source": "first", "target": "failed"},
+            {"source": "failed", "target": "last"},
+        ],
+    }
+    pipeline = client.post(
+        f"/api/v1/projects/{project['id']}/pipelines",
+        headers=auth_headers,
+        json={"name": "restartable", "graph": graph},
+    ).json()
+    queued = client.post(
+        f"/api/v1/projects/{project['id']}/pipelines/{pipeline['id']}/run",
+        headers=auth_headers,
+        json={},
+    )
+    assert queued.status_code == 202
+    run_id = queued.json()["id"]
+
+    with TestingSessionLocal() as db:
+        run = db.get(PipelineRun, run_id)
+        run.status = JobStatus.failed
+        run.node_states_json = json.dumps(
+            {
+                "first": {"status": "succeeded", "output": {"node": "first"}},
+                "failed": {"status": "failed", "error": "temporary"},
+                "last": {"status": "skipped"},
+            }
+        )
+        run.node_artifacts_json = json.dumps({"first": {"node": "first"}})
+        db.commit()
+
+    restarted = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-runs/{run_id}/rerun-from-failed",
+        headers=auth_headers,
+    )
+    assert restarted.status_code == 202
+    body = restarted.json()
+    assert body["status"] == "pending"
+    assert body["node_states"]["first"]["status"] == "succeeded"
+    assert body["node_states"]["failed"]["status"] == "pending"
+    assert body["node_states"]["last"]["status"] == "pending"
+    assert body["node_artifacts"] == {"first": {"node": "first"}}
 
 
 def test_register_rejects_client_gates_and_runs_server_evaluation(

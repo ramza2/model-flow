@@ -6,6 +6,7 @@ import re
 import time
 import traceback
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from urllib.parse import quote_plus
@@ -88,11 +89,42 @@ def claim_next_job() -> TrainingJob | None:
 
 
 def claim_next_pipeline_run() -> PipelineRun | None:
+    runs = claim_pipeline_runs(1)
+    return runs[0] if runs else None
+
+
+def claim_pipeline_runs(limit: int) -> list[PipelineRun]:
+    """Atomically claim at most ``limit`` pipeline runs that are due."""
+
+    if limit <= 0:
+        return []
     now = datetime.now(timezone.utc)
-    return _claim_next(
-        PipelineRun,
-        or_(PipelineRun.scheduled_for.is_(None), PipelineRun.scheduled_for <= now),
-    )
+    db = SessionLocal()
+    try:
+        runs = db.scalars(
+            select(PipelineRun)
+            .where(
+                PipelineRun.status.in_(PENDING_STATUSES),
+                or_(
+                    PipelineRun.scheduled_for.is_(None),
+                    PipelineRun.scheduled_for <= now,
+                ),
+            )
+            .order_by(PipelineRun.id.asc())
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        ).all()
+        for run in runs:
+            run.status = JobStatus.running
+            run.started_at = now
+            run.logs = (run.logs or "") + "Worker claimed pipeline run.\n"
+        db.commit()
+        for run in runs:
+            db.refresh(run)
+            db.expunge(run)
+        return list(runs)
+    finally:
+        db.close()
 
 
 def claim_next_batch_job() -> BatchInferenceJob | None:
@@ -597,13 +629,33 @@ def _wait_for_database() -> None:
 def run_forever() -> None:
     _wait_for_database()
     logger.info("ModelFlow worker started worker_id=%s", settings.worker_id)
+    pipeline_executor = ThreadPoolExecutor(
+        max_workers=max(1, settings.worker_max_concurrent_jobs),
+        thread_name_prefix="pipeline-run",
+    )
+    pipeline_futures: dict[Future[None], int] = {}
     while True:
         processed = False
         try:
             beat()
+            completed = [future for future in pipeline_futures if future.done()]
+            for future in completed:
+                run_id = pipeline_futures.pop(future)
+                try:
+                    future.result()
+                except Exception:
+                    logger.exception("Pipeline run future failed id=%s", run_id)
+                processed = True
+            available = max(
+                0, settings.worker_max_concurrent_jobs - len(pipeline_futures)
+            )
+            for run in claim_pipeline_runs(available):
+                logger.info("Processing pipeline run id=%s", run.id)
+                future = pipeline_executor.submit(process_pipeline_run, run)
+                pipeline_futures[future] = run.id
+                processed = True
             work = (
                 ("training job", claim_next_job, process_job),
-                ("pipeline run", claim_next_pipeline_run, process_pipeline_run),
                 ("batch inference job", claim_next_batch_job, process_batch_job),
                 ("drift run", claim_next_drift_run, process_drift_run),
                 ("data import job", claim_next_import_job, process_import_job),

@@ -29,6 +29,7 @@ _EDITABLE_SETTINGS = {
     "store_inference_payloads",
     "max_upload_bytes",
     "rate_limit_per_minute",
+    "pipeline_max_parallel_nodes",
     "worker_max_concurrent_jobs",
 }
 _RETENTION_MAP = {

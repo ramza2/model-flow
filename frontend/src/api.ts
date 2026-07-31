@@ -214,7 +214,16 @@ export type PipelineGraph = {
     position: { x: number; y: number };
     data: Record<string, unknown>;
   }>;
-  edges: Array<{ id?: string; source: string; target: string }>;
+  edges: Array<{
+    id?: string;
+    source: string;
+    target: string;
+    sourceHandle?: string | null;
+    targetHandle?: string | null;
+    branch?: "true" | "false" | "always";
+    label?: string;
+    data?: { branch?: "true" | "false" | "always"; [key: string]: unknown };
+  }>;
 };
 
 export type Pipeline = {
@@ -235,7 +244,15 @@ export type PipelineRun = {
   pipeline_version_id: number;
   status: string;
   parameters: Record<string, unknown>;
-  node_states: Record<string, { status: string; error?: string }>;
+  node_states: Record<string, {
+    status: string;
+    error?: string;
+    reason?: string;
+    branch?: "true" | "false";
+  }>;
+  node_artifacts: Record<string, unknown>;
+  fail_policy: "stop" | "continue";
+  scheduled_for: string | null;
   logs: string;
   error_message: string | null;
   created_at: string;

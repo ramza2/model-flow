@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import operator
 import uuid
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Any
 
 import pandas as pd
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 from app.db.models import (
@@ -77,6 +80,16 @@ def _node_config(node: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _edge_branch(edge: dict[str, Any]) -> str:
+    data = edge.get("data") or {}
+    value = data.get(
+        "branch", edge.get("branch", edge.get("label", data.get("label", "always")))
+    )
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value or "always").strip().lower()
+
+
 def validate_graph(graph: dict[str, Any]) -> dict[str, Any]:
     """Validate node types, references, required input ports, and acyclicity."""
 
@@ -111,6 +124,12 @@ def validate_graph(graph: dict[str, Any]) -> dict[str, Any]:
         incoming[target].append(edge)
         outgoing[source].append(target)
         indegree[target] += 1
+        if _node_type(node_map[source]) == "condition":
+            branch = _edge_branch(edge)
+            if branch not in {"true", "false", "always"}:
+                errors.append(
+                    f"Condition edge {source!r} -> {target!r} has unsupported branch {branch!r}."
+                )
 
     for node_id, node in node_map.items():
         node_type = _node_type(node)
@@ -422,7 +441,11 @@ def _execute_node(
         passed = bool(operators[operation](left, right))
         if not passed and config.get("fail_on_false", False):
             raise ValueError("Pipeline condition evaluated to false.")
-        return {**(incoming if isinstance(incoming, dict) else {}), "condition": passed}
+        return {
+            **(incoming if isinstance(incoming, dict) else {}),
+            "condition": passed,
+            "branch": "true" if passed else "false",
+        }
 
     if node_type == "model_registration":
         from app.services.registry_service import register_from_run
@@ -532,8 +555,188 @@ def _execute_node(
     raise ValueError(f"Unsupported pipeline node type: {node_type}")
 
 
+_ARTIFACT_MARKER = "__modelflow_artifact__"
+_TERMINAL_NODE_STATES = {"succeeded", "failed", "skipped", "cancelled"}
+
+
+def _persist_output(run: PipelineRun, node_id: str, value: Any) -> Any:
+    if isinstance(value, pd.DataFrame):
+        buffer = BytesIO()
+        value.to_parquet(buffer, index=False)
+        key = (
+            f"project-{run.project_id}/pipeline-runs/{run.id}/"
+            f"{node_id}/{uuid.uuid4().hex}.parquet"
+        )
+        storage.upload_bytes(
+            settings.minio_artifacts_bucket,
+            key,
+            buffer.getvalue(),
+            "application/vnd.apache.parquet",
+        )
+        return {
+            _ARTIFACT_MARKER: "dataframe",
+            "bucket": settings.minio_artifacts_bucket,
+            "key": key,
+        }
+    if isinstance(value, pd.Series):
+        buffer = BytesIO()
+        value.to_frame().to_parquet(buffer, index=False)
+        key = (
+            f"project-{run.project_id}/pipeline-runs/{run.id}/"
+            f"{node_id}/{uuid.uuid4().hex}.series.parquet"
+        )
+        storage.upload_bytes(
+            settings.minio_artifacts_bucket,
+            key,
+            buffer.getvalue(),
+            "application/vnd.apache.parquet",
+        )
+        return {
+            _ARTIFACT_MARKER: "series",
+            "bucket": settings.minio_artifacts_bucket,
+            "key": key,
+            "name": value.name,
+        }
+    if isinstance(value, ModelVersion):
+        return {_ARTIFACT_MARKER: "model_version", "id": value.id}
+    if isinstance(value, dict):
+        return {
+            str(key): _persist_output(run, node_id, item) for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_persist_output(run, node_id, item) for item in value]
+    if hasattr(value, "item"):
+        return value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _restore_output(db: Session, value: Any) -> Any:
+    if isinstance(value, list):
+        return [_restore_output(db, item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    kind = value.get(_ARTIFACT_MARKER)
+    if kind in {"dataframe", "series"}:
+        payload = storage.download_bytes(str(value["bucket"]), str(value["key"]))
+        frame = pd.read_parquet(BytesIO(payload))
+        if kind == "series":
+            series = frame.iloc[:, 0]
+            series.name = value.get("name")
+            return series
+        return frame
+    if kind == "model_version":
+        model = db.get(ModelVersion, int(value["id"]))
+        if model is None:
+            raise ValueError(f"Model version artifact {value['id']} was not found.")
+        return model
+    return {str(key): _restore_output(db, item) for key, item in value.items()}
+
+
+def _bind_models(db: Session, value: Any) -> Any:
+    if isinstance(value, ModelVersion):
+        model = db.get(ModelVersion, value.id)
+        if model is None:
+            raise ValueError(f"Model version {value.id} was not found.")
+        return model
+    if isinstance(value, dict):
+        return {key: _bind_models(db, item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_bind_models(db, item) for item in value]
+    return value
+
+
+def _condition_branch(value: Any) -> str | None:
+    if isinstance(value, dict):
+        branch = value.get("branch")
+        if isinstance(branch, bool):
+            return str(branch).lower()
+        if str(branch).lower() in {"true", "false"}:
+            return str(branch).lower()
+        condition = value.get("condition")
+        if isinstance(condition, bool):
+            return str(condition).lower()
+    return None
+
+
+@dataclass
+class _NodeResult:
+    output: Any = None
+    artifact: Any = None
+    summary: Any = None
+    error: str | None = None
+
+
+def _run_node(
+    session_factory: sessionmaker,
+    run_id: int,
+    node_id: str,
+    node_type: str,
+    config: dict[str, Any],
+    incoming: Any,
+) -> _NodeResult:
+    with session_factory() as node_db:
+        live_run = node_db.get(PipelineRun, run_id)
+        if live_run is None:
+            return _NodeResult(error=f"Pipeline run {run_id} was not found.")
+        try:
+            bound_input = _bind_models(node_db, incoming)
+            output = _execute_node(node_db, live_run, node_type, config, bound_input)
+            artifact = _persist_output(live_run, node_id, output)
+            summary = _json_safe(output)
+            node_db.commit()
+            return _NodeResult(output=output, artifact=artifact, summary=summary)
+        except Exception as exc:
+            node_db.rollback()
+            return _NodeResult(error=str(exc))
+
+
+def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[str]:
+    """Reset failed nodes and their descendants while retaining successful artifacts."""
+
+    states = json.loads(run.node_states_json or "{}")
+    failed = {
+        node_id for node_id, state in states.items() if state.get("status") == "failed"
+    }
+    if not failed:
+        return []
+    outgoing: dict[str, list[str]] = {
+        str(node.get("id")): [] for node in graph.get("nodes", [])
+    }
+    for edge in graph.get("edges", []):
+        source, target = str(edge.get("source")), str(edge.get("target"))
+        if source in outgoing:
+            outgoing[source].append(target)
+
+    restart = set(failed)
+    queue = list(failed)
+    while queue:
+        source = queue.pop()
+        for target in outgoing.get(source, []):
+            if target not in restart:
+                restart.add(target)
+                queue.append(target)
+
+    artifacts = json.loads(run.node_artifacts_json or "{}")
+    for node_id in restart:
+        states[node_id] = {"status": "pending"}
+        artifacts.pop(node_id, None)
+    run.node_states_json = json.dumps(states)
+    run.node_artifacts_json = json.dumps(artifacts)
+    run.status = JobStatus.pending
+    run.error_message = None
+    run.scheduled_for = None
+    run.started_at = None
+    run.finished_at = None
+    run.logs = (run.logs or "") + (
+        f"Restart requested from failed node(s): {', '.join(sorted(failed))}.\n"
+    )
+    return sorted(restart)
+
+
 def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
-    """Execute a stored graph sequentially in topological order."""
+    """Execute ready graph nodes concurrently with branch and cancellation semantics."""
 
     run = db.get(PipelineRun, run_id)
     if run is None:
@@ -543,7 +746,14 @@ def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
         raise ValueError(f"Pipeline version {run.pipeline_version_id} was not found.")
     graph = json.loads(version.graph_json or "{}")
     validation = validate_graph(graph)
+    states = json.loads(run.node_states_json or "{}")
     if not validation["valid"]:
+        for state in states.values():
+            if state.get("status") == "pending":
+                state.update(
+                    status="skipped", reason="Pipeline graph validation failed."
+                )
+        run.node_states_json = json.dumps(states)
         run.status = JobStatus.failed
         run.error_message = "; ".join(validation["errors"])
         run.finished_at = datetime.now(timezone.utc)
@@ -552,67 +762,224 @@ def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
 
     nodes = {str(node["id"]): node for node in graph["nodes"]}
     edges = graph.get("edges", [])
+    incoming_edges: dict[str, list[dict[str, Any]]] = {node_id: [] for node_id in nodes}
+    for edge in edges:
+        incoming_edges[str(edge["target"])].append(edge)
     parameters = json.loads(run.parameters_json or "{}")
-    states = json.loads(run.node_states_json or "{}")
+    artifacts = json.loads(run.node_artifacts_json or "{}")
     outputs: dict[str, Any] = {}
-    had_failure = False
+    for node_id, node in nodes.items():
+        states.setdefault(node_id, {"status": "pending"})
+        if states[node_id].get("status") == "succeeded":
+            saved = artifacts.get(node_id, states[node_id].get("output"))
+            outputs[node_id] = _restore_output(db, saved)
+
+    if run.status == JobStatus.cancel_requested:
+        for state in states.values():
+            if state.get("status") == "pending":
+                state.update(status="cancelled", reason="Pipeline run was cancelled.")
+        run.node_states_json = json.dumps(states)
+        run.status = JobStatus.cancelled
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        return run
+
+    had_failure = any(state.get("status") == "failed" for state in states.values())
+    fail_fast = had_failure and run.fail_policy != "continue"
+    cancel_requested = False
     run.status = JobStatus.running
-    run.started_at = datetime.now(timezone.utc)
+    run.started_at = run.started_at or datetime.now(timezone.utc)
+    run.finished_at = None
     db.commit()
 
-    for node_id in validation["order"]:
-        db.refresh(run)
-        if run.status == JobStatus.cancel_requested:
-            run.status = JobStatus.cancelled
-            run.finished_at = datetime.now(timezone.utc)
-            db.commit()
-            return run
-        node = nodes[node_id]
-        node_type = _node_type(node)
-        config = {**parameters, **_node_config(node)}
-        states[node_id] = {
-            "status": "running",
-            "node_type": node_type,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        }
-        run.node_states_json = json.dumps(states)
-        db.commit()
-        try:
-            incoming = _input_for(node_id, edges, outputs)
-            output = _execute_node(db, run, node_type, config, incoming)
-            outputs[node_id] = output
-            states[node_id].update(
-                {
-                    "status": "succeeded",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
-                    "output": _json_safe(output),
-                }
-            )
-            run.node_states_json = json.dumps(states, default=str)
-            run.logs = (run.logs or "") + f"{node_id} ({node_type}) succeeded.\n"
-            db.commit()
-        except Exception as exc:
-            db.rollback()
-            run = db.get(PipelineRun, run_id)
-            states[node_id].update(
-                {
-                    "status": "failed",
-                    "finished_at": datetime.now(timezone.utc).isoformat(),
-                    "error": str(exc),
-                }
-            )
-            run.node_states_json = json.dumps(states)
-            run.logs = (run.logs or "") + f"{node_id} ({node_type}) failed: {exc}\n"
-            run.error_message = str(exc)
-            had_failure = True
-            if run.fail_policy != "continue":
-                run.status = JobStatus.failed
-                run.finished_at = datetime.now(timezone.utc)
-                db.commit()
-                return run
-            db.commit()
+    node_sessions = sessionmaker(
+        bind=db.get_bind(),
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+    )
+    max_workers = max(1, int(settings.pipeline_max_parallel_nodes))
+    futures: dict[Future[_NodeResult], str] = {}
 
-    run.status = JobStatus.failed if had_failure else JobStatus.succeeded
+    def persist_runtime_state() -> None:
+        run.node_states_json = json.dumps(states, default=str)
+        run.node_artifacts_json = json.dumps(artifacts, default=str)
+        db.commit()
+
+    def edge_is_active(edge: dict[str, Any]) -> bool:
+        source = str(edge["source"])
+        source_status = states[source].get("status")
+        if source_status in {"skipped", "cancelled"}:
+            return False
+        if source_status != "succeeded" or _node_type(nodes[source]) != "condition":
+            return True
+        selected = states[source].get("branch") or _condition_branch(
+            outputs.get(source)
+        )
+        return _edge_branch(edge) in {"always", selected}
+
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix=f"pipeline-{run_id}",
+    ) as executor:
+        while True:
+            db.expire(run, ["status"])
+            db.refresh(run, attribute_names=["status"])
+            cancel_requested = (
+                cancel_requested or run.status == JobStatus.cancel_requested
+            )
+
+            pending_ids = [
+                node_id
+                for node_id, state in states.items()
+                if state.get("status") == "pending"
+            ]
+            if cancel_requested and not futures:
+                for node_id in pending_ids:
+                    states[node_id].update(
+                        status="cancelled",
+                        reason="Pipeline run was cancelled before this node started.",
+                    )
+                persist_runtime_state()
+                break
+            if fail_fast and not futures:
+                for node_id in pending_ids:
+                    states[node_id].update(
+                        status="skipped",
+                        reason="Skipped after a pipeline node failed.",
+                    )
+                persist_runtime_state()
+                break
+
+            ready: list[tuple[str, list[dict[str, Any]]]] = []
+            skipped_any = False
+            if not cancel_requested and not fail_fast:
+                for node_id in sorted(pending_ids):
+                    node_incoming = incoming_edges[node_id]
+                    if any(
+                        states[str(edge["source"])].get("status")
+                        not in _TERMINAL_NODE_STATES
+                        for edge in node_incoming
+                    ):
+                        continue
+                    active = [edge for edge in node_incoming if edge_is_active(edge)]
+                    if node_incoming and not active:
+                        states[node_id].update(
+                            status="skipped",
+                            reason="No selected branch reaches this node.",
+                        )
+                        skipped_any = True
+                        continue
+                    if any(
+                        states[str(edge["source"])].get("status")
+                        in {"failed", "cancelled"}
+                        for edge in active
+                    ):
+                        states[node_id].update(
+                            status="skipped",
+                            reason="An upstream dependency did not succeed.",
+                        )
+                        skipped_any = True
+                        continue
+                    if all(
+                        states[str(edge["source"])].get("status") == "succeeded"
+                        for edge in active
+                    ):
+                        ready.append((node_id, active))
+
+            available = max_workers - len(futures)
+            to_start = ready[:available]
+            if to_start:
+                started_at = datetime.now(timezone.utc).isoformat()
+                for node_id, _ in to_start:
+                    states[node_id] = {
+                        "status": "running",
+                        "node_type": _node_type(nodes[node_id]),
+                        "started_at": started_at,
+                    }
+                persist_runtime_state()
+                for node_id, active in to_start:
+                    node_type = _node_type(nodes[node_id])
+                    config = {**parameters, **_node_config(nodes[node_id])}
+                    incoming = _input_for(node_id, active, outputs)
+                    future = executor.submit(
+                        _run_node,
+                        node_sessions,
+                        run_id,
+                        node_id,
+                        node_type,
+                        config,
+                        incoming,
+                    )
+                    futures[future] = node_id
+
+            if not futures:
+                if skipped_any:
+                    persist_runtime_state()
+                    continue
+                remaining = [
+                    node_id
+                    for node_id, state in states.items()
+                    if state.get("status") == "pending"
+                ]
+                if remaining:
+                    for node_id in remaining:
+                        states[node_id].update(
+                            status="skipped",
+                            reason="No executable dependency path reaches this node.",
+                        )
+                    persist_runtime_state()
+                break
+
+            done, _ = wait(tuple(futures), timeout=0.2, return_when=FIRST_COMPLETED)
+            if not done:
+                continue
+            finished_at = datetime.now(timezone.utc).isoformat()
+            for future in done:
+                node_id = futures.pop(future)
+                node_type = _node_type(nodes[node_id])
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    result = _NodeResult(error=str(exc))
+                if result.error is None:
+                    outputs[node_id] = result.output
+                    artifacts[node_id] = result.artifact
+                    states[node_id].update(
+                        status="succeeded",
+                        finished_at=finished_at,
+                        output=result.summary,
+                    )
+                    branch = _condition_branch(result.output)
+                    if node_type == "condition" and branch:
+                        states[node_id]["branch"] = branch
+                    run.logs = (
+                        run.logs or ""
+                    ) + f"{node_id} ({node_type}) succeeded.\n"
+                else:
+                    states[node_id].update(
+                        status="failed",
+                        finished_at=finished_at,
+                        error=result.error,
+                    )
+                    run.logs = (
+                        run.logs or ""
+                    ) + f"{node_id} ({node_type}) failed: {result.error}\n"
+                    run.error_message = result.error
+                    had_failure = True
+                    if run.fail_policy != "continue":
+                        fail_fast = True
+            persist_runtime_state()
+
+    run.status = (
+        JobStatus.cancelled
+        if cancel_requested
+        else JobStatus.failed
+        if had_failure
+        else JobStatus.succeeded
+    )
     run.finished_at = datetime.now(timezone.utc)
+    if run.status == JobStatus.succeeded:
+        run.error_message = None
     db.commit()
     return run

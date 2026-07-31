@@ -33,6 +33,7 @@ const NODE_TYPES = [
   "preprocessing",
   "training",
   "evaluation",
+  "condition",
   "model_registration",
   "approval_request",
   "endpoint_deployment",
@@ -105,6 +106,7 @@ export function PipelineBuilder() {
   const [nodeType, setNodeType] = useState<(typeof NODE_TYPES)[number]>("dataset_load");
   const [selectedId, setSelectedId] = useState("");
   const [nodeConfig, setNodeConfig] = useState("{}");
+  const [conditionBranch, setConditionBranch] = useState<"true" | "false" | "always">("true");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -166,7 +168,10 @@ export function PipelineBuilder() {
       id: edge.id,
       source: edge.source,
       target: edge.target,
+      ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
       ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+      ...(edge.label ? { label: String(edge.label) } : {}),
+      ...(edge.data ? { data: edge.data as PipelineGraph["edges"][number]["data"] } : {}),
     })) as PipelineGraph["edges"],
   });
 
@@ -209,6 +214,14 @@ export function PipelineBuilder() {
           <select value={nodeType} onChange={(event) => setNodeType(event.target.value as (typeof NODE_TYPES)[number])}>{NODE_TYPES.map((type) => <option value={type} key={type}>{labelFor(type)}</option>)}</select>
           <button className="btn btn-wide" onClick={addNode}>＋ Add to canvas</button>
           <p className="form-hint">Connect steps by dragging between their handles.</p>
+          <label>Condition edge branch
+            <select value={conditionBranch} onChange={(event) => setConditionBranch(event.target.value as "true" | "false" | "always")}>
+              <option value="true">True</option>
+              <option value="false">False</option>
+              <option value="always">Always</option>
+            </select>
+            <small className="form-hint">Applied when the connection starts from a condition step.</small>
+          </label>
           {selectedNode && <>
             <hr />
             <span className="eyebrow">Selected step</span>
@@ -224,7 +237,14 @@ export function PipelineBuilder() {
             edges={edges}
             onNodesChange={(changes: NodeChange[]) => setNodes((rows) => applyNodeChanges(changes, rows))}
             onEdgesChange={(changes: EdgeChange[]) => setEdges((rows) => applyEdgeChanges(changes, rows))}
-            onConnect={(connection: Connection) => setEdges((rows) => addEdge(connection, rows))}
+            onConnect={(connection: Connection) => {
+              const source = nodes.find((node) => node.id === connection.source);
+              const isCondition = source?.data.node_type === "condition";
+              const edge = isCondition
+                ? { ...connection, label: conditionBranch, data: { branch: conditionBranch } }
+                : connection;
+              setEdges((rows) => addEdge(edge, rows));
+            }}
             onNodeClick={(_, node) => selectNode(node)}
             fitView
           >
@@ -245,6 +265,7 @@ export function PipelineBuilder() {
 export function PipelineRunDetail() {
   const { projectId, runId } = useParams();
   const [run, setRun] = useState<PipelineRun | null>(null);
+  const [rerunning, setRerunning] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -255,11 +276,27 @@ export function PipelineRunDetail() {
     return () => { active = false; window.clearInterval(timer); };
   }, [projectId, runId]);
 
+  async function rerunFromFailed() {
+    setRerunning(true);
+    setError("");
+    try {
+      const restarted = await api<PipelineRun>(
+        `/projects/${projectId}/pipeline-runs/${runId}/rerun-from-failed`,
+        { method: "POST" },
+      );
+      setRun(restarted);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Pipeline run could not be restarted.");
+    } finally {
+      setRerunning(false);
+    }
+  }
+
   return <div>
-    <PageHeader title={`Pipeline run #${runId}`} description="Step-level execution state and logs." actions={<StatusBadge status={run?.status} />} />
+    <PageHeader title={`Pipeline run #${runId}`} description="Step-level execution state and logs." actions={<><StatusBadge status={run?.status} />{run?.status === "failed" && <button className="btn" disabled={rerunning} onClick={rerunFromFailed}>{rerunning ? "Restarting…" : "↻ Rerun from failed"}</button>}</>} />
     <ErrorNotice message={error} />
     {!run ? <Loading label="Loading pipeline run" /> : <>
-      <div className="card-grid">{Object.entries(run.node_states).map(([id, state]) => <article className="source-card" key={id}><span className="eyebrow">Step</span><h2>{id}</h2><StatusBadge status={state.status} />{state.error && <p className="error">{state.error}</p>}</article>)}</div>
+      <div className="card-grid">{Object.entries(run.node_states).map(([id, state]) => <article className="source-card" key={id}><span className="eyebrow">Step</span><h2>{id}</h2><StatusBadge status={state.status} />{state.branch && <p className="muted">Selected branch: {state.branch}</p>}{state.reason && <p className="muted">{state.reason}</p>}{state.error && <p className="error">{state.error}</p>}</article>)}</div>
       {Object.keys(run.node_states).length === 0 && <EmptyState title="No steps in this run" description="This pipeline version contains an empty graph." />}
       <section className="panel"><span className="eyebrow">Execution</span><h2>Logs</h2><div className="logs">{run.logs || "Waiting for execution…"}</div></section>
     </>}
