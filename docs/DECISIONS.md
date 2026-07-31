@@ -2,17 +2,17 @@
 
 Format: Decision — Context — Choice — Consequences.
 
-## D-001: No authentication in MVP
+## D-001: Authentication deferred in MVP → superseded by D-018
 
-- **Context:** Local Compose trust boundary; auth would delay the MLOps loop.
-- **Choice:** Open API/UI; document clearly in README.
-- **Consequences:** Not safe on public networks. Add auth post-MVP.
+- **Context:** Local Compose trust boundary; auth delayed the MLOps loop for MVP.
+- **Choice (MVP):** Open API/UI.
+- **Consequences:** Not safe on public networks. **v1.0 replaces with JWT + RBAC (D-018).**
 
 ## D-002: DB-backed job queue instead of Airflow
 
-- **Context:** Airflow excluded from MVP.
-- **Choice:** `training_jobs` table + worker poll with `FOR UPDATE SKIP LOCKED`.
-- **Consequences:** Simple, replaceable via `TrainingRunner` protocol.
+- **Context:** Airflow excluded from MVP and v1.0.
+- **Choice:** Domain job tables + worker poll with `FOR UPDATE SKIP LOCKED`.
+- **Consequences:** Simple, replaceable via `TrainingRunner` / `PipelineExecutor` protocols.
 
 ## D-003: Separate Postgres databases for app and MLflow
 
@@ -23,20 +23,20 @@ Format: Decision — Context — Choice — Consequences.
 ## D-004: MinIO for datasets and MLflow artifacts
 
 - **Context:** Need S3-compatible storage without cloud spend.
-- **Choice:** Single MinIO with buckets `datasets` and `mlflow`.
+- **Choice:** Single MinIO with buckets `datasets`, `mlflow`, `batch-results`, `artifacts`.
 - **Consequences:** Local credentials only (`minioadmin` / `minioadmin`).
 
-## D-005: Sklearn RandomForestClassifier as default trainer
+## D-005: Sklearn trainers for tabular clf/reg
 
-- **Context:** Need a reliable sample model.
-- **Choice:** Classification when target is categorical/integer with few uniques; else RandomForestRegressor. Default sample: Iris-like CSV with `target` column.
-- **Consequences:** Tabular CSV only in MVP.
+- **Context:** Need reliable sample models without GPU.
+- **Choice:** Classification: LogisticRegression, RandomForestClassifier, GradientBoostingClassifier. Regression: Ridge, RandomForestRegressor, GradientBoostingRegressor.
+- **Consequences:** Tabular only in v1.0; protocol allows future frameworks.
 
 ## D-006: Inference in backend process
 
 - **Context:** Avoid separate model-serving mesh.
 - **Choice:** FastAPI loads pyfunc/sklearn model from MLflow URI; in-memory cache per endpoint.
-- **Consequences:** Single-node only; fine for MVP.
+- **Consequences:** Single-node only; fine for Compose self-host.
 
 ## D-007: Frontend served as static build behind nginx in Compose
 
@@ -52,54 +52,108 @@ Format: Decision — Context — Choice — Consequences.
 
 ## D-010: MinIO image tags (superseded by D-016)
 
-- **Context:** Earlier dated MinIO/`mc` tags returned manifest-unknown during Compose pull.
-- **Choice (historical):** Temporarily used `minio/minio:latest` and `minio/mc:latest`.
-- **Consequences:** Less reproducible. Replaced by verified RELEASE tags in D-016.
+Historical; see D-016.
 
 ## D-011: Dataset object keys include UUID
 
-- **Context:** Re-uploading `iris.csv` reused `project-{id}/iris.csv` and overwrote prior objects.
-- **Choice:** Store at `project-{id}/{uuid}/{original_filename}`; keep original name in `datasets.name`.
-- **Consequences:** Object storage grows with each upload; training always reads the dataset-specific key.
+- **Context:** Re-uploading reused keys and overwrote objects.
+- **Choice:** `project-{id}/{dataset_id}/v{version}/{uuid}/{original_filename}`; original name in metadata.
+- **Consequences:** Object storage grows with each version; training reads version-specific key.
 
 ## D-012: Endpoint readiness requires model load
 
-- **Context:** Endpoints could be marked `ready` even when `mlflow.pyfunc.load_model` failed.
-- **Choice:** Load the model before insert; on failure return 400 and do not persist the endpoint.
-- **Consequences:** Slightly slower create path; fails closed for broken artifacts.
+- **Context:** Endpoints could be marked ready when load failed.
+- **Choice:** Load before Ready; create fails closed.
+- **Consequences:** Slightly slower create path.
 
-## D-013: Project-scoped MLflow ownership checks
+## D-013: Project-scoped ownership checks
 
-- **Context:** A client could register another project's run or attach another project's model to an endpoint.
-- **Choice:** Register only if `run.experiment_id` matches `project-{id}` experiment; endpoints require model name prefix `project-{id}-`.
-- **Consequences:** Relies on naming/experiment conventions established at project create / train time.
+- **Context:** Cross-project binding attacks.
+- **Choice:** Membership + project_id FK checks on every resource API; MLflow naming conventions retained as defense in depth.
+- **Consequences:** Hard isolation at API layer.
 
 ## D-014: Worker heartbeat healthcheck
 
-- **Context:** Compose worker health was a no-op sleep and could report healthy while polling was stuck.
-- **Choice:** Worker writes `worker_heartbeats.last_seen_at` each loop; healthcheck module fails if age exceeds 30s.
-- **Consequences:** Requires migration `002_worker_heartbeats`; start_period allows first beat.
+- **Choice:** Worker writes `worker_heartbeats.last_seen_at`; healthcheck fails if age exceeds threshold.
+- **Consequences:** Requires heartbeat table; start_period allows first beat.
 
 ## D-015: verify.sh runs tests in containers
 
-- **Context:** Host Node/npm versions varied; review required reproducible verification.
-- **Choice:** Frontend checks via pinned Node image; E2E via `mcr.microsoft.com/playwright:v1.49.1-jammy`; JSON parsing via `python:3.11-slim`. Host tools: Docker, Compose, curl, bash. EXIT trap collects Compose `ps` and service logs into `artifacts/verify/` on failure.
-- **Consequences:** First verify pull is slower; no host Node/Python required; same gate locally and in CI.
+- **Choice:** Frontend via pinned Node image; E2E via Playwright image; JSON via python:3.11-slim. Host: Docker, Compose, curl, bash.
+- **Consequences:** First verify pull slower; no host Node/Python required.
 
 ## D-016: Pin external Docker images to pull-verified tags
 
-- **Context:** `latest` tags for MinIO/`mc` and floating minor tags reduce CI reproducibility.
-- **Choice:** After `docker pull` / `docker manifest inspect` and a smoke run, pin:
-  - `minio/minio:RELEASE.2025-04-22T22-12-26Z`
-  - `minio/mc:RELEASE.2025-04-16T18-13-26Z`
-  - `postgres:16.9-alpine`
-  - `node:22.17-alpine` (frontend build + verify)
-  - `nginx:1.27.5-alpine`
-  - Keep existing pins: `python:3.11-slim` / `python:3.11-slim-bookworm`, `ghcr.io/mlflow/mlflow:v2.18.0`, `mcr.microsoft.com/playwright:v1.49.1-jammy`
-- **Consequences:** Tags must be re-verified before upgrades; do not invent unverified tags.
+- **Choice:** Pin MinIO/mc/Postgres/Node/nginx/Playwright/MLflow/Python tags after pull verification. See compose + verify.sh.
+- **Consequences:** Re-verify before upgrades; never invent unverified tags.
 
 ## D-017: GitHub Actions CI runs the same verify.sh gate
 
-- **Context:** Need PR Checks without a second verification path.
-- **Choice:** Single workflow `.github/workflows/ci.yml` on PR→main, push→main, and `workflow_dispatch`; runs `./scripts/verify.sh`; concurrency cancels superseded runs; least-privilege permissions; 60m timeout; failure artifact upload of `artifacts/verify/` + `artifacts/screenshots/`.
-- **Consequences:** CI duration tracks full stack; no production secrets or paid external services.
+- **Choice:** `.github/workflows/ci.yml` on PR→main, push→main, workflow_dispatch; concurrency; least privilege; 60m timeout; failure artifacts.
+- **Consequences:** CI duration tracks full stack.
+
+## D-018: JWT access tokens + bcrypt passwords (v1.0)
+
+- **Context:** v1.0 requires real multi-user auth without SSO/LDAP.
+- **Choice:** bcrypt password hashes; JWT Bearer access tokens (HS256) with configurable expiry; logout is client-side token discard (+ optional server denylist for password change). Bootstrap admin via env vars only.
+- **Consequences:** Stateless auth suitable for Compose; rotate `MODELFLOW_SECRET_KEY` invalidates tokens.
+
+## D-019: Project roles as membership enum
+
+- **Context:** Need SYSTEM_ADMIN plus project-scoped roles.
+- **Choice:** `users.is_system_admin` for SYSTEM_ADMIN; `project_memberships.role` ∈ {PROJECT_ADMIN, ML_ENGINEER, DATA_SCIENTIST, VIEWER}.
+- **Consequences:** Simple permission matrix in code; no external IAM.
+
+## D-020: Fernet encryption for data-source secrets
+
+- **Context:** Postgres passwords must not be stored or returned in plaintext.
+- **Choice:** Encrypt with Fernet using `MODELFLOW_ENCRYPTION_KEY` (url-safe base64 32-byte key).
+- **Consequences:** Key rotation requires re-encrypt migration; never log decrypted secrets.
+
+## D-021: App-owned Model Registry workflow over raw MLflow UI
+
+- **Context:** Need approval states, gates, audit beyond MLflow stages.
+- **Choice:** `model_versions` table with lifecycle + gate results; MLflow remains artifact/source of truth for model binary.
+- **Consequences:** Dual write on register; promote does not auto-set MLflow stage unless configured.
+
+## D-022: Visual pipelines via React Flow + DB DAG engine
+
+- **Context:** Avoid Airflow/Prefect dependency.
+- **Choice:** Frontend React Flow; backend stores graph JSON; worker executes topological schedule with parallel ready nodes.
+- **Consequences:** Good enough for tabular DAGs; not a general workflow SaaS.
+
+## D-023: Soft delete for projects/users; hard delete for ephemeral artifacts per retention
+
+- **Context:** Need recovery vs storage control.
+- **Choice:** Users/projects soft-delete (`deleted_at` / `is_active`). Batch results, training logs, inference stats purged by retention job/policy. Audit logs soft-immutable (append-only; purge only via retention).
+- **Consequences:** Documented in README; admin UI exposes retention days.
+
+## D-024: Default inference logging stores metadata only
+
+- **Context:** Prediction inputs may be PII.
+- **Choice:** Store count/latency/error class by default; raw payload optional via system setting `store_inference_payloads=false`.
+- **Consequences:** Safer default; debugging may require temporary enable.
+
+## D-025: Retrain never auto-promotes to PRODUCTION
+
+- **Context:** Drift/retrain automation must not bypass approval.
+- **Choice:** Auto-retrain creates candidate + evaluation + PENDING_APPROVAL; human approve required for PRODUCTION.
+- **Consequences:** Safer ops; slightly more manual for demos.
+
+## D-026: API versioning under `/api/v1`
+
+- **Context:** Stable surface for clients and verify.sh.
+- **Choice:** All app APIs under `/api/v1`; `/api/health` retained for Compose healthchecks.
+- **Consequences:** Clients and scripts must use v1 paths.
+
+## D-027: Login lockout after N failures
+
+- **Context:** Brute-force defense without external WAF.
+- **Choice:** Per-email counter; lock 15 minutes after 5 failures; audit failures without password.
+- **Consequences:** Shared NAT may amplify lockouts; acceptable for self-host.
+
+## D-028: Optional `postgres-source` Compose service for integration tests
+
+- **Context:** Need real Postgres import tests without external SaaS.
+- **Choice:** Secondary Postgres on port 5433 with sample `customers` table seeded.
+- **Consequences:** Slightly heavier compose; only used when profile/tests enable it.

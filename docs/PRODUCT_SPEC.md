@@ -1,52 +1,79 @@
-# ModelFlow Product Spec (MVP)
+# ModelFlow Product Spec (v1.0 RC)
 
 ## One-liner
 
-**ModelFlow** — End-to-End MLOps Platform for local/self-hosted experiment tracking, training, registry, and inference.
+**ModelFlow** — Self-hosted general-purpose tabular MLOps platform for collaboration, data governance, training, visual pipelines, model registry, serving, monitoring, and drift-driven retrain.
 
 ## Problem
 
-Teams need a single place to upload tabular data, train a model, track experiments, register versions, and call a local inference endpoint — without assembling MLflow, object storage, and APIs by hand.
+Teams need one self-hosted system to manage tabular classification/regression from data ingestion through production inference — with auth, project isolation, auditability, and Compose-based operations — without assembling MLflow, object storage, queues, and UIs by hand.
 
-## Goals (MVP)
+## Goals (v1.0)
 
-1. Create projects and upload CSV datasets.
-2. Inspect dataset columns and basic statistics.
-3. Create and run asynchronous training jobs (scikit-learn).
-4. Record runs in MLflow (params, metrics, artifacts).
-5. Register models in MLflow Model Registry and list versions.
-6. Create a local inference endpoint and run sample predictions.
-7. Provide a task-oriented UI (no Kubernetes jargon on primary screens).
+1. Bootstrap admin, login/logout, password change, user admin, RBAC, project membership.
+2. Register file (CSV/JSON/Parquet) and PostgreSQL data sources; encrypt connection secrets.
+3. Manage datasets as immutable versions with profiling, quality rules, splits, and lineage.
+4. Run classification and regression training jobs with rich preprocessing and MLflow tracking.
+5. Design, validate, publish, and execute visual ML pipelines (DAG worker engine).
+6. Operate Model Registry with evaluation gates and approval workflow (candidate → production).
+7. Serve realtime endpoints and batch inference with schema validation and metrics.
+8. Monitor service/data/model health; detect drift; trigger retrain without auto-promoting to production.
+9. In-app alerts, audit logs, admin retention/settings, backup/restore scripts.
+10. Docker Compose self-host + GitHub Actions full verification gate.
 
-## Non-goals (MVP)
+## Non-goals (v1.0)
 
-- Apache Airflow / complex orchestration
-- Multi-tenant auth / SSO
-- GPU training
-- Streaming / online feature store
-- Production deployment to cloud Kubernetes
-- Paid external SaaS dependencies
+- Kubernetes / multi-cluster
+- GPU distributed training
+- Vision / audio / LLM-specialized training
+- SSO / LDAP
+- Multi-cloud auto-deploy
+- HA clustering
+- Usage-based billing
+- Arbitrary unrestricted user code execution
+- Full AutoML
+- Automatic deploy to production servers outside Compose
+
+Interfaces remain replaceable for future runners, identity providers, and orchestrators.
 
 ## Primary users
 
-- ML engineers and data scientists running experiments locally or on a shared Compose stack
-- Cloud agents verifying the full MLOps loop
+| Role | Intent |
+|------|--------|
+| SYSTEM_ADMIN | Users, system health, retention, audit |
+| PROJECT_ADMIN | Project members, data, models, deployments |
+| ML_ENGINEER | Pipelines, training, registry, serving |
+| DATA_SCIENTIST | Datasets, experiments, training |
+| VIEWER | Read-only |
 
 ## Core entities
 
 | Entity | Description |
 |--------|-------------|
-| Project | Workspace container for datasets, jobs, runs, models, endpoints |
-| Dataset | Uploaded CSV stored in MinIO; metadata + column stats in Postgres |
-| TrainingJob | Async job definition + status/logs |
-| ExperimentRun | Mirror/link to an MLflow run |
-| RegisteredModel | MLflow Model Registry entry |
-| Endpoint | Local HTTP inference target bound to a model version |
+| User / Role | Authenticated principal; system or project role |
+| Project / Membership | Isolation boundary for all project resources |
+| DataSource | File or Postgres connection (secrets encrypted) |
+| Dataset / DatasetVersion | Immutable versioned tabular asset in MinIO |
+| QualityRule / QualityCheck | Data quality policy + run history |
+| DatasetSplit | Train/val/test split with seed + ratios |
+| TrainingJob / ExperimentRun | Async train + MLflow-linked run metadata |
+| Pipeline / PipelineVersion / PipelineRun | Visual DAG definition + execution |
+| ModelVersion | Registry entry with lifecycle state + gates |
+| Endpoint | Realtime inference binding to a model version |
+| BatchInferenceJob | Offline prediction over a dataset version |
+| DriftRun / Alert / AuditLog | Monitoring, notifications, governance |
 
-## Required user flow
+## Required end-to-end flows
 
-Project create → CSV upload → column stats → training job → sklearn train → status/logs → MLflow run → params/metrics/artifacts → registry → versions → inference endpoint → sample predict → result.
+1. **Admin & access:** bootstrap → create user → project → membership → login → project-scoped access.
+2. **Data:** source or upload → version → stats → quality → split.
+3. **Train:** job → worker → MLflow metrics/artifacts → compare runs.
+4. **Pipeline:** design → publish → run → registry step.
+5. **Approve & serve:** approve → endpoint → predict → version change → rollback.
+6. **Monitor:** traffic → metrics → drift → alert → retrain request (approval required for prod).
+7. **Batch:** dataset → batch job → artifact download.
+8. **Clean install:** empty volumes → migrate → bootstrap → healthy → core E2E.
 
-## Success metric for MVP
+## Success metric for v1.0 RC
 
-A clean Compose environment can complete the flow above with real Postgres, MLflow, MinIO, and scikit-learn — verified by automated tests and `scripts/verify.sh`.
+Clean Compose volumes + `./scripts/verify.sh` PASS, all Acceptance Criteria PASS, GitHub Actions Full verification gate green, README-only install works, evidence (screenshots/video) attached to Draft PR.
