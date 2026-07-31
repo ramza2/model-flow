@@ -50,8 +50,8 @@ Format: Decision — Context — Choice — Consequences.
 - **Choice:** Auto-create experiment per project.
 - **Consequences:** Clear isolation per project.
 
-## D-009: Forbidden placeholder policy
+## D-010: MinIO image tags
 
-- **Context:** Acceptance forbids mock completion.
-- **Choice:** `scripts/verify.sh` greps for `TODO(mvp-block)`, `Coming soon`, fake fixtures in production paths.
-- **Consequences:** Dev-only test doubles allowed under `tests/` and `e2e/` only.
+- **Context:** Dated MinIO/`mc` release tags returned manifest-unknown during Compose pull.
+- **Choice:** Use `minio/minio:latest` and `minio/mc:latest` for MVP reliability.
+- **Consequences:** Less bit-for-bit reproducibility; acceptable for local MVP. Revisit pinned digests later.

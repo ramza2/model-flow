@@ -25,6 +25,7 @@ describe("Dashboard", () => {
       </MemoryRouter>,
     );
     expect(screen.getByText(/Workspace home/i)).toBeInTheDocument();
-    expect(await screen.findByText("1")).toBeInTheDocument();
+    expect(await screen.findByText("Create project")).toBeInTheDocument();
+    expect(screen.getByText("Projects").closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
   });
 });
