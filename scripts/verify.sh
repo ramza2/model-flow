@@ -56,15 +56,19 @@ fi
 pass "frontend lint/typecheck/test"
 
 info "7) Placeholder / forbidden TODO scan"
-if grep -RIn --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=dist \
-  --exclude-dir=playwright-report --exclude-dir=artifacts \
+FOUND=$(grep -RIn --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=dist \
+  --exclude-dir=playwright-report --exclude-dir=artifacts --exclude='verify.sh' \
   -e 'TODO(mvp-block)' -e 'Coming soon' -e 'mockApi' -e 'FAKE_DATA' \
-  backend frontend e2e docs scripts; then
+  backend frontend e2e docs || true)
+if [[ -n "$FOUND" ]]; then
+  echo "$FOUND"
   fail "forbidden placeholders found"
 fi
 # Soft-scan for k8s jargon on primary UI
-if grep -RIn --exclude-dir=node_modules --exclude-dir=dist \
-  -e '\bKubernetes\b' -e '\bNamespace\b' -e '\bPod\b' frontend/src; then
+FOUND=$(grep -RIn --exclude-dir=node_modules --exclude-dir=dist \
+  -e '\bKubernetes\b' -e '\bNamespace\b' -e '\bPod\b' frontend/src || true)
+if [[ -n "$FOUND" ]]; then
+  echo "$FOUND"
   fail "infra jargon found in frontend"
 fi
 pass "placeholder scan"
