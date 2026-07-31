@@ -24,11 +24,18 @@ Each item must be PASS before completion is declared.
 | AC-18 | No infra jargon (Pod/Namespace/K8s) on primary UI | PASS |
 | AC-19 | Screenshots or browser evidence of key screens | PASS |
 | AC-20 | Draft PR documents PASS/FAIL for all criteria | PASS |
+| AC-21 | Same-filename re-upload keeps distinct MinIO objects | PASS |
+| AC-22 | Endpoint ready only after successful model load | PASS |
+| AC-23 | Cross-project run/model binding rejected | PASS |
+| AC-24 | Worker health reflects fresh DB heartbeat | PASS |
+| AC-25 | verify.sh requires only Docker/Compose/curl/bash on host | PASS |
 
-## Evidence (2026-07-31)
+## Evidence (re-verified after review fixes)
 
-- Compose health: backend/frontend/mlflow/postgres/minio healthy; API system status all `ok`.
-- API flow: train succeeded (`accuracy=1.0`), MLflow run logged, model `project-1-classifier` v1 registered, predict returned `[0]`.
-- Playwright: `e2e/happy-path.spec.ts` passed (~7s); screenshots under `artifacts/screenshots/`.
-- Backend: `pytest` 6 passed; `ruff check` clean.
-- Frontend: `typecheck` clean; `eslint` warnings only (hooks deps); `vitest` 1 passed; production build OK.
+- Clean volumes: `docker compose down -v` then `./scripts/verify.sh` **PASS**
+- Compose health (frontend/backend/worker/postgres/mlflow/minio) all `healthy`
+- Alembic head: `002_worker_heartbeats`
+- Backend: ruff clean, **11** pytest tests passed
+- Frontend (node:22-alpine container): lint/typecheck/vitest PASS
+- Playwright (`mcr.microsoft.com/playwright:v1.49.1-jammy`): PASS
+- API flow: train + registry + predict PASS

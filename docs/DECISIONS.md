@@ -55,3 +55,33 @@ Format: Decision — Context — Choice — Consequences.
 - **Context:** Dated MinIO/`mc` release tags returned manifest-unknown during Compose pull.
 - **Choice:** Use `minio/minio:latest` and `minio/mc:latest` for MVP reliability.
 - **Consequences:** Less bit-for-bit reproducibility; acceptable for local MVP. Revisit pinned digests later.
+
+## D-011: Dataset object keys include UUID
+
+- **Context:** Re-uploading `iris.csv` reused `project-{id}/iris.csv` and overwrote prior objects.
+- **Choice:** Store at `project-{id}/{uuid}/{original_filename}`; keep original name in `datasets.name`.
+- **Consequences:** Object storage grows with each upload; training always reads the dataset-specific key.
+
+## D-012: Endpoint readiness requires model load
+
+- **Context:** Endpoints could be marked `ready` even when `mlflow.pyfunc.load_model` failed.
+- **Choice:** Load the model before insert; on failure return 400 and do not persist the endpoint.
+- **Consequences:** Slightly slower create path; fails closed for broken artifacts.
+
+## D-013: Project-scoped MLflow ownership checks
+
+- **Context:** A client could register another project's run or attach another project's model to an endpoint.
+- **Choice:** Register only if `run.experiment_id` matches `project-{id}` experiment; endpoints require model name prefix `project-{id}-`.
+- **Consequences:** Relies on naming/experiment conventions established at project create / train time.
+
+## D-014: Worker heartbeat healthcheck
+
+- **Context:** Compose worker health was a no-op sleep and could report healthy while polling was stuck.
+- **Choice:** Worker writes `worker_heartbeats.last_seen_at` each loop; healthcheck module fails if age exceeds 30s.
+- **Consequences:** Requires migration `002_worker_heartbeats`; start_period allows first beat.
+
+## D-015: verify.sh runs tests in containers
+
+- **Context:** Host Node/npm versions varied; review required reproducible verification.
+- **Choice:** Frontend checks via `node:22-alpine`; E2E via `mcr.microsoft.com/playwright:v1.49.1-jammy`; JSON parsing via `python:3.11-slim`. Host tools: Docker, Compose, curl, bash.
+- **Consequences:** First verify pull is slower; no host Node required.
