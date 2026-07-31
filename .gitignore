@@ -226,3 +226,4 @@ playwright-report/
 test-results/
 artifacts/
 .pytest_cache/
+backups/

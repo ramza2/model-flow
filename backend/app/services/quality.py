@@ -15,7 +15,43 @@ SUPPORTED_RULE_TYPES = {
     "uniqueness",
     "no_duplicate_rows",
     "allowed_categories",
+    # Aliases accepted by API / pipelines
+    "not_null",
+    "nonnull",
+    "unique",
+    "range",
+    "between",
+    "allowed_values",
+    "in",
 }
+
+
+def _normalize_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    """Map convenient aliases onto canonical rule types."""
+    normalized = dict(rule)
+    rule_type = str(normalized.get("type", "")).lower()
+    if rule_type in {"not_null", "nonnull"}:
+        normalized["type"] = "max_null_ratio"
+        normalized.setdefault("max_ratio", 0)
+        if "column" in normalized and "columns" not in normalized:
+            normalized["columns"] = [normalized["column"]]
+    elif rule_type == "unique":
+        normalized["type"] = "uniqueness"
+        if "column" in normalized and "columns" not in normalized:
+            normalized["columns"] = [normalized["column"]]
+    elif rule_type in {"range", "between"}:
+        normalized["type"] = "value_range"
+        if "column" in normalized and "columns" not in normalized:
+            normalized["columns"] = [normalized["column"]]
+    elif rule_type in {"allowed_values", "in"}:
+        normalized["type"] = "allowed_categories"
+        if "column" in normalized and "columns" not in normalized:
+            normalized["columns"] = [normalized["column"]]
+        if "values" in normalized and "allowed" not in normalized:
+            normalized["allowed"] = normalized["values"]
+    else:
+        normalized["type"] = rule_type
+    return normalized
 
 
 def _columns(rule: dict[str, Any]) -> list[str]:
@@ -72,9 +108,29 @@ def _missing_columns(df: pd.DataFrame, columns: Iterable[str]) -> list[str]:
 
 
 def _evaluate_rule(df: pd.DataFrame, rule: dict[str, Any]) -> dict[str, Any]:
+    rule = _normalize_rule(rule)
     rule_type = str(rule.get("type", "")).lower()
-    if rule_type not in SUPPORTED_RULE_TYPES:
-        raise ValueError(f"Unsupported quality rule type: {rule_type or '<empty>'}")
+    if rule_type not in SUPPORTED_RULE_TYPES - {
+        "not_null",
+        "nonnull",
+        "unique",
+        "range",
+        "between",
+        "allowed_values",
+        "in",
+    }:
+        # After normalization only canonical types remain.
+        canonical = {
+            "required_columns",
+            "dtype",
+            "max_null_ratio",
+            "value_range",
+            "uniqueness",
+            "no_duplicate_rows",
+            "allowed_categories",
+        }
+        if rule_type not in canonical:
+            raise ValueError(f"Unsupported quality rule type: {rule_type or '<empty>'}")
 
     if rule_type == "required_columns":
         required = _columns(rule)

@@ -325,6 +325,104 @@ echo "$AUDIT" \
 echo "$AUDIT" > artifacts/verify/audit.json
 pass "drift monitoring and audit log listing"
 
+info "8b) Regression training"
+REG_DS=$(api -X POST "$API_BASE/projects/$PID/datasets" \
+  -F "name=verify-regression-$RUN_TAG" \
+  -F "file=@samples/regression.csv;type=text/csv")
+REG_DID=$(echo "$REG_DS" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+REG_DVID=$(echo "$REG_DS" | json_get 'import sys,json; print(json.load(sys.stdin)["version"]["id"])')
+REG_JOB=$(api -X POST "$API_BASE/projects/$PID/jobs" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"verify-regressor\",\"dataset_id\":$REG_DID,\"dataset_version_id\":$REG_DVID,\"target_column\":\"target_value\",\"problem_type\":\"regression\",\"algorithm\":\"ridge\",\"feature_columns\":[\"sepal length (cm)\",\"sepal width (cm)\",\"petal width (cm)\"],\"hyperparameters\":{}}")
+REG_JID=$(echo "$REG_JOB" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+for i in $(seq 1 120); do
+  REG_JOB_JSON=$(api "$API_BASE/projects/$PID/jobs/$REG_JID")
+  STATUS=$(echo "$REG_JOB_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["status"])')
+  if [[ "$STATUS" == "succeeded" ]]; then break; fi
+  if [[ "$STATUS" == "failed" || "$STATUS" == "cancelled" ]]; then
+    echo "$REG_JOB_JSON" | tee artifacts/verify/regression-job-failed.json
+    fail "regression training entered terminal status $STATUS"
+  fi
+  sleep 5
+  if [[ $i -eq 120 ]]; then fail "regression training timed out"; fi
+done
+echo "$REG_JOB_JSON" \
+  | json_get 'import sys,json; d=json.load(sys.stdin); assert "rmse" in d["metrics"] or "r2" in d["metrics"]'
+pass "regression training (ridge)"
+
+info "8c) Visual pipeline publish + execute"
+PIPE_BODY=$(DVID="$DVID" docker run --rm -i -e DVID="$DVID" "$PYTHON_IMAGE" python - <<'PY'
+import json, os
+dvid = int(os.environ["DVID"])
+graph = {
+  "nodes": [
+    {"id": "load", "type": "dataset_load", "data": {"node_type": "dataset_load", "config": {"dataset_version_id": dvid}}},
+    {"id": "quality", "type": "quality_check", "data": {"node_type": "quality_check", "config": {"rules": [{"type": "not_null", "column": "target"}], "block_on_fail": True}}},
+    {"id": "split", "type": "split", "data": {"node_type": "split", "config": {"train_ratio": 0.7, "val_ratio": 0.15, "test_ratio": 0.15, "random_seed": 42}}},
+    {"id": "prep", "type": "preprocessing", "data": {"node_type": "preprocessing", "config": {"scale": True}}},
+    {"id": "train", "type": "training", "data": {"node_type": "training", "config": {"target_column": "target", "problem_type": "classification", "algorithm": "logistic_regression", "feature_columns": ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"], "hyperparameters": {"max_iter": 200}}}},
+    {"id": "eval", "type": "evaluation", "data": {"node_type": "evaluation", "config": {"metric": "accuracy", "minimum": 0.5}}},
+    {"id": "register", "type": "model_registration", "data": {"node_type": "model_registration", "config": {"name": "pipeline-classifier"}}},
+  ],
+  "edges": [
+    {"id": "e1", "source": "load", "target": "quality", "targetHandle": "data"},
+    {"id": "e2", "source": "quality", "target": "split", "targetHandle": "data"},
+    {"id": "e3", "source": "split", "target": "prep", "targetHandle": "data"},
+    {"id": "e4", "source": "prep", "target": "train", "targetHandle": "data"},
+    {"id": "e5", "source": "train", "target": "eval", "targetHandle": "model"},
+    {"id": "e6", "source": "eval", "target": "register", "targetHandle": "model"},
+  ],
+}
+print(json.dumps({"name": "verify-pipeline", "description": "e2e", "graph": graph}))
+PY
+)
+[[ -n "$PIPE_BODY" ]] || fail "failed to build pipeline request body"
+PIPE=$(api -X POST "$API_BASE/projects/$PID/pipelines" \
+  -H 'Content-Type: application/json' \
+  -d "$PIPE_BODY")
+PIPE_ID=$(echo "$PIPE" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+api -X POST "$API_BASE/projects/$PID/pipelines/$PIPE_ID/publish" >/dev/null
+PIPE_RUN=$(api -X POST "$API_BASE/projects/$PID/pipelines/$PIPE_ID/run" \
+  -H 'Content-Type: application/json' \
+  -d '{"parameters":{},"fail_policy":"stop"}')
+PIPE_RUN_ID=$(echo "$PIPE_RUN" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+for i in $(seq 1 120); do
+  PIPE_RUN_JSON=$(api "$API_BASE/projects/$PID/pipeline-runs/$PIPE_RUN_ID")
+  STATUS=$(echo "$PIPE_RUN_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["status"])')
+  if [[ "$STATUS" == "succeeded" ]]; then break; fi
+  if [[ "$STATUS" == "failed" || "$STATUS" == "cancelled" ]]; then
+    echo "$PIPE_RUN_JSON" | tee artifacts/verify/pipeline-failed.json
+    fail "pipeline run entered terminal status $STATUS"
+  fi
+  sleep 5
+  if [[ $i -eq 120 ]]; then fail "pipeline run timed out"; fi
+done
+echo "$PIPE_RUN_JSON" \
+  | json_get 'import sys,json; d=json.load(sys.stdin); states=d.get("node_states") or {}; assert "register" in states or d["status"]=="succeeded"'
+echo "$PIPE_RUN_JSON" > artifacts/verify/pipeline-run.json
+pass "visual pipeline publish + execute"
+
+info "8d) Backup smoke + soft dependency advisory scan"
+BACKUP_ROOT="$ROOT/artifacts/verify/backup-smoke" ./scripts/backup.sh \
+  | tee artifacts/verify/backup-smoke.log >/dev/null
+ls artifacts/verify/backup-smoke/*/postgres/modelflow.dump >/dev/null
+ls artifacts/verify/backup-smoke/*/postgres/mlflow.dump >/dev/null
+pass "backup.sh smoke"
+set +e
+docker compose exec -T backend sh -c 'pip install -q pip-audit==2.7.3 && pip-audit -r requirements.txt --progress-spinner off' \
+  > artifacts/verify/pip-audit.txt 2>&1
+PIP_AUDIT_RC=$?
+docker run --rm -v "$ROOT/frontend:/app" -w /app "$NODE_IMAGE" \
+  sh -c 'npm ci --silent && npm audit --json' > artifacts/verify/npm-audit.json 2>/dev/null
+NPM_AUDIT_RC=$?
+set -e
+{
+  echo "pip_audit_rc=${PIP_AUDIT_RC}"
+  echo "npm_audit_rc=${NPM_AUDIT_RC}"
+} > artifacts/verify/security-scan.txt
+# Advisory only — do not fail the gate on known transitive CVEs.
+pass "soft dependency advisory scan (non-blocking)"
+
 info "9) Playwright E2E (official Playwright container)"
 docker run --rm --network host \
   -v "$ROOT:/work" \

@@ -31,7 +31,7 @@ Sign in to the local stack with `admin@modelflow.local` / `ChangeMeAdmin123!`.
 These are development-only credentials from `docker-compose.yml`; change them for every
 non-local deployment.
 
-Sample dataset: `samples/iris.csv` (target column: `target`).
+Sample datasets: `samples/iris.csv` (classification target `target`) and `samples/regression.csv` (regression target `target_value`).
 
 Stop and wipe volumes:
 
