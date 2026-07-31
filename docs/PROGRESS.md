@@ -2,7 +2,7 @@
 
 ## Current phase
 
-Release/QA: independent re-verification of merged MVP on latest `main`, plus GitHub Actions CI and Docker image pinning. Draft PR (not merged).
+Release/QA complete for this Draft PR: independent re-verification, GitHub Actions CI, and Docker image pinning. **Draft PR #3 — not merged.**
 
 ## Baseline
 
@@ -13,16 +13,18 @@ Release/QA: independent re-verification of merged MVP on latest `main`, plus Git
 
 - [x] Product docs + MVP implementation (merged via #2)
 - [x] Fetch `origin/main` and create fresh work branch
-- [x] Independent clean-volume baseline: `docker compose down -v` + `./scripts/verify.sh` **PASS**
+- [x] Independent clean-volume baseline: `docker compose down -v` + `./scripts/verify.sh` **PASS** on `762d892`
 - [x] GitHub Actions CI workflow (`.github/workflows/ci.yml`)
 - [x] Pin external Docker images to pull-verified tags (MinIO, mc, Postgres, Node, nginx)
 - [x] Harden `scripts/verify.sh` for non-interactive CI (EXIT trap + diagnostics)
 - [x] Docs: README (CI badge, artifacts, security), ACCEPTANCE AC-26–30, DECISIONS, PROGRESS, AGENTS
+- [x] Post-change clean-volume `./scripts/verify.sh` **PASS**
+- [x] GitHub Actions PR Check **success** — run `30604686340`
 
 ## Blockers
 
-None for local gate. GitHub Actions run status recorded in the Draft PR after push (do not assume PASS without observed run).
+None.
 
 ## Latest verify snapshot
 
-Independent baseline on `762d892`: all required services healthy; backend tests; Playwright passed; inference OK.
+Post-pin local gate: all required services healthy; backend 11 tests; Playwright 1 passed; inference OK. CI Full verification gate Check green on Draft PR #3.

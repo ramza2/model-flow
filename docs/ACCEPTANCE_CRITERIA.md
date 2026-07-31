@@ -46,6 +46,7 @@ Each item must be PASS before completion is declared.
 
 ### After CI + image pin changes
 
-- Re-run clean-volume `./scripts/verify.sh` required before declaring AC-30 PASS
+- Clean volumes: `docker compose down -v --remove-orphans` then `./scripts/verify.sh` **PASS**
+- GitHub Actions run: https://github.com/ramza2/model-flow/actions/runs/30604686340 — **success** (~3m; Full verification gate Check)
 - Workflow: `.github/workflows/ci.yml`
 - Pinned images documented in `docs/DECISIONS.md` (D-016)
