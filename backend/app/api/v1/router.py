@@ -21,6 +21,7 @@ from app.api.v1 import (
     retrain,
     splits,
     users,
+    gate_policies,
 )
 
 router = APIRouter()
@@ -38,6 +39,7 @@ for child_router in (
     experiments.router,
     pipelines.router,
     registry.router,
+    gate_policies.router,
     endpoints.router,
     batch.router,
     monitoring.router,

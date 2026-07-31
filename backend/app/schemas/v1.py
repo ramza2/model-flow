@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.db.models import AlertSeverity, DataSourceType, ProjectRole
 
@@ -174,11 +174,43 @@ class ModelRegisterRequest(BaseModel):
     artifact_path: str = "model"
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("metadata")
+    @classmethod
+    def reject_gate_policy_metadata(cls, value: dict[str, Any]) -> dict[str, Any]:
+        forbidden = {
+            "gates",
+            "test_instance",
+            "metric_threshold",
+            "max_inference_latency_ms",
+        }
+        banned = sorted(forbidden.intersection(value or {}))
+        if banned:
+            raise ValueError(
+                "metadata must not include gate policy controls: "
+                + ", ".join(banned)
+            )
+        return value
+
     @model_validator(mode="after")
     def source_required(self) -> ModelRegisterRequest:
         if self.training_job_id is None and not self.run_id:
             raise ValueError("Provide training_job_id or run_id")
         return self
+
+
+class ModelGatePolicyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    metric_name: str | None = Field(default=None, max_length=100)
+    metric_minimum: float | None = None
+    metric_maximum: float | None = None
+    max_inference_latency_ms: float | None = Field(default=None, gt=0)
+    require_artifact: bool | None = None
+    require_schema: bool | None = None
+    require_model_load: bool | None = None
+    require_test_inference: bool | None = None
+    require_mlflow_project: bool | None = None
 
 
 class ApprovalRequest(BaseModel):

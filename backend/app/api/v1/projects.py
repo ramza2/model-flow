@@ -77,6 +77,9 @@ def create_project(
         role=ProjectRole.PROJECT_ADMIN,
     )
     db.add(membership)
+    from app.services.gate_policy import ensure_default_gate_policy
+
+    ensure_default_gate_policy(db, project.id, actor_id=auth.user.id)
     try:
         mlflow_service.ensure_experiment(f"project-{project.id}")
     except Exception as exc:

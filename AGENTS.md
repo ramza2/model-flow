@@ -30,6 +30,8 @@ ModelFlow v1 requires bearer authentication under `/api/v1`. On a clean database
 first system administrator. `MODELFLOW_SECRET_KEY` signs access tokens;
 `MODELFLOW_ENCRYPTION_KEY` protects data-source secrets. Generate all local values with
 `./scripts/init-env.sh`; it writes the ignored `.env` and prints bootstrap login
-credentials once. Sign in with those credentials and change the bootstrap password
-immediately. Compose rejects empty required credentials. CI generates ephemeral values
-and must not depend on production secrets or paid external services.
+credentials once. Secret generation runs inside a throwaway `python:3.11-slim`
+container so the host does not need Python or OpenSSL. Sign in with those
+credentials and change the bootstrap password immediately. Compose rejects empty
+required credentials. CI generates ephemeral values and must not depend on
+production secrets or paid external services.

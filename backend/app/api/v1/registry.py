@@ -110,6 +110,12 @@ def register_model(
     if existing:
         raise friendly(409, "This model version is already registered in ModelFlow.")
     metadata = dict(body.metadata)
+    try:
+        from app.services.gate_policy import sanitize_registration_metadata
+
+        metadata = sanitize_registration_metadata(metadata)
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
     metadata.setdefault("artifact_path", body.artifact_path)
     run_params = run.get("params") or {}
     feature_names = [

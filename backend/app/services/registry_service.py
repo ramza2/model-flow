@@ -231,30 +231,28 @@ def _test_sample(
     return None, None
 
 
+def _gate_config_from_policy(policy_config: dict[str, Any]) -> dict[str, Any]:
+    """Build evaluation config exclusively from the server-managed policy."""
+    return {
+        "metric": dict(policy_config.get("metric") or {}),
+        "max_inference_latency_ms": policy_config.get("max_inference_latency_ms", 5000),
+        "require_artifact": bool(policy_config.get("require_artifact", True)),
+        "require_schema": bool(policy_config.get("require_schema", True)),
+        "require_model_load": bool(policy_config.get("require_model_load", True)),
+        "require_test_inference": bool(policy_config.get("require_test_inference", True)),
+        "require_mlflow_project": bool(policy_config.get("require_mlflow_project", True)),
+        "policy_id": policy_config.get("policy_id"),
+        "policy_version": policy_config.get("policy_version"),
+        "policy_name": policy_config.get("policy_name"),
+    }
+
+
 def _gate_config(
     metadata: dict[str, Any], gates: dict[str, Any] | list[dict[str, Any]] | None
 ) -> dict[str, Any]:
-    configured = metadata.get("gates", {})
-    config = dict(configured) if isinstance(configured, dict) else {}
-    if isinstance(gates, dict):
-        config.update(gates)
-    elif isinstance(gates, list):
-        for gate in gates:
-            gate_type = str(gate.get("type", "")).lower()
-            if gate_type == "min_metric":
-                config["metric"] = {
-                    "name": gate.get("metric"),
-                    "minimum": gate.get(
-                        "min", gate.get("minimum", gate.get("value", 0))
-                    ),
-                }
-            elif gate_type in {"max_latency", "max_inference_latency"}:
-                config["max_inference_latency_ms"] = gate.get(
-                    "max", gate.get("maximum", gate.get("value", 5000))
-                )
-            elif gate_type == "test_predict" and isinstance(gate.get("instance"), dict):
-                config["test_instance"] = gate["instance"]
-    return config
+    # Legacy helper retained only for tests of rejection paths; production uses policies.
+    del metadata, gates
+    return {}
 
 
 def _metric_gate(
@@ -343,7 +341,12 @@ def evaluate_gates(
     *,
     test_instance: dict[str, Any] | None = None,
     actor_id: int | None = None,
+    gate_policy_id: int | None = None,
 ) -> dict[str, Any]:
+    # Client-supplied gates/test_instance are intentionally ignored.
+    del gates, test_instance
+    from app.services import gate_policy as gate_policy_service
+
     row = _model(db, model_version)
     if row.lifecycle in {
         ModelLifecycle.APPROVED,
@@ -355,21 +358,20 @@ def evaluate_gates(
     row.lifecycle = ModelLifecycle.VALIDATING
     db.flush()
 
+    if gate_policy_id is not None:
+        policy = gate_policy_service.get_gate_policy_for_project(
+            db, row.project_id, int(gate_policy_id)
+        )
+    else:
+        policy = gate_policy_service.get_active_gate_policy(db, row.project_id)
+    policy_config = gate_policy_service.policy_to_config(policy)
+    config = _gate_config_from_policy(policy_config)
+
     metrics = _json(row.metrics_json)
     metadata = _json(row.metadata_json)
-    config = _gate_config(metadata, gates)
     job = db.get(TrainingJob, row.training_job_id) if row.training_job_id else None
     schema, schema_source, version = _feature_schema(db, row, metadata, job)
-    sample, sample_source = _test_sample(
-        schema,
-        version,
-        test_instance
-        or (
-            config.get("test_instance")
-            if isinstance(config.get("test_instance"), dict)
-            else None
-        ),
-    )
+    sample, sample_source = _test_sample(schema, version, None)
     results: list[dict[str, Any]] = []
 
     run: dict[str, Any] | None = None
@@ -379,27 +381,29 @@ def evaluate_gates(
             f"project-{row.project_id}"
         )
         run_belongs = str(run.get("experiment_id")) == str(expected_experiment)
-        results.append(
-            _gate_result(
-                "mlflow_project",
-                passed=run_belongs,
-                message=(
-                    "MLflow run belongs to the project experiment."
-                    if run_belongs
-                    else "MLflow run belongs to a different project experiment."
-                ),
-                observed=run.get("experiment_id"),
-                expected=expected_experiment,
+        if config.get("require_mlflow_project", True):
+            results.append(
+                _gate_result(
+                    "mlflow_project",
+                    passed=run_belongs,
+                    message=(
+                        "MLflow run belongs to the project experiment."
+                        if run_belongs
+                        else "MLflow run belongs to a different project experiment."
+                    ),
+                    observed=run.get("experiment_id"),
+                    expected=expected_experiment,
+                )
             )
-        )
     except Exception as exc:
-        results.append(
-            _gate_result(
-                "mlflow_project",
-                passed=False,
-                message=f"MLflow run could not be verified: {exc}",
+        if config.get("require_mlflow_project", True):
+            results.append(
+                _gate_result(
+                    "mlflow_project",
+                    passed=False,
+                    message=f"MLflow run could not be verified: {exc}",
+                )
             )
-        )
 
     artifact_path = str(metadata.get("artifact_path") or "model")
     artifact_present = bool(
@@ -408,81 +412,110 @@ def evaluate_gates(
             str(row.mlflow_run_id), artifact_path, run.get("artifacts")
         )
     )
-    results.append(
-        _gate_result(
-            "artifact_exists",
-            passed=artifact_present,
-            message=(
-                "Model artifact exists in the MLflow run."
-                if artifact_present
-                else "Model artifact is missing from the MLflow run."
-            ),
-            observed=artifact_path if artifact_present else None,
-            expected=artifact_path,
+    if config.get("require_artifact", True):
+        results.append(
+            _gate_result(
+                "artifact_exists",
+                passed=artifact_present,
+                message=(
+                    "Model artifact exists in the MLflow run."
+                    if artifact_present
+                    else "Model artifact is missing from the MLflow run."
+                ),
+                observed=artifact_path if artifact_present else None,
+                expected=artifact_path,
+            )
         )
-    )
 
     loaded_model: Any = None
+    load_error: Exception | None = None
     try:
         loaded_model = inference.load_model(row.model_uri)
-        results.append(
-            _gate_result(
-                "load_model", passed=True, message="Model loaded successfully."
-            )
-        )
     except Exception as exc:
+        load_error = exc
+    if config.get("require_model_load", True):
         results.append(
             _gate_result(
-                "load_model", passed=False, message=f"Model load failed: {exc}"
+                "load_model",
+                passed=load_error is None,
+                message=(
+                    "Model loaded successfully."
+                    if load_error is None
+                    else f"Model load failed: {load_error}"
+                ),
             )
         )
 
-    results.append(
-        _gate_result(
-            "schema_present",
-            passed=bool(schema),
-            message=(
-                f"Feature schema is present from {schema_source}."
-                if schema
-                else "Feature schema is missing."
-            ),
-            observed=schema,
-            expected={"source": "metadata_or_training_job"},
+    if config.get("require_schema", True):
+        results.append(
+            _gate_result(
+                "schema_present",
+                passed=bool(schema),
+                message=(
+                    f"Feature schema is present from {schema_source}."
+                    if schema
+                    else "Feature schema is missing."
+                ),
+                observed=schema,
+                expected={"source": "metadata_or_training_job"},
+            )
         )
-    )
 
     prediction: Any = None
     latency_ms: float | None = None
     prediction_error: Exception | None = None
-    if loaded_model is None:
-        prediction_error = ValueError("Model was not loaded.")
-    elif not sample:
-        prediction_error = ValueError("No test instance could be created.")
-    else:
-        try:
-            inference.validate_instances([sample], schema)
-            started = time.perf_counter()
-            prediction = loaded_model.predict(pd.DataFrame([sample]))
-            latency_ms = (time.perf_counter() - started) * 1000
-            if len(prediction) != 1:
-                raise ValueError("Model did not return exactly one prediction.")
-        except Exception as exc:
-            prediction_error = exc
-    results.append(
-        _gate_result(
-            "test_inference",
-            passed=prediction_error is None,
-            message=(
-                "Single-sample test inference succeeded."
+    if config.get("require_test_inference", True):
+        if loaded_model is None:
+            prediction_error = ValueError("Model was not loaded.")
+        elif not sample:
+            prediction_error = ValueError("No test instance could be created.")
+        else:
+            try:
+                inference.validate_instances([sample], schema)
+                started = time.perf_counter()
+                prediction = loaded_model.predict(pd.DataFrame([sample]))
+                latency_ms = (time.perf_counter() - started) * 1000
+                if len(prediction) != 1:
+                    raise ValueError("Model did not return exactly one prediction.")
+            except Exception as exc:
+                prediction_error = exc
+        results.append(
+            _gate_result(
+                "test_inference",
+                passed=prediction_error is None,
+                message=(
+                    "Single-sample test inference succeeded."
+                    if prediction_error is None
+                    else f"Test inference failed: {prediction_error}"
+                ),
+                observed={"sample_source": sample_source, "prediction_count": 1}
                 if prediction_error is None
-                else f"Test inference failed: {prediction_error}"
-            ),
-            observed={"sample_source": sample_source, "prediction_count": 1}
-            if prediction_error is None
-            else {"sample_source": sample_source},
-            expected={"prediction_count": 1},
+                else {"sample_source": sample_source},
+                expected={"prediction_count": 1},
+            )
         )
-    )
+        try:
+            max_latency_ms = float(config.get("max_inference_latency_ms", 5000))
+        except (TypeError, ValueError):
+            max_latency_ms = 5000.0
+        latency_passed = (
+            latency_ms is not None
+            and math.isfinite(latency_ms)
+            and latency_ms <= max_latency_ms
+        )
+        results.append(
+            _gate_result(
+                "inference_latency",
+                passed=latency_passed,
+                message=(
+                    "Test inference latency is within the configured maximum."
+                    if latency_passed
+                    else "Test inference latency is unavailable or exceeds the configured maximum."
+                ),
+                observed={"latency_ms": latency_ms},
+                expected={"maximum_ms": max_latency_ms},
+            )
+        )
 
     problem_type = str(
         (job.problem_type if job is not None else None)
@@ -491,37 +524,18 @@ def evaluate_gates(
     )
     results.append(_metric_gate(metrics, problem_type, config))
 
-    try:
-        max_latency_ms = float(config.get("max_inference_latency_ms", 5000))
-    except (TypeError, ValueError):
-        max_latency_ms = 5000.0
-    latency_passed = (
-        latency_ms is not None
-        and math.isfinite(latency_ms)
-        and latency_ms <= max_latency_ms
-    )
-    results.append(
-        _gate_result(
-            "inference_latency",
-            passed=latency_passed,
-            message=(
-                "Test inference latency is within the configured maximum."
-                if latency_passed
-                else "Test inference latency is unavailable or exceeds the configured maximum."
-            ),
-            observed={"latency_ms": latency_ms},
-            expected={"maximum_ms": max_latency_ms},
-        )
-    )
-
     passed = all(result["passed"] for result in results)
     summary = {
         "passed": passed,
         "results": results,
         "computed_by": "server",
         "gate_version": "1",
+        "policy_id": policy.id,
+        "policy_version": policy.version,
+        "policy_name": policy.name,
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
     }
+    row.gate_policy_id = policy.id
     row.gate_results_json = json.dumps(summary)
     row.gates_passed = passed
     row.lifecycle = (
@@ -548,15 +562,16 @@ def run_gates(
     *,
     test_instance: dict[str, Any] | None = None,
     actor_id: int | None = None,
+    gate_policy_id: int | None = None,
 ) -> dict[str, Any]:
     """Backward-compatible alias for the server-owned gate evaluator."""
 
+    del gates, test_instance
     return evaluate_gates(
         db,
         model_version,
-        gates,
-        test_instance=test_instance,
         actor_id=actor_id,
+        gate_policy_id=gate_policy_id,
     )
 
 

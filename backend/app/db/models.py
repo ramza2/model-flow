@@ -316,6 +316,37 @@ class Endpoint(Base):
     project: Mapped[Project] = relationship(back_populates="endpoints")
 
 
+class ModelGatePolicy(Base):
+    """Server-managed evaluation policy for model gates (not client-supplied)."""
+
+    __tablename__ = "model_gate_policies"
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", "version", name="uq_gate_policy_name_ver"),
+        Index("ix_gate_policy_project_active", "project_id", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False, default="default")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    metric_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    metric_minimum: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metric_maximum: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_inference_latency_ms: Mapped[float] = mapped_column(Float, default=5000.0, nullable=False)
+    require_artifact: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_schema: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_model_load: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_test_inference: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    require_mlflow_project: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ModelVersion(Base):
     __tablename__ = "model_versions"
     __table_args__ = (UniqueConstraint("project_id", "name", "version", name="uq_model_name_ver"),)
@@ -336,6 +367,7 @@ class ModelVersion(Base):
     dataset_version_id: Mapped[int | None] = mapped_column(ForeignKey("dataset_versions.id"), nullable=True)
     training_job_id: Mapped[int | None] = mapped_column(ForeignKey("training_jobs.id"), nullable=True)
     pipeline_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gate_policy_id: Mapped[int | None] = mapped_column(ForeignKey("model_gate_policies.id"), nullable=True)
     gate_results_json: Mapped[str] = mapped_column(Text, default="{}")
     gates_passed: Mapped[bool] = mapped_column(Boolean, default=False)
     approval_comment: Mapped[str | None] = mapped_column(Text, nullable=True)

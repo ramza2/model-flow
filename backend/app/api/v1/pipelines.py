@@ -14,7 +14,6 @@ from app.api.v1.common import (
     pipeline_out,
     pipeline_run_out,
     pipeline_version_out,
-    validate_graph,
 )
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
@@ -34,6 +33,7 @@ from app.schemas.v1 import (
     PipelineUpdate,
 )
 from app.services import pipeline_engine
+from app.services.pipeline_engine import validate_graph
 
 router = APIRouter(tags=["pipelines"])
 
@@ -56,9 +56,21 @@ def _save_version(
     graph: dict,
     user_id: int,
 ) -> PipelineVersion:
-    errors = validate_graph(graph)
-    if errors:
-        raise friendly(400, "Pipeline graph is invalid.", "; ".join(errors))
+    validation = validate_graph(graph, strict=False)
+    if not validation["valid"]:
+        raise friendly(
+            400, "Pipeline graph is invalid.", "; ".join(validation["errors"])
+        )
+    from app.services.gate_policy import assert_pipeline_node_gate_config
+    from app.services.pipeline_engine import _node_config, _node_type
+
+    for node in graph.get("nodes") or []:
+        try:
+            assert_pipeline_node_gate_config(
+                pipeline.project_id, _node_type(node), _node_config(node), db
+            )
+        except ValueError as exc:
+            raise friendly(400, str(exc)) from exc
     pipeline.latest_version = (pipeline.latest_version or 0) + 1
     pipeline.status = PipelineStatus.draft
     version = PipelineVersion(
@@ -244,8 +256,7 @@ def validate_pipeline(
         if body
         else pipeline_version_out(_latest_version(db, pipeline))["graph"]
     )
-    errors = validate_graph(graph)
-    return {"valid": not errors, "errors": errors}
+    return validate_graph(graph)
 
 
 @router.post("/projects/{project_id}/pipelines/{pipeline_id}/publish")
@@ -258,9 +269,9 @@ def publish_pipeline(
     auth, _, _ = access
     pipeline = get_owned(db, Pipeline, pipeline_id, project_id, "Pipeline")
     graph = pipeline_version_out(_latest_version(db, pipeline))["graph"]
-    errors = validate_graph(graph)
-    if errors:
-        raise friendly(400, "Pipeline graph is invalid.", "; ".join(errors))
+    result = validate_graph(graph)
+    if not result["valid"]:
+        raise friendly(400, "Pipeline graph is invalid.", "; ".join(result["errors"]))
     pipeline.status = PipelineStatus.published
     audit_event(db, auth, "pipeline.publish", "pipeline", pipeline.id)
     db.commit()
@@ -355,9 +366,11 @@ def run_pipeline(
         )
         if not version:
             raise friendly(404, f"Pipeline version {body.version} was not found.")
-    errors = validate_graph(pipeline_version_out(version)["graph"])
-    if errors:
-        raise friendly(400, "Pipeline graph is invalid.", "; ".join(errors))
+    validation = validate_graph(pipeline_version_out(version)["graph"])
+    if not validation["valid"]:
+        raise friendly(
+            400, "Pipeline graph is invalid.", "; ".join(validation["errors"])
+        )
     node_states = {
         str(node["id"]): {"status": "pending"}
         for node in pipeline_version_out(version)["graph"].get("nodes", [])

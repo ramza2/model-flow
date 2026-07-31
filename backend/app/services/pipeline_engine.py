@@ -90,14 +90,22 @@ def _edge_branch(edge: dict[str, Any]) -> str:
     return str(value or "always").strip().lower()
 
 
-def validate_graph(graph: dict[str, Any]) -> dict[str, Any]:
+def validate_graph(graph: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
     """Validate node types, references, required input ports, and acyclicity."""
 
     errors: list[str] = []
     nodes = graph.get("nodes")
     edges = graph.get("edges")
-    if not isinstance(nodes, list) or not nodes:
-        return {"valid": False, "errors": ["Graph must contain at least one node."], "order": []}
+    if not isinstance(nodes, list):
+        return {"valid": False, "errors": ["Graph nodes must be a list."], "order": []}
+    if not nodes:
+        if strict:
+            return {
+                "valid": False,
+                "errors": ["Graph must contain at least one node."],
+                "order": [],
+            }
+        return {"valid": True, "errors": [], "order": []}
     if not isinstance(edges, list):
         return {"valid": False, "errors": ["Graph edges must be a list."], "order": []}
 
@@ -110,7 +118,9 @@ def validate_graph(graph: dict[str, Any]) -> dict[str, Any]:
     node_map = {str(node.get("id")): node for node in nodes if node.get("id")}
     for node_id, node in node_map.items():
         node_type = _node_type(node)
-        if node_type not in NODE_TYPES:
+        if node_type and node_type not in NODE_TYPES:
+            errors.append(f"Node '{node_id}' has unsupported type '{node_type}'.")
+        elif strict and node_type not in NODE_TYPES:
             errors.append(f"Node '{node_id}' has unsupported type '{node_type}'.")
 
     incoming: dict[str, list[dict[str, Any]]] = {node_id: [] for node_id in node_map}
@@ -131,29 +141,32 @@ def validate_graph(graph: dict[str, Any]) -> dict[str, Any]:
                     f"Condition edge {source!r} -> {target!r} has unsupported branch {branch!r}."
                 )
 
-    for node_id, node in node_map.items():
-        node_type = _node_type(node)
-        required = list(REQUIRED_PORTS.get(node_type, []))
-        config = _node_config(node)
-        if node_type == "batch_prediction" and config.get("dataset_version_id"):
-            required = ["model"]
-        connected_ports = {
-            str(edge.get("targetHandle", edge.get("target_port", "")))
-            for edge in incoming[node_id]
-            if edge.get("targetHandle", edge.get("target_port"))
-        }
-        if connected_ports:
-            missing = [port for port in required if port not in connected_ports]
-        else:
-            missing = required[len(incoming[node_id]) :]
-        if missing:
-            errors.append(f"Node '{node_id}' is missing required input ports: {missing}.")
-        if node_type == "dataset_load" and not (
-            config.get("dataset_version_id") or config.get("dataset_id")
-        ):
-            errors.append(
-                f"Node '{node_id}' requires dataset_version_id or dataset_id configuration."
-            )
+    if strict:
+        for node_id, node in node_map.items():
+            node_type = _node_type(node)
+            required = list(REQUIRED_PORTS.get(node_type, []))
+            config = _node_config(node)
+            if node_type == "batch_prediction" and config.get("dataset_version_id"):
+                required = ["model"]
+            connected_ports = {
+                str(edge.get("targetHandle", edge.get("target_port", "")))
+                for edge in incoming[node_id]
+                if edge.get("targetHandle", edge.get("target_port"))
+            }
+            if connected_ports:
+                missing = [port for port in required if port not in connected_ports]
+            else:
+                missing = required[len(incoming[node_id]) :]
+            if missing:
+                errors.append(
+                    f"Node '{node_id}' is missing required input ports: {missing}."
+                )
+            if node_type == "dataset_load" and not (
+                config.get("dataset_version_id") or config.get("dataset_id")
+            ):
+                errors.append(
+                    f"Node '{node_id}' requires dataset_version_id or dataset_id configuration."
+                )
 
     queue = sorted(node_id for node_id, degree in indegree.items() if degree == 0)
     order: list[str] = []
@@ -466,18 +479,30 @@ def _execute_node(
         return {**(incoming if isinstance(incoming, dict) else {}), "model_version": model}
 
     if node_type == "approval_request":
+        from app.services.gate_policy import (
+            FORBIDDEN_PIPELINE_GATE_KEYS,
+            get_gate_policy_for_project,
+        )
         from app.services.registry_service import request_approval, run_gates
 
+        banned = sorted(FORBIDDEN_PIPELINE_GATE_KEYS.intersection(config))
+        if banned:
+            raise ValueError(
+                "approval_request must not set gate criteria fields: "
+                + ", ".join(banned)
+            )
         model = _find(incoming, "model_version")
         if not isinstance(model, ModelVersion):
             raise ValueError("approval_request requires a registered model.")
+        policy_id = config.get("gate_policy_id")
+        if policy_id is not None:
+            get_gate_policy_for_project(db, run.project_id, int(policy_id))
         if not model.gates_passed:
             run_gates(
                 db,
                 model,
-                config.get("gates"),
-                test_instance=config.get("test_instance"),
                 actor_id=run.created_by,
+                gate_policy_id=int(policy_id) if policy_id is not None else None,
             )
         request_approval(db, model, actor_id=run.created_by)
         return incoming

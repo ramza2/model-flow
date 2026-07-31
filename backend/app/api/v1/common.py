@@ -361,6 +361,7 @@ def model_version_out(row: ModelVersion) -> dict[str, Any]:
         "dataset_version_id": row.dataset_version_id,
         "training_job_id": row.training_job_id,
         "pipeline_run_id": row.pipeline_run_id,
+        "gate_policy_id": row.gate_policy_id,
         "gate_results": loads(row.gate_results_json, {}),
         "gates_passed": row.gates_passed,
         "approval_comment": row.approval_comment,
@@ -446,64 +447,7 @@ def retrain_out(row: RetrainTrigger) -> dict[str, Any]:
 
 
 def validate_graph(graph: dict[str, Any]) -> list[str]:
-    errors: list[str] = []
-    nodes = graph.get("nodes", [])
-    edges = graph.get("edges", [])
-    if not isinstance(nodes, list) or not isinstance(edges, list):
-        return ["graph.nodes and graph.edges must be arrays"]
-    node_ids = [
-        str(n.get("id"))
-        for n in nodes
-        if isinstance(n, dict) and n.get("id") is not None
-    ]
-    if len(node_ids) != len(nodes):
-        errors.append("Every node must have an id")
-    if len(set(node_ids)) != len(node_ids):
-        errors.append("Node ids must be unique")
-    node_map = {
-        str(node.get("id")): node
-        for node in nodes
-        if isinstance(node, dict) and node.get("id") is not None
-    }
-    adjacency: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
-    indegree = {node_id: 0 for node_id in node_ids}
-    for edge in edges:
-        if not isinstance(edge, dict):
-            errors.append("Every edge must be an object")
-            continue
-        source, target = str(edge.get("source")), str(edge.get("target"))
-        if source not in adjacency or target not in adjacency:
-            errors.append(f"Edge {source}->{target} refers to an unknown node")
-            continue
-        adjacency[source].append(target)
-        indegree[target] += 1
-        source_data = node_map[source].get("data") or {}
-        source_type = (
-            source_data.get("node_type")
-            or source_data.get("nodeType")
-            or source_data.get("type")
-            or node_map[source].get("type")
-        )
-        if source_type == "condition":
-            edge_data = edge.get("data") or {}
-            branch = edge_data.get(
-                "branch",
-                edge.get("branch", edge.get("label", edge_data.get("label", "always"))),
-            )
-            branch = str(branch).lower() if branch is not None else "always"
-            if branch not in {"true", "false", "always"}:
-                errors.append(
-                    f"Condition edge {source}->{target} has unsupported branch '{branch}'"
-                )
-    queue = [node_id for node_id, degree in indegree.items() if degree == 0]
-    visited = 0
-    while queue:
-        current = queue.pop()
-        visited += 1
-        for target in adjacency[current]:
-            indegree[target] -= 1
-            if indegree[target] == 0:
-                queue.append(target)
-    if visited != len(node_ids):
-        errors.append("Pipeline graph contains a cycle")
-    return errors
+    """Compatibility wrapper — prefer pipeline_engine.validate_graph."""
+    from app.services.pipeline_engine import validate_graph as engine_validate
+
+    return list(engine_validate(graph).get("errors") or [])
