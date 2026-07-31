@@ -95,6 +95,11 @@ SOURCE_POSTGRES_USER="source_$(random_hex 6)"
 SOURCE_POSTGRES_PASSWORD="$(random_urlsafe 36)"
 SOURCE_POSTGRES_DB="source_$(random_hex 6)"
 CORS_ORIGINS="http://localhost:3000,http://localhost:5173,http://localhost"
+RATE_LIMIT_PER_MINUTE="120"
+if [[ "$NON_INTERACTIVE" == true ]]; then
+  # Verification/CI issues many authenticated API + browser requests from one IP.
+  RATE_LIMIT_PER_MINUTE="10000"
+fi
 
 prompt_value() {
   local variable="$1"
@@ -203,6 +208,7 @@ SOURCE_POSTGRES_USER=$SOURCE_POSTGRES_USER
 SOURCE_POSTGRES_PASSWORD=$SOURCE_POSTGRES_PASSWORD
 SOURCE_POSTGRES_DB=$SOURCE_POSTGRES_DB
 CORS_ORIGINS=$CORS_ORIGINS
+RATE_LIMIT_PER_MINUTE=$RATE_LIMIT_PER_MINUTE
 EOF
 mv "$TEMP_FILE" "$ENV_FILE"
 trap - EXIT

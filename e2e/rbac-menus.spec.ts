@@ -33,7 +33,20 @@ async function login(page: Page, email: string) {
   await page.getByTestId("login-email").fill(email);
   await page.getByTestId("login-password").fill(memberPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: "Workspace home" })).toBeVisible();
+  const home = page.getByRole("heading", { name: /Workspace home/i });
+  const rateLimited = page.getByText(/Rate limit exceeded/i);
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    if (await home.isVisible().catch(() => false)) {
+      return;
+    }
+    if (await rateLimited.isVisible().catch(() => false)) {
+      await page.waitForTimeout(5_000);
+      await page.getByTestId("login-submit").click();
+      continue;
+    }
+    await page.waitForTimeout(500);
+  }
+  await expect(home).toBeVisible({ timeout: 30_000 });
 }
 
 test.beforeAll(async ({ request }) => {
