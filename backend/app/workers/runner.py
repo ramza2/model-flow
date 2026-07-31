@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, text
 
 from app.core.config import settings
-from app.db.models import Dataset, JobStatus, TrainingJob, WorkerHeartbeat
+from app.db.models import Dataset, DatasetVersion, JobStatus, TrainingJob, WorkerHeartbeat
 from app.db.session import SessionLocal
 from app.services import storage
 from app.services.training import TrainingJobContext, get_training_runner
@@ -33,7 +33,7 @@ def claim_next_job() -> TrainingJob | None:
     try:
         job = db.scalar(
             select(TrainingJob)
-            .where(TrainingJob.status == JobStatus.pending)
+            .where(TrainingJob.status.in_([JobStatus.pending, JobStatus.queued]))
             .order_by(TrainingJob.id.asc())
             .with_for_update(skip_locked=True)
         )
@@ -58,7 +58,14 @@ def process_job(job: TrainingJob) -> None:
         ds = db.get(Dataset, live.dataset_id)
         if not ds:
             raise RuntimeError("Dataset missing for job")
-        csv_bytes = storage.download_bytes(settings.minio_datasets_bucket, ds.object_key)
+        version = (
+            db.get(DatasetVersion, live.dataset_version_id)
+            if live.dataset_version_id is not None
+            else None
+        )
+        object_key = version.object_key if version else ds.object_key
+        data_format = version.format if version else "csv"
+        data_bytes = storage.download_bytes(settings.minio_datasets_bucket, object_key)
         ctx = TrainingJobContext(
             job_id=live.id,
             project_id=live.project_id,
@@ -66,8 +73,16 @@ def process_job(job: TrainingJob) -> None:
             target_column=live.target_column,
             algorithm=live.algorithm,
             hyperparameters=json.loads(live.hyperparameters_json or "{}"),
-            csv_bytes=csv_bytes,
+            csv_bytes=data_bytes,
             experiment_name=f"project-{live.project_id}",
+            problem_type=live.problem_type,
+            preprocessing=json.loads(live.preprocessing_json or "{}"),
+            feature_columns=json.loads(live.feature_columns_json or "[]"),
+            train_ratio=live.train_ratio,
+            val_ratio=live.val_ratio,
+            test_ratio=live.test_ratio,
+            random_seed=live.random_seed,
+            data_format=data_format,
         )
         live.logs = (live.logs or "") + "Starting SklearnTrainingRunner...\n"
         db.commit()

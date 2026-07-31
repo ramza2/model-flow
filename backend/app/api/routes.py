@@ -379,7 +379,7 @@ def predict(endpoint_id: int, body: PredictRequest, db: Session = Depends(get_db
     if not ep:
         raise _friendly(404, f"Endpoint {endpoint_id} was not found.")
     try:
-        preds = inference.predict(ep.model_uri, body.instances)
+        preds = inference.predict(ep.model_uri, body.instances, ep.feature_schema_json)
     except Exception as exc:
         raise _friendly(
             400,
