@@ -1,16 +1,28 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { api, Run } from "../api";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { api, type Run } from "../api";
+import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
 
 export default function Runs() {
   const { projectId } = useParams();
+  const [params] = useSearchParams();
   const [runs, setRuns] = useState<Run[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    api<Run[]>(`/api/projects/${projectId}/runs`).then(setRuns).catch((e) => setError(String(e.message || e)));
-  }, [projectId]);
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    api<Run[]>(`/projects/${projectId}/experiments/runs${query}`)
+      .then((rows) => {
+        setRuns(rows);
+        const requested = params.get("run");
+        if (requested && rows.some((run) => run.run_id === requested)) setSelected([requested]);
+      })
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "Experiment runs could not be loaded."))
+      .finally(() => setLoading(false));
+  }, [params, projectId, search]);
 
   function toggle(id: string) {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -18,41 +30,44 @@ export default function Runs() {
 
   return (
     <div>
-      <div className="row-actions" style={{ justifyContent: "space-between" }}>
-        <div>
-          <h1>Experiment runs</h1>
-          <p className="lead">Parameters, metrics, and artifacts recorded in MLflow.</p>
-        </div>
-        <Link
+      <PageHeader
+        title="Experiments"
+        description="Compare tracked parameters and metrics across model training runs."
+        actions={<Link
           className="btn secondary"
-          to={`/projects/${projectId}/runs/compare?run_ids=${selected.join(",")}`}
-          style={{ pointerEvents: selected.length < 2 ? "none" : undefined, opacity: selected.length < 2 ? 0.5 : 1 }}
+          to={`/projects/${projectId}/experiments/compare?run_ids=${selected.join(",")}`}
+          aria-disabled={selected.length < 2}
+          onClick={(event) => selected.length < 2 && event.preventDefault()}
         >
           Compare selected ({selected.length})
-        </Link>
+        </Link>}
+      />
+      <ErrorNotice message={error} />
+      <div className="filter-bar">
+        <label>Search runs<input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Run name or ID" /></label>
+        <span>Select two or more runs to compare.</span>
       </div>
-      {error && <div className="error">{error}</div>}
-      <div className="panel">
-        <table>
-          <thead>
-            <tr><th></th><th>Run</th><th>Status</th><th>Metrics</th><th>Params</th></tr>
-          </thead>
-          <tbody>
-            {runs.map((r) => (
-              <tr key={r.run_id}>
-                <td>
-                  <input type="checkbox" checked={selected.includes(r.run_id)} onChange={() => toggle(r.run_id)} />
-                </td>
-                <td className="mono">{r.run_id.slice(0, 12)}</td>
-                <td><span className="badge">{r.status}</span></td>
-                <td className="mono muted">{Object.entries(r.metrics).map(([k, v]) => `${k}=${v.toFixed?.(4) ?? v}`).join(", ") || "—"}</td>
-                <td className="mono muted">{r.params.algorithm || r.params.task || "—"}</td>
-              </tr>
-            ))}
-            {runs.length === 0 && <tr><td colSpan={5} className="muted">No runs yet. Complete a training job first.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      {loading ? <Loading label="Loading experiments" /> : runs.length === 0 ? (
+        <EmptyState title="No experiment runs" description="Completed training jobs record runs here automatically." action={<Link className="btn" to={`/projects/${projectId}/jobs/new`}>Start training</Link>} />
+      ) : (
+        <div className="panel table-wrap">
+          <table>
+            <thead><tr><th aria-label="Select" /><th>Run</th><th>Status</th><th>Started</th><th>Metrics</th><th>Algorithm</th></tr></thead>
+            <tbody>
+              {runs.map((run) => (
+                <tr key={run.run_id} className={selected.includes(run.run_id) ? "selected-row" : ""}>
+                  <td><input aria-label={`Select run ${run.run_id}`} type="checkbox" checked={selected.includes(run.run_id)} onChange={() => toggle(run.run_id)} /></td>
+                  <td><strong>{run.tags["mlflow.runName"] || run.run_id.slice(0, 12)}</strong><small className="table-subtitle mono">{run.run_id}</small></td>
+                  <td><StatusBadge status={run.status} /></td>
+                  <td>{formatDate(run.start_time)}</td>
+                  <td className="mono">{Object.entries(run.metrics).slice(0, 2).map(([key, value]) => `${key} ${Number(value).toFixed(3)}`).join(" · ") || "—"}</td>
+                  <td>{run.params.algorithm || run.params.task || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

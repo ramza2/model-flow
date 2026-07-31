@@ -1,31 +1,36 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import { ProjectProvider } from "../ProjectContext";
 import Dashboard from "../pages/Dashboard";
 
 describe("Dashboard", () => {
-  it("renders workspace home", async () => {
+  it("renders live project statistics", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          projects: 1,
-          datasets: 2,
-          jobs: 3,
-          endpoints: 0,
-          succeeded_jobs: 1,
-          failed_jobs: 0,
-        }),
+      vi.fn().mockImplementation(async (input: string) => {
+        const payload = input.endsWith("/projects")
+          ? [{ id: 7, name: "Iris", description: "", is_active: true, role: "project_admin", created_at: "2026-01-01" }]
+          : input.includes("/datasets")
+            ? [{ id: 1 }, { id: 2 }]
+            : input.includes("/jobs")
+              ? [{ id: 3, name: "baseline", algorithm: "random_forest", status: "running", metrics: {} }]
+              : input.includes("/endpoints")
+                ? []
+                : [];
+        return { ok: true, status: 200, json: async () => payload };
       }),
     );
     render(
       <MemoryRouter>
-        <Dashboard />
+        <ProjectProvider>
+          <Dashboard />
+        </ProjectProvider>
       </MemoryRouter>,
     );
     expect(screen.getByText(/Workspace home/i)).toBeInTheDocument();
-    expect(await screen.findByText("Create project")).toBeInTheDocument();
-    expect(screen.getByText("Projects").closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
+    expect(screen.getByRole("link", { name: /Create project/ })).toBeInTheDocument();
+    expect(await screen.findByText("Iris")).toBeInTheDocument();
+    expect((await screen.findByText("Datasets")).closest(".stat")?.querySelector(".value")?.textContent).toBe("2");
   });
 });
