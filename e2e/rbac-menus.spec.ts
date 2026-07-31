@@ -97,11 +97,11 @@ test("data scientist sees training but no approval controls", async ({ page }) =
   await login(page, emails.dataScientist);
 
   await page.goto(`/projects/${projectAId}/jobs`);
-  await expect(page.getByRole("heading", { name: "Training Jobs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Training Jobs", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /New training job/ })).toBeVisible();
 
   await page.goto(`/projects/${projectAId}/models`);
-  await expect(page.getByRole("heading", { name: "Model Registry" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Model Registry", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /Approve/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Register from run/ })).toHaveCount(0);
 });
