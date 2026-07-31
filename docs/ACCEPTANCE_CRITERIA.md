@@ -29,13 +29,24 @@ Each item must be PASS before completion is declared.
 | AC-23 | Cross-project run/model binding rejected | PASS |
 | AC-24 | Worker health reflects fresh DB heartbeat | PASS |
 | AC-25 | verify.sh requires only Docker/Compose/curl/bash on host | PASS |
+| AC-26 | GitHub Actions CI workflow present; YAML validates and triggers on PR/push/`workflow_dispatch` | PASS |
+| AC-27 | Pull Request targeting `main` runs the full verification gate as a required Check | PASS |
+| AC-28 | CI failure uploads `artifacts/verify/` and `artifacts/screenshots/` (plus Compose ps / service logs) | PASS |
+| AC-29 | External Docker images used by Compose/verify are pinned to pull-verified tags (no floating `latest`) | PASS |
+| AC-30 | Clean-volume full verification (`docker compose down -v` + `./scripts/verify.sh`) PASS on latest main baseline + after pin/CI changes | PASS |
 
-## Evidence (re-verified after review fixes)
+## Evidence
 
-- Clean volumes: `docker compose down -v` then `./scripts/verify.sh` **PASS**
+### Independent baseline (latest `origin/main` @ `762d892`)
+
+- Clean volumes: `docker compose down -v --remove-orphans` then `./scripts/verify.sh` **PASS**
 - Compose health (frontend/backend/worker/postgres/mlflow/minio) all `healthy`
-- Alembic head: `002_worker_heartbeats`
-- Backend: ruff clean, **11** pytest tests passed
-- Frontend (node:22-alpine container): lint/typecheck/vitest PASS
-- Playwright (`mcr.microsoft.com/playwright:v1.49.1-jammy`): PASS
-- API flow: train + registry + predict PASS
+- API flow train + registry + predict PASS
+- Playwright PASS
+
+### After CI + image pin changes
+
+- Clean volumes: `docker compose down -v --remove-orphans` then `./scripts/verify.sh` **PASS**
+- GitHub Actions run: https://github.com/ramza2/model-flow/actions/runs/30604686340 — **success** (~3m; Full verification gate Check)
+- Workflow: `.github/workflows/ci.yml`
+- Pinned images documented in `docs/DECISIONS.md` (D-016)

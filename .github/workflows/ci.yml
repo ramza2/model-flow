@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  checks: write
+
+jobs:
+  verify:
+    name: Full verification gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Confirm Docker and Compose
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+          command -v curl
+          command -v bash
+
+      - name: Clean previous Compose state
+        run: |
+          set -euo pipefail
+          docker compose down -v --remove-orphans || true
+
+      - name: Run full verification gate
+        id: verify
+        run: |
+          set -euo pipefail
+          chmod +x scripts/verify.sh
+          ./scripts/verify.sh
+
+      - name: Collect Compose status and service logs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/verify
+          {
+            echo "=== docker compose ps ==="
+            docker compose ps -a || true
+            echo
+            echo "=== docker compose ps (plain) ==="
+            docker compose ps -a --format 'table {{.Name}}\t{{.Service}}\t{{.Status}}\t{{.Health}}' || true
+          } | tee artifacts/verify/compose-ps-ci.txt
+
+          for svc in postgres minio mlflow backend worker frontend; do
+            docker compose logs --no-color --tail=200 "$svc" \
+              > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
+              echo "(no logs for $svc)" > "artifacts/verify/logs-${svc}.txt"
+          done
+          docker compose logs --no-color --tail=400 \
+            > artifacts/verify/logs-all.txt 2>&1 || true
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: verify-failure-${{ github.run_id }}
+          path: |
+            artifacts/verify/
+            artifacts/screenshots/
+          if-no-files-found: warn
+          retention-days: 14

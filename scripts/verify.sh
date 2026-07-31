@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # ModelFlow verification gate.
 # Host prerequisites: Docker, Docker Compose plugin, curl, bash.
-# Node.js/npm/npx are NOT required on the host.
+# Node.js/npm/npx and host Python are NOT required.
+# Designed for both local and non-interactive CI (GitHub Actions).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p artifacts/screenshots artifacts/verify
 
-NODE_IMAGE="node:22-alpine"
+NODE_IMAGE="node:22.17-alpine"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.49.1-jammy"
+PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
+
+VERIFY_EXIT=0
+VERIFY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 pass() { echo "[PASS] $*"; }
 fail() { echo "[FAIL] $*"; exit 1; }
@@ -19,8 +24,48 @@ info() { echo "[INFO] $*"; }
 # Parse JSON from stdin inside a container (no host Python/Node required for scripting).
 json_get() {
   local code="$1"
-  docker run --rm -i python:3.11-slim python -c "$code"
+  docker run --rm -i "$PYTHON_IMAGE" python -c "$code"
 }
+
+collect_diagnostics() {
+  local ec="${1:-$?}"
+  mkdir -p artifacts/verify
+  {
+    echo "verify_started_at=${VERIFY_STARTED_AT}"
+    echo "verify_finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "exit_code=${ec}"
+    echo "cwd=${ROOT}"
+    echo "ci=${CI:-false}"
+  } > artifacts/verify/meta.txt
+
+  {
+    echo "=== docker compose ps -a ==="
+    docker compose ps -a 2>&1 || true
+    echo
+    echo "=== docker compose ps (format) ==="
+    docker compose ps -a --format '{{.Service}}={{.Health}}={{.State}}' 2>&1 || true
+  } | tee artifacts/verify/compose-ps-final.txt >/dev/null || true
+
+  if [[ "$ec" -ne 0 ]]; then
+    info "Collecting service logs after failure (exit=${ec})"
+    for svc in postgres minio mlflow backend worker frontend minio-init; do
+      docker compose logs --no-color --tail=200 "$svc" \
+        > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
+        echo "(no logs for ${svc})" > "artifacts/verify/logs-${svc}.txt"
+    done
+    docker compose logs --no-color --tail=400 \
+      > artifacts/verify/logs-all.txt 2>&1 || true
+    echo "FAIL" > artifacts/verify/RESULT.txt
+  fi
+}
+
+on_exit() {
+  local ec=$?
+  VERIFY_EXIT="$ec"
+  collect_diagnostics "$ec" || true
+  exit "$ec"
+}
+trap on_exit EXIT
 
 require_host_tools() {
   for bin in docker curl bash; do
@@ -52,13 +97,14 @@ info "1) Docker Compose config"
 docker compose config -q
 pass "compose config"
 
-info "2) Build & start stack (clean volumes)"
+info "2) Build & start stack (clean volumes — no host volume reuse)"
 docker compose down -v --remove-orphans
 docker compose build
 docker compose up -d
 pass "compose up"
 
 info "3) Wait for HTTP readiness then assert compose health"
+# ~4.5 minutes max (90 * 3s) — enough for cold image builds on CI
 for i in $(seq 1 90); do
   if curl -sf http://localhost:8000/api/health >/dev/null \
     && curl -sf http://localhost:3000/ >/dev/null \
@@ -67,8 +113,8 @@ for i in $(seq 1 90); do
   fi
   sleep 3
   if [[ $i -eq 90 ]]; then
-    docker compose ps
-    docker compose logs --tail=80
+    docker compose ps -a | tee artifacts/verify/compose-ps-timeout.txt || true
+    docker compose logs --no-color --tail=80 | tee artifacts/verify/logs-timeout.txt || true
     fail "services did not become HTTP-ready"
   fi
 done
@@ -172,6 +218,7 @@ docker run --rm --network host \
   -w /work \
   -e E2E_BASE_URL=http://localhost:3000 \
   -e HOME=/tmp \
+  -e CI=true \
   "$PLAYWRIGHT_IMAGE" \
   bash -lc 'npm ci && npx playwright test'
 pass "playwright"
