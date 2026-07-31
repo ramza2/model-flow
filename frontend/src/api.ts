@@ -34,6 +34,7 @@ export type Dataset = {
   id: number;
   project_id: number;
   name: string;
+  object_key?: string;
   row_count: number;
   column_count: number;
   columns: string[];

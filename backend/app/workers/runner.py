@@ -8,10 +8,24 @@ from datetime import datetime, timezone
 from sqlalchemy import select, text
 
 from app.core.config import settings
-from app.db.models import Dataset, JobStatus, TrainingJob
+from app.db.models import Dataset, JobStatus, TrainingJob, WorkerHeartbeat
 from app.db.session import SessionLocal
 from app.services import storage
 from app.services.training import TrainingJobContext, get_training_runner
+
+
+def beat() -> None:
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        row = db.get(WorkerHeartbeat, settings.worker_id)
+        if row is None:
+            db.add(WorkerHeartbeat(worker_id=settings.worker_id, last_seen_at=now))
+        else:
+            row.last_seen_at = now
+        db.commit()
+    finally:
+        db.close()
 
 
 def claim_next_job() -> TrainingJob | None:
@@ -31,7 +45,6 @@ def claim_next_job() -> TrainingJob | None:
         job.logs = (job.logs or "") + "Worker claimed job.\n"
         db.commit()
         db.refresh(job)
-        # Detach values needed outside session
         db.expunge(job)
         return job
     finally:
@@ -82,7 +95,6 @@ def process_job(job: TrainingJob) -> None:
 
 
 def run_forever() -> None:
-    # Wait for DB
     for _ in range(60):
         try:
             db = SessionLocal()
@@ -93,10 +105,12 @@ def run_forever() -> None:
             time.sleep(2)
     print("ModelFlow worker started", flush=True)
     while True:
+        beat()
         job = claim_next_job()
         if job:
             print(f"Processing job {job.id}", flush=True)
             process_job(job)
+            beat()
         else:
             time.sleep(settings.worker_poll_seconds)
 

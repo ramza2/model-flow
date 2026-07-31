@@ -22,6 +22,7 @@ class DatasetOut(BaseModel):
     id: int
     project_id: int
     name: str
+    object_key: str
     row_count: int
     column_count: int
     columns: list[str]

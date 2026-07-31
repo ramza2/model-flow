@@ -1,4 +1,5 @@
 import json
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -35,6 +36,7 @@ def _dataset_out(d: Dataset) -> DatasetOut:
         id=d.id,
         project_id=d.project_id,
         name=d.name,
+        object_key=d.object_key,
         row_count=d.row_count,
         column_count=d.column_count,
         columns=json.loads(d.columns_json or "[]"),
@@ -168,7 +170,8 @@ async def upload_dataset(
         raise _friendly(400, f"Could not parse CSV: {exc}", "Ensure the file is valid UTF-8 CSV.") from exc
 
     storage.ensure_buckets()
-    key = f"project-{project_id}/{file.filename}"
+    # Unique object key so re-uploads with the same filename never overwrite prior objects.
+    key = f"project-{project_id}/{uuid.uuid4().hex}/{file.filename}"
     storage.upload_bytes(settings.minio_datasets_bucket, key, data, "text/csv")
     d = Dataset(
         project_id=project_id,
@@ -271,11 +274,34 @@ def compare_runs(project_id: int, run_ids: str, db: Session = Depends(get_db)):
 @router.post("/projects/{project_id}/models/register")
 def register_model(project_id: int, body: RegisterModelRequest, db: Session = Depends(get_db)):
     _get_project(db, project_id)
-    name = body.model_name if body.model_name.startswith(f"project-{project_id}-") else f"project-{project_id}-{body.model_name}"
+    experiment_name = f"project-{project_id}"
+    try:
+        run = mlflow_service.get_run(body.run_id)
+    except Exception as exc:
+        raise _friendly(404, f"Run '{body.run_id}' was not found.", str(exc)) from exc
+    try:
+        exp_id = mlflow_service.ensure_experiment(experiment_name)
+    except Exception as exc:
+        raise _friendly(400, f"Could not resolve experiment for this project: {exc}") from exc
+    if str(run.get("experiment_id")) != str(exp_id):
+        raise _friendly(
+            400,
+            "That experiment run does not belong to this project.",
+            f"Register models only from runs under experiment '{experiment_name}'.",
+        )
+    name = (
+        body.model_name
+        if body.model_name.startswith(f"project-{project_id}-")
+        else f"project-{project_id}-{body.model_name}"
+    )
     try:
         return mlflow_service.register_model(body.run_id, name, body.artifact_path)
     except Exception as exc:
-        raise _friendly(400, f"Could not register model: {exc}", "Ensure the run finished and logged a 'model' artifact.") from exc
+        raise _friendly(
+            400,
+            f"Could not register model: {exc}",
+            "Ensure the run finished and logged a 'model' artifact.",
+        ) from exc
 
 
 @router.get("/projects/{project_id}/models")
@@ -301,11 +327,30 @@ def list_endpoints(project_id: int, db: Session = Depends(get_db)):
 @router.post("/projects/{project_id}/endpoints", response_model=EndpointOut, status_code=201)
 def create_endpoint(project_id: int, body: EndpointCreate, db: Session = Depends(get_db)):
     _get_project(db, project_id)
+    expected_prefix = f"project-{project_id}-"
+    if not body.model_name.startswith(expected_prefix):
+        raise _friendly(
+            400,
+            "That model does not belong to this project.",
+            f"Model names for this project must start with '{expected_prefix}'.",
+        )
     try:
         mlflow_service.get_model_version(body.model_name, body.model_version)
     except Exception as exc:
-        raise _friendly(400, f"Unknown model version: {body.model_name} v{body.model_version}", str(exc)) from exc
+        raise _friendly(
+            400,
+            f"Unknown model version: {body.model_name} v{body.model_version}",
+            str(exc),
+        ) from exc
     uri = f"models:/{body.model_name}/{body.model_version}"
+    try:
+        inference.load_model(uri)
+    except Exception as exc:
+        raise _friendly(
+            400,
+            "The model could not be loaded for inference.",
+            "Confirm the registered version has a valid model artifact, then try again.",
+        ) from exc
     ep = Endpoint(
         project_id=project_id,
         name=body.name,
@@ -317,11 +362,6 @@ def create_endpoint(project_id: int, body: EndpointCreate, db: Session = Depends
     db.add(ep)
     db.commit()
     db.refresh(ep)
-    # Warm cache (best effort)
-    try:
-        inference.load_model(uri)
-    except Exception:
-        pass
     return ep
 
 

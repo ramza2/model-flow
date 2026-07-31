@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     minio_datasets_bucket: str = "datasets"
     minio_mlflow_bucket: str = "mlflow"
     worker_poll_seconds: float = 2.0
+    worker_id: str = "default"
+    worker_heartbeat_max_age_seconds: int = 30
     cors_origins: str = "http://localhost:5173,http://localhost:3000,http://localhost"
 
 

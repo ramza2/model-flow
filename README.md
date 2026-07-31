@@ -2,6 +2,15 @@
 
 End-to-End MLOps Platform (MVP).
 
+## Host prerequisites
+
+- Docker Engine
+- Docker Compose plugin (`docker compose`)
+- curl
+- bash
+
+Node.js/npm are **not** required on the host for `./scripts/verify.sh` (frontend and Playwright run in containers).
+
 ## Quick start
 
 ```bash
@@ -21,18 +30,18 @@ Sample dataset: `samples/iris.csv` (target column: `target`).
 
 ```bash
 chmod +x scripts/verify.sh
+docker compose down -v --remove-orphans
 ./scripts/verify.sh
 ```
 
 ## Local development (optional)
 
-Backend:
+Backend (requires Compose infra services):
 
 ```bash
 cd backend
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# requires Compose postgres/minio/mlflow running
 alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 python -m app.workers.runner
