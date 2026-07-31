@@ -2,24 +2,23 @@
 
 ## Current phase
 
-MVP verification complete.
+PR review fixes verified on clean volumes; Draft PR #2 updated. Not merged.
 
 ## Completed
 
-- [x] Product docs (PRODUCT_SPEC, ARCHITECTURE, ACCEPTANCE, BACKLOG, DECISIONS)
-- [x] Branch `cursor/modelflow-mvp-c87f`
-- [x] Backend API + worker + Alembic + pytest
-- [x] Frontend 15 screens + Vitest
-- [x] Docker Compose stack (6 services + healthchecks)
-- [x] `scripts/verify.sh` + Playwright E2E
-- [x] Full API + UI happy-path verification
-- [x] Acceptance criteria marked PASS
-- [x] Draft PR updated
+- [x] Product docs + MVP implementation
+- [x] Merge `origin/main` into `cursor/modelflow-mvp-c87f` (Dockerfile from main; install deps + merged AGENTS.md)
+- [x] Unique dataset object keys + regression test
+- [x] Endpoint create requires successful model load + tests
+- [x] Cross-project run/model integrity checks + tests
+- [x] Worker DB heartbeat healthcheck
+- [x] `scripts/verify.sh` containerized frontend/Playwright + compose healthy assertion
+- [x] `docker compose down -v` + `./scripts/verify.sh` PASS
 
 ## Blockers
 
 None.
 
-## Notes
+## Latest verify snapshot
 
-MinIO images pinned to `:latest` after dated release tags 404'd (recorded in DECISIONS D-010).
+All required services healthy; backend 11 tests; Playwright 1 passed; inference OK.
