@@ -2,19 +2,25 @@
 
 ## Cursor Cloud specific instructions
 
-ModelFlow is in early scaffolding: there is **no application code yet**. Do not invent product code during environment/setup tasks unless explicitly asked. Future stack (not present in-repo yet): FastAPI, React, PostgreSQL, MLflow, MinIO.
-
 ### Base tooling
 
 Environment is defined by `.cursor/environment.json` → `.cursor/Dockerfile` (Ubuntu 24.04 with Git, Docker/Compose, Python 3.11, Node.js 22, npm, `psql`, curl, make).
 
-- After boot, Docker is started via `start`: `sudo service docker start`. If the daemon is down, run that (or `sudo dockerd`) before container work.
-- DinD uses `fuse-overlayfs` + `iptables-legacy` (see Dockerfile). Prefer `docker compose` (plugin), not legacy `docker-compose`.
-- Prefer `python3.11` / `python` from the image for backend work. System `python3` on some snapshots may still be 3.12; use `python3.11` explicitly if unsure.
-- Node 22 LTS + npm are available for the future React app.
-- `psql` is the PostgreSQL **client** only; a Postgres server is expected via Docker Compose once the app lands.
-- `install` is currently a no-op (`true`) because there are no project dependency manifests. When `requirements.txt` / `pyproject.toml` / `package.json` appear, update `.cursor/environment.json` `install` (and the SetupVmEnvironment update script) accordingly — keep it idempotent and dependency-refresh only (no `docker compose up`, no migrations, no `dev` servers).
+- After boot, Docker daemon: `sudo service docker start` (or `sudo dockerd`) if needed. DinD uses `fuse-overlayfs` + `iptables-legacy`.
+- Prefer `docker compose` (plugin), not legacy `docker-compose`.
+- Prefer `python3.11` for backend work; some base images may still expose `python3` as 3.12.
+- `psql` is the PostgreSQL **client** only; the server runs via Compose.
+- `install` refreshes `backend/requirements.txt` and `frontend` npm deps only — never `compose up`, migrations, or dev servers.
 
-### Not in scope until product scaffolding exists
+### MVP day-to-day
 
-Lint, unit tests, and running FastAPI/React/Postgres/MLflow/MinIO services cannot be exercised until those packages and Compose definitions are added in a later agent task.
+ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.runner`), React/Vite UI (`frontend`), Postgres, MLflow, MinIO via `docker compose`.
+
+- Preferred full stack: `docker compose up --build -d` (see README). UI http://localhost:3000, API http://localhost:8000/docs.
+- Full gate: `./scripts/verify.sh` (Compose + health + migrations + lint/tests in containers + API flow + Playwright container). Host needs Docker, Compose, curl, bash — not Node/npm.
+- Sample CSV: `samples/iris.csv` with target column `target`.
+- Worker claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`) and writes a DB heartbeat for health checks; training uses `SklearnTrainingRunner` (`app/services/training.py`).
+
+### Auth / secrets
+
+MVP has no auth. Local MinIO/MLflow credentials are the Compose defaults (`minioadmin`). Do not use production secrets.
