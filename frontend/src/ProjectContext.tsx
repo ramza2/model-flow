@@ -7,7 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { api, type Project } from "./api";
+import { api, type Project, type ProjectRole, type User } from "./api";
 
 const PROJECT_KEY = "modelflow_project_id";
 
@@ -84,5 +84,20 @@ export function useProject() {
 }
 
 export function hasProjectAdminRole(project: Project | null) {
-  return project?.role === "project_admin";
+  return hasProjectRole(project, "PROJECT_ADMIN");
+}
+
+export function hasProjectRole(
+  project: Project | null,
+  ...roles: ProjectRole[]
+) {
+  return Boolean(project && roles.includes(project.role.toUpperCase() as ProjectRole));
+}
+
+export function userCanProject(
+  user: User | null,
+  project: Project | null,
+  ...roles: ProjectRole[]
+) {
+  return Boolean(user?.is_system_admin || hasProjectRole(project, ...roles));
 }

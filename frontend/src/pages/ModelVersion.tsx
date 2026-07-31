@@ -10,7 +10,7 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
-import { useProject } from "../ProjectContext";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function ModelVersion() {
   const { projectId, modelVersionId } = useParams();
@@ -56,8 +56,8 @@ export default function ModelVersion() {
     }
   }
 
-  const canWrite = user?.is_system_admin || ["ml_engineer", "project_admin"].includes(selectedProject?.role || "");
-  const canApprove = user?.is_system_admin || selectedProject?.role === "project_admin";
+  const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+  const canApprove = userCanProject(user, selectedProject, "PROJECT_ADMIN");
 
   return (
     <div>

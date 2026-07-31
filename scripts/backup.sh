@@ -18,7 +18,7 @@ fi
 : "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BACKUP_DIR="${BACKUP_ROOT:-$ROOT/backups}/$TIMESTAMP"
+BACKUP_DIR="${BACKUP_DIR:-${BACKUP_ROOT:-$ROOT/backups}/$TIMESTAMP}"
 mkdir -p "$BACKUP_DIR/postgres" "$BACKUP_DIR/minio"
 
 echo "Creating database dumps in $BACKUP_DIR"

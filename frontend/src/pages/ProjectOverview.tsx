@@ -19,7 +19,7 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
-import { useProject } from "../ProjectContext";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function ProjectOverview() {
   const { projectId } = useParams();
@@ -32,7 +32,7 @@ export default function ProjectOverview() {
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
   const [members, setMembers] = useState<Membership[]>([]);
   const [memberEmail, setMemberEmail] = useState("");
-  const [memberRole, setMemberRole] = useState<ProjectRole>("viewer");
+  const [memberRole, setMemberRole] = useState<ProjectRole>("VIEWER");
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -45,7 +45,7 @@ export default function ProjectOverview() {
     setError("");
     try {
       const projectRow = await api<Project>(`/projects/${projectId}`);
-      const canManage = projectRow.role === "project_admin" || user?.is_system_admin;
+      const canManage = userCanProject(user, projectRow, "PROJECT_ADMIN");
       const [datasetRows, jobRows, endpointRows, memberRows] = await Promise.all([
         api<Dataset[]>(`/projects/${projectId}/datasets`),
         api<Job[]>(`/projects/${projectId}/jobs`),
@@ -65,13 +65,16 @@ export default function ProjectOverview() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, selectProject, user?.is_system_admin]);
+  }, [projectId, selectProject, user]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const canManage = project?.role === "project_admin" || user?.is_system_admin;
+  const canManage = userCanProject(user, project, "PROJECT_ADMIN");
+  const canWriteData = userCanProject(user, project, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
+  const canTrain = userCanProject(user, project, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
+  const canBuildPipeline = userCanProject(user, project, "ML_ENGINEER", "PROJECT_ADMIN");
 
   async function saveProject(event: FormEvent) {
     event.preventDefault();
@@ -162,10 +165,10 @@ export default function ProjectOverview() {
           <section className="panel">
             <div className="panel-title"><div><span className="eyebrow">Quick start</span><h2>Project workflow</h2></div></div>
             <div className="row-actions">
-              <Link className="btn" to={`/projects/${projectId}/datasets`}>Upload dataset</Link>
-              <Link className="btn secondary" to={`/projects/${projectId}/jobs/new`}>Start training</Link>
+              {canWriteData && <Link className="btn" to={`/projects/${projectId}/datasets`}>Upload dataset</Link>}
+              {canTrain && <Link className="btn secondary" to={`/projects/${projectId}/jobs/new`}>Start training</Link>}
               <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>View experiments</Link>
-              <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>Build pipeline</Link>
+              {canBuildPipeline && <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>Build pipeline</Link>}
             </div>
           </section>
           {canManage && (
@@ -177,10 +180,10 @@ export default function ProjectOverview() {
               <form className="inline-form" onSubmit={addMember}>
                 <label>Email<input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} required placeholder="teammate@example.com" /></label>
                 <label>Role<select value={memberRole} onChange={(event) => setMemberRole(event.target.value as ProjectRole)}>
-                  <option value="viewer">Viewer</option>
-                  <option value="data_scientist">Data scientist</option>
-                  <option value="ml_engineer">ML engineer</option>
-                  <option value="project_admin">Project administrator</option>
+                  <option value="VIEWER">Viewer</option>
+                  <option value="DATA_SCIENTIST">Data scientist</option>
+                  <option value="ML_ENGINEER">ML engineer</option>
+                  <option value="PROJECT_ADMIN">Project administrator</option>
                 </select></label>
                 <button className="btn">Add member</button>
               </form>

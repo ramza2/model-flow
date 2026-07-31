@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Job, type ModelVersion } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   ErrorNotice,
   Loading,
@@ -10,14 +11,19 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function JobDetail() {
   const { projectId, jobId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState("");
+  const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
+  const canRegister = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   useEffect(() => {
     let alive = true;
@@ -90,11 +96,11 @@ export default function JobDetail() {
       {!job ? <Loading label="Loading training job" /> : (
         <>
           <div className="row-actions toolbar-actions">
-            {active && <button className="btn danger" disabled={busy === "cancel"} onClick={() => action("cancel")}>Stop job</button>}
-            {["failed", "cancelled"].includes(job.status) && <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")}>Retry</button>}
-            <button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("clone")}>Clone configuration</button>
+            {canTrain && active && <button className="btn danger" disabled={busy === "cancel"} onClick={() => action("cancel")}>Stop job</button>}
+            {canTrain && ["failed", "cancelled"].includes(job.status) && <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")}>Retry</button>}
+            {canTrain && <button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("clone")}>Clone configuration</button>}
             {job.mlflow_run_id && <Link className="btn secondary" to={`/projects/${projectId}/experiments?run=${job.mlflow_run_id}`}>Open experiment</Link>}
-            {job.status === "succeeded" && job.model_uri && (
+            {canRegister && job.status === "succeeded" && job.model_uri && (
               <button className="btn" type="button" disabled={busy === "register"} onClick={register} data-testid="register-model">
                 {busy === "register" ? "Registering…" : "Register model"}
               </button>

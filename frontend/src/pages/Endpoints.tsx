@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { api, type Endpoint, type ModelVersion } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -11,9 +12,12 @@ import {
   confirmAction,
   metric,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Endpoints() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const location = useLocation() as { state?: { modelVersionId?: number } };
   const [items, setItems] = useState<Endpoint[]>([]);
   const [models, setModels] = useState<ModelVersion[]>([]);
@@ -24,6 +28,7 @@ export default function Endpoints() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canDeploy = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const refresh = useCallback(async () => {
     const [e, m] = await Promise.all([
@@ -81,9 +86,9 @@ export default function Endpoints() {
 
   return (
     <div>
-      <PageHeader title="Deployments" description="Serve approved model versions and verify live predictions." actions={<div className="row-actions"><Link className="btn secondary" to={`/projects/${projectId}/deployments/batch`}>Batch inference</Link><button className="btn" onClick={() => setShowCreate(!showCreate)}>＋ New deployment</button></div>} />
+      <PageHeader title="Deployments" description="Serve approved model versions and verify live predictions." actions={canDeploy ? <div className="row-actions"><Link className="btn secondary" to={`/projects/${projectId}/deployments/batch`}>Batch inference</Link><button className="btn" onClick={() => setShowCreate(!showCreate)}>＋ New deployment</button></div> : undefined} />
       <ErrorNotice message={error} /><SuccessNotice message={success} />
-      {showCreate && <form className="panel form" onSubmit={onCreate}>
+      {canDeploy && showCreate && <form className="panel form" onSubmit={onCreate}>
         <div className="panel-title"><div><span className="eyebrow">Online prediction</span><h2>Create deployment</h2></div></div>
         {models.length === 0 && <div className="notice">Approve a model version before creating a deployment.</div>}
         <label>Deployment name<input value={name} onChange={(event) => setName(event.target.value)} required data-testid="endpoint-name" /></label>
@@ -91,14 +96,14 @@ export default function Endpoints() {
         <div className="row-actions"><button className="btn" disabled={!modelVersionId || busy === "create"} data-testid="endpoint-create">{busy === "create" ? "Creating…" : "Create deployment"}</button><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</button></div>
       </form>}
       {loading ? <Loading label="Loading deployments" /> : items.length === 0 ? (
-        <EmptyState title="No deployments" description="Approve a registered model, then create a prediction service." action={<button className="btn" onClick={() => setShowCreate(true)}>Create deployment</button>} />
+        <EmptyState title="No deployments" description="Approve a registered model, then create a prediction service." action={canDeploy ? <button className="btn" onClick={() => setShowCreate(true)}>Create deployment</button> : undefined} />
       ) : (
         <div className="deployment-grid">
           {items.map((endpoint) => <article className="deployment-card" key={endpoint.id}>
             <header><div><span className="eyebrow">Online service</span><h2>{endpoint.name}</h2></div><StatusBadge status={endpoint.status} /></header>
             <p className="mono">{endpoint.model_name} · v{endpoint.model_version}</p>
             <div className="deployment-metrics"><div><strong>{endpoint.request_count.toLocaleString()}</strong><span>Requests</span></div><div><strong>{endpoint.success_rate === null ? "—" : `${metric(endpoint.success_rate * 100, 1)}%`}</strong><span>Success</span></div><div><strong>{metric(endpoint.latency_p95_ms, 1)} ms</strong><span>p95 latency</span></div></div>
-            <footer><Link className="btn" to={`/projects/${projectId}/deployments/${endpoint.id}/predict`}>Test prediction</Link>{endpoint.status === "ready" ? <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "stop")}>Stop</button> : <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "start")}>Start</button>}</footer>
+            <footer><Link className="btn" to={`/projects/${projectId}/deployments/${endpoint.id}/predict`}>Test prediction</Link>{canDeploy && (endpoint.status === "ready" ? <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "stop")}>Stop</button> : <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "start")}>Start</button>)}</footer>
           </article>)}
         </div>
       )}

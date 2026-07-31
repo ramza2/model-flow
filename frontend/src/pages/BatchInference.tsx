@@ -8,6 +8,7 @@ import {
   type Endpoint,
   type ModelVersion,
 } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -17,9 +18,12 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function BatchInference() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [jobs, setJobs] = useState<BatchJob[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
@@ -34,6 +38,7 @@ export default function BatchInference() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canDeploy = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     try {
@@ -113,7 +118,7 @@ export default function BatchInference() {
     <PageHeader title="Batch inference" description="Score a complete dataset version with a deployment or approved model." />
     <ErrorNotice message={error} /><SuccessNotice message={success} />
     {loading ? <Loading label="Loading batch inference" /> : <>
-      <form className="panel form form-wide" onSubmit={create}>
+      {canDeploy && <form className="panel form form-wide" onSubmit={create}>
         <div className="form-grid">
           <label>Dataset<select value={datasetId} onChange={(event) => setDatasetId(event.target.value)} required><option value="">Select dataset</option>{datasets.map((dataset) => <option value={dataset.id} key={dataset.id}>{dataset.name}</option>)}</select></label>
           <label>Version<select value={versionId} onChange={(event) => setVersionId(event.target.value)} required>{versions.map((version) => <option value={version.id} key={version.id}>v{version.version} · {version.row_count.toLocaleString()} rows</option>)}</select></label>
@@ -122,7 +127,7 @@ export default function BatchInference() {
           <label>Result format<select value={format} onChange={(event) => setFormat(event.target.value)}><option value="csv">CSV</option><option value="json">JSON</option><option value="parquet">Parquet</option></select></label>
         </div>
         <button className="btn" disabled={busy || !versionId || !targetId}>{busy ? "Queuing…" : "Run batch inference"}</button>
-      </form>
+      </form>}
       <section className="panel">
         <div className="panel-title"><div><span className="eyebrow">History</span><h2>Batch jobs</h2></div></div>
         {jobs.length === 0 ? <EmptyState title="No batch jobs" description="Configure a dataset and prediction target to score records in bulk." /> : <div className="table-wrap"><table><thead><tr><th>Job</th><th>Status</th><th>Rows</th><th>Format</th><th>Created</th><th /></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>Batch #{job.id}</td><td><StatusBadge status={job.status} /></td><td>{job.row_count?.toLocaleString() || "—"}</td><td>{job.result_format.toUpperCase()}</td><td>{formatDate(job.created_at)}</td><td>{job.status === "succeeded" && <button className="btn link" onClick={() => download(job)}>Download</button>}</td></tr>)}</tbody></table></div>}

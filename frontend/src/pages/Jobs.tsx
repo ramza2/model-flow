@@ -1,14 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Job } from "../api";
+import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Jobs() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [items, setItems] = useState<Job[]>([]);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   useEffect(() => {
     let alive = true;
@@ -36,7 +41,7 @@ export default function Jobs() {
       <PageHeader
         title="Training Jobs"
         description="Configure, track, and reproduce model training work."
-        actions={<Link className="btn" to={`/projects/${projectId}/jobs/new`}>＋ New training job</Link>}
+        actions={canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>＋ New training job</Link> : undefined}
       />
       <ErrorNotice message={error} />
       <div className="filter-bar">
@@ -49,7 +54,7 @@ export default function Jobs() {
         <EmptyState
           title={status ? `No ${status} jobs` : "No training jobs"}
           description="Create a job from a versioned dataset to begin an experiment."
-          action={!status && <Link className="btn" to={`/projects/${projectId}/jobs/new`}>Create training job</Link>}
+          action={!status && canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>Create training job</Link> : undefined}
         />
       ) : (
         <div className="panel table-wrap">

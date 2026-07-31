@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Alert } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -10,14 +11,18 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Alerts() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [filter, setFilter] = useState("open");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canResolve = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     const query = filter === "open" ? "?is_resolved=false" : filter === "resolved" ? "?is_resolved=true" : "";
@@ -53,7 +58,7 @@ export default function Alerts() {
       <div className="alert-list">
         {alerts.map((alert) => <article className={`alert-card ${alert.is_read ? "" : "unread"}`} key={alert.id}>
           <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
-          <div className="alert-copy"><div className="row-actions"><StatusBadge status={alert.severity} /><span>{formatDate(alert.created_at)}</span>{!alert.is_read && <span className="unread-label">Unread</span>}</div><h2>{alert.title}</h2><p>{alert.message}</p><div className="row-actions">{alert.link_path && <Link to={alert.link_path}>View related item →</Link>}{!alert.is_read && <button className="btn link" onClick={() => action(alert, "read")}>Mark read</button>}{!alert.is_resolved && <button className="btn secondary" onClick={() => action(alert, "resolve")}>Resolve</button>}</div></div>
+          <div className="alert-copy"><div className="row-actions"><StatusBadge status={alert.severity} /><span>{formatDate(alert.created_at)}</span>{!alert.is_read && <span className="unread-label">Unread</span>}</div><h2>{alert.title}</h2><p>{alert.message}</p><div className="row-actions">{alert.link_path && <Link to={alert.link_path}>View related item →</Link>}{!alert.is_read && <button className="btn link" onClick={() => action(alert, "read")}>Mark read</button>}{canResolve && !alert.is_resolved && <button className="btn secondary" onClick={() => action(alert, "resolve")}>Resolve</button>}</div></div>
         </article>)}
       </div>
     )}

@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, type ModelVersion, type Run } from "../api";
 import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice, formatDate } from "../components";
-import { useProject } from "../ProjectContext";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Registry() {
   const { projectId } = useParams();
@@ -57,7 +57,7 @@ export default function Registry() {
     }
   }
 
-  const canWrite = user?.is_system_admin || ["ml_engineer", "project_admin"].includes(selectedProject?.role || "");
+  const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   return (
     <div>

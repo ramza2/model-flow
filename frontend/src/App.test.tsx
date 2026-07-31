@@ -44,7 +44,7 @@ describe("authentication and navigation", () => {
               updated_at: "2026-01-01",
             }
           : input.endsWith("/projects")
-            ? [{ id: 9, name: "Production", description: "", is_active: true, role: "project_admin", created_at: "2026-01-01" }]
+            ? [{ id: 9, name: "Production", description: "", is_active: true, role: "PROJECT_ADMIN", created_at: "2026-01-01" }]
             : [];
         return { ok: true, status: 200, json: async () => payload };
       }),

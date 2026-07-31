@@ -10,7 +10,7 @@ describe("Dashboard", () => {
       "fetch",
       vi.fn().mockImplementation(async (input: string) => {
         const payload = input.endsWith("/projects")
-          ? [{ id: 7, name: "Iris", description: "", is_active: true, role: "project_admin", created_at: "2026-01-01" }]
+          ? [{ id: 7, name: "Iris", description: "", is_active: true, role: "PROJECT_ADMIN", created_at: "2026-01-01" }]
           : input.includes("/datasets")
             ? [{ id: 1 }, { id: 2 }]
             : input.includes("/jobs")

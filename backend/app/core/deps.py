@@ -6,6 +6,7 @@ from jwt import PyJWTError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.audit import write_audit
 from app.core.rbac import Permission, role_has
 from app.core.security import decode_access_token
 from app.db.models import Project, ProjectMembership, ProjectRole, User
@@ -113,8 +114,44 @@ def get_optional_user(
         return None
 
 
-def require_system_admin(auth: AuthContext = Depends(get_auth)) -> AuthContext:
+def _audit_authorization_denial(
+    db: Session,
+    auth: AuthContext,
+    *,
+    resource_type: str,
+    resource_id: str | int | None,
+    required_permission: str,
+    failure_reason: str,
+) -> None:
+    write_audit(
+        db,
+        action="authorization.denied",
+        resource_type=resource_type,
+        resource_id=str(resource_id) if resource_id is not None else None,
+        user_id=auth.user.id,
+        user_email=auth.user.email,
+        success=False,
+        ip_address=auth.ip,
+        request_id=auth.request_id,
+        after={"required_permission": required_permission},
+        failure_reason=failure_reason,
+    )
+    db.commit()
+
+
+def require_system_admin(
+    auth: AuthContext = Depends(get_auth),
+    db: Session = Depends(get_db),
+) -> AuthContext:
     if not auth.is_system_admin:
+        _audit_authorization_denial(
+            db,
+            auth,
+            resource_type="system",
+            resource_id=None,
+            required_permission=Permission.ADMIN.value,
+            failure_reason="system_administrator_required",
+        )
         raise HTTPException(
             status_code=403,
             detail={
@@ -144,6 +181,14 @@ def require_project_perm(perm: Permission):
     ) -> tuple[AuthContext, Project, ProjectRole | None]:
         project = db.get(Project, project_id)
         if not project or project.deleted_at is not None:
+            _audit_authorization_denial(
+                db,
+                auth,
+                resource_type="project",
+                resource_id=project_id,
+                required_permission=perm.value,
+                failure_reason="project_not_found",
+            )
             raise HTTPException(
                 status_code=404,
                 detail={
@@ -155,6 +200,14 @@ def require_project_perm(perm: Permission):
             return auth, project, ProjectRole.PROJECT_ADMIN
         membership = get_membership(db, project_id, auth.user.id)
         if not membership:
+            _audit_authorization_denial(
+                db,
+                auth,
+                resource_type="project",
+                resource_id=project_id,
+                required_permission=perm.value,
+                failure_reason="project_membership_required",
+            )
             raise HTTPException(
                 status_code=403,
                 detail={
@@ -163,6 +216,14 @@ def require_project_perm(perm: Permission):
                 },
             )
         if not role_has(membership.role, perm):
+            _audit_authorization_denial(
+                db,
+                auth,
+                resource_type="project",
+                resource_id=project_id,
+                required_permission=perm.value,
+                failure_reason="project_permission_required",
+            )
             raise HTTPException(
                 status_code=403,
                 detail={

@@ -8,6 +8,7 @@ import {
   type QualityCheck,
   type QualityRule,
 } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -17,9 +18,12 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function DatasetDetail() {
   const { projectId, datasetId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [ds, setDs] = useState<Dataset | null>(null);
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
@@ -34,6 +38,7 @@ export default function DatasetDetail() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     setError("");
@@ -147,7 +152,7 @@ export default function DatasetDetail() {
       <PageHeader
         title={ds?.name ?? "Dataset"}
         description={ds ? `${ds.row_count.toLocaleString()} rows · ${ds.column_count} columns · ${versions.length} version${versions.length === 1 ? "" : "s"}` : "Dataset profile and history."}
-        actions={<Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}`}>▶ Train on this dataset</Link>}
+        actions={canWrite ? <Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}`}>▶ Train on this dataset</Link> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
@@ -194,20 +199,20 @@ export default function DatasetDetail() {
           </section>
           <div className="two-column">
             <section className="panel">
-              <div className="panel-title"><div><span className="eyebrow">Trust</span><h2>Data quality</h2></div><button className="btn secondary" disabled={busy === "quality" || rules.length === 0} onClick={runQuality}>{busy === "quality" ? "Running…" : "Run all checks"}</button></div>
+              <div className="panel-title"><div><span className="eyebrow">Trust</span><h2>Data quality</h2></div>{canWrite && <button className="btn secondary" disabled={busy === "quality" || rules.length === 0} onClick={runQuality}>{busy === "quality" ? "Running…" : "Run all checks"}</button>}</div>
               {rules.length === 0 ? <p className="muted">Create a rule before running quality checks.</p> : <p className="muted">{rules.length} rule set{rules.length === 1 ? "" : "s"} configured.</p>}
-              <form className="compact-form" onSubmit={createRule}>
+              {canWrite && <form className="compact-form" onSubmit={createRule}>
                 <input aria-label="Rule name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
                 <select aria-label="Rule column" value={ruleColumn} onChange={(event) => setRuleColumn(event.target.value)}>{ds?.columns.map((column) => <option key={column}>{column}</option>)}</select>
                 <select aria-label="Rule type" value={ruleType} onChange={(event) => setRuleType(event.target.value)}><option value="not_null">Not null</option><option value="unique">Unique</option></select>
                 <button className="btn secondary" disabled={busy === "rule"}>Add rule</button>
-              </form>
+              </form>}
               <div className="activity-list compact">
                 {checks.map((check) => <div key={check.id}><div><strong>Check #{check.id}</strong><small>{formatDate(check.created_at)}</small></div><StatusBadge status={check.result} /></div>)}
               </div>
             </section>
             <section className="panel">
-              <div className="panel-title"><div><span className="eyebrow">Reproducibility</span><h2>Data splits</h2></div><button className="btn secondary" disabled={busy === "split"} onClick={createSplit}>{busy === "split" ? "Creating…" : "Create 70/15/15 split"}</button></div>
+              <div className="panel-title"><div><span className="eyebrow">Reproducibility</span><h2>Data splits</h2></div>{canWrite && <button className="btn secondary" disabled={busy === "split"} onClick={createSplit}>{busy === "split" ? "Creating…" : "Create 70/15/15 split"}</button>}</div>
               {splits.length === 0 ? <EmptyState title="No saved splits" description="Create a deterministic split for repeatable training." /> : (
                 <div className="activity-list compact">{splits.map((split) => <div key={split.id}><div><strong>{split.name}</strong><small>seed {split.random_seed}</small></div><span>{Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}</span></div>)}</div>
               )}

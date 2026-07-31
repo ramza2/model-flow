@@ -1,16 +1,21 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Dataset } from "../api";
+import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, SuccessNotice, formatDate } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Datasets() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [items, setItems] = useState<Dataset[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
+  const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   const refresh = useCallback(async () => {
     const data = await api<Dataset[]>(`/projects/${projectId}/datasets`);
@@ -57,7 +62,7 @@ export default function Datasets() {
       <PageHeader
         title="Datasets"
         description="Version, profile, validate, and split the data used by your models."
-        actions={<button className="btn" onClick={() => setShowUpload(!showUpload)}>↑ Upload dataset</button>}
+        actions={canWrite ? <button className="btn" onClick={() => setShowUpload(!showUpload)}>↑ Upload dataset</button> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
@@ -83,7 +88,7 @@ export default function Datasets() {
         <EmptyState
           title="No datasets"
           description="Upload a data file or import one from a connected data source."
-          action={<button className="btn" onClick={() => setShowUpload(true)}>Upload dataset</button>}
+          action={canWrite ? <button className="btn" onClick={() => setShowUpload(true)}>Upload dataset</button> : undefined}
         />
       ) : (
         <div className="panel table-wrap">

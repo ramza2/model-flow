@@ -419,12 +419,12 @@ echo "$PIPE_RUN_JSON" \
 echo "$PIPE_RUN_JSON" > artifacts/verify/pipeline-run.json
 pass "visual pipeline publish + execute"
 
-info "8d) Backup smoke + soft dependency advisory scan"
-BACKUP_ROOT="$ROOT/artifacts/verify/backup-smoke" ./scripts/backup.sh \
-  | tee artifacts/verify/backup-smoke.log >/dev/null
-ls artifacts/verify/backup-smoke/*/postgres/modelflow.dump >/dev/null
-ls artifacts/verify/backup-smoke/*/postgres/mlflow.dump >/dev/null
-pass "backup.sh smoke"
+info "8d) PostgreSQL + MinIO backup/restore round-trip"
+ROUNDTRIP_ENDPOINT_ID="$EID" ./scripts/verify-backup-roundtrip.sh \
+  | tee artifacts/verify/backup-roundtrip.log
+pass "backup/restore round-trip"
+
+info "8e) Soft dependency advisory scan"
 set +e
 docker compose exec -T backend sh -c 'pip install -q pip-audit==2.7.3 && pip-audit -r requirements.txt --progress-spinner off' \
   > artifacts/verify/pip-audit.txt 2>&1

@@ -16,6 +16,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Pipeline, type PipelineGraph, type PipelineRun } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -25,6 +26,7 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 const NODE_TYPES = [
   "dataset_load",
@@ -46,11 +48,14 @@ const labelFor = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, 
 export function Pipelines() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [name, setName] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     try {
@@ -80,11 +85,11 @@ export function Pipelines() {
 
   return (
     <div>
-      <PageHeader title="Pipelines" description="Build repeatable data, training, approval, and deployment workflows." actions={<button className="btn" onClick={() => setShowCreate(!showCreate)}>＋ New pipeline</button>} />
+      <PageHeader title="Pipelines" description="Build repeatable data, training, approval, and deployment workflows." actions={canWrite ? <button className="btn" onClick={() => setShowCreate(!showCreate)}>＋ New pipeline</button> : undefined} />
       <ErrorNotice message={error} />
-      {showCreate && <form className="panel inline-form" onSubmit={create}><label>Pipeline name<input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Production training workflow" /></label><button className="btn">Create and open builder</button><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</button></form>}
+      {canWrite && showCreate && <form className="panel inline-form" onSubmit={create}><label>Pipeline name<input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Production training workflow" /></label><button className="btn">Create and open builder</button><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancel</button></form>}
       {loading ? <Loading label="Loading pipelines" /> : pipelines.length === 0 ? (
-        <EmptyState title="No pipelines" description="Create a visual workflow to standardize your model lifecycle." action={<button className="btn" onClick={() => setShowCreate(true)}>Create pipeline</button>} />
+        <EmptyState title="No pipelines" description="Create a visual workflow to standardize your model lifecycle." action={canWrite ? <button className="btn" onClick={() => setShowCreate(true)}>Create pipeline</button> : undefined} />
       ) : (
         <div className="panel table-wrap">
           <table><thead><tr><th>Pipeline</th><th>Status</th><th>Version</th><th>Type</th><th>Created</th></tr></thead>
@@ -99,6 +104,8 @@ export function Pipelines() {
 export function PipelineBuilder() {
   const { projectId, pipelineId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -110,6 +117,7 @@ export function PipelineBuilder() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     try {
@@ -205,11 +213,11 @@ export function PipelineBuilder() {
       <PageHeader
         title={pipeline.name}
         description={`Visual pipeline builder · version ${pipeline.latest_version}`}
-        actions={<><StatusBadge status={pipeline.status} /><button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("save")}>{busy === "save" ? "Saving…" : "Save version"}</button><button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("publish")}>Publish</button><button className="btn" disabled={Boolean(busy)} onClick={() => action("run")}>▶ Run pipeline</button></>}
+        actions={<><StatusBadge status={pipeline.status} />{canWrite && <><button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("save")}>{busy === "save" ? "Saving…" : "Save version"}</button><button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("publish")}>Publish</button><button className="btn" disabled={Boolean(busy)} onClick={() => action("run")}>▶ Run pipeline</button></>}</>}
       />
       <ErrorNotice message={error} /><SuccessNotice message={success} />
       <div className="builder-layout">
-        <aside className="builder-sidebar panel">
+        {canWrite && <aside className="builder-sidebar panel">
           <span className="eyebrow">Add step</span>
           <select value={nodeType} onChange={(event) => setNodeType(event.target.value as (typeof NODE_TYPES)[number])}>{NODE_TYPES.map((type) => <option value={type} key={type}>{labelFor(type)}</option>)}</select>
           <button className="btn btn-wide" onClick={addNode}>＋ Add to canvas</button>
@@ -230,7 +238,7 @@ export function PipelineBuilder() {
             <button className="btn secondary btn-wide" onClick={updateConfig}>Apply configuration</button>
             <button className="btn link danger-text" onClick={() => { setNodes((rows) => rows.filter((node) => node.id !== selectedId)); setEdges((rows) => rows.filter((edge) => edge.source !== selectedId && edge.target !== selectedId)); setSelectedId(""); }}>Remove step</button>
           </>}
-        </aside>
+        </aside>}
         <div className="pipeline-canvas" aria-label="Pipeline graph">
           <ReactFlow
             nodes={nodes}
@@ -264,9 +272,12 @@ export function PipelineBuilder() {
 
 export function PipelineRunDetail() {
   const { projectId, runId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [run, setRun] = useState<PipelineRun | null>(null);
   const [rerunning, setRerunning] = useState(false);
   const [error, setError] = useState("");
+  const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   useEffect(() => {
     let active = true;
@@ -293,7 +304,7 @@ export function PipelineRunDetail() {
   }
 
   return <div>
-    <PageHeader title={`Pipeline run #${runId}`} description="Step-level execution state and logs." actions={<><StatusBadge status={run?.status} />{run?.status === "failed" && <button className="btn" disabled={rerunning} onClick={rerunFromFailed}>{rerunning ? "Restarting…" : "↻ Rerun from failed"}</button>}</>} />
+    <PageHeader title={`Pipeline run #${runId}`} description="Step-level execution state and logs." actions={<><StatusBadge status={run?.status} />{canWrite && run?.status === "failed" && <button className="btn" disabled={rerunning} onClick={rerunFromFailed}>{rerunning ? "Restarting…" : "↻ Rerun from failed"}</button>}</>} />
     <ErrorNotice message={error} />
     {!run ? <Loading label="Loading pipeline run" /> : <>
       <div className="card-grid">{Object.entries(run.node_states).map(([id, state]) => <article className="source-card" key={id}><span className="eyebrow">Step</span><h2>{id}</h2><StatusBadge status={state.status} />{state.branch && <p className="muted">Selected branch: {state.branch}</p>}{state.reason && <p className="muted">{state.reason}</p>}{state.error && <p className="error">{state.error}</p>}</article>)}</div>

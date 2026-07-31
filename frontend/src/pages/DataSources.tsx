@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type DataSource } from "../api";
+import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
@@ -11,9 +12,12 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
+import { userCanProject, useProject } from "../ProjectContext";
 
 export default function DataSources() {
   const { projectId } = useParams();
+  const { user } = useAuth();
+  const { selectedProject } = useProject();
   const [sources, setSources] = useState<DataSource[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
@@ -25,6 +29,7 @@ export default function DataSources() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
     try {
@@ -121,11 +126,11 @@ export default function DataSources() {
       <PageHeader
         title="Data Sources"
         description="Connect managed data systems without exposing credentials in the interface."
-        actions={<button className="btn" onClick={() => setShowForm(!showForm)}>＋ Add data source</button>}
+        actions={canWrite ? <button className="btn" onClick={() => setShowForm(!showForm)}>＋ Add data source</button> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      {showForm && (
+      {canWrite && showForm && (
         <form className="panel form" onSubmit={save}>
           <div className="panel-title"><div><span className="eyebrow">Connection</span><h2>{editing ? "Edit data source" : "New data source"}</h2></div></div>
           <label>Name<input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Analytics warehouse" /></label>
@@ -142,7 +147,7 @@ export default function DataSources() {
         </form>
       )}
       {loading ? <Loading label="Loading data sources" /> : sources.length === 0 ? (
-        <EmptyState title="No connected data sources" description="Add PostgreSQL or use direct dataset upload to bring data into ModelFlow." action={<button className="btn" onClick={() => setShowForm(true)}>Add data source</button>} />
+        <EmptyState title="No connected data sources" description="Add PostgreSQL or use direct dataset upload to bring data into ModelFlow." action={canWrite ? <button className="btn" onClick={() => setShowForm(true)}>Add data source</button> : undefined} />
       ) : (
         <div className="card-grid">
           {sources.map((source) => (
@@ -158,11 +163,11 @@ export default function DataSources() {
                 <div><dt>Last tested</dt><dd>{formatDate(source.last_tested_at)}</dd></div>
               </dl>
               {source.last_test_message && <p className="source-message">{source.last_test_message}</p>}
-              <div className="row-actions">
+              {canWrite && <div className="row-actions">
                 <button className="btn secondary" onClick={() => testSource(source)} disabled={!source.is_active || busy === `test-${source.id}`}>{busy === `test-${source.id}` ? "Testing…" : "Test connection"}</button>
                 <button className="btn link" onClick={() => editSource(source)}>Edit</button>
                 {source.is_active && <button className="btn link danger-text" onClick={() => deactivate(source)}>Deactivate</button>}
-              </div>
+              </div>}
             </article>
           ))}
         </div>

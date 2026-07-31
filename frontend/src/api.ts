@@ -76,10 +76,10 @@ export type AuthResponse = {
 };
 
 export type ProjectRole =
-  | "viewer"
-  | "data_scientist"
-  | "ml_engineer"
-  | "project_admin";
+  | "VIEWER"
+  | "DATA_SCIENTIST"
+  | "ML_ENGINEER"
+  | "PROJECT_ADMIN";
 
 export type Project = {
   id: number;
