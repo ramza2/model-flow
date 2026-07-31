@@ -1,9 +1,10 @@
 # Acceptance Criteria (MVP + v1.0 RC)
 
-Existing MVP criteria are retained and v1.0 criteria are additive. Status values are `PASS`, `FAIL`, `NOT_VERIFIED`, and `PENDING`. `PASS` requires repeatable evidence for the current revision; implementation alone is not evidence.
+Existing MVP criteria are retained and v1.0 criteria are additive. Status values are `PASS`, `FAIL`, and `NOT_VERIFIED`. `PASS` requires repeatable evidence for the current revision; implementation alone is not evidence.
 
-**Remediation revision tip:** `470c854` (after release-review Critical/High fixes).  
-**Clean gate:** `rm -f .env && ./scripts/init-env.sh --non-interactive-test && ./scripts/verify.sh` → **PASS**.
+**Current tip:** `6ba1eb3`  
+**GitHub Actions:** https://github.com/ramza2/model-flow/actions/runs/30619731915 — **success**  
+**Clean gate:** `docker compose --profile source down -v --remove-orphans && rm -f .env && ./scripts/init-env.sh --non-interactive-test && ./scripts/verify.sh` → **PASS** (`artifacts/verify/RESULT.txt` = OK).
 
 ## MVP criteria (retained)
 
@@ -11,7 +12,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 |----|-----------|--------|---------------------|----------------|-------------------|
 | AC-01 | README alone is enough to run the stack on a clean machine | PASS | Documented init-env → compose → login flow | `README.md`; `scripts/init-env.sh` | README runbook |
 | AC-02 | `docker compose` brings up frontend, backend, worker, postgres, mlflow, minio with healthchecks | PASS | Clean-volume Compose health gate | `scripts/verify.sh` sections 2–3 | `artifacts/verify/compose-ps.txt` |
-| AC-03 | Alembic migrations apply cleanly | PASS | Run migrations on clean Postgres | `scripts/verify.sh` section 4 | `artifacts/verify/alembic.txt` |
+| AC-03 | Alembic migrations apply cleanly | PASS | Run migrations on clean Postgres | `scripts/verify.sh` section 4 | `artifacts/verify/alembic.txt` (head `005_model_gate_policies`) |
 | AC-04 | Create project via API and UI | PASS | Authenticated API flow and browser flow | `scripts/verify.sh`; `e2e/happy-path.spec.ts` | `artifacts/verify/RESULT.txt` |
 | AC-05 | Upload CSV dataset to MinIO; metadata in Postgres | PASS | Upload and retrieve a real dataset | `scripts/verify.sh` section 8 | `artifacts/verify/RESULT.txt` |
 | AC-06 | Dataset column names and basic stats available via API/UI | PASS | Dataset API and browser assertions | Backend tests; Playwright | `artifacts/verify/RESULT.txt` |
@@ -21,8 +22,8 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-10 | Model registered; versions listed | PASS | Register trained run and query registry | `scripts/verify.sh` section 8 | `artifacts/verify/RESULT.txt` |
 | AC-11 | Inference endpoint created; sample predict returns results | PASS | Deploy model and invoke prediction | `scripts/verify.sh` section 8 | `artifacts/verify/predict.json` |
 | AC-12 | UI screens wired to real APIs — no mock/fake completion | PASS | Placeholder scan plus browser flow | `scripts/verify.sh` sections 7 and 9 | `artifacts/verify/RESULT.txt` |
-| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | 37 passed |
-| AC-14 | Frontend Vitest + typecheck + lint pass | PASS | Node container checks | `scripts/verify.sh` section 6 | `artifacts/verify/RESULT.txt` |
+| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | **45** passed |
+| AC-14 | Frontend Vitest + typecheck + lint pass | PASS | Node container checks | `scripts/verify.sh` section 6 | 3 Vitest passed |
 | AC-15 | Playwright E2E covers core flow | PASS | Official Playwright image | `e2e/*.spec.ts` (5 tests) | `artifacts/verify/RESULT.txt` |
 | AC-16 | `scripts/verify.sh` runs full verification suite | PASS | Clean volume + init-env + verify | `scripts/verify.sh` | `artifacts/verify/RESULT.txt` = OK |
 | AC-17 | Friendly error messages for common failures | PASS | API error shape `{detail,hint}` | Backend API tests | OpenAPI / tests |
@@ -33,9 +34,9 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-22 | Endpoint ready only after successful model load | PASS | Endpoint create path | Backend/endpoint tests; verify | `artifacts/verify/RESULT.txt` |
 | AC-23 | Cross-project run/model binding rejected | PASS | Isolation tests | `backend/tests/test_rbac_isolation.py` | pytest |
 | AC-24 | Worker health reflects fresh DB heartbeat | PASS | Compose worker healthcheck | `scripts/verify.sh` | `compose-ps.txt` |
-| AC-25 | verify.sh requires only Docker/Compose/curl/bash on host | PASS | Script host-tool check | `scripts/verify.sh` | script header |
+| AC-25 | verify.sh / init-env require only Docker/Compose/curl/bash on host | PASS | Host-tool check; secrets via `python:3.11-slim` container | `scripts/verify.sh`; `scripts/init-env.sh` | script headers |
 | AC-26 | GitHub Actions CI workflow present | PASS | Workflow YAML | `.github/workflows/ci.yml` | Actions UI |
-| AC-27 | PR targeting `main` runs full verification gate | PASS | PR Check on #4 | Actions runs | latest CI success |
+| AC-27 | PR targeting `main` runs full verification gate | PASS | PR Check on #4 | Actions run `30619731915` | success on tip `6ba1eb3` |
 | AC-28 | CI failure uploads verify/screenshots artifacts | PASS | Workflow upload-artifact step | `.github/workflows/ci.yml` | workflow |
 | AC-29 | External Docker images pinned | PASS | Compose/verify pins | `docker-compose.yml`; D-016 | compose |
 | AC-30 | Clean-volume full verification PASS | PASS | `down -v` + init-env + verify | `scripts/verify.sh` | `RESULT.txt` |
@@ -63,7 +64,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-47 | Experiment compare UI | PASS | Experiments pages wired | frontend Experiments/RunCompare | UI |
 | AC-48 | Visual pipeline design/publish/execute | PASS | Pipeline publish+execute in verify; unit engine tests | verify 8c; `test_pipeline_engine.py` | `pipeline-run.json` |
 | AC-49 | Pipeline E2E data→…→registry | PASS | 7-node DAG in verify | verify 8c | `pipeline-run.json` |
-| AC-50 | Model lifecycle + **server** gates | PASS | Register without client gates; server `computed_by=server`; approve | verify register/approve; registry tests | RESULT; gate_results |
+| AC-50 | Model lifecycle + **server** ModelGatePolicy | PASS | Client metadata gate keys → 422; active policy only; `policy_id`/`policy_version`/`computed_by=server` | `test_gate_policy.py`; verify register/approve | RESULT; gate_results |
 | AC-51 | Realtime endpoint metrics/schema | PASS | Predict in verify | verify section 8 | `predict.json` |
 | AC-52 | Batch inference + download | PASS | Batch job in verify | verify section 8 | `batch-result.csv` |
 | AC-53 | Monitoring empty states / real metrics | PASS | Monitoring UI + APIs | UI screenshots | v1-monitoring.png |
@@ -85,19 +86,21 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented | PASS | Doc present | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full gate PASS on Draft PR | PASS | Latest tip workflow success | Actions on `cursor/modelflow-v1-rc-71f2` | CI run URL (see PR) |
+| AC-72 | GitHub Actions Full gate PASS on Draft PR | PASS | Tip workflow success | Actions on `cursor/modelflow-v1-rc-71f2` | run `30619731915` |
 
 ## Additional remediation checks (Release Review)
 
 | Check | Status | Evidence |
 |-------|--------|----------|
 | Legacy `/api` unauthenticated router removed | PASS | `/api/projects` → 404; `/api/v1/projects` without token → 401 |
-| No hardcoded credentials in repo | PASS | Secrets only via `.env` from `init-env.sh`; reject-list in config |
-| Client cannot set `gates_passed` | PASS | Fields removed from schema; server `computed_by=server` |
+| No hardcoded credentials in repo | PASS | Secrets only via `.env` from Docker-backed `init-env.sh`; reject-list in config |
+| Client cannot set `gates_passed` / gate criteria metadata | PASS | Schema forbid + `test_gate_policy.py` 422; server `computed_by=server` |
+| Server-managed `ModelGatePolicy` | PASS | Migration `005`; PATCH admin-only; default on project create |
+| Pipeline cannot override gate criteria | PASS | `gate_policy_id` only; inline `gates` rejected on save/execute |
 | Logout invalidates token | PASS | `token_version` bump; subsequent `/auth/me` → 401 |
 | Pipeline parallel/branch/restart/schedule | PASS | `test_pipeline_engine.py`; migration 004 |
 | Security High/Critical gate fails CI | PASS | verify 8e; `security/allowlist.json` |
 
 ## Remaining NOT_VERIFIED
 
-None for AC-01…AC-72 after remediation gate on tip `470c854` (pending confirmation of latest GitHub Actions run for this tip — update when green).
+None for AC-01…AC-72 on tip `6ba1eb3` (local clean gate PASS; GitHub Actions run `30619731915` success).
