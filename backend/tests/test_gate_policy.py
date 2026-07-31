@@ -11,10 +11,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.security import hash_password
-from app.db.models import Base, ModelLifecycle, ModelVersion, User
+from app.db.models import Base, ModelVersion, User
 from app.db.session import get_db
 from app.main import _rate_windows, app
-from app.services import inference, mlflow_service, registry_service, storage
+from app.services import inference, mlflow_service, storage
 
 engine = create_engine(
     "sqlite+pysqlite:///:memory:",
