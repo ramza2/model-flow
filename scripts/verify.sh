@@ -424,21 +424,45 @@ ROUNDTRIP_ENDPOINT_ID="$EID" ./scripts/verify-backup-roundtrip.sh \
   | tee artifacts/verify/backup-roundtrip.log
 pass "backup/restore round-trip"
 
-info "8e) Soft dependency advisory scan"
+info "8e) Dependency security gate (High/Critical)"
 set +e
-docker compose exec -T backend sh -c 'pip install -q pip-audit==2.7.3 && pip-audit -r requirements.txt --progress-spinner off' \
-  > artifacts/verify/pip-audit.txt 2>&1
+docker compose exec -T backend sh -c \
+  'python -m pip install -q pip-audit && pip-audit -r requirements.txt --progress-spinner off --format json' \
+  > artifacts/verify/pip-audit.json \
+  2> artifacts/verify/pip-audit.stderr.txt
 PIP_AUDIT_RC=$?
 docker run --rm -v "$ROOT/frontend:/app" -w /app "$NODE_IMAGE" \
-  sh -c 'npm ci --silent && npm audit --json' > artifacts/verify/npm-audit.json 2>/dev/null
+  sh -c 'npm ci --silent >/dev/null && npm audit --json' \
+  > artifacts/verify/npm-audit.json \
+  2> artifacts/verify/npm-audit.stderr.txt
 NPM_AUDIT_RC=$?
 set -e
 {
   echo "pip_audit_rc=${PIP_AUDIT_RC}"
   echo "npm_audit_rc=${NPM_AUDIT_RC}"
 } > artifacts/verify/security-scan.txt
-# Advisory only — do not fail the gate on known transitive CVEs.
-pass "soft dependency advisory scan (non-blocking)"
+if [[ "$PIP_AUDIT_RC" -ne 0 && "$PIP_AUDIT_RC" -ne 1 ]]; then
+  fail "pip-audit failed to run (exit=$PIP_AUDIT_RC)"
+fi
+if [[ "$NPM_AUDIT_RC" -ne 0 && "$NPM_AUDIT_RC" -ne 1 ]]; then
+  fail "npm audit failed to run (exit=$NPM_AUDIT_RC)"
+fi
+set +e
+docker run --rm \
+  -v "$ROOT:/work:ro" \
+  -w /work \
+  "$PYTHON_IMAGE" \
+  python scripts/check-security-audits.py \
+    --pip artifacts/verify/pip-audit.json \
+    --npm artifacts/verify/npm-audit.json \
+    --allowlist security/allowlist.json \
+  > artifacts/verify/security-gate.json
+SECURITY_GATE_RC=$?
+set -e
+if [[ "$SECURITY_GATE_RC" -ne 0 ]]; then
+  fail "dependency security gate rejected findings or invalid scan output (exit=$SECURITY_GATE_RC)"
+fi
+pass "no unallowlisted High/Critical dependency vulnerabilities"
 
 info "9) Playwright E2E (official Playwright container)"
 docker run --rm --network host \

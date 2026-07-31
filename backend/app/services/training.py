@@ -498,6 +498,7 @@ class SklearnTrainingRunner:
                 artifact_path="model",
                 signature=signature,
                 input_example=input_example,
+                serialization_format=mlflow.sklearn.SERIALIZATION_FORMAT_CLOUDPICKLE,
             )
             run_id = run.info.run_id
             model_uri = f"runs:/{run_id}/model"
