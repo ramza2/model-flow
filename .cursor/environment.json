@@ -1,0 +1,16 @@
+{
+  "name": "modelflow",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "true",
+  "start": "sudo service docker start",
+  "ports": [
+    { "name": "fastapi", "port": 8000 },
+    { "name": "react", "port": 5173 },
+    { "name": "postgres", "port": 5432 },
+    { "name": "mlflow", "port": 5000 },
+    { "name": "minio", "port": 9000 },
+    { "name": "minio-console", "port": 9001 }
+  ]
+}
