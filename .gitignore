@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ModelFlow local
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+node_modules/
+playwright-report/
+test-results/
+artifacts/
+.pytest_cache/

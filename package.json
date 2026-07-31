@@ -1,0 +1,11 @@
+{
+  "name": "model-flow",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  },
+  "scripts": {
+    "test:e2e": "playwright test",
+    "verify": "bash scripts/verify.sh"
+  }
+}
