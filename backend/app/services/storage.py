@@ -22,7 +22,12 @@ def s3_client():
 def ensure_buckets() -> None:
     client = s3_client()
     existing = {b["Name"] for b in client.list_buckets().get("Buckets", [])}
-    for bucket in (settings.minio_datasets_bucket, settings.minio_mlflow_bucket):
+    for bucket in (
+        settings.minio_datasets_bucket,
+        settings.minio_mlflow_bucket,
+        settings.minio_batch_bucket,
+        settings.minio_artifacts_bucket,
+    ):
         if bucket not in existing:
             client.create_bucket(Bucket=bucket)
 

@@ -3,12 +3,27 @@ import path from "path";
 
 const iris = path.resolve(__dirname, "../samples/iris.csv");
 
-test("full MLOps happy path", async ({ page }) => {
+function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} is required. Run Playwright through ./scripts/verify.sh.`);
+  }
+  return value;
+}
+
+const adminEmail = requiredEnv("E2E_ADMIN_EMAIL");
+const adminPassword = requiredEnv("E2E_ADMIN_PASSWORD");
+
+test("authenticated model lifecycle happy path", async ({ page }) => {
   const projectName = `e2e-${Date.now()}`;
 
   await page.goto("/");
+  await expect(page).toHaveURL(/\/login$/);
+  await page.getByTestId("login-email").fill(adminEmail);
+  await page.getByTestId("login-password").fill(adminPassword);
+  await page.getByTestId("login-submit").click();
   await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
-  await page.screenshot({ path: "artifacts/screenshots/01-home.png", fullPage: true });
+  await page.screenshot({ path: "artifacts/screenshots/01-authenticated-home.png", fullPage: true });
 
   await page.getByRole("link", { name: "Create project" }).click();
   await page.getByTestId("project-name").fill(projectName);
@@ -17,7 +32,8 @@ test("full MLOps happy path", async ({ page }) => {
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/02-project.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Datasets" }).click();
+  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
@@ -36,20 +52,22 @@ test("full MLOps happy path", async ({ page }) => {
   await page.getByTestId("register-model").click();
   await expect(page.getByText(/Registered/i)).toBeVisible({ timeout: 60_000 });
 
-  await page.getByRole("link", { name: "Models" }).click();
-  await expect(page.getByText(/project-.*-classifier/)).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "Model Registry" }).click();
+  await expect(page.getByRole("link", { name: "classifier" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "classifier" }).click();
+  await page.getByRole("button", { name: "Request approval" }).click();
+  await expect(page.getByRole("button", { name: /Approve/ })).toBeVisible();
+  await page.getByTestId("approve-model").click();
+  await expect(page.getByText("Model approved.")).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/05-registry.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Endpoints" }).click();
+  await page.getByRole("link", { name: "Deployments" }).click();
+  await page.getByRole("button", { name: "New deployment" }).click();
   await page.getByTestId("endpoint-name").fill("e2e-endpoint");
   await page.getByTestId("endpoint-create").click();
-  await expect(page.getByRole("link", { name: "Test inference" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("link", { name: "Test inference" }).click();
+  await expect(page.getByRole("link", { name: "Test prediction" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "Test prediction" }).click();
   await page.getByTestId("predict-submit").click();
   await expect(page.getByTestId("predict-result")).toContainText("predictions", { timeout: 60_000 });
   await page.screenshot({ path: "artifacts/screenshots/06-predict.png", fullPage: true });
-
-  await page.goto("/system");
-  await expect(page.getByRole("heading", { name: /System status/i })).toBeVisible();
-  await page.screenshot({ path: "artifacts/screenshots/07-system.png", fullPage: true });
 });

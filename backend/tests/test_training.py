@@ -11,6 +11,7 @@ def test_sklearn_runner_trains(tmp_path, monkeypatch):
     tracking = tmp_path / "mlruns"
     tracking.mkdir()
     monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking.as_uri())
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())

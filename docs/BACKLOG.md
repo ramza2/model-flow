@@ -1,27 +1,91 @@
-# Backlog (MVP)
+# Backlog — ModelFlow v1.0 RC
 
-## P0 — Must ship
+Phases execute sequentially without waiting for user approval. Mark items done in PROGRESS.md as they complete.
 
-1. Docs (PRODUCT_SPEC, ARCHITECTURE, ACCEPTANCE, DECISIONS, PROGRESS)
-2. Compose stack + healthchecks
-3. Backend CRUD: projects, datasets, jobs, runs, models, endpoints
-4. Worker + SklearnTrainingRunner
-5. MinIO upload + dataset profiling
-6. MLflow logging + registry
-7. Inference predict API
-8. Frontend 15 screens
-9. pytest / Vitest / Playwright
-10. `scripts/verify.sh` + README
+## Phase 1 — Foundation
 
-## P1 — Nice if time allows
+- [x] `/api/v1` versioning; consistent errors; correlation ID; structured logging
+- [x] Extend models + Alembic migration(s) for v1.0 schema
+- [x] Keep Compose healthchecks; worker heartbeat
+- [x] Preserve MVP train path while extending
 
-- Run comparison charts
-- Endpoint traffic simple counter
-- Dark/light theme toggle
+## Phase 2 — Auth / Users / RBAC
 
-## P2 — Post-MVP
+- [x] Bootstrap admin from env
+- [x] Login / logout / me / password change
+- [x] User CRUD (admin), activate/deactivate
+- [x] JWT + expiry; bcrypt; lockout / rate limit
+- [x] Project membership; role permissions; 403 path
+- [x] Frontend protected routes + role menus
 
-- Auth / RBAC
-- Airflow-backed TrainingRunner
-- Multi-framework trainers (XGBoost, PyTorch)
-- Cloud deploy guides
+## Phase 3 — Data sources & datasets
+
+- [x] File sources CSV/JSON/Parquet
+- [x] Postgres source: register, test, schema/table, import
+- [x] Encrypt secrets; no plaintext in API/logs
+- [x] Dataset versions, profiling, preview, compare, lineage
+- [x] Quality rules + checks; train policy on FAIL
+- [x] Train/val/test splits with seed
+
+## Phase 4 — Training & experiments
+
+- [x] Classification: LR, RF, GB
+- [x] Regression: Ridge, RF, GB
+- [x] Preprocessing + feature select + metrics
+- [x] Job lifecycle: queue, cancel, retry, clone, concurrency limits
+- [x] MLflow params/metrics/artifacts enrichment
+- [x] Experiment UI: filter, sort, compare, charts
+
+## Phase 5 — Visual Pipeline
+
+- [x] React Flow builder; design vs run views
+- [x] Node types (load, quality, split, preprocess, train, eval, condition, register, approve, deploy, batch, notify)
+- [x] Validate DAG; versions; draft/publish; import/export
+- [x] Pipeline engine on worker; parallel independent nodes; restart from failed
+- [x] E2E pipeline path to registry
+
+## Phase 6 — Registry & approval
+
+- [x] States: CANDIDATE → … → PRODUCTION / REJECTED / ARCHIVED
+- [x] Gates; approve/reject; promote; rollback; audit
+- [x] Lineage + version compare
+
+## Phase 7 — Serving & batch
+
+- [x] Endpoint CRUD, start/stop, swap, rollback, health, schema, test predict
+- [x] Latency/error counters; feature schema validation
+- [x] Batch jobs + MinIO results + download
+- [x] Inference log retention setting (default: no raw input)
+
+## Phase 8 — Monitoring / drift / retrain
+
+- [x] Service / data / model monitoring panels (empty states, no fake metrics)
+- [x] PSI / KS / categorical distance drift
+- [x] Alerts; retrain triggers without auto-prod swap
+
+## Phase 9 — Admin / audit / ops
+
+- [x] Admin screens: users, membership, system, workers, queue, storage, audit, settings, alerts, retention
+- [x] Soft vs hard delete policy documented + applied
+- [x] Audit search/filter/detail UI
+
+## Phase 10 — UI/UX
+
+- [x] App shell: header, sidebar, project selector, user menu, alerts, breadcrumb
+- [x] All menus wired to real APIs; no mock data
+- [x] Wizards, toasts, confirmation, a11y basics, pagination
+
+## Phase 11 — Security / performance / scripts
+
+- [x] Security headers, CORS, rate limit, validation, XSS/SQLi hygiene
+- [x] `backup.sh` / `restore.sh` / `reset-dev.sh` / `seed-demo.sh`
+- [x] Dependency vulnerability scan in CI (informational / non-breaking)
+
+## Phase 12 — Release verification
+
+- [x] Extend verify.sh for auth + all E2E-01..09 gates
+- [x] Playwright scenarios
+- [x] Clean volume PASS
+- [x] GitHub Actions PASS
+- [x] Screenshots/video evidence
+- [x] Draft PR with full report; AC table all PASS

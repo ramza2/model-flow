@@ -149,6 +149,8 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -226,3 +228,4 @@ playwright-report/
 test-results/
 artifacts/
 .pytest_cache/
+backups/

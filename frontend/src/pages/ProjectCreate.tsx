@@ -1,27 +1,31 @@
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, Project } from "../api";
+import { Link, useNavigate } from "react-router-dom";
+import { api, type Project } from "../api";
+import { ErrorNotice, PageHeader } from "../components";
+import { useProject } from "../ProjectContext";
 
 export default function ProjectCreate() {
   const nav = useNavigate();
+  const { refreshProjects, selectProject } = useProject();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError(null);
+    setError("");
     try {
-      const p = await api<Project>("/api/projects", {
+      const project = await api<Project>("/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, description }),
       });
-      nav(`/projects/${p.id}`);
+      await refreshProjects();
+      selectProject(project.id);
+      nav(`/projects/${project.id}`);
     } catch (err) {
-      setError(String((err as Error).message || err));
+      setError(err instanceof Error ? err.message : "Project could not be created.");
     } finally {
       setBusy(false);
     }
@@ -29,9 +33,8 @@ export default function ProjectCreate() {
 
   return (
     <div>
-      <h1>Create project</h1>
-      <p className="lead">Name a workspace for your datasets and training runs.</p>
-      {error && <div className="error">{error}</div>}
+      <PageHeader title="Create project" description="Set up a secure workspace for your ML lifecycle." />
+      <ErrorNotice message={error} />
       <form className="form panel" onSubmit={onSubmit}>
         <label>
           Name
@@ -39,11 +42,19 @@ export default function ProjectCreate() {
         </label>
         <label>
           Description
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} data-testid="project-description" />
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What will this project deliver?"
+            data-testid="project-description"
+          />
         </label>
-        <button className="btn" type="submit" disabled={busy} data-testid="project-submit">
-          {busy ? "Creating…" : "Create project"}
-        </button>
+        <div className="row-actions form-actions">
+          <button className="btn" type="submit" disabled={busy} data-testid="project-submit">
+            {busy ? "Creating…" : "Create project"}
+          </button>
+          <Link className="btn secondary" to="/projects">Cancel</Link>
+        </div>
       </form>
     </div>
   );
