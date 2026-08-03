@@ -23,13 +23,29 @@ docker compose up --build -d
 The initializer creates a mode-`600` `.env` with random credentials and prints the
 bootstrap administrator email and password once. Save them in a password manager.
 
-Open:
+### Local host ports
 
-- UI: http://localhost:3000
-- API v1: http://localhost:8000/api/v1
-- API docs: http://localhost:8000/docs
-- MLflow: http://localhost:5000
-- MinIO console: http://localhost:9001
+Publish ports are configured in `.env` (see `.env.example`). **Do not edit
+`docker-compose.yml` to change local ports** — that file is tracked and causes
+merge conflicts when each developer picks different host ports. Keep your personal
+`.env` out of Git (it is gitignored).
+
+Default host ports and URLs after `./scripts/init-env.sh`:
+
+| Service | `.env` variable | Default | URL |
+|---------|-----------------|---------|-----|
+| UI | `FRONTEND_HOST_PORT` | `3000` | http://localhost:3000 |
+| API v1 | `BACKEND_HOST_PORT` | `8000` | http://localhost:8000/api/v1 |
+| API docs | `BACKEND_HOST_PORT` | `8000` | http://localhost:8000/docs |
+| MLflow | `MLFLOW_HOST_PORT` | `5000` | http://localhost:5000 |
+| MinIO API | `MINIO_API_HOST_PORT` | `9000` | http://localhost:9000 |
+| MinIO console | `MINIO_CONSOLE_HOST_PORT` | `9001` | http://localhost:9001 |
+| PostgreSQL | `POSTGRES_HOST_PORT` | `5432` | `localhost:5432` |
+| Source PostgreSQL | `SOURCE_POSTGRES_HOST_PORT` | `5433` | `localhost:5433` |
+
+If you change `FRONTEND_HOST_PORT`, `init-env.sh` keeps
+`http://localhost:${FRONTEND_HOST_PORT}` in `CORS_ORIGINS`. Container-internal
+ports and service DNS names (`backend:8000`, `postgres:5432`, …) stay fixed.
 
 Sign in with the credentials printed by `init-env.sh`, open the user menu, choose
 **Change password**, and replace the bootstrap password immediately. MinIO credentials
@@ -83,8 +99,8 @@ Seed a running stack with a demo project and `samples/iris.csv`:
 ./scripts/seed-demo.sh
 ```
 
-An optional PostgreSQL source on host port `5433` contains
-`public.customers` for data-source integration tests:
+An optional PostgreSQL source (host port `SOURCE_POSTGRES_HOST_PORT`, default
+`5433`) contains `public.customers` for data-source integration tests:
 
 ```bash
 docker compose --profile source up -d postgres-source
@@ -92,7 +108,7 @@ docker compose --profile source up -d postgres-source
 
 Use the generated `SOURCE_POSTGRES_USER`, `SOURCE_POSTGRES_PASSWORD`, and
 `SOURCE_POSTGRES_DB` values from `.env`. The host is `postgres-source` from Compose
-services and `localhost:5433` from the host.
+services and `localhost:${SOURCE_POSTGRES_HOST_PORT}` from the host.
 
 ## Backup, restore, and reset
 
@@ -156,14 +172,14 @@ Backend (requires Compose infra services):
 set -a
 source .env
 set +a
-export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
+export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_HOST_PORT:-5432}/${POSTGRES_DB}"
 export MINIO_ACCESS_KEY="$MINIO_ROOT_USER"
 export MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD"
 cd backend
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port "${BACKEND_HOST_PORT:-8000}"
 python -m app.workers.runner
 ```
 

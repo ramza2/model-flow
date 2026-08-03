@@ -40,9 +40,10 @@ echo "Stopping application services during restore"
 docker compose stop frontend worker backend mlflow >/dev/null 2>&1 || true
 docker compose up -d postgres minio
 
+MINIO_API_HOST_PORT="${MINIO_API_HOST_PORT:-9000}"
 for attempt in $(seq 1 60); do
   if docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null \
-    && curl -sf http://localhost:9000/minio/health/live >/dev/null; then
+    && curl -sf "http://localhost:${MINIO_API_HOST_PORT}/minio/health/live" >/dev/null; then
     break
   fi
   if [[ $attempt -eq 60 ]]; then

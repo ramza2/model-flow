@@ -10,6 +10,7 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   use: {
+    // Prefer E2E_BASE_URL from verify.sh / .env FRONTEND_HOST_PORT.
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",

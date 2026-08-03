@@ -21,7 +21,8 @@ set +a
 : "${MINIO_ROOT_USER:?Missing MinIO user in .env}"
 : "${MINIO_ROOT_PASSWORD:?Missing MinIO password in .env}"
 
-API_BASE="${API_BASE:-http://localhost:8000/api/v1}"
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
+API_BASE="${API_BASE:-http://localhost:${BACKEND_HOST_PORT}/api/v1}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.11-slim}"
 ARTIFACT_DIR="${VERIFY_ARTIFACT_DIR:-$ROOT/artifacts/verify}"
 RUN_TAG="$(date +%s)-$$-$RANDOM"
@@ -125,7 +126,7 @@ fi
 ./scripts/restore.sh "$BACKUP_DIR" \
   | tee "$ARTIFACT_DIR/backup-roundtrip-restore.log"
 
-curl -fsS http://localhost:8000/api/health \
+curl -fsS "http://localhost:${BACKEND_HOST_PORT}/api/health" \
   > "$ARTIFACT_DIR/backup-roundtrip-health.json"
 LOGIN="$(curl -fsS -X POST "$API_BASE/auth/login" \
   -H 'Content-Type: application/json' \

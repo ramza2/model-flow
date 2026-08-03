@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -24,7 +24,7 @@ services:
       POSTGRES_PASSWORD: ${SOURCE_POSTGRES_PASSWORD:?SOURCE_POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${SOURCE_POSTGRES_DB:?SOURCE_POSTGRES_DB is required}
     ports:
-      - "5433:5432"
+      - "${SOURCE_POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres_source_data:/var/lib/postgresql/data
       - ./scripts/init-source.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -41,8 +41,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -92,7 +92,7 @@ services:
       --default-artifact-root s3://mlflow/
       --serve-artifacts
     ports:
-      - "5000:5000"
+      - "${MLFLOW_HOST_PORT:-5000}:5000"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health')\""]
       interval: 10s
@@ -130,7 +130,7 @@ services:
       MODELFLOW_ENCRYPTION_KEY: ${MODELFLOW_ENCRYPTION_KEY:?MODELFLOW_ENCRYPTION_KEY is required}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
     ports:
-      - "8000:8000"
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000"
@@ -180,7 +180,7 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "3000:80"
+      - "${FRONTEND_HOST_PORT:-3000}:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/ >/dev/null || exit 1"]
       interval: 5s

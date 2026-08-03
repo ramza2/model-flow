@@ -16,7 +16,7 @@ Environment is defined by `.cursor/environment.json` → `.cursor/Dockerfile` (U
 
 ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.runner`), React/Vite UI (`frontend`), Postgres, MLflow, MinIO via `docker compose`.
 
-- Preferred full stack: run `./scripts/init-env.sh`, then `docker compose up --build -d` (see README). UI http://localhost:3000, API http://localhost:8000/docs.
+- Preferred full stack: run `./scripts/init-env.sh`, then `docker compose up --build -d` (see README). Host ports come from `.env` (`FRONTEND_HOST_PORT`, `BACKEND_HOST_PORT`, …); do not edit `docker-compose.yml` for local port conflicts.
 - Full gate: `./scripts/verify.sh` (Compose + health + migrations + lint/tests in containers + API flow + Playwright container). Host needs Docker, Compose, curl, bash — not Node/npm/host Python.
 - Same gate runs in GitHub Actions (`.github/workflows/ci.yml`) on PRs to `main`, pushes to `main`, and `workflow_dispatch`. Failure artifacts: `artifacts/verify/`, `artifacts/screenshots/`.
 - External images are pinned (see `docs/DECISIONS.md` D-016). Do not switch back to `latest` without pull/run verification.

@@ -13,7 +13,6 @@ NODE_IMAGE="node:22.17-alpine"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
 PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
-API_BASE="http://localhost:8000/api/v1"
 
 VERIFY_EXIT=0
 VERIFY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -116,9 +115,25 @@ ADMIN_PASSWORD="$MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD"
 export E2E_ADMIN_EMAIL="$ADMIN_EMAIL"
 export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
+POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-5432}"
+SOURCE_POSTGRES_HOST_PORT="${SOURCE_POSTGRES_HOST_PORT:-5433}"
+MINIO_API_HOST_PORT="${MINIO_API_HOST_PORT:-9000}"
+MINIO_CONSOLE_HOST_PORT="${MINIO_CONSOLE_HOST_PORT:-9001}"
+MLFLOW_HOST_PORT="${MLFLOW_HOST_PORT:-5000}"
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
+FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-3000}"
+API_BASE="http://localhost:${BACKEND_HOST_PORT}/api/v1"
+FRONTEND_BASE_URL="http://localhost:${FRONTEND_HOST_PORT}"
+MLFLOW_BASE_URL="http://localhost:${MLFLOW_HOST_PORT}"
+export E2E_BASE_URL="$FRONTEND_BASE_URL"
+
 info "1) Docker Compose config"
 docker compose config -q
 pass "compose config"
+
+info "1b) Custom host-port compose config"
+./scripts/test-compose-host-ports.sh
+pass "custom host ports reflected in compose config"
 
 info "2) Build & start stack (clean volumes — no host volume reuse)"
 docker compose --profile source down -v --remove-orphans
@@ -132,8 +147,8 @@ LOGIN_PAYLOAD="{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 LOGIN=""
 for i in $(seq 1 120); do
   if curl -sf "$API_BASE/health" >/dev/null \
-    && curl -sf http://localhost:3000/ >/dev/null \
-    && curl -sf http://localhost:5000/health >/dev/null; then
+    && curl -sf "$FRONTEND_BASE_URL/" >/dev/null \
+    && curl -sf "${MLFLOW_BASE_URL}/health" >/dev/null; then
     LOGIN="$(curl -sf -X POST "$API_BASE/auth/login" \
       -H 'Content-Type: application/json' \
       -d "$LOGIN_PAYLOAD" || true)"
@@ -478,7 +493,7 @@ info "9) Playwright E2E (official Playwright container)"
 docker run --rm --network host \
   -v "$ROOT:/work" \
   -w /work \
-  -e E2E_BASE_URL=http://localhost:3000 \
+  -e E2E_BASE_URL="$FRONTEND_BASE_URL" \
   -e E2E_ADMIN_EMAIL="$ADMIN_EMAIL" \
   -e E2E_ADMIN_PASSWORD="$E2E_ADMIN_PASSWORD" \
   -e HOME=/tmp \
