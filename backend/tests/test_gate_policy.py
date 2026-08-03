@@ -14,7 +14,7 @@ from app.core.security import hash_password
 from app.db.models import Base, ModelVersion, User
 from app.db.session import get_db
 from app.main import _rate_windows, app
-from app.services import inference, mlflow_service, storage
+from app.services import inference, mlflow_service, registry_service, storage
 
 engine = create_engine(
     "sqlite+pysqlite:///:memory:",
@@ -58,6 +58,11 @@ def setup_gate_policy(monkeypatch):
         lambda bucket, key: OBJECT_STORE[(bucket, key)],
     )
     monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-1")
+    monkeypatch.setattr(
+        registry_service,
+        "_mlflow_logged_feature_schema",
+        lambda run_id: [],
+    )
     with TestingSessionLocal() as db:
         db.add(
             User(

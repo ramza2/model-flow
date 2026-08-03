@@ -65,6 +65,11 @@ def setup_v1(monkeypatch):
         lambda bucket, key: OBJECT_STORE[(bucket, key)],
     )
     monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-1")
+    monkeypatch.setattr(
+        registry_service,
+        "_mlflow_logged_feature_schema",
+        lambda run_id: [],
+    )
     with TestingSessionLocal() as db:
         db.add(
             User(
