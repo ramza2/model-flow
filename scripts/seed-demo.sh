@@ -4,16 +4,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib.sh"
 
-if [[ -f "$ROOT/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT/.env"
-  set +a
+if ! modelflow_load_env "$ROOT"; then
+  echo "Missing $(modelflow_env_file "$ROOT"); initialize the environment first." >&2
+  exit 2
 fi
 
-: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Set MODELFLOW_BOOTSTRAP_ADMIN_EMAIL in .env}"
-: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Set MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD in .env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Set MODELFLOW_BOOTSTRAP_ADMIN_EMAIL in env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Set MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD in env}"
 
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
 API_BASE="${MODELFLOW_API_BASE:-http://localhost:${BACKEND_HOST_PORT}/api/v1}"
@@ -52,9 +52,7 @@ PROJECT="$(
     -H "Content-Type: application/json" \
     -d "$PROJECT_PAYLOAD"
 )"
-PROJECT_ID="$(
-  echo "$PROJECT" | json_get 'import json,sys; print(json.load(sys.stdin)["id"])'
-)"
+PROJECT_ID="$(echo "$PROJECT" | json_get 'import json,sys; print(json.load(sys.stdin)["id"])')"
 
 DATASET="$(
   curl -fsS -X POST "$API_BASE/projects/$PROJECT_ID/datasets" \

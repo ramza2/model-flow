@@ -69,11 +69,22 @@ docker compose down -v --remove-orphans
 ./scripts/verify.sh
 ```
 
+`verify.sh` is a **clean verification**: it tears down Compose and deletes volumes
+(`down -v`) before rebuilding, so local data in those volumes is wiped. It does **not**
+rewrite your project `.env` or rotate credentials. Verification credentials are written
+to a temporary env file and passed with `docker compose --env-file`.
+
+If a project `.env` already exists, `verify.sh` reads its `*_HOST_PORT` values (and any
+already-exported ports in the shell / CI) and uses those for the run. Change ports in
+`.env` when another Docker stack already binds the defaults — do not edit
+`docker-compose.yml`.
+
 The script builds the stack with clean volumes, waits for the bootstrap administrator,
 checks health, runs Alembic / lint / tests, and exercises the authenticated `/api/v1`
 data-quality, training, registry, serving, batch, drift, and audit flow. It then runs
 Playwright E2E in the official Playwright container. On failure it writes Compose status
-and service logs under `artifacts/verify/`.
+and service logs under `artifacts/verify/`. CI runs this gate on non-default host ports
+and also asserts default-port Compose config rendering.
 
 ## Authentication and bootstrap
 
@@ -149,7 +160,7 @@ Behavior:
 - Cancels superseded runs for the same ref (`concurrency`)
 - Least-privilege token permissions (`contents: read`, `checks: write`)
 - 60-minute job timeout
-- Executes `./scripts/verify.sh` end-to-end
+- Executes `./scripts/verify.sh` end-to-end on **non-default host ports** (and asserts default-port Compose config)
 - On failure, uploads `artifacts/verify/` and `artifacts/screenshots/` (plus Compose `ps` / service logs collected in the workflow)
 
 ### CI Badge

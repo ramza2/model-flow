@@ -4,18 +4,18 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib.sh"
 
-if [[ -f "$ROOT/.env" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "$ROOT/.env"
-  set +a
+if ! modelflow_load_env "$ROOT"; then
+  echo "Missing $(modelflow_env_file "$ROOT"); initialize the environment first." >&2
+  exit 2
 fi
 
-: "${POSTGRES_USER:?Set POSTGRES_USER in .env}"
-: "${POSTGRES_DB:?Set POSTGRES_DB in .env}"
-: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
-: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
+: "${POSTGRES_USER:?Set POSTGRES_USER in env}"
+: "${POSTGRES_DB:?Set POSTGRES_DB in env}"
+: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in env}"
+: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in env}"
 
 if [[ $# -ne 1 ]]; then
   echo "Usage: $0 <backup-directory>" >&2
@@ -37,12 +37,12 @@ for bucket in datasets mlflow batch-results artifacts; do
 done
 
 echo "Stopping application services during restore"
-docker compose stop frontend worker backend mlflow >/dev/null 2>&1 || true
-docker compose up -d postgres minio
+modelflow_compose stop frontend worker backend mlflow >/dev/null 2>&1 || true
+modelflow_compose up -d postgres minio
 
 MINIO_API_HOST_PORT="${MINIO_API_HOST_PORT:-9000}"
 for attempt in $(seq 1 60); do
-  if docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null \
+  if modelflow_compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres >/dev/null \
     && curl -sf "http://localhost:${MINIO_API_HOST_PORT}/minio/health/live" >/dev/null; then
     break
   fi
@@ -59,17 +59,17 @@ for database in "$POSTGRES_DB" mlflow; do
   if [[ "$database" == "$POSTGRES_DB" ]]; then
     dump_name="modelflow"
   fi
-  docker compose exec -T postgres \
+  modelflow_compose exec -T postgres \
     dropdb -U "$POSTGRES_USER" --maintenance-db=postgres --if-exists --force "$database"
-  docker compose exec -T postgres \
+  modelflow_compose exec -T postgres \
     createdb -U "$POSTGRES_USER" --owner="$POSTGRES_USER" "$database"
-  docker compose exec -T postgres \
+  modelflow_compose exec -T postgres \
     pg_restore -U "$POSTGRES_USER" -d "$database" --no-owner --no-acl --exit-on-error \
     < "$BACKUP_DIR/postgres/$dump_name.dump"
 done
 
 echo "Restoring MinIO buckets"
-docker compose run --rm --no-deps \
+modelflow_compose run --rm --no-deps \
   -v "$BACKUP_DIR/minio:/backup:ro" \
   --entrypoint /bin/sh \
   minio-init -c '
@@ -82,5 +82,5 @@ docker compose run --rm --no-deps \
   '
 
 echo "Starting restored stack"
-docker compose up -d --wait --wait-timeout 300 mlflow backend worker frontend
+modelflow_compose up -d --wait --wait-timeout 300 mlflow backend worker frontend
 echo "Restore complete from: $BACKUP_DIR"

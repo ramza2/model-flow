@@ -5,21 +5,18 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib.sh"
 
-if [[ ! -f "$ROOT/.env" ]]; then
-  echo "Missing $ROOT/.env; initialize the verification environment first." >&2
+if ! modelflow_load_env "$ROOT"; then
+  echo "Missing $(modelflow_env_file "$ROOT"); initialize the verification environment first." >&2
   exit 2
 fi
 
-set -a
-# shellcheck disable=SC1091
-source "$ROOT/.env"
-set +a
-
-: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Missing bootstrap administrator email in .env}"
-: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Missing bootstrap administrator password in .env}"
-: "${MINIO_ROOT_USER:?Missing MinIO user in .env}"
-: "${MINIO_ROOT_PASSWORD:?Missing MinIO password in .env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Missing bootstrap administrator email in env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Missing bootstrap administrator password in env}"
+: "${MINIO_ROOT_USER:?Missing MinIO user in env}"
+: "${MINIO_ROOT_PASSWORD:?Missing MinIO password in env}"
 
 BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
 API_BASE="${API_BASE:-http://localhost:${BACKEND_HOST_PORT}/api/v1}"
@@ -52,14 +49,14 @@ api() {
 }
 
 object_checksum() {
-  docker compose run --rm --no-deps -T \
+  modelflow_compose run --rm --no-deps -T \
     -e OBJECT_KEY="$OBJECT_KEY" \
     --entrypoint /bin/sh \
     minio-init -c '
       set -eu
       mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
       mc cat "local/datasets/$OBJECT_KEY"
-    ' | docker compose exec -T backend python -c \
+    ' | modelflow_compose exec -T backend python -c \
       'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
 }
 
@@ -99,7 +96,7 @@ BACKUP_DIR="$BACKUP_DIR" ./scripts/backup.sh \
   | tee "$ARTIFACT_DIR/backup-roundtrip-backup.log"
 
 api -X DELETE "$API_BASE/projects/$PROJECT_ID" >/dev/null
-docker compose run --rm --no-deps -T \
+modelflow_compose run --rm --no-deps -T \
   -e OBJECT_KEY="$OBJECT_KEY" \
   --entrypoint /bin/sh \
   minio-init -c '
@@ -113,7 +110,7 @@ PROJECT_STATUS="$(curl -sS -o "$ARTIFACT_DIR/backup-roundtrip-mutated-project.js
   -H "Authorization: Bearer $TOKEN" \
   "$API_BASE/projects/$PROJECT_ID")"
 [[ "$PROJECT_STATUS" == "404" ]] || fail "deleted marker project remained visible (HTTP $PROJECT_STATUS)"
-if docker compose run --rm --no-deps -T \
+if modelflow_compose run --rm --no-deps -T \
   -e OBJECT_KEY="$OBJECT_KEY" \
   --entrypoint /bin/sh \
   minio-init -c '
