@@ -128,17 +128,51 @@ assert_user_env_unchanged() {
 
 cleanup_temp_files() {
   local f
-  for f in "${TEMP_FILES[@]:-}"; do
-    [[ -n "$f" ]] || continue
-    rm -f "$f"
-  done
+  if ((${#TEMP_FILES[@]} > 0)); then
+    for f in "${TEMP_FILES[@]}"; do
+      [[ -n "$f" ]] || continue
+      rm -f "$f"
+    done
+  fi
   TEMP_FILES=()
 }
 
+# Register in the *current* shell. Never call via command substitution —
+# that would run in a subshell and leave TEMP_FILES empty for EXIT cleanup.
 register_temp() {
   local path="$1"
+  [[ -n "$path" ]] || {
+    echo "[FAIL] env-preservation: register_temp requires a path" >&2
+    return 1
+  }
   TEMP_FILES+=("$path")
-  printf '%s\n' "$path"
+}
+
+assert_temp_paths_absent() {
+  local manifest="$1"
+  local label="$2"
+  local f
+  [[ -f "$manifest" ]] || {
+    echo "[FAIL] env-preservation: missing temp manifest (${label}): $manifest" >&2
+    return 1
+  }
+  while IFS= read -r f || [[ -n "$f" ]]; do
+    [[ -n "$f" ]] || continue
+    if [[ -e "$f" ]]; then
+      echo "[FAIL] env-preservation: temp fixture still present after ${label}: $f" >&2
+      return 1
+    fi
+  done < "$manifest"
+  return 0
+}
+
+write_temp_manifest() {
+  local manifest="$1"
+  if ((${#TEMP_FILES[@]} == 0)); then
+    echo "[FAIL] env-preservation: TEMP_FILES empty when writing $manifest" >&2
+    return 1
+  fi
+  printf '%s\n' "${TEMP_FILES[@]}" > "$manifest"
 }
 
 on_exit() {
@@ -147,6 +181,17 @@ on_exit() {
   trap - EXIT INT TERM
   SCRIPT_EXIT="$ec"
   cleanup_temp_files || true
+  # After cleanup, any fixture paths we recorded must be gone.
+  if [[ -n "${SUCCESS_TEMP_MANIFEST:-}" && -f "${SUCCESS_TEMP_MANIFEST}" ]]; then
+    if ! assert_temp_paths_absent "$SUCCESS_TEMP_MANIFEST" "success-exit cleanup"; then
+      SCRIPT_EXIT=1
+    fi
+  fi
+  if [[ -n "${FORCE_FAIL_TEMP_MANIFEST:-}" && -f "${FORCE_FAIL_TEMP_MANIFEST}" ]]; then
+    if ! assert_temp_paths_absent "$FORCE_FAIL_TEMP_MANIFEST" "forced-fail cleanup"; then
+      SCRIPT_EXIT=1
+    fi
+  fi
   if ! assert_user_env_unchanged "exit"; then
     SCRIPT_EXIT=1
   else
@@ -188,7 +233,10 @@ else
 fi
 
 # --- Unit: init-env preserves exported host ports and CORS ---
-OUT_CUSTOM="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-custom.XXXXXX")")"
+OUT_CUSTOM="$(mktemp "$ARTIFACT_DIR/init-env-custom.XXXXXX")"
+register_temp "$OUT_CUSTOM"
+FORCE_FAIL_TEMP_MANIFEST="$ARTIFACT_DIR/env-preservation-force-fail-temps.txt"
+SUCCESS_TEMP_MANIFEST="$ARTIFACT_DIR/env-preservation-success-temps.txt"
 
 export POSTGRES_HOST_PORT=15432
 export SOURCE_POSTGRES_HOST_PORT=15433
@@ -200,6 +248,8 @@ export FRONTEND_HOST_PORT=13000
 
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_CUSTOM" >/dev/null
 assert_user_env_unchanged "after-custom-output" || fail "project .env changed after custom --output"
+[[ -s "$OUT_CUSTOM" ]] || fail "custom --output fixture was not created"
+((${#TEMP_FILES[@]} >= 1)) || fail "TEMP_FILES empty after register_temp (subshell bug?)"
 
 [[ "$(read_env_value "$OUT_CUSTOM" POSTGRES_HOST_PORT)" == "15432" ]] \
   || fail "POSTGRES_HOST_PORT not preserved"
@@ -224,13 +274,23 @@ esac
 pass "init-env preserves exported host ports and CORS"
 
 # Mid-run forced failure: nested invocation proves EXIT trap preserves .env
-# without this script writing to the project root.
+# and deletes temp fixtures registered in the parent shell.
 if [[ "${MODELFLOW_ENV_PRESERVATION_FORCE_FAIL:-}" == "1" ]]; then
+  [[ -s "$OUT_CUSTOM" ]] || fail "expected temp fixture before forced fail"
+  write_temp_manifest "$FORCE_FAIL_TEMP_MANIFEST" \
+    || fail "could not record force-fail temp manifest"
+  # Prove fixtures exist immediately before failing.
+  while IFS= read -r _force_path || [[ -n "${_force_path:-}" ]]; do
+    [[ -n "${_force_path:-}" ]] || continue
+    [[ -e "$_force_path" ]] || fail "temp fixture missing before forced fail: $_force_path"
+  done < "$FORCE_FAIL_TEMP_MANIFEST"
+  pass "temp fixtures exist before mid-test forced-fail"
   fail "forced mid-test failure (MODELFLOW_ENV_PRESERVATION_FORCE_FAIL=1)"
 fi
 
 if [[ "${MODELFLOW_ENV_PRESERVATION_SKIP_SELF_FAIL:-}" != "1" ]]; then
   echo "[INFO] env-preservation: nested mid-test forced-fail check"
+  rm -f "$FORCE_FAIL_TEMP_MANIFEST"
   set +e
   MODELFLOW_ENV_PRESERVATION_FORCE_FAIL=1 \
     MODELFLOW_ENV_PRESERVATION_SKIP_SELF_FAIL=1 \
@@ -240,7 +300,11 @@ if [[ "${MODELFLOW_ENV_PRESERVATION_SKIP_SELF_FAIL:-}" != "1" ]]; then
   [[ "$SELF_FAIL_RC" -ne 0 ]] || fail "expected nested mid-test forced-fail to exit non-zero"
   assert_user_env_unchanged "after-self-force-fail" \
     || fail "nested mid-test forced-fail mutated project .env"
-  pass "mid-test forced-fail preserves project .env state"
+  [[ -s "$FORCE_FAIL_TEMP_MANIFEST" ]] \
+    || fail "nested forced-fail did not write temp manifest"
+  assert_temp_paths_absent "$FORCE_FAIL_TEMP_MANIFEST" "nested forced-fail exit" \
+    || fail "nested forced-fail left temp fixtures behind"
+  pass "mid-test forced-fail preserves project .env and deletes temp fixtures"
 fi
 
 # --- Unit: defaults when host ports are unset ---
@@ -248,9 +312,11 @@ unset POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
 unset MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
 unset MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
 
-OUT_DEFAULT="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-default.XXXXXX")")"
+OUT_DEFAULT="$(mktemp "$ARTIFACT_DIR/init-env-default.XXXXXX")"
+register_temp "$OUT_DEFAULT"
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_DEFAULT" >/dev/null
 assert_user_env_unchanged "after-default-output" || fail "project .env changed after default --output"
+[[ -s "$OUT_DEFAULT" ]] || fail "default --output fixture was not created"
 
 [[ "$(read_env_value "$OUT_DEFAULT" POSTGRES_HOST_PORT)" == "5432" ]] \
   || fail "default POSTGRES_HOST_PORT expected 5432"
@@ -274,13 +340,22 @@ esac
 pass "init-env keeps default host ports when unset"
 
 # --- Unit: --output never creates/modifies project .env ---
-OUT_SIDE="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-side.XXXXXX")")"
+OUT_SIDE="$(mktemp "$ARTIFACT_DIR/init-env-side.XXXXXX")"
+register_temp "$OUT_SIDE"
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_SIDE" >/dev/null
 assert_user_env_unchanged "after-side-output" || fail "init-env --output mutated project .env"
-[[ -f "$OUT_SIDE" ]] || fail "init-env --output did not write target file"
+[[ -s "$OUT_SIDE" ]] || fail "init-env --output did not write target file"
 pass "init-env --output leaves project .env untouched"
 
 if [[ "$UNIT_ONLY" == true ]]; then
+  # Record fixtures that must disappear after EXIT cleanup on success.
+  write_temp_manifest "$SUCCESS_TEMP_MANIFEST" \
+    || fail "could not record success temp manifest"
+  while IFS= read -r _ok_path || [[ -n "${_ok_path:-}" ]]; do
+    [[ -n "${_ok_path:-}" ]] || continue
+    [[ -e "$_ok_path" ]] || fail "temp fixture missing before success exit: $_ok_path"
+  done < "$SUCCESS_TEMP_MANIFEST"
+  pass "temp fixtures exist before success exit"
   pass "unit-only env preservation checks complete"
   exit 0
 fi
@@ -312,5 +387,13 @@ set -e
 assert_user_env_unchanged "after-verify-force-fail" \
   || fail "forced-fail verify mutated project .env state"
 pass "forced-fail verify preserves project .env state"
+
+write_temp_manifest "$SUCCESS_TEMP_MANIFEST" \
+  || fail "could not record success temp manifest"
+while IFS= read -r _ok_path || [[ -n "${_ok_path:-}" ]]; do
+  [[ -n "${_ok_path:-}" ]] || continue
+  [[ -e "$_ok_path" ]] || fail "temp fixture missing before success exit: $_ok_path"
+done < "$SUCCESS_TEMP_MANIFEST"
+pass "temp fixtures exist before success exit"
 
 pass "all env-preservation checks complete"
