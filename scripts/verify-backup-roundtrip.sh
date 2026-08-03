@@ -54,7 +54,8 @@ object_checksum() {
     --entrypoint /bin/sh \
     minio-init -c '
       set -eu
-      mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+      MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
+      export MC_HOST_local
       mc cat "local/datasets/$OBJECT_KEY"
     ' | modelflow_compose exec -T backend python -c \
       'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
@@ -101,7 +102,8 @@ modelflow_compose run --rm --no-deps -T \
   --entrypoint /bin/sh \
   minio-init -c '
     set -eu
-    mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+    MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
+    export MC_HOST_local
     mc rm "local/datasets/$OBJECT_KEY"
   ' >/dev/null
 
@@ -114,7 +116,8 @@ if modelflow_compose run --rm --no-deps -T \
   -e OBJECT_KEY="$OBJECT_KEY" \
   --entrypoint /bin/sh \
   minio-init -c '
-    mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+    MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
+    export MC_HOST_local
     mc stat "local/datasets/$OBJECT_KEY"
   ' >/dev/null 2>&1; then
   fail "deleted marker object remained in MinIO"

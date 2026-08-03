@@ -74,7 +74,8 @@ modelflow_compose run --rm --no-deps \
   --entrypoint /bin/sh \
   minio-init -c '
     set -eu
-    mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+    MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
+    export MC_HOST_local
     for bucket in datasets mlflow batch-results artifacts; do
       mc mb -p "local/$bucket" >/dev/null 2>&1 || true
       mc mirror --overwrite --remove "/backup/$bucket" "local/$bucket"

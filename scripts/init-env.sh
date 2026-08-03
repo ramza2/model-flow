@@ -91,7 +91,11 @@ def hex_bytes(n: int) -> str:
 
 
 def urlsafe(n: int) -> str:
-    return secrets.token_urlsafe(n)
+    # Avoid a leading '-' so CLI tools (e.g. mc) never treat the value as a flag.
+    while True:
+        value = secrets.token_urlsafe(n)
+        if not value.startswith("-"):
+            return value
 
 
 def identifier(prefix: str, n: int = 6) -> str:
