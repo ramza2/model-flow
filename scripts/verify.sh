@@ -3,26 +3,67 @@
 # Host prerequisites: Docker, Docker Compose plugin, curl, bash.
 # Node.js/npm/npx and host Python are NOT required.
 # Designed for both local and non-interactive CI (GitHub Actions).
+# Never rewrites the caller's project .env; verification credentials live in a temp env file.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib.sh"
 mkdir -p artifacts/screenshots artifacts/verify
 
 NODE_IMAGE="node:22.17-alpine"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
 PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
-API_BASE="http://localhost:8000/api/v1"
 
 VERIFY_EXIT=0
 VERIFY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+USER_ENV_FILE="$ROOT/.env"
+USER_ENV_EXISTED=0
+USER_ENV_SHA=""
+VERIFY_ENV_FILE=""
 
 pass() { echo "[PASS] $*"; }
 fail() { echo "[FAIL] $*"; exit 1; }
 info() { echo "[INFO] $*"; }
 
-# Parse JSON from stdin inside a container (no host Python/Node required for scripting).
+sha256_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{print $1}'
+  else
+    docker run --rm -v "$path:/file:ro" "$PYTHON_IMAGE" \
+      python -c 'import hashlib,pathlib; print(hashlib.sha256(pathlib.Path("/file").read_bytes()).hexdigest())'
+  fi
+}
+
+assert_user_env_unchanged() {
+  # Return status only — may run from EXIT trap (do not call fail/exit here).
+  if [[ "$USER_ENV_EXISTED" -eq 1 ]]; then
+    if [[ ! -f "$USER_ENV_FILE" ]]; then
+      echo "[FAIL] user .env was deleted during verification" >&2
+      return 1
+    fi
+    local after
+    after="$(sha256_file "$USER_ENV_FILE")"
+    echo "$USER_ENV_SHA" > artifacts/verify/user-env-sha-before.txt
+    echo "$after" > artifacts/verify/user-env-sha-after.txt
+    if [[ "$after" != "$USER_ENV_SHA" ]]; then
+      echo "[FAIL] user .env checksum changed during verification (before=$USER_ENV_SHA after=$after)" >&2
+      return 1
+    fi
+    pass "user .env checksum unchanged"
+  else
+    if [[ -e "$USER_ENV_FILE" ]]; then
+      echo "[FAIL] verification created a project .env but none existed before" >&2
+      return 1
+    fi
+    pass "no project .env existed; none was created"
+  fi
+  return 0
+}
+
 json_get() {
   local code="$1"
   docker run --rm -i -e ADMIN_EMAIL="${ADMIN_EMAIL:-}" "$PYTHON_IMAGE" python -c "$code"
@@ -41,24 +82,29 @@ collect_diagnostics() {
     echo "exit_code=${ec}"
     echo "cwd=${ROOT}"
     echo "ci=${CI:-false}"
+    echo "user_env_existed=${USER_ENV_EXISTED}"
+    echo "user_env_sha_before=${USER_ENV_SHA}"
+    echo "verify_env_file=${VERIFY_ENV_FILE}"
+    echo "frontend_host_port=${FRONTEND_HOST_PORT:-}"
+    echo "backend_host_port=${BACKEND_HOST_PORT:-}"
   } > artifacts/verify/meta.txt
 
   {
     echo "=== docker compose ps -a ==="
-    docker compose ps -a 2>&1 || true
+    modelflow_compose ps -a 2>&1 || true
     echo
     echo "=== docker compose ps (format) ==="
-    docker compose ps -a --format '{{.Service}}={{.Health}}={{.State}}' 2>&1 || true
+    modelflow_compose ps -a --format '{{.Service}}={{.Health}}={{.State}}' 2>&1 || true
   } | tee artifacts/verify/compose-ps-final.txt >/dev/null || true
 
   if [[ "$ec" -ne 0 ]]; then
     info "Collecting service logs after failure (exit=${ec})"
     for svc in postgres minio mlflow backend worker frontend minio-init; do
-      docker compose logs --no-color --tail=200 "$svc" \
+      modelflow_compose logs --no-color --tail=200 "$svc" \
         > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
         echo "(no logs for ${svc})" > "artifacts/verify/logs-${svc}.txt"
     done
-    docker compose logs --no-color --tail=400 \
+    modelflow_compose logs --no-color --tail=400 \
       > artifacts/verify/logs-all.txt 2>&1 || true
     echo "FAIL" > artifacts/verify/RESULT.txt
   fi
@@ -66,8 +112,15 @@ collect_diagnostics() {
 
 on_exit() {
   local ec=$?
+  trap - EXIT
   VERIFY_EXIT="$ec"
   collect_diagnostics "$ec" || true
+  if [[ -n "${VERIFY_ENV_FILE:-}" && -e "${VERIFY_ENV_FILE}" ]]; then
+    rm -f "$VERIFY_ENV_FILE"
+  fi
+  if ! assert_user_env_unchanged; then
+    ec=1
+  fi
   exit "$ec"
 }
 trap on_exit EXIT
@@ -82,7 +135,7 @@ require_host_tools() {
 assert_services_healthy() {
   info "Checking docker compose health for: ${REQUIRED_SERVICES[*]}"
   local report
-  report="$(docker compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
+  report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
   echo "$report" | tee artifacts/verify/compose-ps.txt
   local svc health state line
   for svc in "${REQUIRED_SERVICES[@]}"; do
@@ -98,32 +151,132 @@ assert_services_healthy() {
 
 require_host_tools
 
-if [[ -f "$ROOT/.env" ]]; then
-  info "Stopping stack before rotating verification credentials"
+# Capture the caller's .env (if any) and never rewrite it. Host ports from that file
+# (or from the process environment / CI) are preserved into a temporary verify env.
+if [[ -f "$USER_ENV_FILE" ]]; then
+  USER_ENV_EXISTED=1
+  USER_ENV_SHA="$(sha256_file "$USER_ENV_FILE")"
+  info "Preserving existing project .env (sha256=${USER_ENV_SHA})"
+  set -a
+  # shellcheck disable=SC1091
+  source "$USER_ENV_FILE"
+  set +a
+  info "Stopping stack with current project env before verification"
   docker compose --profile source down -v --remove-orphans || true
+else
+  info "No project .env present; verification will not create one"
 fi
 
-info "Generating isolated verification credentials"
-./scripts/init-env.sh --non-interactive-test --force
+POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-5432}"
+SOURCE_POSTGRES_HOST_PORT="${SOURCE_POSTGRES_HOST_PORT:-5433}"
+MINIO_API_HOST_PORT="${MINIO_API_HOST_PORT:-9000}"
+MINIO_CONSOLE_HOST_PORT="${MINIO_CONSOLE_HOST_PORT:-9001}"
+MLFLOW_HOST_PORT="${MLFLOW_HOST_PORT:-5000}"
+BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
+FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-3000}"
+export POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
+export MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
+export MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
+
+# Nested forced-fail run: proves EXIT cleanup never mutates the caller's .env.
+# Skipped when we *are* the forced-fail child (MODELFLOW_VERIFY_FORCE_FAIL=1).
+if [[ "${MODELFLOW_VERIFY_FORCE_FAIL:-}" != "1" ]]; then
+  info "0a) Forced-fail .env preservation check"
+  set +e
+  MODELFLOW_VERIFY_FORCE_FAIL=1 "$ROOT/scripts/verify.sh"
+  FORCE_RC=$?
+  set -e
+  [[ "$FORCE_RC" -ne 0 ]] || fail "expected forced-fail verify to exit non-zero"
+  if [[ "$USER_ENV_EXISTED" -eq 1 ]]; then
+    FORCE_AFTER="$(sha256_file "$USER_ENV_FILE")"
+    [[ "$FORCE_AFTER" == "$USER_ENV_SHA" ]] \
+      || fail "forced-fail verify mutated .env (before=$USER_ENV_SHA after=$FORCE_AFTER)"
+    echo "$USER_ENV_SHA" > artifacts/verify/user-env-sha-force-before.txt
+    echo "$FORCE_AFTER" > artifacts/verify/user-env-sha-force-after.txt
+  elif [[ -e "$USER_ENV_FILE" ]]; then
+    fail "forced-fail verify created a project .env"
+  fi
+  pass "forced-fail verify preserves project .env"
+fi
+
+VERIFY_ENV_FILE="$(mktemp "$ROOT/artifacts/verify/verify.env.XXXXXX")"
+chmod 600 "$VERIFY_ENV_FILE"
+export MODELFLOW_ENV_FILE="$VERIFY_ENV_FILE"
+
+info "Generating isolated verification credentials in a temporary env file"
+./scripts/init-env.sh --non-interactive-test --output "$VERIFY_ENV_FILE"
 set -a
-# shellcheck disable=SC1091
-source "$ROOT/.env"
+# shellcheck disable=SC1090
+source "$VERIFY_ENV_FILE"
 set +a
-: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Missing bootstrap administrator email in .env}"
-: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Missing bootstrap administrator password in .env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?Missing bootstrap administrator email in verify env}"
+: "${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?Missing bootstrap administrator password in verify env}"
 ADMIN_EMAIL="$MODELFLOW_BOOTSTRAP_ADMIN_EMAIL"
 ADMIN_PASSWORD="$MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD"
 export E2E_ADMIN_EMAIL="$ADMIN_EMAIL"
 export E2E_ADMIN_PASSWORD="$ADMIN_PASSWORD"
 
-info "1) Docker Compose config"
-docker compose config -q
+API_BASE="http://localhost:${BACKEND_HOST_PORT}/api/v1"
+FRONTEND_BASE_URL="http://localhost:${FRONTEND_HOST_PORT}"
+MLFLOW_BASE_URL="http://localhost:${MLFLOW_HOST_PORT}"
+export E2E_BASE_URL="$FRONTEND_BASE_URL"
+export API_BASE
+
+case ",${CORS_ORIGINS}," in
+  *,http://localhost:${FRONTEND_HOST_PORT},*) ;;
+  *) fail "CORS_ORIGINS must include http://localhost:${FRONTEND_HOST_PORT}" ;;
+esac
+pass "CORS_ORIGINS includes frontend host port ${FRONTEND_HOST_PORT}"
+
+# Used by scripts/test-env-preservation.sh to assert EXIT trap never mutates .env.
+if [[ "${MODELFLOW_VERIFY_FORCE_FAIL:-}" == "1" ]]; then
+  fail "forced failure for env-preservation test (MODELFLOW_VERIFY_FORCE_FAIL=1)"
+fi
+
+info "0b) Env preservation unit checks"
+./scripts/test-env-preservation.sh --unit-only
+pass "env preservation unit checks"
+
+info "1) Docker Compose config (active verify ports)"
+modelflow_compose config -q
 pass "compose config"
 
+info "1b) Custom host-port compose config fixture"
+./scripts/test-compose-host-ports.sh
+pass "custom host ports reflected in compose config"
+
+info "1c) Default host-port compose config fixture"
+(
+  set -a
+  # shellcheck disable=SC1090
+  source "$VERIFY_ENV_FILE"
+  set +a
+  export POSTGRES_HOST_PORT=5432 SOURCE_POSTGRES_HOST_PORT=5433
+  export MINIO_API_HOST_PORT=9000 MINIO_CONSOLE_HOST_PORT=9001
+  export MLFLOW_HOST_PORT=5000 BACKEND_HOST_PORT=8000 FRONTEND_HOST_PORT=3000
+  DEFAULT_CONFIG="$(mktemp "$ROOT/artifacts/verify/default-ports.XXXXXX.yml")"
+  docker compose --profile source config >"$DEFAULT_CONFIG"
+  docker run --rm \
+    -v "$DEFAULT_CONFIG:/config.yml:ro" \
+    -v "$ROOT/scripts/check-compose-host-ports.py:/check.py:ro" \
+    -e POSTGRES_HOST_PORT=5432 \
+    -e SOURCE_POSTGRES_HOST_PORT=5433 \
+    -e MINIO_API_HOST_PORT=9000 \
+    -e MINIO_CONSOLE_HOST_PORT=9001 \
+    -e MLFLOW_HOST_PORT=5000 \
+    -e BACKEND_HOST_PORT=8000 \
+    -e FRONTEND_HOST_PORT=3000 \
+    "$PYTHON_IMAGE" python /check.py /config.yml
+  rm -f "$DEFAULT_CONFIG"
+)
+pass "default host ports reflected in compose config"
+
+info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKEND_HOST_PORT} MLflow=${MLFLOW_HOST_PORT}"
+
 info "2) Build & start stack (clean volumes — no host volume reuse)"
-docker compose --profile source down -v --remove-orphans
-docker compose build
-docker compose up -d
+modelflow_compose --profile source down -v --remove-orphans
+modelflow_compose build
+modelflow_compose up -d
 pass "compose up"
 
 info "3) Wait for HTTP readiness and bootstrap administrator"
@@ -132,8 +285,8 @@ LOGIN_PAYLOAD="{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}"
 LOGIN=""
 for i in $(seq 1 120); do
   if curl -sf "$API_BASE/health" >/dev/null \
-    && curl -sf http://localhost:3000/ >/dev/null \
-    && curl -sf http://localhost:5000/health >/dev/null; then
+    && curl -sf "$FRONTEND_BASE_URL/" >/dev/null \
+    && curl -sf "${MLFLOW_BASE_URL}/health" >/dev/null; then
     LOGIN="$(curl -sf -X POST "$API_BASE/auth/login" \
       -H 'Content-Type: application/json' \
       -d "$LOGIN_PAYLOAD" || true)"
@@ -143,8 +296,8 @@ for i in $(seq 1 120); do
   fi
   sleep 5
   if [[ $i -eq 120 ]]; then
-    docker compose ps -a | tee artifacts/verify/compose-ps-timeout.txt || true
-    docker compose logs --no-color --tail=80 | tee artifacts/verify/logs-timeout.txt || true
+    modelflow_compose ps -a | tee artifacts/verify/compose-ps-timeout.txt || true
+    modelflow_compose logs --no-color --tail=80 | tee artifacts/verify/logs-timeout.txt || true
     fail "services or bootstrap administrator did not become ready"
   fi
 done
@@ -158,12 +311,12 @@ sleep 5
 assert_services_healthy
 
 info "4) Alembic"
-docker compose exec -T backend alembic current | tee artifacts/verify/alembic.txt
+modelflow_compose exec -T backend alembic current | tee artifacts/verify/alembic.txt
 pass "alembic"
 
 info "5) Backend lint + unit tests"
-docker compose exec -T backend ruff check app tests
-docker compose exec -T backend pytest -q
+modelflow_compose exec -T backend ruff check app tests
+modelflow_compose exec -T backend pytest -q
 pass "backend lint/tests"
 
 info "6) Frontend lint/typecheck/test (Node container)"
@@ -420,13 +573,14 @@ echo "$PIPE_RUN_JSON" > artifacts/verify/pipeline-run.json
 pass "visual pipeline publish + execute"
 
 info "8d) PostgreSQL + MinIO backup/restore round-trip"
-ROUNDTRIP_ENDPOINT_ID="$EID" ./scripts/verify-backup-roundtrip.sh \
+ROUNDTRIP_ENDPOINT_ID="$EID" MODELFLOW_ENV_FILE="$VERIFY_ENV_FILE" \
+  ./scripts/verify-backup-roundtrip.sh \
   | tee artifacts/verify/backup-roundtrip.log
 pass "backup/restore round-trip"
 
 info "8e) Dependency security gate (High/Critical)"
 set +e
-docker compose exec -T backend sh -c \
+modelflow_compose exec -T backend sh -c \
   'python -m pip install -q pip-audit && pip-audit -r requirements.txt --progress-spinner off --format json' \
   > artifacts/verify/pip-audit.json \
   2> artifacts/verify/pip-audit.stderr.txt
@@ -478,7 +632,7 @@ info "9) Playwright E2E (official Playwright container)"
 docker run --rm --network host \
   -v "$ROOT:/work" \
   -w /work \
-  -e E2E_BASE_URL=http://localhost:3000 \
+  -e E2E_BASE_URL="$FRONTEND_BASE_URL" \
   -e E2E_ADMIN_EMAIL="$ADMIN_EMAIL" \
   -e E2E_ADMIN_PASSWORD="$E2E_ADMIN_PASSWORD" \
   -e HOME=/tmp \

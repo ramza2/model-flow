@@ -40,9 +40,19 @@ jobs:
 
       - name: Run full verification gate
         id: verify
+        env:
+          # Non-default host ports — exercise the same custom-port path local
+          # developers use when other Docker stacks occupy the defaults.
+          POSTGRES_HOST_PORT: "15432"
+          SOURCE_POSTGRES_HOST_PORT: "15433"
+          MINIO_API_HOST_PORT: "19000"
+          MINIO_CONSOLE_HOST_PORT: "19001"
+          MLFLOW_HOST_PORT: "15000"
+          BACKEND_HOST_PORT: "18000"
+          FRONTEND_HOST_PORT: "13000"
         run: |
           set -euo pipefail
-          chmod +x scripts/verify.sh
+          chmod +x scripts/verify.sh scripts/init-env.sh scripts/test-env-preservation.sh
           ./scripts/verify.sh
 
       - name: Collect Compose status and service logs

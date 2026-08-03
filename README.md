@@ -23,13 +23,29 @@ docker compose up --build -d
 The initializer creates a mode-`600` `.env` with random credentials and prints the
 bootstrap administrator email and password once. Save them in a password manager.
 
-Open:
+### Local host ports
 
-- UI: http://localhost:3000
-- API v1: http://localhost:8000/api/v1
-- API docs: http://localhost:8000/docs
-- MLflow: http://localhost:5000
-- MinIO console: http://localhost:9001
+Publish ports are configured in `.env` (see `.env.example`). **Do not edit
+`docker-compose.yml` to change local ports** — that file is tracked and causes
+merge conflicts when each developer picks different host ports. Keep your personal
+`.env` out of Git (it is gitignored).
+
+Default host ports and URLs after `./scripts/init-env.sh`:
+
+| Service | `.env` variable | Default | URL |
+|---------|-----------------|---------|-----|
+| UI | `FRONTEND_HOST_PORT` | `3000` | http://localhost:3000 |
+| API v1 | `BACKEND_HOST_PORT` | `8000` | http://localhost:8000/api/v1 |
+| API docs | `BACKEND_HOST_PORT` | `8000` | http://localhost:8000/docs |
+| MLflow | `MLFLOW_HOST_PORT` | `5000` | http://localhost:5000 |
+| MinIO API | `MINIO_API_HOST_PORT` | `9000` | http://localhost:9000 |
+| MinIO console | `MINIO_CONSOLE_HOST_PORT` | `9001` | http://localhost:9001 |
+| PostgreSQL | `POSTGRES_HOST_PORT` | `5432` | `localhost:5432` |
+| Source PostgreSQL | `SOURCE_POSTGRES_HOST_PORT` | `5433` | `localhost:5433` |
+
+If you change `FRONTEND_HOST_PORT`, `init-env.sh` keeps
+`http://localhost:${FRONTEND_HOST_PORT}` in `CORS_ORIGINS`. Container-internal
+ports and service DNS names (`backend:8000`, `postgres:5432`, …) stay fixed.
 
 Sign in with the credentials printed by `init-env.sh`, open the user menu, choose
 **Change password**, and replace the bootstrap password immediately. MinIO credentials
@@ -53,11 +69,22 @@ docker compose down -v --remove-orphans
 ./scripts/verify.sh
 ```
 
+`verify.sh` is a **clean verification**: it tears down Compose and deletes volumes
+(`down -v`) before rebuilding, so local data in those volumes is wiped. It does **not**
+rewrite your project `.env` or rotate credentials. Verification credentials are written
+to a temporary env file and passed with `docker compose --env-file`.
+
+If a project `.env` already exists, `verify.sh` reads its `*_HOST_PORT` values (and any
+already-exported ports in the shell / CI) and uses those for the run. Change ports in
+`.env` when another Docker stack already binds the defaults — do not edit
+`docker-compose.yml`.
+
 The script builds the stack with clean volumes, waits for the bootstrap administrator,
 checks health, runs Alembic / lint / tests, and exercises the authenticated `/api/v1`
 data-quality, training, registry, serving, batch, drift, and audit flow. It then runs
 Playwright E2E in the official Playwright container. On failure it writes Compose status
-and service logs under `artifacts/verify/`.
+and service logs under `artifacts/verify/`. CI runs this gate on non-default host ports
+and also asserts default-port Compose config rendering.
 
 ## Authentication and bootstrap
 
@@ -83,8 +110,8 @@ Seed a running stack with a demo project and `samples/iris.csv`:
 ./scripts/seed-demo.sh
 ```
 
-An optional PostgreSQL source on host port `5433` contains
-`public.customers` for data-source integration tests:
+An optional PostgreSQL source (host port `SOURCE_POSTGRES_HOST_PORT`, default
+`5433`) contains `public.customers` for data-source integration tests:
 
 ```bash
 docker compose --profile source up -d postgres-source
@@ -92,7 +119,7 @@ docker compose --profile source up -d postgres-source
 
 Use the generated `SOURCE_POSTGRES_USER`, `SOURCE_POSTGRES_PASSWORD`, and
 `SOURCE_POSTGRES_DB` values from `.env`. The host is `postgres-source` from Compose
-services and `localhost:5433` from the host.
+services and `localhost:${SOURCE_POSTGRES_HOST_PORT}` from the host.
 
 ## Backup, restore, and reset
 
@@ -133,7 +160,7 @@ Behavior:
 - Cancels superseded runs for the same ref (`concurrency`)
 - Least-privilege token permissions (`contents: read`, `checks: write`)
 - 60-minute job timeout
-- Executes `./scripts/verify.sh` end-to-end
+- Executes `./scripts/verify.sh` end-to-end on **non-default host ports** (and asserts default-port Compose config)
 - On failure, uploads `artifacts/verify/` and `artifacts/screenshots/` (plus Compose `ps` / service logs collected in the workflow)
 
 ### CI Badge
@@ -156,14 +183,14 @@ Backend (requires Compose infra services):
 set -a
 source .env
 set +a
-export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}"
+export DATABASE_URL="postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_HOST_PORT:-5432}/${POSTGRES_DB}"
 export MINIO_ACCESS_KEY="$MINIO_ROOT_USER"
 export MINIO_SECRET_KEY="$MINIO_ROOT_PASSWORD"
 cd backend
 python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 alembic upgrade head
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port "${BACKEND_HOST_PORT:-8000}"
 python -m app.workers.runner
 ```
 
