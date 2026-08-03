@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Automated checks that verification preserves the caller's .env and host ports.
+#
+# This script NEVER creates, overwrites, or deletes the project .env.
+# All generated credentials go to temporary files under artifacts/verify/.
+#
 # Usage:
 #   ./scripts/test-env-preservation.sh            # unit + forced-fail verify path
 #   ./scripts/test-env-preservation.sh --unit-only  # no verify.sh invocation
+#
+# Test-only knobs (do not set in normal use):
+#   MODELFLOW_ENV_PRESERVATION_FORCE_FAIL=1
+#     Exit mid-run after writing a temp env file, so EXIT trap can prove .env
+#     is still untouched on failure.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,6 +26,14 @@ PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.11-slim}"
 ARTIFACT_DIR="$ROOT/artifacts/verify"
 mkdir -p "$ARTIFACT_DIR"
 
+USER_ENV="$ROOT/.env"
+USER_ENV_EXISTED=0
+USER_ENV_SHA=""
+USER_ENV_MODE=""
+USER_ENV_SIZE=""
+TEMP_FILES=()
+SCRIPT_EXIT=0
+
 pass() { echo "[PASS] env-preservation: $*"; }
 fail() { echo "[FAIL] env-preservation: $*" >&2; exit 1; }
 
@@ -30,9 +47,130 @@ sha256_file() {
   fi
 }
 
+file_mode() {
+  # Portable-ish mode string (octal when available).
+  if stat -c '%a' "$1" >/dev/null 2>&1; then
+    stat -c '%a' "$1"
+  else
+    stat -f '%OLp' "$1"
+  fi
+}
+
+file_size() {
+  if stat -c '%s' "$1" >/dev/null 2>&1; then
+    stat -c '%s' "$1"
+  else
+    stat -f '%z' "$1"
+  fi
+}
+
+record_user_env_baseline() {
+  if [[ -e "$USER_ENV" ]]; then
+    USER_ENV_EXISTED=1
+    USER_ENV_SHA="$(sha256_file "$USER_ENV")"
+    USER_ENV_MODE="$(file_mode "$USER_ENV")"
+    USER_ENV_SIZE="$(file_size "$USER_ENV")"
+    {
+      echo "existed=1"
+      echo "sha256=${USER_ENV_SHA}"
+      echo "mode=${USER_ENV_MODE}"
+      echo "size=${USER_ENV_SIZE}"
+    } > "$ARTIFACT_DIR/env-preservation-baseline.txt"
+  else
+    USER_ENV_EXISTED=0
+    USER_ENV_SHA=""
+    USER_ENV_MODE=""
+    USER_ENV_SIZE=""
+    {
+      echo "existed=0"
+      echo "sha256="
+      echo "mode="
+      echo "size="
+    } > "$ARTIFACT_DIR/env-preservation-baseline.txt"
+  fi
+}
+
+assert_user_env_unchanged() {
+  # Return status only — safe to call from EXIT / signal traps.
+  local label="${1:-check}"
+  if [[ "$USER_ENV_EXISTED" -eq 1 ]]; then
+    if [[ ! -e "$USER_ENV" ]]; then
+      echo "[FAIL] env-preservation: project .env was deleted (${label})" >&2
+      return 1
+    fi
+    local after_sha after_mode after_size
+    after_sha="$(sha256_file "$USER_ENV")"
+    after_mode="$(file_mode "$USER_ENV")"
+    after_size="$(file_size "$USER_ENV")"
+    echo "$USER_ENV_SHA" > "$ARTIFACT_DIR/env-preservation-${label}-before.sha256"
+    echo "$after_sha" > "$ARTIFACT_DIR/env-preservation-${label}-after.sha256"
+    if [[ "$after_sha" != "$USER_ENV_SHA" ]]; then
+      echo "[FAIL] env-preservation: project .env checksum changed (${label}: before=$USER_ENV_SHA after=$after_sha)" >&2
+      return 1
+    fi
+    if [[ "$after_size" != "$USER_ENV_SIZE" ]]; then
+      echo "[FAIL] env-preservation: project .env size changed (${label}: before=$USER_ENV_SIZE after=$after_size)" >&2
+      return 1
+    fi
+    if [[ "$after_mode" != "$USER_ENV_MODE" ]]; then
+      echo "[FAIL] env-preservation: project .env mode changed (${label}: before=$USER_ENV_MODE after=$after_mode)" >&2
+      return 1
+    fi
+  else
+    if [[ -e "$USER_ENV" ]]; then
+      echo "[FAIL] env-preservation: project .env was created (${label}); removing stray file" >&2
+      rm -f "$USER_ENV"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+cleanup_temp_files() {
+  local f
+  for f in "${TEMP_FILES[@]:-}"; do
+    [[ -n "$f" ]] || continue
+    rm -f "$f"
+  done
+  TEMP_FILES=()
+}
+
+register_temp() {
+  local path="$1"
+  TEMP_FILES+=("$path")
+  printf '%s\n' "$path"
+}
+
+on_exit() {
+  local ec=$?
+  # Prevent re-entry from nested exit / fail inside this trap.
+  trap - EXIT INT TERM
+  SCRIPT_EXIT="$ec"
+  cleanup_temp_files || true
+  if ! assert_user_env_unchanged "exit"; then
+    SCRIPT_EXIT=1
+  else
+    if [[ "$USER_ENV_EXISTED" -eq 1 ]]; then
+      echo "[PASS] env-preservation: EXIT trap: project .env unchanged"
+    else
+      echo "[PASS] env-preservation: EXIT trap: project .env still absent"
+    fi
+  fi
+  exit "$SCRIPT_EXIT"
+}
+
+on_signal() {
+  local sig="$1"
+  echo "[FAIL] env-preservation: received ${sig}; aborting without touching project .env" >&2
+  exit 130
+}
+
+trap on_exit EXIT
+trap 'on_signal INT' INT
+trap 'on_signal TERM' TERM
+
 read_env_value() {
   local file="$1" key="$2"
-  # shellcheck disable=SC1090
   (
     set -a
     # shellcheck disable=SC1090
@@ -42,9 +180,15 @@ read_env_value() {
   )
 }
 
+record_user_env_baseline
+if [[ "$USER_ENV_EXISTED" -eq 1 ]]; then
+  echo "[INFO] env-preservation: baseline .env sha256=${USER_ENV_SHA} mode=${USER_ENV_MODE} size=${USER_ENV_SIZE}"
+else
+  echo "[INFO] env-preservation: baseline .env absent (will not create one)"
+fi
+
 # --- Unit: init-env preserves exported host ports and CORS ---
-OUT_CUSTOM="$(mktemp "$ARTIFACT_DIR/init-env-custom.XXXXXX")"
-trap 'rm -f "$OUT_CUSTOM" "$OUT_DEFAULT" "${FORCE_FAIL_MARKER:-}"' EXIT
+OUT_CUSTOM="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-custom.XXXXXX")")"
 
 export POSTGRES_HOST_PORT=15432
 export SOURCE_POSTGRES_HOST_PORT=15433
@@ -55,6 +199,7 @@ export BACKEND_HOST_PORT=18000
 export FRONTEND_HOST_PORT=13000
 
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_CUSTOM" >/dev/null
+assert_user_env_unchanged "after-custom-output" || fail "project .env changed after custom --output"
 
 [[ "$(read_env_value "$OUT_CUSTOM" POSTGRES_HOST_PORT)" == "15432" ]] \
   || fail "POSTGRES_HOST_PORT not preserved"
@@ -78,13 +223,34 @@ case ",${CORS}," in
 esac
 pass "init-env preserves exported host ports and CORS"
 
+# Mid-run forced failure: nested invocation proves EXIT trap preserves .env
+# without this script writing to the project root.
+if [[ "${MODELFLOW_ENV_PRESERVATION_FORCE_FAIL:-}" == "1" ]]; then
+  fail "forced mid-test failure (MODELFLOW_ENV_PRESERVATION_FORCE_FAIL=1)"
+fi
+
+if [[ "${MODELFLOW_ENV_PRESERVATION_SKIP_SELF_FAIL:-}" != "1" ]]; then
+  echo "[INFO] env-preservation: nested mid-test forced-fail check"
+  set +e
+  MODELFLOW_ENV_PRESERVATION_FORCE_FAIL=1 \
+    MODELFLOW_ENV_PRESERVATION_SKIP_SELF_FAIL=1 \
+    "$ROOT/scripts/test-env-preservation.sh" --unit-only
+  SELF_FAIL_RC=$?
+  set -e
+  [[ "$SELF_FAIL_RC" -ne 0 ]] || fail "expected nested mid-test forced-fail to exit non-zero"
+  assert_user_env_unchanged "after-self-force-fail" \
+    || fail "nested mid-test forced-fail mutated project .env"
+  pass "mid-test forced-fail preserves project .env state"
+fi
+
 # --- Unit: defaults when host ports are unset ---
 unset POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
 unset MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
 unset MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
 
-OUT_DEFAULT="$(mktemp "$ARTIFACT_DIR/init-env-default.XXXXXX")"
+OUT_DEFAULT="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-default.XXXXXX")")"
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_DEFAULT" >/dev/null
+assert_user_env_unchanged "after-default-output" || fail "project .env changed after default --output"
 
 [[ "$(read_env_value "$OUT_DEFAULT" POSTGRES_HOST_PORT)" == "5432" ]] \
   || fail "default POSTGRES_HOST_PORT expected 5432"
@@ -108,65 +274,24 @@ esac
 pass "init-env keeps default host ports when unset"
 
 # --- Unit: --output never creates/modifies project .env ---
-MARKER_CONTENT="# env-preservation-marker-$(date +%s)-$$"$'\n'"FRONTEND_HOST_PORT=13000"$'\n'
-USER_ENV="$ROOT/.env"
-HAD_USER_ENV=0
-USER_ENV_BACKUP=""
-if [[ -f "$USER_ENV" ]]; then
-  HAD_USER_ENV=1
-  USER_ENV_BACKUP="$(mktemp "$ARTIFACT_DIR/user-env-backup.XXXXXX")"
-  cp -a "$USER_ENV" "$USER_ENV_BACKUP"
-  BEFORE_SHA="$(sha256_file "$USER_ENV")"
-else
-  printf '%s' "$MARKER_CONTENT" > "$USER_ENV"
-  chmod 600 "$USER_ENV"
-  BEFORE_SHA="$(sha256_file "$USER_ENV")"
-fi
-
-OUT_SIDE="$(mktemp "$ARTIFACT_DIR/init-env-side.XXXXXX")"
+OUT_SIDE="$(register_temp "$(mktemp "$ARTIFACT_DIR/init-env-side.XXXXXX")")"
 ./scripts/init-env.sh --non-interactive-test --output "$OUT_SIDE" >/dev/null
-AFTER_SHA="$(sha256_file "$USER_ENV")"
-[[ "$AFTER_SHA" == "$BEFORE_SHA" ]] || fail "init-env --output mutated project .env"
+assert_user_env_unchanged "after-side-output" || fail "init-env --output mutated project .env"
 [[ -f "$OUT_SIDE" ]] || fail "init-env --output did not write target file"
-rm -f "$OUT_SIDE"
 pass "init-env --output leaves project .env untouched"
 
-restore_user_env() {
-  if [[ "$HAD_USER_ENV" -eq 1 ]]; then
-    cp -a "$USER_ENV_BACKUP" "$USER_ENV"
-    rm -f "$USER_ENV_BACKUP"
-  else
-    # We created a temporary marker .env for the test; remove it unless a later
-    # forced-fail verify step still needs it.
-    if [[ "${KEEP_MARKER_ENV:-0}" != "1" ]]; then
-      rm -f "$USER_ENV"
-    fi
-  fi
-}
-
-# --- Forced-fail is covered by verify.sh step 0a when run as the full gate.
-# Standalone mode still exercises it once for local debugging.
 if [[ "$UNIT_ONLY" == true ]]; then
-  restore_user_env
   pass "unit-only env preservation checks complete"
   exit 0
 fi
 
 # Avoid double-nesting when invoked from inside verify.sh's own force-fail child.
 if [[ "${MODELFLOW_VERIFY_FORCE_FAIL:-}" == "1" ]]; then
-  restore_user_env
-  pass "skipping nested forced-fail (already in force-fail child)"
+  pass "skipping nested verify forced-fail (already in verify force-fail child)"
   exit 0
 fi
 
-KEEP_MARKER_ENV=1
-if [[ "$HAD_USER_ENV" -eq 1 ]]; then
-  printf '%s' "$MARKER_CONTENT" > "$USER_ENV"
-  chmod 600 "$USER_ENV"
-fi
-FORCE_BEFORE="$(sha256_file "$USER_ENV")"
-echo "$FORCE_BEFORE" > "$ARTIFACT_DIR/env-preservation-force-before.sha256"
-
+# --- Forced-fail verify: never write markers into project .env ---
 export POSTGRES_HOST_PORT=15432
 export SOURCE_POSTGRES_HOST_PORT=15433
 export MINIO_API_HOST_PORT=19000
@@ -175,23 +300,17 @@ export MLFLOW_HOST_PORT=15000
 export BACKEND_HOST_PORT=18000
 export FRONTEND_HOST_PORT=13000
 
+assert_user_env_unchanged "before-verify-force-fail" \
+  || fail "baseline drifted before verify forced-fail"
+
 set +e
 MODELFLOW_VERIFY_FORCE_FAIL=1 ./scripts/verify.sh
 FORCE_RC=$?
 set -e
 [[ "$FORCE_RC" -ne 0 ]] || fail "expected forced verify failure"
 
-FORCE_AFTER="$(sha256_file "$USER_ENV")"
-echo "$FORCE_AFTER" > "$ARTIFACT_DIR/env-preservation-force-after.sha256"
-[[ "$FORCE_AFTER" == "$FORCE_BEFORE" ]] \
-  || fail "forced-fail verify mutated .env (before=$FORCE_BEFORE after=$FORCE_AFTER)"
-pass "forced-fail verify preserves .env checksum"
-
-if [[ "$HAD_USER_ENV" -eq 1 ]]; then
-  cp -a "$USER_ENV_BACKUP" "$USER_ENV"
-  rm -f "$USER_ENV_BACKUP"
-else
-  rm -f "$USER_ENV"
-fi
+assert_user_env_unchanged "after-verify-force-fail" \
+  || fail "forced-fail verify mutated project .env state"
+pass "forced-fail verify preserves project .env state"
 
 pass "all env-preservation checks complete"
