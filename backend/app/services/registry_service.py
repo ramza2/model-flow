@@ -34,6 +34,183 @@ def _json(value: str | None) -> dict[str, Any]:
         return {}
 
 
+def _json_list(value: str | None) -> list[Any]:
+    try:
+        loaded = json.loads(value or "[]")
+        return loaded if isinstance(loaded, list) else []
+    except json.JSONDecodeError:
+        return []
+
+
+def resolve_training_job(
+    db: Session,
+    *,
+    project_id: int,
+    training_job_id: int | None = None,
+    mlflow_run_id: str | None = None,
+) -> TrainingJob | None:
+    """Resolve a TrainingJob by explicit id or matching MLflow run id."""
+
+    if training_job_id is not None:
+        job = db.get(TrainingJob, training_job_id)
+        if job is not None and job.project_id == project_id:
+            return job
+    if mlflow_run_id:
+        return db.scalar(
+            select(TrainingJob)
+            .where(
+                TrainingJob.project_id == project_id,
+                TrainingJob.mlflow_run_id == str(mlflow_run_id),
+            )
+            .order_by(TrainingJob.id.desc())
+        )
+    return None
+
+
+def _dataset_dtypes(version: DatasetVersion | None) -> dict[str, str]:
+    if version is None:
+        return {}
+    return {str(key): str(value) for key, value in _json(version.dtypes_json).items()}
+
+
+def _mlflow_logged_feature_schema(run_id: str | None) -> list[dict[str, Any]]:
+    """Load feature_schema.json logged by training when available.
+
+    Uses a short timeout so unreachable tracking servers cannot stall gate
+    evaluation (common in unit tests and offline environments).
+    """
+
+    if not run_id:
+        return []
+
+    def _load() -> list[dict[str, Any]]:
+        local_path = mlflow_service.client().download_artifacts(
+            str(run_id), "feature_schema.json"
+        )
+        with open(local_path, encoding="utf-8") as handle:
+            return _normalize_schema(json.load(handle))
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        future = pool.submit(_load)
+        return future.result(timeout=3)
+    except Exception:
+        return []
+    finally:
+        # Do not wait for a hung MLflow client thread on interpreter shutdown.
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+def _fields_missing_dtype(
+    fields: list[dict[str, Any]], dtypes: dict[str, str]
+) -> bool:
+    for field in fields:
+        name = str(field.get("name") or "")
+        current = str(field.get("dtype") or field.get("type") or "").strip()
+        if not current and not str(dtypes.get(name, "")).strip():
+            return True
+    return False
+
+
+def _enrich_schema_dtypes(
+    fields: list[dict[str, Any]],
+    dtypes: dict[str, str],
+    *,
+    mlflow_schema: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    mlflow_dtypes = {
+        str(item["name"]): str(item.get("dtype") or item.get("type") or "")
+        for item in (mlflow_schema or [])
+        if item.get("name") and (item.get("dtype") or item.get("type"))
+    }
+    enriched: list[dict[str, Any]] = []
+    for field in fields:
+        item = {**field, "name": str(field["name"])}
+        item.setdefault("required", True)
+        current = str(item.get("dtype") or item.get("type") or "").strip()
+        if not current:
+            name = item["name"]
+            filled = dtypes.get(name) or mlflow_dtypes.get(name) or ""
+            if filled:
+                item["dtype"] = filled
+        elif "dtype" not in item and item.get("type"):
+            item["dtype"] = str(item["type"])
+        enriched.append(item)
+    return enriched
+
+
+def build_registration_feature_schema(
+    db: Session,
+    *,
+    metadata_schema: Any = None,
+    feature_names: list[str] | None = None,
+    job: TrainingJob | None = None,
+    dataset_version_id: int | None = None,
+    mlflow_run_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Build a dtype-aware feature schema for model registration metadata."""
+
+    del mlflow_run_id  # Dtypes come from DatasetVersion / job columns; MLflow is gate-time fallback.
+    version_id = dataset_version_id or (job.dataset_version_id if job else None)
+    version = db.get(DatasetVersion, version_id) if version_id else None
+    dtypes = _dataset_dtypes(version)
+
+    schema = _normalize_schema(metadata_schema)
+    if schema:
+        return _enrich_schema_dtypes(schema, dtypes)
+
+    names = [str(name) for name in (feature_names or []) if name]
+    if not names and job is not None:
+        names = [
+            str(name)
+            for name in _json_list(job.feature_columns_json)
+            if isinstance(name, str) and name
+        ]
+    if not names and version is not None and job is not None:
+        names = [
+            str(name)
+            for name in _json_list(version.columns_json)
+            if isinstance(name, str) and name and name != job.target_column
+        ]
+    return _enrich_schema_dtypes(
+        [{"name": name, "required": True} for name in names],
+        dtypes,
+    )
+
+
+def backfill_model_lineage(
+    db: Session,
+    row: ModelVersion,
+    *,
+    job: TrainingJob | None = None,
+) -> TrainingJob | None:
+    """Attach TrainingJob/DatasetVersion when registration omitted them."""
+
+    resolved = job or resolve_training_job(
+        db,
+        project_id=row.project_id,
+        training_job_id=row.training_job_id,
+        mlflow_run_id=row.mlflow_run_id,
+    )
+    if resolved is None:
+        return None
+    changed = False
+    if row.training_job_id != resolved.id:
+        row.training_job_id = resolved.id
+        changed = True
+    if (
+        row.dataset_version_id is None
+        and resolved.dataset_version_id is not None
+    ):
+        row.dataset_version_id = resolved.dataset_version_id
+        changed = True
+    if changed:
+        db.flush()
+    return resolved
+
+
 def register_from_run(
     db: Session,
     *,
@@ -72,24 +249,38 @@ def register_from_run(
     ):
         raise ValueError(f"Model {mlflow_name} version {version} is already registered.")
 
-    if training_job_id is None:
-        training_job = db.scalar(
-            select(TrainingJob).where(
-                TrainingJob.project_id == project_id,
-                TrainingJob.mlflow_run_id == run_id,
-            )
-        )
-        training_job_id = training_job.id if training_job else None
-        if dataset_version_id is None and training_job is not None:
+    training_job = resolve_training_job(
+        db,
+        project_id=project_id,
+        training_job_id=training_job_id,
+        mlflow_run_id=run_id,
+    )
+    if training_job is not None:
+        training_job_id = training_job.id
+        if dataset_version_id is None:
             dataset_version_id = training_job.dataset_version_id
 
     params = run.get("params") or {}
-    feature_names = [name for name in str(params.get("features", "")).split(",") if name]
+    feature_names = [
+        name.strip()
+        for name in str(params.get("features", "")).split(",")
+        if name.strip()
+    ]
+    feature_schema = build_registration_feature_schema(
+        db,
+        metadata_schema=None,
+        feature_names=feature_names,
+        job=training_job,
+        dataset_version_id=dataset_version_id,
+        mlflow_run_id=run_id,
+    )
     metadata = {
         "artifact_path": artifact_path,
-        "feature_schema": [{"name": name, "required": True} for name in feature_names],
+        "feature_schema": feature_schema,
         "run_tags": run.get("tags") or {},
     }
+    if params.get("problem_type"):
+        metadata["problem_type"] = params["problem_type"]
     row = ModelVersion(
         project_id=project_id,
         name=mlflow_name,
@@ -156,78 +347,165 @@ def _feature_schema(
     metadata: dict[str, Any],
     job: TrainingJob | None,
 ) -> tuple[list[dict[str, Any]], str | None, DatasetVersion | None]:
-    version_id = row.dataset_version_id
+    version_id = row.dataset_version_id or (
+        job.dataset_version_id if job is not None else None
+    )
+    version = db.get(DatasetVersion, version_id) if version_id else None
+    dtypes = _dataset_dtypes(version)
+
     schema = _normalize_schema(
         metadata.get("feature_schema") or metadata.get("features")
     )
     if schema:
-        version = db.get(DatasetVersion, version_id) if version_id else None
-        return schema, "metadata", version
-    if job is None:
-        return [], None, db.get(DatasetVersion, version_id) if version_id else None
+        enriched = _enrich_schema_dtypes(schema, dtypes)
+        if _fields_missing_dtype(enriched, {}):
+            enriched = _enrich_schema_dtypes(
+                schema,
+                dtypes,
+                mlflow_schema=_mlflow_logged_feature_schema(row.mlflow_run_id),
+            )
+        return enriched, "metadata", version
 
-    version_id = job.dataset_version_id or version_id
-    version = db.get(DatasetVersion, version_id) if version_id else None
-    try:
-        feature_names = json.loads(job.feature_columns_json or "[]")
-    except json.JSONDecodeError:
-        feature_names = []
-    if not isinstance(feature_names, list):
-        feature_names = []
+    if job is None:
+        mlflow_schema = _mlflow_logged_feature_schema(row.mlflow_run_id)
+        if mlflow_schema:
+            return (
+                _enrich_schema_dtypes(mlflow_schema, dtypes, mlflow_schema=mlflow_schema),
+                "mlflow",
+                version,
+            )
+        return [], None, version
+
+    feature_names: list[Any] = _json_list(job.feature_columns_json)
     if not feature_names and version is not None:
-        try:
-            columns = json.loads(version.columns_json or "[]")
-        except json.JSONDecodeError:
-            columns = []
         feature_names = [
-            name for name in columns if isinstance(name, str) and name != job.target_column
+            name
+            for name in _json_list(version.columns_json)
+            if isinstance(name, str) and name != job.target_column
         ]
-    dtypes = _json(version.dtypes_json) if version is not None else {}
-    schema = [
-        {
-            "name": str(name),
-            "dtype": str(dtypes.get(str(name), "")),
-            "required": True,
-        }
+    draft = [
+        {"name": str(name), "required": True}
         for name in feature_names
         if name
     ]
+    if not draft:
+        mlflow_schema = _mlflow_logged_feature_schema(row.mlflow_run_id)
+        if mlflow_schema:
+            return (
+                _enrich_schema_dtypes(mlflow_schema, dtypes, mlflow_schema=mlflow_schema),
+                "mlflow",
+                version,
+            )
+        return [], None, version
+
+    schema = _enrich_schema_dtypes(draft, dtypes)
+    if _fields_missing_dtype(schema, {}):
+        schema = _enrich_schema_dtypes(
+            draft,
+            dtypes,
+            mlflow_schema=_mlflow_logged_feature_schema(row.mlflow_run_id),
+        )
     return schema, "training_job" if schema else None, version
 
 
 def _generated_value(field: dict[str, Any]) -> Any:
     for key in ("example", "sample", "default"):
-        if key in field:
+        if key in field and field[key] is not None:
             return field[key]
     dtype = str(field.get("dtype", field.get("type", ""))).lower()
-    if "bool" in dtype:
+    if any(token in dtype for token in ("bool", "boolean")):
         return False
-    if any(token in dtype for token in ("str", "text", "object", "category")):
+    if any(
+        token in dtype
+        for token in ("datetime", "date", "timestamp", "timedelta")
+    ):
+        return "2024-01-01T00:00:00"
+    if any(
+        token in dtype
+        for token in ("str", "string", "text", "object", "category", "categorical")
+    ):
         return ""
-    if any(token in dtype for token in ("int", "long")):
+    if any(
+        token in dtype
+        for token in ("int", "int8", "int16", "int32", "int64", "long", "uint")
+    ):
         return 0
-    return 0.0
+    if any(
+        token in dtype
+        for token in ("float", "double", "decimal", "number", "numeric")
+    ):
+        return 0.0
+    # Unknown dtype: prefer empty string over float — safer for object/string columns.
+    return ""
+
+
+def _signature_sample(loaded_model: Any) -> dict[str, Any] | None:
+    """Build a single input row from an MLflow model signature when available."""
+
+    try:
+        metadata = getattr(loaded_model, "metadata", None)
+        signature = getattr(metadata, "signature", None) if metadata is not None else None
+        inputs = getattr(signature, "inputs", None) if signature is not None else None
+        if inputs is None:
+            return None
+        sample: dict[str, Any] = {}
+        for column in inputs:
+            name = getattr(column, "name", None)
+            if not name:
+                continue
+            type_name = str(getattr(column, "type", "")).lower()
+            sample[str(name)] = _generated_value(
+                {"name": str(name), "dtype": type_name}
+            )
+        return sample or None
+    except Exception:
+        return None
 
 
 def _test_sample(
     schema: list[dict[str, Any]],
     version: DatasetVersion | None,
     configured: dict[str, Any] | None,
+    *,
+    loaded_model: Any = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     names = [str(field["name"]) for field in schema]
+    required = [
+        str(field["name"])
+        for field in schema
+        if field.get("name") and field.get("required", True)
+    ]
     if configured:
-        return {name: configured[name] for name in names if name in configured}, "configured"
+        sample = {name: configured[name] for name in names if name in configured}
+        if not required or all(name in sample for name in required):
+            return sample, "configured"
     if version is not None:
-        try:
-            preview = json.loads(version.preview_json or "[]")
-        except json.JSONDecodeError:
-            preview = []
-        if isinstance(preview, list) and preview and isinstance(preview[0], dict):
-            sample = {name: preview[0][name] for name in names if name in preview[0]}
-            if sample:
-                return sample, "dataset"
+        preview = _json_list(version.preview_json)
+        if preview and isinstance(preview[0], dict):
+            row = preview[0]
+            if required and all(name in row for name in required):
+                return {name: row[name] for name in required}, "dataset"
+            if names and all(name in row for name in names):
+                return {name: row[name] for name in names}, "dataset"
+    if schema and any(
+        str(field.get("dtype") or field.get("type") or "").strip() for field in schema
+    ):
+        return (
+            {str(field["name"]): _generated_value(field) for field in schema},
+            "schema",
+        )
+    signature_sample = _signature_sample(loaded_model)
+    if signature_sample is not None:
+        if not names:
+            return signature_sample, "signature"
+        filtered = {name: signature_sample[name] for name in names if name in signature_sample}
+        if filtered and (not required or all(name in filtered for name in required)):
+            return filtered, "signature"
     if schema:
-        return {str(field["name"]): _generated_value(field) for field in schema}, "schema"
+        return (
+            {str(field["name"]): _generated_value(field) for field in schema},
+            "schema",
+        )
     return None, None
 
 
@@ -369,9 +647,12 @@ def evaluate_gates(
 
     metrics = _json(row.metrics_json)
     metadata = _json(row.metadata_json)
-    job = db.get(TrainingJob, row.training_job_id) if row.training_job_id else None
+    job = backfill_model_lineage(db, row)
     schema, schema_source, version = _feature_schema(db, row, metadata, job)
-    sample, sample_source = _test_sample(schema, version, None)
+    # Persist dtype enrichment for older registrations that only stored names.
+    if schema:
+        metadata["feature_schema"] = schema
+        row.metadata_json = json.dumps(metadata)
     results: list[dict[str, Any]] = []
 
     run: dict[str, Any] | None = None
@@ -460,6 +741,10 @@ def evaluate_gates(
                 expected={"source": "metadata_or_training_job"},
             )
         )
+
+    sample, sample_source = _test_sample(
+        schema, version, None, loaded_model=loaded_model
+    )
 
     prediction: Any = None
     latency_ms: float | None = None

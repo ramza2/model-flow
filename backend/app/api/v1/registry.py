@@ -84,6 +84,18 @@ def register_model(
         raise friendly(404, f"MLflow run '{run_id}' was not found.") from exc
     if str(run.get("experiment_id")) != str(experiment_id):
         raise friendly(400, "The MLflow run does not belong to this project.")
+    if job is None:
+        job = registry_service.resolve_training_job(
+            db,
+            project_id=project_id,
+            mlflow_run_id=str(run_id),
+        )
+        if job is not None:
+            dataset_version_id = job.dataset_version_id
+            if not metrics:
+                metrics = loads(job.metrics_json, {})
+            if not model_uri:
+                model_uri = job.model_uri
     mlflow_name = (
         body.name
         if body.name.startswith(f"project-{project_id}-")
@@ -123,12 +135,16 @@ def register_model(
         for name in str(run_params.get("features", "")).split(",")
         if name.strip()
     ]
-    if feature_names and not (
-        metadata.get("feature_schema") or metadata.get("features")
-    ):
-        metadata["feature_schema"] = [
-            {"name": name, "required": True} for name in feature_names
-        ]
+    feature_schema = registry_service.build_registration_feature_schema(
+        db,
+        metadata_schema=metadata.get("feature_schema") or metadata.get("features"),
+        feature_names=feature_names,
+        job=job,
+        dataset_version_id=dataset_version_id,
+        mlflow_run_id=str(run_id),
+    )
+    if feature_schema:
+        metadata["feature_schema"] = feature_schema
     if run_params.get("problem_type"):
         metadata.setdefault("problem_type", run_params["problem_type"])
     row = ModelVersion(
