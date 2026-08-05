@@ -40,9 +40,19 @@ from app.services.algorithm_catalog import (
     ALGORITHM_ALIASES,
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
-    detect_problem_type as _detect_problem_type,
     normalize_problem_type as _normalise_problem_type,
     resolve_algorithm as _resolve_algorithm,
+)
+
+# Re-export catalog constants for callers that historically imported them here.
+__all__ = (
+    "ALGORITHM_ALIASES",
+    "CLASSIFICATION_ALGORITHMS",
+    "REGRESSION_ALGORITHMS",
+    "SklearnTrainingRunner",
+    "TrainingJobContext",
+    "TrainingResult",
+    "TrainingRunner",
 )
 
 
