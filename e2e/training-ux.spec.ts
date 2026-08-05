@@ -22,25 +22,38 @@ async function login(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
 }
 
-test("training auto detection filters classification algorithms", async ({ page }) => {
-  const projectName = `e2e-train-ux-${Date.now()}`;
-  await login(page);
-
+async function createProject(page: import("@playwright/test").Page, projectName: string) {
   await page.getByRole("link", { name: "Create project" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+}
 
+async function uploadIrisAndOpenTrain(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "Datasets", exact: true }).click();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Datasets" })).toBeVisible();
+  const uploadToggle = page.getByRole("button", { name: "↑ Upload dataset", exact: true });
+  await uploadToggle.click();
+  await expect(page.getByTestId("dataset-file")).toBeVisible();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
-  await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: "iris.csv" })).toBeVisible({ timeout: 60_000 });
   await page.getByRole("link", { name: "iris.csv" }).click();
   await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await expect(page.getByTestId("job-submit")).toBeVisible();
+}
+
+test.describe.configure({ mode: "serial" });
+
+test("training auto detection filters classification algorithms", async ({ page }) => {
+  const projectName = `e2e-train-ux-${Date.now()}`;
+  await login(page);
+  await createProject(page, projectName);
+  await uploadIrisAndOpenTrain(page);
 
   await expect(page.getByTestId("detected-problem-type")).toContainText("Classification", { timeout: 30_000 });
   const algorithm = page.getByTestId("job-algorithm");
+  await expect(algorithm.locator("option")).toHaveCount(3);
   await expect(algorithm).toContainText("Random forest");
   await expect(algorithm).not.toContainText("Ridge regression");
   await page.getByTestId("job-name").fill("e2e-auto-cls");
@@ -51,17 +64,10 @@ test("training auto detection filters classification algorithms", async ({ page 
 test("invalid algorithm API combination does not create a job", async ({ page, request }) => {
   const projectName = `e2e-api-422-${Date.now()}`;
   await login(page);
-
-  await page.getByRole("link", { name: "Create project" }).click();
-  await page.getByTestId("project-name").fill(projectName);
-  await page.getByTestId("project-submit").click();
-  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
-
+  await createProject(page, projectName);
+  await uploadIrisAndOpenTrain(page);
+  // Leave the create form; we only needed a dataset for the API call.
   await page.getByRole("link", { name: "Datasets", exact: true }).click();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
-  await page.getByTestId("dataset-file").setInputFiles(iris);
-  await page.getByTestId("dataset-upload").click();
-  await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
 
   const token = await page.evaluate(() => localStorage.getItem("modelflow_token"));
   const projectId = page.url().match(/projects\/(\d+)/)?.[1];
@@ -98,28 +104,17 @@ test("invalid algorithm API combination does not create a job", async ({ page, r
 test("clone configuration opens editable create form", async ({ page }) => {
   const projectName = `e2e-clone-${Date.now()}`;
   await login(page);
-
-  await page.getByRole("link", { name: "Create project" }).click();
-  await page.getByTestId("project-name").fill(projectName);
-  await page.getByTestId("project-submit").click();
-
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
-  await page.getByTestId("dataset-file").setInputFiles(iris);
-  await page.getByTestId("dataset-upload").click();
-  await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("link", { name: "iris.csv" }).click();
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await createProject(page, projectName);
+  await uploadIrisAndOpenTrain(page);
   await page.getByTestId("job-name").fill("clone-source");
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-logs")).toBeVisible();
 
-  // Cancel pending/running so clone is available without waiting for full training.
   const stop = page.getByRole("button", { name: "Stop job" });
-  if (await stop.isVisible().catch(() => false)) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await stop.click();
-  }
+  await expect(stop).toBeVisible({ timeout: 30_000 });
+  page.once("dialog", (dialog) => dialog.accept());
+  await stop.click();
+  await expect(page.getByTestId("job-clone")).toBeVisible({ timeout: 30_000 });
 
   await page.getByTestId("job-clone").click();
   await expect(page).toHaveURL(/jobs\/new\?cloneFrom=/);
