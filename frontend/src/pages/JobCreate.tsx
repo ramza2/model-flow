@@ -43,6 +43,7 @@ export default function JobCreate() {
   const [problemType, setProblemType] = useState("auto");
   const [detectedType, setDetectedType] = useState<string | null>(null);
   const [resolvingProblemType, setResolvingProblemType] = useState(false);
+  const [problemTypeDetectionError, setProblemTypeDetectionError] = useState<string | null>(null);
   const [algorithm, setAlgorithm] = useState("random_forest");
   const [hyperparameters, setHyperparameters] = useState("{}");
   const [featureColumns, setFeatureColumns] = useState<string[]>([]);
@@ -174,12 +175,16 @@ export default function JobCreate() {
 
   useEffect(() => {
     if (!projectId || !datasetId || !target || problemType !== "auto") {
-      if (problemType !== "auto") setDetectedType(problemType);
+      if (problemType !== "auto") {
+        setDetectedType(problemType);
+        setProblemTypeDetectionError(null);
+      }
       setResolvingProblemType(false);
       return;
     }
     let cancelled = false;
     setDetectedType(null);
+    setProblemTypeDetectionError(null);
     setResolvingProblemType(true);
     api<ResolveResponse>(`/projects/${projectId}/training/resolve-problem-type`, {
       method: "POST",
@@ -193,12 +198,16 @@ export default function JobCreate() {
       .then((result) => {
         if (cancelled) return;
         setDetectedType(result.resolved_problem_type);
+        setProblemTypeDetectionError(null);
         setResolvingProblemType(false);
       })
-      .catch(() => {
+      .catch((reason) => {
         if (cancelled) return;
         setDetectedType(null);
         setResolvingProblemType(false);
+        setProblemTypeDetectionError(
+          reason instanceof Error ? reason.message : "Problem type detection failed.",
+        );
       });
     return () => {
       cancelled = true;
@@ -307,6 +316,11 @@ export default function JobCreate() {
             {problemType === "auto" && !resolvingProblemType && detectedType && (
               <p className="form-hint" data-testid="detected-problem-type">
                 Detected problem type: {titleCaseProblemType(detectedType)}
+              </p>
+            )}
+            {problemType === "auto" && !resolvingProblemType && problemTypeDetectionError && (
+              <p className="form-hint" data-testid="problem-type-detection-error">
+                Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.
               </p>
             )}
             <label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Purpose or hypothesis" /></label>

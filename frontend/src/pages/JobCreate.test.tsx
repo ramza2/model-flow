@@ -447,6 +447,79 @@ describe("JobCreate UX", () => {
       "gradient_boosting_regressor",
     ]);
   });
+
+  it("shows detection failure guidance and recovers after manual problem type selection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 1,
+                name: "iris",
+                latest_version: 1,
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 11,
+                dataset_id: 1,
+                version: 1,
+                original_filename: "iris.csv",
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: false,
+            status: 422,
+            json: async () => ({
+              detail: "Target column could not be analyzed.",
+              hint: "Choose another target column.",
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("problem-type-detection-error")).toHaveTextContent(
+      "Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.",
+    );
+    expect(screen.getByTestId("job-submit")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("job-problem-type"), { target: { value: "classification" } });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("problem-type-detection-error")).not.toBeInTheDocument();
+      expect(screen.getByTestId("job-submit")).not.toBeDisabled();
+    });
+    expect(screen.getByTestId("job-algorithm")).toHaveTextContent("Random forest");
+  });
 });
 
 describe("JobDetail clone navigation", () => {
