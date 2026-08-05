@@ -42,6 +42,7 @@ export default function JobCreate() {
   const [target, setTarget] = useState("target");
   const [problemType, setProblemType] = useState("auto");
   const [detectedType, setDetectedType] = useState<string | null>(null);
+  const [resolvingProblemType, setResolvingProblemType] = useState(false);
   const [algorithm, setAlgorithm] = useState("random_forest");
   const [hyperparameters, setHyperparameters] = useState("{}");
   const [featureColumns, setFeatureColumns] = useState<string[]>([]);
@@ -174,9 +175,12 @@ export default function JobCreate() {
   useEffect(() => {
     if (!projectId || !datasetId || !target || problemType !== "auto") {
       if (problemType !== "auto") setDetectedType(problemType);
+      setResolvingProblemType(false);
       return;
     }
     let cancelled = false;
+    setDetectedType(null);
+    setResolvingProblemType(true);
     api<ResolveResponse>(`/projects/${projectId}/training/resolve-problem-type`, {
       method: "POST",
       body: JSON.stringify({
@@ -189,9 +193,12 @@ export default function JobCreate() {
       .then((result) => {
         if (cancelled) return;
         setDetectedType(result.resolved_problem_type);
+        setResolvingProblemType(false);
       })
       .catch(() => {
-        if (!cancelled) setDetectedType(null);
+        if (cancelled) return;
+        setDetectedType(null);
+        setResolvingProblemType(false);
       });
     return () => {
       cancelled = true;
@@ -233,6 +240,9 @@ export default function JobCreate() {
       if (featureColumns.length === 0) {
         throw new Error("Select at least one feature column.");
       }
+      if (problemType === "auto" && (resolvingProblemType || !detectedType)) {
+        throw new Error("Wait for problem type detection to finish before starting training.");
+      }
       const filterType = problemType === "auto" ? detectedType : problemType;
       if (filterType && selectedAlgorithm && !selectedAlgorithm.problem_types.includes(filterType)) {
         throw new Error(`${selectedAlgorithm.display_name} is not supported for ${filterType}.`);
@@ -267,6 +277,7 @@ export default function JobCreate() {
   }
 
   const formReady = !loading && cloneLoaded;
+  const waitingForDetection = problemType === "auto" && (resolvingProblemType || !detectedType);
 
   return (
     <div>
@@ -288,7 +299,12 @@ export default function JobCreate() {
                 </select>
               </label>
             </div>
-            {problemType === "auto" && detectedType && (
+            {problemType === "auto" && resolvingProblemType && (
+              <p className="form-hint" data-testid="detecting-problem-type">
+                Detecting problem type…
+              </p>
+            )}
+            {problemType === "auto" && !resolvingProblemType && detectedType && (
               <p className="form-hint" data-testid="detected-problem-type">
                 Detected problem type: {titleCaseProblemType(detectedType)}
               </p>
@@ -353,7 +369,12 @@ export default function JobCreate() {
           <div className="form-section">
             <span className="eyebrow">Estimator</span>
             <label>Algorithm
-              <select value={algorithm} onChange={(event) => onAlgorithmChange(event.target.value)} data-testid="job-algorithm">
+              <select
+                value={algorithm}
+                onChange={(event) => onAlgorithmChange(event.target.value)}
+                disabled={resolvingProblemType}
+                data-testid="job-algorithm"
+              >
                 {visibleAlgorithms.map((item) => (
                   <option key={item.id} value={item.id}>{item.display_name}</option>
                 ))}
@@ -373,7 +394,7 @@ export default function JobCreate() {
             <button
               className="btn"
               type="submit"
-              disabled={busy || !datasetId || featureColumns.length === 0}
+              disabled={busy || !datasetId || featureColumns.length === 0 || waitingForDetection}
               data-testid="job-submit"
             >
               {busy ? "Queuing…" : "Start training"}

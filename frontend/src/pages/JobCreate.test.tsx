@@ -313,6 +313,140 @@ describe("JobCreate UX", () => {
     expect(screen.getByTestId("job-algorithm")).toHaveValue("logistic_regression");
     expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 0.5');
   });
+
+  it("disables submit while resolving and ignores stale detection responses", async () => {
+    type ResolvePayload = {
+      requested_problem_type: string;
+      resolved_problem_type: string;
+      target_column: string;
+      dataset_id: number;
+      dataset_version_id: number | null;
+    };
+    type Deferred = {
+      targetColumn: string;
+      resolve: (value: ResolvePayload) => void;
+    };
+    const pendingResolves: Deferred[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 1,
+                name: "iris",
+                latest_version: 1,
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 11,
+                dataset_id: 1,
+                version: 1,
+                original_filename: "iris.csv",
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          const body = JSON.parse(String(init?.body || "{}")) as { target_column?: string };
+          const targetColumn = body.target_column || "target";
+          const payload = await new Promise<ResolvePayload>((resolve) => {
+            pendingResolves.push({ targetColumn, resolve });
+          });
+          return { ok: true, status: 200, json: async () => payload };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("detecting-problem-type")).toHaveTextContent("Detecting problem type");
+    expect(screen.getByTestId("job-submit")).toBeDisabled();
+    expect(screen.getByTestId("job-algorithm")).toBeDisabled();
+
+    await waitFor(() => expect(pendingResolves.some((item) => item.targetColumn === "target")).toBe(true));
+    const classificationRequests = pendingResolves.filter((item) => item.targetColumn === "target");
+    // Keep the latest classification request in-flight, then switch to a regression target.
+    const staleClassification = classificationRequests[classificationRequests.length - 1];
+
+    fireEvent.change(screen.getByTestId("job-target"), { target: { value: "sepal length (cm)" } });
+
+    expect(await screen.findByTestId("detecting-problem-type")).toBeInTheDocument();
+    expect(screen.queryByTestId("detected-problem-type")).not.toBeInTheDocument();
+    expect(screen.getByTestId("job-submit")).toBeDisabled();
+    expect(screen.getByTestId("job-algorithm")).toBeDisabled();
+
+    await waitFor(() => (
+      expect(pendingResolves.some((item) => item.targetColumn === "sepal length (cm)")).toBe(true)
+    ));
+    const regressionRequest = [...pendingResolves].reverse().find(
+      (item) => item.targetColumn === "sepal length (cm)",
+    );
+    expect(regressionRequest).toBeTruthy();
+
+    regressionRequest!.resolve({
+      requested_problem_type: "auto",
+      resolved_problem_type: "regression",
+      target_column: "sepal length (cm)",
+      dataset_id: 1,
+      dataset_version_id: 11,
+    });
+
+    expect(await screen.findByTestId("detected-problem-type")).toHaveTextContent("Regression");
+    expect(screen.getByTestId("job-submit")).not.toBeDisabled();
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("job-algorithm") as HTMLSelectElement;
+      expect(algorithm).toHaveTextContent("Ridge regression");
+      expect(algorithm).not.toHaveTextContent("Logistic regression");
+      expect(Array.from(algorithm.options).map((option) => option.value)).toEqual([
+        "ridge",
+        "random_forest_regressor",
+        "gradient_boosting_regressor",
+      ]);
+    });
+
+    // Late classification response from the previous target must not overwrite regression.
+    staleClassification.resolve({
+      requested_problem_type: "auto",
+      resolved_problem_type: "classification",
+      target_column: "target",
+      dataset_id: 1,
+      dataset_version_id: 11,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(screen.getByTestId("detected-problem-type")).toHaveTextContent("Regression");
+    const algorithmAfterStale = screen.getByTestId("job-algorithm") as HTMLSelectElement;
+    expect(algorithmAfterStale).toHaveTextContent("Ridge regression");
+    expect(Array.from(algorithmAfterStale.options).map((option) => option.value)).toEqual([
+      "ridge",
+      "random_forest_regressor",
+      "gradient_boosting_regressor",
+    ]);
+  });
 });
 
 describe("JobDetail clone navigation", () => {
