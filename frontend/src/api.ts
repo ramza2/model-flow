@@ -181,6 +181,8 @@ export type Job = {
   algorithm: string;
   hyperparameters: Record<string, unknown>;
   feature_columns: string[];
+  ratios?: { train: number; validation: number; test: number };
+  random_seed?: number;
   status: string;
   logs: string;
   mlflow_run_id: string | null;

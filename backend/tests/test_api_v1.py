@@ -211,6 +211,9 @@ def test_dataset_versions_quality_split_job_and_pipeline(
             "dataset_version_id": dataset_version_id,
             "split_id": split.json()["id"],
             "target_column": "target",
+            "feature_columns": ["a", "b"],
+            "algorithm": "random_forest",
+            "hyperparameters": {"n_estimators": 10, "max_depth": 3},
         },
     )
     assert job.status_code == 201

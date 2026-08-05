@@ -5,13 +5,14 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.v1.common import audit_event, dumps, get_owned, job_out, retrain_out
-from app.api.v1.jobs import _body_from_job, _new_job, _validate_job_source
+from app.api.v1.common import audit_event, dumps, friendly, get_owned, job_out, retrain_out
+from app.api.v1.jobs import _body_from_job, _new_job
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
 from app.db.models import RetrainTrigger, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import RetrainRequest
+from app.services.training_validation import TrainingConfigError, validate_training_config
 
 router = APIRouter(tags=["retraining"])
 
@@ -33,8 +34,11 @@ def trigger_retrain(
         name=body.name or f"{source.name} (retrain)",
         overrides=overrides,
     )
-    _, version = _validate_job_source(db, project_id, retrain_body)
-    job = _new_job(retrain_body, project_id, auth.user.id, version)
+    try:
+        validated = validate_training_config(db, project_id, retrain_body)
+    except TrainingConfigError as exc:
+        raise friendly(exc.status_code, exc.detail, exc.hint) from exc
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
     job.parent_job_id = source.id
     db.add(job)
     db.flush()

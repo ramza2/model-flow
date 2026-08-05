@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,85 +15,30 @@ from app.api.v1.common import (
     job_out,
     loads,
 )
-from app.core.config import settings
-from app.core.deps import require_project_perm
+from app.core.deps import get_auth, require_project_perm
 from app.core.rbac import Permission
-from app.db.models import (
-    Dataset,
-    DatasetSplit,
-    DatasetVersion,
-    JobStatus,
-    QualityCheck,
-    QualityResult,
-    QualityRule,
-    TrainingJob,
-)
+from app.db.models import DatasetVersion, JobStatus, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import JobCloneRequest, JobCreate
+from app.services.algorithm_catalog import list_algorithms
+from app.services.training_validation import (
+    TrainingConfigError,
+    resolve_problem_type_for_version,
+    validate_training_config,
+)
 
 router = APIRouter(tags=["training-jobs"])
 
 
-def _validate_job_source(
-    db: Session, project_id: int, body: JobCreate
-) -> tuple[Dataset, DatasetVersion | None]:
-    dataset = get_owned(db, Dataset, body.dataset_id, project_id, "Dataset")
-    version = None
-    if body.dataset_version_id is not None:
-        version = get_owned(
-            db,
-            DatasetVersion,
-            body.dataset_version_id,
-            project_id,
-            "Dataset version",
-        )
-        if version.dataset_id != dataset.id:
-            raise friendly(
-                400, "Dataset version does not belong to the selected dataset."
-            )
-    elif dataset.latest_version:
-        version = db.scalar(
-            select(DatasetVersion).where(
-                DatasetVersion.dataset_id == dataset.id,
-                DatasetVersion.version == dataset.latest_version,
-            )
-        )
-    columns = loads(version.columns_json if version else dataset.columns_json, [])
-    if body.target_column not in columns:
-        raise friendly(
-            400,
-            f"Target column '{body.target_column}' is not in the dataset.",
-            f"Available columns: {', '.join(columns)}",
-        )
-    if body.split_id is not None:
-        split = get_owned(db, DatasetSplit, body.split_id, project_id, "Dataset split")
-        if not version or split.dataset_version_id != version.id:
-            raise friendly(
-                400, "Dataset split does not belong to the selected version."
-            )
-    if version and not settings.allow_train_on_quality_fail:
-        latest_check = db.scalar(
-            select(QualityCheck)
-            .where(QualityCheck.dataset_version_id == version.id)
-            .order_by(QualityCheck.id.desc())
-        )
-        blocking_rules = db.scalar(
-            select(QualityRule.id).where(
-                QualityRule.project_id == project_id,
-                QualityRule.block_training_on_fail.is_(True),
-            )
-        )
-        if (
-            latest_check
-            and latest_check.result == QualityResult.FAIL
-            and blocking_rules
-        ):
-            raise friendly(
-                409,
-                "Training is blocked by the latest quality check.",
-                "Resolve the failing quality rules or ask an administrator to override the policy.",
-            )
-    return dataset, version
+class ResolveProblemTypeRequest(BaseModel):
+    dataset_id: int
+    dataset_version_id: int | None = None
+    target_column: str = Field(min_length=1, max_length=200)
+    problem_type: str = "auto"
+
+
+def _raise_config_error(exc: TrainingConfigError) -> None:
+    raise friendly(exc.status_code, exc.detail, exc.hint) from exc
 
 
 def _new_job(
@@ -149,6 +97,44 @@ def _body_from_job(
     return JobCreate.model_validate(values)
 
 
+@router.get("/training/algorithms")
+def get_algorithm_catalog(
+    problem_type: str | None = Query(default=None),
+    _auth=Depends(get_auth),
+):
+    """Shared algorithm catalog used by Job Create UI and validation."""
+    return {"algorithms": list_algorithms(problem_type)}
+
+
+@router.get("/projects/{project_id}/training/algorithms")
+def get_project_algorithm_catalog(
+    project_id: int,
+    problem_type: str | None = Query(default=None),
+    _=Depends(require_project_perm(Permission.TRAIN_READ)),
+):
+    return {"algorithms": list_algorithms(problem_type)}
+
+
+@router.post("/projects/{project_id}/training/resolve-problem-type")
+def resolve_problem_type(
+    project_id: int,
+    body: ResolveProblemTypeRequest,
+    _=Depends(require_project_perm(Permission.TRAIN_READ)),
+    db: Session = Depends(get_db),
+):
+    try:
+        return resolve_problem_type_for_version(
+            db,
+            project_id,
+            dataset_id=body.dataset_id,
+            dataset_version_id=body.dataset_version_id,
+            target_column=body.target_column,
+            problem_type=body.problem_type,
+        )
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+
+
 @router.get("/projects/{project_id}/jobs")
 def list_jobs(
     project_id: int,
@@ -175,8 +161,11 @@ def create_job(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    _, version = _validate_job_source(db, project_id, body)
-    job = _new_job(body, project_id, auth.user.id, version)
+    try:
+        validated = validate_training_config(db, project_id, body)
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
     db.add(job)
     db.flush()
     audit_event(db, auth, "training_job.create", "training_job", job.id)
@@ -206,6 +195,7 @@ def cancel_job(
     job = get_owned(db, TrainingJob, job_id, project_id, "Training job")
     if job.status in {JobStatus.pending, JobStatus.queued}:
         job.status = JobStatus.cancelled
+        job.finished_at = datetime.now(timezone.utc)
     elif job.status == JobStatus.running:
         job.status = JobStatus.cancel_requested
     else:
@@ -232,8 +222,11 @@ def retry_job(
     body = _body_from_job(
         source, name=f"{source.name} (retry {source.retry_count + 1})"
     )
-    _, version = _validate_job_source(db, project_id, body)
-    job = _new_job(body, project_id, auth.user.id, version)
+    try:
+        validated = validate_training_config(db, project_id, body)
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
     job.parent_job_id = source.id
     job.retry_count = source.retry_count + 1
     db.add(job)
@@ -270,8 +263,11 @@ def clone_job(
             "Job overrides are invalid.",
             "Use supported job fields and valid value types.",
         ) from exc
-    _, version = _validate_job_source(db, project_id, job_body)
-    job = _new_job(job_body, project_id, auth.user.id, version)
+    try:
+        validated = validate_training_config(db, project_id, job_body)
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
     job.parent_job_id = source.id
     db.add(job)
     db.flush()
