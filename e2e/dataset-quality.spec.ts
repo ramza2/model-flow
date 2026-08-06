@@ -40,7 +40,9 @@ async function uploadDataset(
   filePath: string,
   linkName: string,
 ) {
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  const projectId = page.url().match(/projects\/(\d+)/)?.[1];
+  expect(projectId).toBeTruthy();
+  await page.goto(`/projects/${projectId}/datasets`);
   await expect(page.getByRole("heading", { name: "Datasets" })).toBeVisible();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await expect(page.getByTestId("dataset-file")).toBeVisible();
