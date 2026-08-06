@@ -384,7 +384,7 @@ pass "project and versioned dataset upload"
 
 RULE=$(api -X POST "$API_BASE/projects/$PID/quality-rules" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"target-required","rules":[{"type":"not_null","column":"target"}],"block_training_on_fail":true}')
+  -d "{\"name\":\"target-required\",\"dataset_id\":$DID,\"rules\":[{\"type\":\"not_null\",\"column\":\"target\",\"severity\":\"fail\"}],\"block_training_on_fail\":true}")
 RULE_ID=$(echo "$RULE" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
 CHECK=$(api -X POST "$API_BASE/projects/$PID/dataset-versions/$DVID/quality-checks" \
   -H 'Content-Type: application/json' \
