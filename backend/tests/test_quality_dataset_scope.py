@@ -788,3 +788,237 @@ def test_list_filters_and_legacy_migration_defaults(client, auth_headers):
     assert assigned.status_code == 200
     assert assigned.json()["dataset_id"] == dataset_id
     assert assigned.json()["is_active"] is True
+
+
+def test_delete_blocked_by_individual_and_run_all_history(client, auth_headers):
+    project_id = _project(client, auth_headers, "del-hist")
+    csv = b"a,b,target\n1,2,0\n2,3,1\n3,4,0\n4,5,1\n"
+    dataset_id, version_id = _upload(client, auth_headers, project_id, csv)
+
+    rule_a = client.post(
+        f"/api/v1/projects/{project_id}/quality-rules",
+        headers=auth_headers,
+        json={
+            "name": "Rule A",
+            "dataset_id": dataset_id,
+            "rules": [{"type": "not_null", "column": "a", "severity": "fail"}],
+        },
+    )
+    rule_b = client.post(
+        f"/api/v1/projects/{project_id}/quality-rules",
+        headers=auth_headers,
+        json={
+            "name": "Rule B",
+            "dataset_id": dataset_id,
+            "rules": [{"type": "not_null", "column": "b", "severity": "fail"}],
+        },
+    )
+    unused = client.post(
+        f"/api/v1/projects/{project_id}/quality-rules",
+        headers=auth_headers,
+        json={
+            "name": "Unused",
+            "dataset_id": dataset_id,
+            "rules": [{"type": "not_null", "column": "target", "severity": "fail"}],
+        },
+    )
+    assert rule_a.status_code == rule_b.status_code == unused.status_code == 201
+    rule_a_id = rule_a.json()["id"]
+    rule_b_id = rule_b.json()["id"]
+    unused_id = unused.json()["id"]
+
+    # Individual run history blocks delete
+    solo = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/quality-checks",
+        headers=auth_headers,
+        json={"quality_rule_id": rule_a_id},
+    )
+    assert solo.status_code == 201
+    assert (
+        client.delete(
+            f"/api/v1/projects/{project_id}/quality-rules/{rule_a_id}",
+            headers=auth_headers,
+        ).status_code
+        == 409
+    )
+
+    # Deactivate A so run-all only evaluates B (A is inactive)
+    client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{rule_a_id}",
+        headers=auth_headers,
+        json={"is_active": False},
+    )
+    # Keep unused inactive so run-all only hits B
+    client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{unused_id}",
+        headers=auth_headers,
+        json={"is_active": False},
+    )
+    run_all = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/quality-checks",
+        headers=auth_headers,
+        json={},
+    )
+    assert run_all.status_code == 201
+    assert run_all.json()["quality_rule_id"] is None
+    assert any(d["quality_rule_id"] == rule_b_id for d in run_all.json()["details"])
+    assert not any(d["quality_rule_id"] == unused_id for d in run_all.json()["details"])
+
+    # Run-all history blocks B even though quality_rule_id on check is null
+    blocked_b = client.delete(
+        f"/api/v1/projects/{project_id}/quality-rules/{rule_b_id}",
+        headers=auth_headers,
+    )
+    assert blocked_b.status_code == 409
+    assert "Deactivate" in (blocked_b.json().get("hint") or "")
+
+    # Unused never appeared in checks → delete succeeds
+    assert (
+        client.delete(
+            f"/api/v1/projects/{project_id}/quality-rules/{unused_id}",
+            headers=auth_headers,
+        ).status_code
+        == 200
+    )
+
+
+def test_legacy_activate_requires_dataset(client, auth_headers):
+    project_id = _project(client, auth_headers, "legacy-act")
+    dataset_id, _ = _upload(
+        client, auth_headers, project_id, b"a,b,target\n1,2,0\n2,3,1\n"
+    )
+    with TestingSessionLocal() as db:
+        legacy = QualityRule(
+            project_id=project_id,
+            dataset_id=None,
+            name="Legacy",
+            rules_json='[{"type":"not_null","column":"a","severity":"fail"}]',
+            block_training_on_fail=True,
+            is_active=False,
+        )
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+
+    reject = client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{legacy_id}",
+        headers=auth_headers,
+        json={"is_active": True},
+    )
+    assert reject.status_code == 422
+    assert "Assign a dataset" in reject.json()["detail"]
+
+    assign_only = client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{legacy_id}",
+        headers=auth_headers,
+        json={"dataset_id": dataset_id},
+    )
+    assert assign_only.status_code == 200
+    assert assign_only.json()["dataset_id"] == dataset_id
+    assert assign_only.json()["is_active"] is False
+
+    # Reset to legacy for combined assign+activate path
+    with TestingSessionLocal() as db:
+        legacy2 = QualityRule(
+            project_id=project_id,
+            dataset_id=None,
+            name="Legacy2",
+            rules_json='[{"type":"not_null","column":"a","severity":"fail"}]',
+            block_training_on_fail=True,
+            is_active=False,
+        )
+        db.add(legacy2)
+        db.commit()
+        legacy2_id = legacy2.id
+
+    activate = client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{legacy2_id}",
+        headers=auth_headers,
+        json={"dataset_id": dataset_id, "is_active": True},
+    )
+    assert activate.status_code == 200
+    assert activate.json()["is_active"] is True
+
+    assigned_activate = client.patch(
+        f"/api/v1/projects/{project_id}/quality-rules/{legacy_id}",
+        headers=auth_headers,
+        json={"is_active": True},
+    )
+    assert assigned_activate.status_code == 200
+    assert assigned_activate.json()["is_active"] is True
+
+
+def test_range_bounds_validation_and_safe_evaluation(client, auth_headers):
+    project_id = _project(client, auth_headers, "range-safe")
+    csv = b"site_id,a,target\nS1,1,0\nS2,2,1\n"
+    dataset_id, version_id = _upload(client, auth_headers, project_id, csv)
+
+    def create(rules):
+        return client.post(
+            f"/api/v1/projects/{project_id}/quality-rules",
+            headers=auth_headers,
+            json={"name": "range", "dataset_id": dataset_id, "rules": rules},
+        )
+
+    assert (
+        create(
+            [{"type": "range", "column": "a", "min": "abc", "severity": "fail"}]
+        ).status_code
+        == 422
+    )
+    assert (
+        create(
+            [{"type": "range", "column": "a", "max": {}, "severity": "fail"}]
+        ).status_code
+        == 422
+    )
+    min_only = create(
+        [{"type": "range", "column": "a", "min": 0, "severity": "fail"}]
+    )
+    assert min_only.status_code == 201
+    assert min_only.json()["rules"][0]["min"] == 0
+    assert "max" not in min_only.json()["rules"][0]
+
+    max_only = create(
+        [{"type": "range", "column": "a", "max": 10, "severity": "fail"}]
+    )
+    assert max_only.status_code == 201
+    assert max_only.json()["rules"][0]["max"] == 10
+
+    # String column with numeric range → Check 201 FAIL detail, no 500
+    str_range = create(
+        [{"type": "range", "column": "site_id", "min": 0, "max": 10, "severity": "fail"}]
+    )
+    assert str_range.status_code == 201
+    check = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/quality-checks",
+        headers=auth_headers,
+        json={"quality_rule_id": str_range.json()["id"]},
+    )
+    assert check.status_code == 201
+    assert check.json()["result"] == "FAIL"
+    assert "incompatible values" in check.json()["details"][0]["message"]
+
+    # Legacy invalid bounds still produce Check FAIL without 500
+    with TestingSessionLocal() as db:
+        legacy = QualityRule(
+            project_id=project_id,
+            dataset_id=dataset_id,
+            name="Bad legacy range",
+            rules_json=(
+                '[{"type":"range","column":"a","min":"not-a-number","severity":"fail"}]'
+            ),
+            block_training_on_fail=False,
+            is_active=True,
+        )
+        db.add(legacy)
+        db.commit()
+        legacy_id = legacy.id
+    legacy_check = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/quality-checks",
+        headers=auth_headers,
+        json={"quality_rule_id": legacy_id},
+    )
+    assert legacy_check.status_code == 201
+    assert legacy_check.json()["result"] == "FAIL"
+    assert "incompatible values" in legacy_check.json()["details"][0]["message"]

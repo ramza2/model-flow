@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.common import (
@@ -25,6 +25,7 @@ from app.services import storage
 from app.services.quality import (
     QualityRuleValidationError,
     evaluate_api_rule,
+    quality_rule_has_check_history,
     validate_quality_rule_write,
 )
 
@@ -200,6 +201,20 @@ def update_rule(
     except QualityRuleValidationError as exc:
         _validation_error(exc)
 
+    final_dataset_id = (
+        dataset.id
+        if dataset is not None and "dataset_id" in fields_set
+        else row.dataset_id
+    )
+    final_is_active = (
+        body.is_active if body.is_active is not None else row.is_active
+    )
+    if final_dataset_id is None and final_is_active:
+        raise friendly(
+            422,
+            "Assign a dataset before activating this quality rule.",
+        )
+
     if body.name is not None:
         row.name = body.name.strip()
     if dataset is not None and "dataset_id" in fields_set:
@@ -257,16 +272,7 @@ def delete_rule(
 ):
     auth, _, _ = access
     row = get_owned(db, QualityRule, rule_id, project_id, "Quality rule")
-    usage = db.scalar(
-        select(func.count())
-        .select_from(QualityCheck)
-        .where(QualityCheck.quality_rule_id == row.id)
-    )
-    # Also count checks that referenced this rule in run-all details.
-    if not usage:
-        # History via quality_rule_id on the check row is the deletion gate.
-        pass
-    if usage:
+    if quality_rule_has_check_history(db, project_id, row.id):
         raise friendly(
             409,
             "This quality rule has check history and cannot be deleted.",

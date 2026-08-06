@@ -305,6 +305,30 @@ class QualityRuleValidationError(ValueError):
     """Raised when a quality rule payload fails validation."""
 
 
+def _coerce_range_bound(value: Any, *, label: str) -> float | int:
+    """Parse a range bound as a real number. Rejects bool and non-numeric values."""
+    if isinstance(value, bool) or value is None:
+        raise QualityRuleValidationError(f"Range {label} must be numeric.")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value != value:  # NaN
+            raise QualityRuleValidationError(f"Range {label} must be numeric.")
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise QualityRuleValidationError(f"Range {label} must be numeric.")
+        try:
+            number = float(text)
+        except ValueError as exc:
+            raise QualityRuleValidationError(f"Range {label} must be numeric.") from exc
+        if number.is_integer():
+            return int(number)
+        return number
+    raise QualityRuleValidationError(f"Range {label} must be numeric.")
+
+
 def validate_api_rule_conditions(
     rules: list[dict[str, Any]] | None,
     *,
@@ -353,20 +377,28 @@ def validate_api_rule_conditions(
                 raise QualityRuleValidationError(
                     "Range rules require at least one of min or max."
                 )
-            if minimum is not None and maximum is not None:
-                try:
-                    if float(minimum) > float(maximum):
-                        raise QualityRuleValidationError(
-                            "Range min must be less than or equal to max."
-                        )
-                except (TypeError, ValueError) as exc:
-                    raise QualityRuleValidationError(
-                        "Range min and max must be numeric."
-                    ) from exc
-            if minimum is not None:
-                condition["min"] = minimum
-            if maximum is not None:
-                condition["max"] = maximum
+            parsed_min = (
+                _coerce_range_bound(minimum, label="min")
+                if minimum is not None
+                else None
+            )
+            parsed_max = (
+                _coerce_range_bound(maximum, label="max")
+                if maximum is not None
+                else None
+            )
+            if (
+                parsed_min is not None
+                and parsed_max is not None
+                and float(parsed_min) > float(parsed_max)
+            ):
+                raise QualityRuleValidationError(
+                    "Range min must be less than or equal to max."
+                )
+            if parsed_min is not None:
+                condition["min"] = parsed_min
+            if parsed_max is not None:
+                condition["max"] = parsed_max
         elif rule_type == "allowed_values":
             values = raw.get("values", raw.get("allowed"))
             if not isinstance(values, list) or len(values) == 0:
@@ -456,6 +488,26 @@ def validate_quality_rule_write(
     return dataset, normalized_rules
 
 
+def _parse_runtime_range_bound(value: Any) -> float | int | None:
+    """Best-effort numeric parse for evaluation; returns None when unusable."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return None if value != value else value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        return int(number) if number.is_integer() else number
+    return None
+
+
 def evaluate_api_rule(frame: pd.DataFrame, rule: dict[str, Any]) -> tuple[bool, str]:
     """Evaluate a single API quality condition against a dataframe."""
     rule_type = str(rule.get("type", "")).lower()
@@ -470,13 +522,32 @@ def evaluate_api_rule(frame: pd.DataFrame, rule: dict[str, Any]) -> tuple[bool, 
         count = int(series.duplicated().sum())
         return count == 0, f"{count} duplicate values"
     if rule_type in {"range", "between"}:
-        minimum, maximum = rule.get("min"), rule.get("max")
-        invalid = series.notna() & (
-            ((series < minimum) if minimum is not None else False)
-            | ((series > maximum) if maximum is not None else False)
-        )
-        count = int(invalid.sum())
-        return count == 0, f"{count} values outside the configured range"
+        try:
+            minimum = _parse_runtime_range_bound(rule.get("min"))
+            maximum = _parse_runtime_range_bound(rule.get("max"))
+            if minimum is None and rule.get("min") is not None:
+                raise TypeError("invalid min bound")
+            if maximum is None and rule.get("max") is not None:
+                raise TypeError("invalid max bound")
+            if minimum is None and maximum is None:
+                raise TypeError("missing bounds")
+            numeric = pd.to_numeric(series, errors="coerce")
+            # Non-null values that cannot be compared numerically → incompatible.
+            incompatible = series.notna() & numeric.isna()
+            if bool(incompatible.any()):
+                raise TypeError("incompatible column values")
+            invalid = numeric.notna() & (
+                ((numeric < minimum) if minimum is not None else False)
+                | ((numeric > maximum) if maximum is not None else False)
+            )
+            count = int(invalid.sum())
+            return count == 0, f"{count} values outside the configured range"
+        except (TypeError, ValueError):
+            return (
+                False,
+                f"Range rule could not be evaluated for column '{column}': "
+                "incompatible values.",
+            )
     if rule_type in {"allowed_values", "in"}:
         invalid = series.notna() & ~series.isin(rule.get("values", []))
         count = int(invalid.sum())
@@ -491,6 +562,42 @@ def evaluate_api_rule(frame: pd.DataFrame, rule: dict[str, Any]) -> tuple[bool, 
         count = int(invalid.sum())
         return count == 0, f"{count} values do not match"
     return False, f"Unsupported rule type '{rule_type}'"
+
+
+def quality_rule_has_check_history(
+    db: Session, project_id: int, rule_id: int
+) -> bool:
+    """True when the rule appears on a check row or inside run-all details_json."""
+    direct = db.scalar(
+        select(QualityCheck.id)
+        .where(
+            QualityCheck.project_id == project_id,
+            QualityCheck.quality_rule_id == rule_id,
+        )
+        .limit(1)
+    )
+    if direct is not None:
+        return True
+
+    checks = db.scalars(
+        select(QualityCheck.details_json).where(
+            QualityCheck.project_id == project_id,
+            QualityCheck.quality_rule_id.is_(None),
+        )
+    ).all()
+    for details_json in checks:
+        try:
+            details = json.loads(details_json or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(details, list):
+            continue
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            if detail.get("quality_rule_id") == rule_id:
+                return True
+    return False
 
 
 def _detail_is_fail_severity_failure(detail: dict[str, Any]) -> bool:
