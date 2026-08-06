@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.common import (
     audit_event,
@@ -20,58 +22,56 @@ from app.db.models import DatasetVersion, QualityCheck, QualityResult, QualityRu
 from app.db.session import get_db
 from app.schemas.v1 import QualityRuleCreate, QualityRuleUpdate, QualityRunRequest
 from app.services import storage
+from app.services.quality import (
+    QualityRuleValidationError,
+    evaluate_api_rule,
+    validate_quality_rule_write,
+)
 
 router = APIRouter(tags=["quality"])
 
 
-def _evaluate_rule(frame, rule: dict) -> tuple[bool, str]:
-    rule_type = str(rule.get("type", "")).lower()
-    column = rule.get("column")
-    if column not in frame.columns:
-        return False, f"Column '{column}' was not found"
-    series = frame[column]
-    if rule_type in {"not_null", "nonnull"}:
-        count = int(series.isna().sum())
-        return count == 0, f"{count} null values"
-    if rule_type == "unique":
-        count = int(series.duplicated().sum())
-        return count == 0, f"{count} duplicate values"
-    if rule_type in {"range", "between"}:
-        minimum, maximum = rule.get("min"), rule.get("max")
-        invalid = series.notna() & (
-            ((series < minimum) if minimum is not None else False)
-            | ((series > maximum) if maximum is not None else False)
-        )
-        count = int(invalid.sum())
-        return count == 0, f"{count} values outside the configured range"
-    if rule_type in {"allowed_values", "in"}:
-        invalid = series.notna() & ~series.isin(rule.get("values", []))
-        count = int(invalid.sum())
-        return count == 0, f"{count} values are not allowed"
-    if rule_type == "regex":
-        invalid = series.notna() & ~series.astype(str).str.match(
-            str(rule.get("pattern", ""))
-        )
-        count = int(invalid.sum())
-        return count == 0, f"{count} values do not match"
-    return False, f"Unsupported rule type '{rule_type}'"
+def _validation_error(exc: QualityRuleValidationError):
+    message = str(exc)
+    # Missing dataset in project → 404; other validation → 422
+    if "was not found in this project" in message:
+        raise friendly(404, message) from exc
+    raise friendly(422, message) from exc
 
 
 @router.get("/projects/{project_id}/quality-rules")
 def list_rules(
     project_id: int,
+    dataset_id: int | None = None,
+    include_inactive: bool = Query(default=True),
+    include_unassigned: bool = Query(default=False),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
-    rows = db.scalars(
+    statement = (
         select(QualityRule)
+        .options(joinedload(QualityRule.dataset))
         .where(QualityRule.project_id == project_id)
-        .order_by(QualityRule.id.desc())
-        .offset(skip)
-        .limit(limit)
-    ).all()
+    )
+    if dataset_id is not None:
+        if include_unassigned:
+            statement = statement.where(
+                or_(
+                    QualityRule.dataset_id == dataset_id,
+                    QualityRule.dataset_id.is_(None),
+                )
+            )
+        else:
+            statement = statement.where(QualityRule.dataset_id == dataset_id)
+    elif not include_unassigned:
+        statement = statement.where(QualityRule.dataset_id.is_not(None))
+    if not include_inactive:
+        statement = statement.where(QualityRule.is_active.is_(True))
+    rows = db.scalars(
+        statement.order_by(QualityRule.id.desc()).offset(skip).limit(limit)
+    ).unique().all()
     return [quality_rule_out(row) for row in rows]
 
 
@@ -83,17 +83,50 @@ def create_rule(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
+    try:
+        dataset, normalized_rules = validate_quality_rule_write(
+            db,
+            project_id=project_id,
+            name=body.name,
+            dataset_id=body.dataset_id,
+            rules=body.rules,
+            require_dataset=True,
+            require_rules=True,
+        )
+    except QualityRuleValidationError as exc:
+        _validation_error(exc)
+
+    assert dataset is not None and normalized_rules is not None
     row = QualityRule(
         project_id=project_id,
+        dataset_id=dataset.id,
         name=body.name.strip(),
-        rules_json=dumps(body.rules),
+        rules_json=dumps(normalized_rules),
         block_training_on_fail=body.block_training_on_fail,
+        is_active=body.is_active,
     )
     db.add(row)
     db.flush()
-    audit_event(db, auth, "quality_rule.create", "quality_rule", row.id)
+    audit_event(
+        db,
+        auth,
+        "quality_rule.create",
+        "quality_rule",
+        row.id,
+        after={
+            "dataset_id": row.dataset_id,
+            "name": row.name,
+            "is_active": row.is_active,
+            "block_training_on_fail": row.block_training_on_fail,
+        },
+    )
     db.commit()
     db.refresh(row)
+    row = db.scalar(
+        select(QualityRule)
+        .options(joinedload(QualityRule.dataset))
+        .where(QualityRule.id == row.id)
+    )
     return quality_rule_out(row)
 
 
@@ -104,9 +137,14 @@ def get_rule(
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
-    return quality_rule_out(
-        get_owned(db, QualityRule, rule_id, project_id, "Quality rule")
+    row = db.scalar(
+        select(QualityRule)
+        .options(joinedload(QualityRule.dataset))
+        .where(QualityRule.id == rule_id, QualityRule.project_id == project_id)
     )
+    if not row:
+        raise friendly(404, f"Quality rule {rule_id} was not found in this project.")
+    return quality_rule_out(row)
 
 
 @router.patch("/projects/{project_id}/quality-rules/{rule_id}")
@@ -120,22 +158,93 @@ def update_rule(
     auth, _, _ = access
     row = get_owned(db, QualityRule, rule_id, project_id, "Quality rule")
     before = quality_rule_out(row)
+    before_active = row.is_active
+
+    # Reject clearing dataset_id once assigned (explicit null on assigned rule).
+    fields_set = body.model_fields_set
+    if "dataset_id" in fields_set and body.dataset_id is None and row.dataset_id is not None:
+        raise friendly(
+            422,
+            "dataset_id cannot be cleared once a rule is assigned to a dataset.",
+        )
+
+    target_dataset_id = (
+        body.dataset_id
+        if "dataset_id" in fields_set and body.dataset_id is not None
+        else row.dataset_id
+    )
+    # When reassigning dataset without new conditions, re-validate existing rules
+    # against the target dataset columns.
+    rules_to_validate = body.rules
+    if (
+        rules_to_validate is None
+        and "dataset_id" in fields_set
+        and body.dataset_id is not None
+        and body.dataset_id != row.dataset_id
+    ):
+        try:
+            rules_to_validate = json.loads(row.rules_json or "[]")
+        except (TypeError, ValueError):
+            rules_to_validate = []
+    try:
+        dataset, normalized_rules = validate_quality_rule_write(
+            db,
+            project_id=project_id,
+            name=body.name if body.name is not None else row.name,
+            dataset_id=body.dataset_id if "dataset_id" in fields_set else None,
+            rules=rules_to_validate,
+            require_dataset=False,
+            require_rules=False,
+            existing_dataset_id=target_dataset_id,
+        )
+    except QualityRuleValidationError as exc:
+        _validation_error(exc)
+
     if body.name is not None:
         row.name = body.name.strip()
-    if body.rules is not None:
-        row.rules_json = dumps(body.rules)
+    if dataset is not None and "dataset_id" in fields_set:
+        row.dataset_id = dataset.id
+    if normalized_rules is not None:
+        row.rules_json = dumps(normalized_rules)
     if body.block_training_on_fail is not None:
         row.block_training_on_fail = body.block_training_on_fail
-    audit_event(
-        db,
-        auth,
-        "quality_rule.update",
-        "quality_rule",
-        row.id,
-        before=before,
-        after=quality_rule_out(row),
-    )
+    if body.is_active is not None:
+        row.is_active = body.is_active
+
+    after = {
+        "dataset_id": row.dataset_id,
+        "name": row.name,
+        "is_active": row.is_active,
+        "block_training_on_fail": row.block_training_on_fail,
+        "rules": json.loads(row.rules_json or "[]"),
+    }
+    if body.is_active is not None and body.is_active != before_active:
+        action = "quality_rule.activate" if row.is_active else "quality_rule.deactivate"
+        audit_event(
+            db,
+            auth,
+            action,
+            "quality_rule",
+            row.id,
+            before=before,
+            after=after,
+        )
+    else:
+        audit_event(
+            db,
+            auth,
+            "quality_rule.update",
+            "quality_rule",
+            row.id,
+            before=before,
+            after=after,
+        )
     db.commit()
+    row = db.scalar(
+        select(QualityRule)
+        .options(joinedload(QualityRule.dataset))
+        .where(QualityRule.id == row.id)
+    )
     return quality_rule_out(row)
 
 
@@ -153,12 +262,29 @@ def delete_rule(
         .select_from(QualityCheck)
         .where(QualityCheck.quality_rule_id == row.id)
     )
+    # Also count checks that referenced this rule in run-all details.
+    if not usage:
+        # History via quality_rule_id on the check row is the deletion gate.
+        pass
     if usage:
         raise friendly(
-            409, "This quality rule has check history and cannot be deleted."
+            409,
+            "This quality rule has check history and cannot be deleted.",
+            "Deactivate the rule instead of deleting it.",
         )
     db.delete(row)
-    audit_event(db, auth, "quality_rule.delete", "quality_rule", row.id)
+    audit_event(
+        db,
+        auth,
+        "quality_rule.delete",
+        "quality_rule",
+        row.id,
+        before={
+            "dataset_id": row.dataset_id,
+            "name": row.name,
+            "is_active": row.is_active,
+        },
+    )
     db.commit()
     return {"detail": "Quality rule deleted.", "hint": None}
 
@@ -184,15 +310,36 @@ def run_check(
         "Dataset version",
     )
     if body.quality_rule_id is not None:
-        rules = [
-            get_owned(db, QualityRule, body.quality_rule_id, project_id, "Quality rule")
-        ]
+        rule = get_owned(
+            db, QualityRule, body.quality_rule_id, project_id, "Quality rule"
+        )
+        if rule.dataset_id != version.dataset_id:
+            raise friendly(
+                409,
+                "This quality rule belongs to another dataset.",
+                "Choose a rule assigned to this dataset.",
+            )
+        if not rule.is_active:
+            raise friendly(
+                409,
+                "This quality rule is inactive.",
+                "Activate it before running the check.",
+            )
+        rules = [rule]
     else:
         rules = db.scalars(
-            select(QualityRule).where(QualityRule.project_id == project_id)
+            select(QualityRule).where(
+                QualityRule.project_id == project_id,
+                QualityRule.dataset_id == version.dataset_id,
+                QualityRule.is_active.is_(True),
+            )
         ).all()
     if not rules:
-        raise friendly(400, "No quality rules are configured for this project.")
+        raise friendly(
+            400,
+            "No active quality rules are configured for this dataset.",
+            "Create or activate a rule for this dataset first.",
+        )
     try:
         data = storage.download_bytes(
             settings.minio_datasets_bucket, version.object_key
@@ -207,9 +354,19 @@ def run_check(
     has_failure = False
     has_warning = False
     for rule_set in rules:
-        for rule in __import__("json").loads(rule_set.rules_json or "[]"):
-            passed, message = _evaluate_rule(frame, rule)
-            severity = str(rule.get("severity", "fail")).lower()
+        try:
+            conditions = json.loads(rule_set.rules_json or "[]")
+        except (TypeError, ValueError):
+            conditions = []
+        if not isinstance(conditions, list):
+            conditions = []
+        for rule in conditions:
+            if not isinstance(rule, dict):
+                passed, message = False, "Invalid rule condition"
+                severity = "fail"
+            else:
+                passed, message = evaluate_api_rule(frame, rule)
+                severity = str(rule.get("severity", "fail")).lower()
             if not passed and severity == "warning":
                 has_warning = True
             elif not passed:
@@ -217,7 +374,10 @@ def run_check(
             details.append(
                 {
                     "quality_rule_id": rule_set.id,
-                    "rule": rule,
+                    "quality_rule_name": rule_set.name,
+                    "rule": rule if isinstance(rule, dict) else {"type": "unknown"},
+                    "severity": severity,
+                    "block_training_on_fail": rule_set.block_training_on_fail,
                     "passed": passed,
                     "message": message,
                 }
@@ -245,7 +405,12 @@ def run_check(
         "quality_check.run",
         "quality_check",
         check.id,
-        after={"result": result.value},
+        after={
+            "result": result.value,
+            "dataset_id": version.dataset_id,
+            "quality_rule_id": body.quality_rule_id,
+            "dataset_version_id": version.id,
+        },
     )
     db.commit()
     db.refresh(check)

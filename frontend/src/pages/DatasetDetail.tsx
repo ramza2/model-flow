@@ -1,6 +1,7 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  ApiRequestError,
   api,
   type Dataset,
   type DatasetSplit,
@@ -20,6 +21,85 @@ import {
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
 
+type ConditionDraft = {
+  column: string;
+  type: string;
+  severity: string;
+  min: string;
+  max: string;
+  values: string;
+  pattern: string;
+};
+
+const RULE_TYPES = [
+  { value: "not_null", label: "Not null" },
+  { value: "unique", label: "Unique" },
+  { value: "range", label: "Range" },
+  { value: "allowed_values", label: "Allowed values" },
+  { value: "regex", label: "Regex" },
+] as const;
+
+function emptyCondition(column = "target"): ConditionDraft {
+  return {
+    column,
+    type: "not_null",
+    severity: "fail",
+    min: "",
+    max: "",
+    values: "",
+    pattern: "",
+  };
+}
+
+function conditionsFromRule(rule: QualityRule, fallbackColumn: string): ConditionDraft[] {
+  const rows = Array.isArray(rule.rules) ? rule.rules : [];
+  if (rows.length === 0) return [emptyCondition(fallbackColumn)];
+  return rows.map((item) => ({
+    column: String(item.column ?? fallbackColumn),
+    type: String(item.type ?? "not_null"),
+    severity: String(item.severity ?? "fail"),
+    min: item.min !== undefined && item.min !== null ? String(item.min) : "",
+    max: item.max !== undefined && item.max !== null ? String(item.max) : "",
+    values: Array.isArray(item.values) ? item.values.map(String).join(", ") : "",
+    pattern: item.pattern !== undefined ? String(item.pattern) : "",
+  }));
+}
+
+function serializeConditions(conditions: ConditionDraft[]) {
+  return conditions.map((condition) => {
+    const base: Record<string, unknown> = {
+      type: condition.type,
+      column: condition.column,
+      severity: condition.severity,
+    };
+    if (condition.type === "range") {
+      if (condition.min !== "") base.min = Number(condition.min);
+      if (condition.max !== "") base.max = Number(condition.max);
+    }
+    if (condition.type === "allowed_values") {
+      base.values = condition.values
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+    }
+    if (condition.type === "regex") {
+      base.pattern = condition.pattern;
+    }
+    return base;
+  });
+}
+
+function typeLabel(type: string) {
+  return RULE_TYPES.find((item) => item.value === type)?.label ?? type;
+}
+
+function summarizeCondition(rule: Record<string, unknown>) {
+  const type = String(rule.type ?? "");
+  const column = String(rule.column ?? "—");
+  const severity = String(rule.severity ?? "fail");
+  return `${column} · ${typeLabel(type)} · ${severity}`;
+}
+
 export default function DatasetDetail() {
   const { projectId, datasetId } = useParams();
   const { user } = useAuth();
@@ -29,37 +109,63 @@ export default function DatasetDetail() {
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const [preview, setPreview] = useState<{ columns: string[]; rows: Array<Record<string, unknown>> } | null>(null);
   const [rules, setRules] = useState<QualityRule[]>([]);
+  const [legacyRules, setLegacyRules] = useState<QualityRule[]>([]);
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [splits, setSplits] = useState<DatasetSplit[]>([]);
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
+  const [showForm, setShowForm] = useState(false);
   const [ruleName, setRuleName] = useState("Required target");
-  const [ruleColumn, setRuleColumn] = useState("target");
-  const [ruleType, setRuleType] = useState("not_null");
+  const [ruleActive, setRuleActive] = useState(true);
+  const [ruleBlocking, setRuleBlocking] = useState(true);
+  const [conditions, setConditions] = useState<ConditionDraft[]>([emptyCondition()]);
+  const [expandedChecks, setExpandedChecks] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
+  const numericDatasetId = Number(datasetId);
+  const activeRules = useMemo(() => rules.filter((rule) => rule.is_active), [rules]);
+  const latestResult = checks[0]?.result ?? "—";
+
+  const loadRules = useCallback(async () => {
+    const [scoped, legacy] = await Promise.all([
+      api<QualityRule[]>(
+        `/projects/${projectId}/quality-rules?dataset_id=${datasetId}&include_inactive=true&include_unassigned=false`,
+      ),
+      api<QualityRule[]>(
+        `/projects/${projectId}/quality-rules?include_inactive=true&include_unassigned=true`,
+      ),
+    ]);
+    setRules(scoped.filter((rule) => rule.dataset_id === numericDatasetId));
+    setLegacyRules(legacy.filter((rule) => rule.dataset_id == null));
+  }, [datasetId, numericDatasetId, projectId]);
+
   const load = useCallback(async () => {
     setError("");
     try {
-      const [dataset, versionRows, ruleRows] = await Promise.all([
+      const [dataset, versionRows] = await Promise.all([
         api<Dataset>(`/projects/${projectId}/datasets/${datasetId}`),
         api<DatasetVersion[]>(`/projects/${projectId}/datasets/${datasetId}/versions`),
-        api<QualityRule[]>(`/projects/${projectId}/quality-rules`),
       ]);
       setDs(dataset);
       setVersions(versionRows);
-      setRules(ruleRows);
       setSelectedVersionId((current) => current || versionRows[0]?.id || null);
-      if (dataset.columns.includes("target")) setRuleColumn("target");
-      else if (dataset.columns[0]) setRuleColumn(dataset.columns[0]);
+      const fallback = dataset.columns.includes("target") ? "target" : dataset.columns[0] || "target";
+      setConditions((current) =>
+        current.length === 1 && !current[0].column ? [emptyCondition(fallback)] : current.map((row) => ({
+          ...row,
+          column: row.column || fallback,
+        })),
+      );
+      await loadRules();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Dataset could not be loaded.");
     } finally {
       setLoading(false);
     }
-  }, [datasetId, projectId]);
+  }, [datasetId, loadRules, projectId]);
 
   useEffect(() => {
     void load();
@@ -77,48 +183,148 @@ export default function DatasetDetail() {
       api<DatasetSplit[]>(`/projects/${projectId}/dataset-versions/${selected.id}/splits`),
     ])
       .then(([previewRows, checkRows, splitRows]) => {
-        setPreview(previewRows);
         setChecks(checkRows);
         setSplits(splitRows);
+        setPreview(previewRows);
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Version details could not be loaded."));
   }, [datasetId, projectId, selectedVersionId, versions]);
 
-  async function createRule(event: FormEvent) {
+  function resetForm(fallbackColumn?: string) {
+    const column = fallbackColumn
+      || (ds?.columns.includes("target") ? "target" : ds?.columns[0])
+      || "target";
+    setEditingRuleId(null);
+    setRuleName("Required target");
+    setRuleActive(true);
+    setRuleBlocking(true);
+    setConditions([emptyCondition(column)]);
+    setShowForm(false);
+  }
+
+  function startCreate() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  function startEdit(rule: QualityRule) {
+    const fallback = ds?.columns[0] || "target";
+    setEditingRuleId(rule.id);
+    setRuleName(rule.name);
+    setRuleActive(rule.is_active);
+    setRuleBlocking(rule.block_training_on_fail);
+    setConditions(conditionsFromRule(rule, fallback));
+    setShowForm(true);
+  }
+
+  async function saveRule(event: FormEvent) {
     event.preventDefault();
     setBusy("rule");
     setError("");
+    setSuccess("");
+    const payload = {
+      name: ruleName,
+      dataset_id: numericDatasetId,
+      is_active: ruleActive,
+      block_training_on_fail: ruleBlocking,
+      rules: serializeConditions(conditions),
+    };
     try {
-      await api(`/projects/${projectId}/quality-rules`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: ruleName,
-          rules: [{ type: ruleType, column: ruleColumn, severity: "fail" }],
-          block_training_on_fail: true,
-        }),
-      });
-      setSuccess("Quality rule created.");
-      await load();
+      if (editingRuleId == null) {
+        await api(`/projects/${projectId}/quality-rules`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Quality rule created.");
+      } else {
+        await api(`/projects/${projectId}/quality-rules/${editingRuleId}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        setSuccess("Quality rule updated.");
+      }
+      resetForm();
+      await loadRules();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Quality rule could not be created.");
+      setError(reason instanceof Error ? reason.message : "Quality rule could not be saved.");
     } finally {
       setBusy("");
     }
   }
 
-  async function runQuality() {
+  async function runQuality(ruleId?: number) {
     if (!selectedVersionId) return;
-    setBusy("quality");
+    setBusy(ruleId ? `run-${ruleId}` : "quality");
     setError("");
+    setSuccess("");
     try {
+      const body = ruleId == null ? {} : { quality_rule_id: ruleId };
       const result = await api<QualityCheck>(
         `/projects/${projectId}/dataset-versions/${selectedVersionId}/quality-checks`,
-        { method: "POST", body: JSON.stringify({}) },
+        { method: "POST", body: JSON.stringify(body) },
       );
-      setChecks((rows) => [result, ...rows]);
+      const [checkRows] = await Promise.all([
+        api<QualityCheck[]>(`/projects/${projectId}/quality-checks?dataset_version_id=${selectedVersionId}`),
+        loadRules(),
+      ]);
+      setChecks(checkRows);
+      setExpandedChecks((current) => ({ ...current, [result.id]: true }));
       setSuccess(`Quality check completed: ${result.result}.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Quality check could not run.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleActive(rule: QualityRule) {
+    setBusy(`active-${rule.id}`);
+    setError("");
+    try {
+      await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !rule.is_active }),
+      });
+      setSuccess(rule.is_active ? "Rule deactivated." : "Rule activated.");
+      await loadRules();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Rule status could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteRule(rule: QualityRule) {
+    setBusy(`delete-${rule.id}`);
+    setError("");
+    try {
+      await api(`/projects/${projectId}/quality-rules/${rule.id}`, { method: "DELETE" });
+      setSuccess("Quality rule deleted.");
+      if (editingRuleId === rule.id) resetForm();
+      await loadRules();
+    } catch (reason) {
+      if (reason instanceof ApiRequestError && reason.status === 409) {
+        setError("This rule has check history. Deactivate it instead.");
+      } else {
+        setError(reason instanceof Error ? reason.message : "Quality rule could not be deleted.");
+      }
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function assignLegacy(rule: QualityRule) {
+    setBusy(`legacy-${rule.id}`);
+    setError("");
+    try {
+      await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ dataset_id: numericDatasetId, is_active: true }),
+      });
+      setSuccess("Legacy rule assigned to this dataset and activated.");
+      await loadRules();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Legacy rule could not be assigned.");
     } finally {
       setBusy("");
     }
@@ -146,6 +352,73 @@ export default function DatasetDetail() {
   }
 
   const selected = versions.find((version) => version.id === selectedVersionId);
+  const columns = ds?.columns ?? [];
+
+  function renderRuleCard(rule: QualityRule, { legacy = false }: { legacy?: boolean } = {}) {
+    const conditionLines = (Array.isArray(rule.rules) ? rule.rules : []).map((item) => summarizeCondition(item));
+    return (
+      <div className="quality-rule-card" key={rule.id} data-testid={`quality-rule-${rule.id}`}>
+        <div className="quality-rule-head">
+          <div>
+            <strong>{rule.name}</strong>
+            <div className="quality-rule-meta">
+              <span className={`badge ${rule.is_active ? "ok" : "warn"}`}>{rule.is_active ? "Active" : "Inactive"}</span>
+              <span className={`badge ${rule.block_training_on_fail ? "err" : "run"}`}>
+                {rule.block_training_on_fail ? "Blocking" : "Non-blocking"}
+              </span>
+              {legacy ? <span className="badge warn">Needs dataset assignment</span> : null}
+              <small>
+                {legacy ? "Unassigned" : rule.dataset_name || `Dataset #${rule.dataset_id}`}
+                {" · "}
+                {conditionLines.length} condition{conditionLines.length === 1 ? "" : "s"}
+              </small>
+            </div>
+          </div>
+          {canWrite && (
+            <div className="row-actions">
+              {!legacy && (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid={`quality-run-${rule.id}`}
+                  disabled={busy !== "" || !rule.is_active}
+                  onClick={() => void runQuality(rule.id)}
+                >
+                  {busy === `run-${rule.id}` ? "Running…" : "Run"}
+                </button>
+              )}
+              <button type="button" className="btn secondary" data-testid={`quality-edit-${rule.id}`} disabled={busy !== ""} onClick={() => startEdit(rule)}>
+                Edit
+              </button>
+              {!legacy && (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid={`quality-toggle-${rule.id}`}
+                  disabled={busy !== ""}
+                  onClick={() => void toggleActive(rule)}
+                >
+                  {rule.is_active ? "Deactivate" : "Activate"}
+                </button>
+              )}
+              {legacy ? (
+                <button type="button" className="btn secondary" data-testid={`quality-assign-${rule.id}`} disabled={busy !== ""} onClick={() => void assignLegacy(rule)}>
+                  Assign to dataset
+                </button>
+              ) : (
+                <button type="button" className="btn secondary" data-testid={`quality-delete-${rule.id}`} disabled={busy !== ""} onClick={() => void deleteRule(rule)}>
+                  Delete
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <ul className="quality-condition-list">
+          {conditionLines.map((line) => <li key={line}>{line}</li>)}
+        </ul>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -167,7 +440,9 @@ export default function DatasetDetail() {
           <div className="grid stats-grid">
             <div className="stat"><div className="label">Rows</div><div className="value">{selected?.row_count.toLocaleString() ?? "—"}</div></div>
             <div className="stat"><div className="label">Columns</div><div className="value">{selected?.column_count ?? "—"}</div></div>
-            <div className="stat"><div className="label">Quality checks</div><div className="value">{checks.length}</div></div>
+            <div className="stat" data-testid="quality-active-count"><div className="label">Active rules</div><div className="value">{activeRules.length}</div></div>
+            <div className="stat" data-testid="quality-latest-result"><div className="label">Latest quality result</div><div className="value">{latestResult}</div></div>
+            <div className="stat" data-testid="quality-check-count"><div className="label">Quality checks</div><div className="value">{checks.length}</div></div>
             <div className="stat"><div className="label">Saved splits</div><div className="value">{splits.length}</div></div>
           </div>
           <section className="panel">
@@ -198,17 +473,173 @@ export default function DatasetDetail() {
             )}
           </section>
           <div className="two-column">
-            <section className="panel">
-              <div className="panel-title"><div><span className="eyebrow">Trust</span><h2>Data quality</h2></div>{canWrite && <button className="btn secondary" disabled={busy === "quality" || rules.length === 0} onClick={runQuality}>{busy === "quality" ? "Running…" : "Run all checks"}</button>}</div>
-              {rules.length === 0 ? <p className="muted">Create a rule before running quality checks.</p> : <p className="muted">{rules.length} rule set{rules.length === 1 ? "" : "s"} configured.</p>}
-              {canWrite && <form className="compact-form" onSubmit={createRule}>
-                <input aria-label="Rule name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
-                <select aria-label="Rule column" value={ruleColumn} onChange={(event) => setRuleColumn(event.target.value)}>{ds?.columns.map((column) => <option key={column}>{column}</option>)}</select>
-                <select aria-label="Rule type" value={ruleType} onChange={(event) => setRuleType(event.target.value)}><option value="not_null">Not null</option><option value="unique">Unique</option></select>
-                <button className="btn secondary" disabled={busy === "rule"}>Add rule</button>
-              </form>}
-              <div className="activity-list compact">
-                {checks.map((check) => <div key={check.id}><div><strong>Check #{check.id}</strong><small>{formatDate(check.created_at)}</small></div><StatusBadge status={check.result} /></div>)}
+            <section className="panel" data-testid="quality-panel">
+              <div className="panel-title">
+                <div><span className="eyebrow">Trust</span><h2>Data quality</h2></div>
+                {canWrite && (
+                  <div className="row-actions">
+                    <button className="btn secondary" data-testid="quality-run-all" disabled={busy !== "" || activeRules.length === 0} onClick={() => void runQuality()}>
+                      {busy === "quality" ? "Running…" : "Run all checks"}
+                    </button>
+                    <button className="btn secondary" data-testid="quality-create" disabled={busy !== ""} onClick={startCreate}>New rule</button>
+                  </div>
+                )}
+              </div>
+              {rules.length === 0 ? (
+                <p className="muted">No quality rules are assigned to this dataset yet.</p>
+              ) : (
+                <div className="quality-rule-list" data-testid="quality-rule-list">
+                  {rules.map((rule) => renderRuleCard(rule))}
+                </div>
+              )}
+              {canWrite && showForm && (
+                <form className="quality-rule-form" data-testid="quality-rule-form" onSubmit={saveRule}>
+                  <div className="panel-title"><div><h3>{editingRuleId == null ? "Create rule" : "Edit rule"}</h3></div></div>
+                  <label>
+                    Rule name
+                    <input aria-label="Rule name" data-testid="quality-rule-name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
+                  </label>
+                  <div className="quality-form-toggles">
+                    <label><input type="checkbox" data-testid="quality-rule-active" checked={ruleActive} onChange={(event) => setRuleActive(event.target.checked)} /> Active</label>
+                    <label><input type="checkbox" data-testid="quality-rule-blocking" checked={ruleBlocking} onChange={(event) => setRuleBlocking(event.target.checked)} /> Block training on fail</label>
+                  </div>
+                  {conditions.map((condition, index) => (
+                    <div className="quality-condition-editor" key={`condition-${index}`} data-testid={`quality-condition-${index}`}>
+                      <select aria-label={`Condition ${index + 1} column`} value={condition.column} onChange={(event) => {
+                        const next = [...conditions];
+                        next[index] = { ...condition, column: event.target.value };
+                        setConditions(next);
+                      }}>
+                        {columns.map((column) => <option key={column} value={column}>{column}</option>)}
+                      </select>
+                      <select aria-label={`Condition ${index + 1} type`} data-testid={`quality-condition-type-${index}`} value={condition.type} onChange={(event) => {
+                        const next = [...conditions];
+                        next[index] = { ...condition, type: event.target.value };
+                        setConditions(next);
+                      }}>
+                        {RULE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                      <select aria-label={`Condition ${index + 1} severity`} value={condition.severity} onChange={(event) => {
+                        const next = [...conditions];
+                        next[index] = { ...condition, severity: event.target.value };
+                        setConditions(next);
+                      }}>
+                        <option value="fail">Fail</option>
+                        <option value="warning">Warning</option>
+                      </select>
+                      {condition.type === "range" && (
+                        <>
+                          <input aria-label={`Condition ${index + 1} min`} placeholder="Min" value={condition.min} onChange={(event) => {
+                            const next = [...conditions];
+                            next[index] = { ...condition, min: event.target.value };
+                            setConditions(next);
+                          }} />
+                          <input aria-label={`Condition ${index + 1} max`} placeholder="Max" value={condition.max} onChange={(event) => {
+                            const next = [...conditions];
+                            next[index] = { ...condition, max: event.target.value };
+                            setConditions(next);
+                          }} />
+                        </>
+                      )}
+                      {condition.type === "allowed_values" && (
+                        <input
+                          aria-label={`Condition ${index + 1} values`}
+                          data-testid={`quality-condition-values-${index}`}
+                          placeholder="Comma-separated values"
+                          value={condition.values}
+                          onChange={(event) => {
+                            const next = [...conditions];
+                            next[index] = { ...condition, values: event.target.value };
+                            setConditions(next);
+                          }}
+                        />
+                      )}
+                      {condition.type === "regex" && (
+                        <input
+                          aria-label={`Condition ${index + 1} pattern`}
+                          data-testid={`quality-condition-pattern-${index}`}
+                          placeholder="Pattern"
+                          value={condition.pattern}
+                          onChange={(event) => {
+                            const next = [...conditions];
+                            next[index] = { ...condition, pattern: event.target.value };
+                            setConditions(next);
+                          }}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        data-testid={`quality-remove-condition-${index}`}
+                        disabled={conditions.length === 1}
+                        onClick={() => setConditions(conditions.filter((_, itemIndex) => itemIndex !== index))}
+                      >
+                        Remove condition
+                      </button>
+                    </div>
+                  ))}
+                  <div className="row-actions">
+                    <button type="button" className="btn secondary" data-testid="quality-add-condition" onClick={() => setConditions([...conditions, emptyCondition(columns[0] || "target")])}>
+                      Add condition
+                    </button>
+                    <button className="btn" data-testid="quality-save-rule" disabled={busy === "rule"}>{busy === "rule" ? "Saving…" : "Save rule"}</button>
+                    <button type="button" className="btn secondary" data-testid="quality-cancel-rule" onClick={() => resetForm()}>Cancel</button>
+                  </div>
+                </form>
+              )}
+              {legacyRules.length > 0 && (
+                <div className="legacy-quality-rules" data-testid="legacy-quality-rules">
+                  <h3>Legacy unassigned rules</h3>
+                  <p className="muted">Needs dataset assignment · Inactive until assigned.</p>
+                  {legacyRules.map((rule) => renderRuleCard(rule, { legacy: true }))}
+                </div>
+              )}
+              <div className="quality-check-history" data-testid="quality-check-history">
+                <h3>Check history</h3>
+                {checks.length === 0 ? (
+                  <p className="muted">No quality checks have been run for this version.</p>
+                ) : (
+                  checks.map((check) => {
+                    const open = expandedChecks[check.id] ?? false;
+                    return (
+                      <details
+                        key={check.id}
+                        className="quality-check-item"
+                        data-testid={`quality-check-${check.id}`}
+                        open={open}
+                        onToggle={(event) => {
+                          const nextOpen = (event.target as HTMLDetailsElement).open;
+                          setExpandedChecks((current) => ({ ...current, [check.id]: nextOpen }));
+                        }}
+                      >
+                        <summary>
+                          <strong>Check #{check.id}</strong>
+                          <StatusBadge status={check.result} />
+                          <small>{formatDate(check.created_at)}</small>
+                        </summary>
+                        <div className="quality-check-details">
+                          {(check.details || []).map((detail, index) => {
+                            const rule = detail.rule || {};
+                            return (
+                              <div key={`${check.id}-${index}`} className="quality-check-detail">
+                                <div>
+                                  <strong>{detail.quality_rule_name || `Rule #${detail.quality_rule_id ?? "—"}`}</strong>
+                                  <small>{summarizeCondition(rule)} · {(detail.passed ? "PASS" : "FAIL")}</small>
+                                </div>
+                                <div className="muted">{detail.message || "—"}</div>
+                                <small>
+                                  Severity: {detail.severity || String(rule.severity || "fail")}
+                                  {" · "}
+                                  Blocks training: {detail.block_training_on_fail ? "Yes" : "No"}
+                                </small>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    );
+                  })
+                )}
               </div>
             </section>
             <section className="panel">

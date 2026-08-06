@@ -12,9 +12,6 @@ from app.db.models import (
     Dataset,
     DatasetSplit,
     DatasetVersion,
-    QualityCheck,
-    QualityResult,
-    QualityRule,
 )
 from app.schemas.v1 import JobCreate
 from app.services import storage
@@ -23,6 +20,7 @@ from app.services.algorithm_catalog import (
     resolve_algorithm,
     validate_hyperparameters,
 )
+from app.services.quality import get_training_quality_blockers
 from app.services.training import _read_frame
 
 
@@ -178,26 +176,13 @@ def validate_training_config(
             )
 
     if version and not settings.allow_train_on_quality_fail:
-        latest_check = db.scalar(
-            select(QualityCheck)
-            .where(QualityCheck.dataset_version_id == version.id)
-            .order_by(QualityCheck.id.desc())
-        )
-        blocking_rules = db.scalar(
-            select(QualityRule.id).where(
-                QualityRule.project_id == project_id,
-                QualityRule.block_training_on_fail.is_(True),
-            )
-        )
-        if (
-            latest_check
-            and latest_check.result == QualityResult.FAIL
-            and blocking_rules
-        ):
+        blockers = get_training_quality_blockers(db, version.id)
+        if blockers:
+            names = ", ".join(item["name"] for item in blockers)
             raise TrainingConfigError(
                 409,
-                "Training is blocked by the latest quality check.",
-                "Resolve the failing quality rules or ask an administrator to override the policy.",
+                "Training is blocked by failed data quality rules.",
+                f"Blocking rules: {names}",
             )
 
     feature_columns = list(body.feature_columns or [])

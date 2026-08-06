@@ -217,12 +217,16 @@ def dataset_version_out(
 
 
 def quality_rule_out(row: QualityRule) -> dict[str, Any]:
+    dataset = getattr(row, "dataset", None)
     return {
         "id": row.id,
         "project_id": row.project_id,
+        "dataset_id": row.dataset_id,
+        "dataset_name": dataset.name if dataset is not None else None,
         "name": row.name,
         "rules": loads(row.rules_json, []),
         "block_training_on_fail": row.block_training_on_fail,
+        "is_active": row.is_active,
         "created_at": row.created_at,
     }
 

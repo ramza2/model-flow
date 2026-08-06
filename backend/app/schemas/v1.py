@@ -76,14 +76,18 @@ class DataImportRequest(BaseModel):
 
 class QualityRuleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
+    dataset_id: int
     rules: list[dict[str, Any]] = Field(default_factory=list)
     block_training_on_fail: bool = True
+    is_active: bool = True
 
 
 class QualityRuleUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
+    dataset_id: int | None = None
     rules: list[dict[str, Any]] | None = None
     block_training_on_fail: bool | None = None
+    is_active: bool | None = None
 
 
 class QualityRunRequest(BaseModel):

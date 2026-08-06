@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterable
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.db.models import QualityResult
+from app.db.models import (
+    Dataset,
+    DatasetVersion,
+    QualityCheck,
+    QualityResult,
+    QualityRule,
+)
 
 SUPPORTED_RULE_TYPES = {
     "required_columns",
@@ -279,3 +289,284 @@ def run_quality_rules(
 
 
 run_quality_checks = run_quality_rules
+
+
+# ---------------------------------------------------------------------------
+# Dataset-scoped API rule validation and training blockers
+# ---------------------------------------------------------------------------
+
+API_RULE_TYPES = frozenset(
+    {"not_null", "unique", "range", "allowed_values", "regex"}
+)
+API_SEVERITIES = frozenset({"fail", "warning"})
+
+
+class QualityRuleValidationError(ValueError):
+    """Raised when a quality rule payload fails validation."""
+
+
+def validate_api_rule_conditions(
+    rules: list[dict[str, Any]] | None,
+    *,
+    columns: list[str],
+) -> list[dict[str, Any]]:
+    """Validate and normalize API rule conditions. Raises QualityRuleValidationError."""
+    if not rules:
+        raise QualityRuleValidationError("At least one rule condition is required.")
+    column_set = set(columns)
+    normalized: list[dict[str, Any]] = []
+    for index, raw in enumerate(rules):
+        if not isinstance(raw, dict):
+            raise QualityRuleValidationError(
+                f"Rule condition {index + 1} must be an object."
+            )
+        rule_type = str(raw.get("type", "")).strip().lower()
+        if rule_type not in API_RULE_TYPES:
+            raise QualityRuleValidationError(
+                f"Unsupported rule type '{raw.get('type')}'. "
+                f"Supported types: {', '.join(sorted(API_RULE_TYPES))}."
+            )
+        column = raw.get("column")
+        if not column or not isinstance(column, str) or not column.strip():
+            raise QualityRuleValidationError(
+                f"Rule condition {index + 1} requires a column."
+            )
+        column = column.strip()
+        if column not in column_set:
+            raise QualityRuleValidationError(
+                f"Column '{column}' was not found in the dataset."
+            )
+        severity = str(raw.get("severity", "fail")).strip().lower()
+        if severity not in API_SEVERITIES:
+            raise QualityRuleValidationError(
+                f"Severity must be 'fail' or 'warning' (got '{raw.get('severity')}')."
+            )
+        condition: dict[str, Any] = {
+            "type": rule_type,
+            "column": column,
+            "severity": severity,
+        }
+        if rule_type == "range":
+            minimum = raw.get("min", raw.get("minimum"))
+            maximum = raw.get("max", raw.get("maximum"))
+            if minimum is None and maximum is None:
+                raise QualityRuleValidationError(
+                    "Range rules require at least one of min or max."
+                )
+            if minimum is not None and maximum is not None:
+                try:
+                    if float(minimum) > float(maximum):
+                        raise QualityRuleValidationError(
+                            "Range min must be less than or equal to max."
+                        )
+                except (TypeError, ValueError) as exc:
+                    raise QualityRuleValidationError(
+                        "Range min and max must be numeric."
+                    ) from exc
+            if minimum is not None:
+                condition["min"] = minimum
+            if maximum is not None:
+                condition["max"] = maximum
+        elif rule_type == "allowed_values":
+            values = raw.get("values", raw.get("allowed"))
+            if not isinstance(values, list) or len(values) == 0:
+                raise QualityRuleValidationError(
+                    "Allowed values must be a non-empty array."
+                )
+            condition["values"] = values
+        elif rule_type == "regex":
+            pattern = raw.get("pattern")
+            if not pattern or not isinstance(pattern, str):
+                raise QualityRuleValidationError("Regex rules require a pattern.")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise QualityRuleValidationError(
+                    f"Invalid regular expression: {exc}."
+                ) from exc
+            condition["pattern"] = pattern
+        normalized.append(condition)
+    return normalized
+
+
+def resolve_rule_dataset(
+    db: Session,
+    *,
+    project_id: int,
+    dataset_id: int,
+) -> Dataset:
+    """Return the dataset when it exists in the project; else raise QualityRuleValidationError."""
+    dataset = db.get(Dataset, dataset_id)
+    if not dataset or dataset.project_id != project_id:
+        raise QualityRuleValidationError(
+            f"Dataset {dataset_id} was not found in this project."
+        )
+    return dataset
+
+
+def validate_quality_rule_write(
+    db: Session,
+    *,
+    project_id: int,
+    name: str | None,
+    dataset_id: int | None,
+    rules: list[dict[str, Any]] | None,
+    require_dataset: bool,
+    require_rules: bool,
+    existing_dataset_id: int | None = None,
+) -> tuple[Dataset | None, list[dict[str, Any]] | None]:
+    """Shared create/update validation. Returns (dataset, normalized_rules)."""
+    if name is not None and not str(name).strip():
+        raise QualityRuleValidationError("Rule name must not be empty.")
+
+    dataset: Dataset | None = None
+    if dataset_id is not None:
+        dataset = resolve_rule_dataset(db, project_id=project_id, dataset_id=dataset_id)
+    elif require_dataset:
+        raise QualityRuleValidationError("dataset_id is required for new quality rules.")
+    elif (
+        existing_dataset_id is not None
+        and dataset_id is None
+        and require_dataset is False
+    ):
+        # Update without changing dataset — load columns from existing assignment when validating rules.
+        pass
+
+    columns: list[str] = []
+    target_dataset_id = (
+        dataset.id if dataset is not None else existing_dataset_id
+    )
+    if target_dataset_id is not None:
+        if dataset is None:
+            dataset = resolve_rule_dataset(
+                db, project_id=project_id, dataset_id=target_dataset_id
+            )
+        columns = json.loads(dataset.columns_json or "[]")
+
+    normalized_rules: list[dict[str, Any]] | None = None
+    if rules is not None:
+        if not columns and target_dataset_id is None:
+            raise QualityRuleValidationError(
+                "Assign a dataset before configuring rule conditions."
+            )
+        normalized_rules = validate_api_rule_conditions(rules, columns=columns)
+    elif require_rules:
+        raise QualityRuleValidationError("At least one rule condition is required.")
+
+    return dataset, normalized_rules
+
+
+def evaluate_api_rule(frame: pd.DataFrame, rule: dict[str, Any]) -> tuple[bool, str]:
+    """Evaluate a single API quality condition against a dataframe."""
+    rule_type = str(rule.get("type", "")).lower()
+    column = rule.get("column")
+    if column not in frame.columns:
+        return False, f"Column '{column}' was not found"
+    series = frame[column]
+    if rule_type in {"not_null", "nonnull"}:
+        count = int(series.isna().sum())
+        return count == 0, f"{count} null values"
+    if rule_type == "unique":
+        count = int(series.duplicated().sum())
+        return count == 0, f"{count} duplicate values"
+    if rule_type in {"range", "between"}:
+        minimum, maximum = rule.get("min"), rule.get("max")
+        invalid = series.notna() & (
+            ((series < minimum) if minimum is not None else False)
+            | ((series > maximum) if maximum is not None else False)
+        )
+        count = int(invalid.sum())
+        return count == 0, f"{count} values outside the configured range"
+    if rule_type in {"allowed_values", "in"}:
+        invalid = series.notna() & ~series.isin(rule.get("values", []))
+        count = int(invalid.sum())
+        return count == 0, f"{count} values are not allowed"
+    if rule_type == "regex":
+        try:
+            pattern = str(rule.get("pattern", ""))
+            re.compile(pattern)
+        except re.error as exc:
+            return False, f"Invalid regular expression: {exc}"
+        invalid = series.notna() & ~series.astype(str).str.match(pattern)
+        count = int(invalid.sum())
+        return count == 0, f"{count} values do not match"
+    return False, f"Unsupported rule type '{rule_type}'"
+
+
+def _detail_is_fail_severity_failure(detail: dict[str, Any]) -> bool:
+    if detail.get("passed", True):
+        return False
+    severity = detail.get("severity")
+    if severity is None and isinstance(detail.get("rule"), dict):
+        severity = detail["rule"].get("severity", "fail")
+    return str(severity or "fail").lower() == "fail"
+
+
+def get_training_quality_blockers(
+    db: Session,
+    dataset_version_id: int,
+) -> list[dict[str, Any]]:
+    """
+    Return active blocking rules whose latest evaluation has a fail-severity failure.
+
+    Walks quality checks newest-first and records the first (latest) result per rule.
+    Rules with no evaluation history do not block training.
+    """
+    version = db.get(DatasetVersion, dataset_version_id)
+    if version is None:
+        return []
+
+    active_blocking = db.scalars(
+        select(QualityRule).where(
+            QualityRule.project_id == version.project_id,
+            QualityRule.dataset_id == version.dataset_id,
+            QualityRule.is_active.is_(True),
+            QualityRule.block_training_on_fail.is_(True),
+        )
+    ).all()
+    if not active_blocking:
+        return []
+
+    pending: dict[int, QualityRule] = {rule.id: rule for rule in active_blocking}
+    blockers: list[dict[str, Any]] = []
+
+    checks = db.scalars(
+        select(QualityCheck)
+        .where(QualityCheck.dataset_version_id == dataset_version_id)
+        .order_by(QualityCheck.id.desc())
+    ).all()
+
+    for check in checks:
+        if not pending:
+            break
+        try:
+            details = json.loads(check.details_json or "[]")
+        except (TypeError, ValueError):
+            details = []
+        if not isinstance(details, list):
+            continue
+
+        seen_in_check: set[int] = set()
+        for detail in details:
+            if not isinstance(detail, dict):
+                continue
+            rule_id = detail.get("quality_rule_id")
+            if rule_id not in pending or rule_id in seen_in_check:
+                continue
+            seen_in_check.add(rule_id)
+            rule = pending.pop(rule_id)
+            rule_details = [
+                item
+                for item in details
+                if isinstance(item, dict) and item.get("quality_rule_id") == rule_id
+            ]
+            if any(_detail_is_fail_severity_failure(item) for item in rule_details):
+                blockers.append(
+                    {
+                        "quality_rule_id": rule.id,
+                        "name": rule.name,
+                        "check_id": check.id,
+                    }
+                )
+
+    return blockers

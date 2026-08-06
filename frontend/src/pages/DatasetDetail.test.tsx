@@ -1,0 +1,268 @@
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "../api";
+import DatasetDetail from "./DatasetDetail";
+
+const apiMock = vi.fn();
+
+vi.mock("../api", async () => {
+  const actual = await vi.importActual<typeof import("../api")>("../api");
+  return {
+    ...actual,
+    api: (...args: unknown[]) => apiMock(...args),
+  };
+});
+
+vi.mock("../AuthContext", () => ({
+  useAuth: () => ({ user: { id: 1, is_system_admin: true, email: "a@b.c" } }),
+}));
+
+const canWriteRef = { value: true };
+
+vi.mock("../ProjectContext", () => ({
+  useProject: () => ({ selectedProject: { id: 7, role: "PROJECT_ADMIN" } }),
+  userCanProject: () => canWriteRef.value,
+}));
+
+const dataset = {
+  id: 3,
+  name: "sites",
+  row_count: 3,
+  column_count: 3,
+  columns: ["site_id", "a", "target"],
+  latest_version: 1,
+};
+
+const version = {
+  id: 11,
+  dataset_id: 3,
+  version: 1,
+  original_filename: "sites.csv",
+  source_type: "upload",
+  row_count: 3,
+  column_count: 3,
+  columns: ["site_id", "a", "target"],
+  dtypes: { site_id: "object", a: "int64", target: "int64" },
+  stats: {},
+  created_at: "2026-08-06T10:00:00Z",
+};
+
+const activeRule = {
+  id: 12,
+  project_id: 7,
+  dataset_id: 3,
+  dataset_name: "sites",
+  name: "Unique site ID",
+  rules: [{ type: "unique", column: "site_id", severity: "fail" }],
+  block_training_on_fail: true,
+  is_active: true,
+  created_at: "2026-08-06T10:01:00Z",
+};
+
+const inactiveRule = {
+  ...activeRule,
+  id: 13,
+  name: "Inactive target",
+  is_active: false,
+  rules: [{ type: "not_null", column: "target", severity: "fail" }],
+};
+
+const legacyRule = {
+  id: 99,
+  project_id: 7,
+  dataset_id: null,
+  dataset_name: null,
+  name: "Legacy rule",
+  rules: [{ type: "not_null", column: "target", severity: "fail" }],
+  block_training_on_fail: true,
+  is_active: false,
+  created_at: "2026-08-01T10:00:00Z",
+};
+
+const check = {
+  id: 15,
+  dataset_version_id: 11,
+  result: "FAIL",
+  created_at: "2026-08-06T10:30:00Z",
+  details: [
+    {
+      quality_rule_id: 12,
+      quality_rule_name: "Unique site ID",
+      rule: { type: "unique", column: "site_id", severity: "fail" },
+      severity: "fail",
+      block_training_on_fail: true,
+      passed: false,
+      message: "24 duplicate values",
+    },
+  ],
+};
+
+function mockApiRouter() {
+  apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    const method = (init?.method || "GET").toUpperCase();
+    if (path === "/projects/7/datasets/3") return dataset;
+    if (path === "/projects/7/datasets/3/versions") return [version];
+    if (path.includes("/quality-rules?") && path.includes("include_unassigned=true") && !path.includes("dataset_id=")) {
+      return [activeRule, inactiveRule, legacyRule];
+    }
+    if (path.includes("/quality-rules?dataset_id=3")) {
+      return [activeRule, inactiveRule];
+    }
+    if (path.includes("/versions/1/preview")) {
+      return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+    }
+    if (path.includes("/quality-checks?dataset_version_id=11")) return [check];
+    if (path.includes("/splits")) return [];
+    if (path === "/projects/7/quality-rules" && method === "POST") {
+      const body = JSON.parse(String(init?.body || "{}"));
+      return { ...activeRule, id: 50, name: body.name, rules: body.rules, is_active: body.is_active };
+    }
+    if (path.startsWith("/projects/7/quality-rules/") && method === "PATCH") {
+      const body = JSON.parse(String(init?.body || "{}"));
+      const id = Number(path.split("/").pop());
+      if (id === 99) {
+        return { ...legacyRule, dataset_id: 3, dataset_name: "sites", is_active: true, ...body };
+      }
+      return { ...activeRule, id, ...body };
+    }
+    if (path.startsWith("/projects/7/quality-rules/") && method === "DELETE") {
+      throw new ApiRequestError(409, "This quality rule has check history and cannot be deleted.", "Deactivate the rule instead of deleting it.");
+    }
+    if (path.includes("/quality-checks") && method === "POST") {
+      const body = JSON.parse(String(init?.body || "{}"));
+      return { ...check, id: 16, quality_rule_id: body.quality_rule_id ?? null, result: "FAIL" };
+    }
+    throw new Error(`Unhandled api call ${method} ${path}`);
+  });
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={["/projects/7/datasets/3"]}>
+      <Routes>
+        <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("DatasetDetail quality management", () => {
+  beforeEach(() => {
+    canWriteRef.value = true;
+    apiMock.mockReset();
+    mockApiRouter();
+  });
+
+  it("filters dataset rules, shows badges, and expands check details", async () => {
+    renderPage();
+    await screen.findByTestId("quality-rule-12");
+    expect(screen.getByText("Unique site ID")).toBeInTheDocument();
+    expect(within(screen.getByTestId("quality-rule-12")).getByText("Active")).toBeInTheDocument();
+    expect(within(screen.getByTestId("quality-rule-13")).getByText("Inactive")).toBeInTheDocument();
+    expect(screen.getByTestId("quality-active-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("legacy-quality-rules")).toHaveTextContent("Legacy unassigned rules");
+    expect(screen.getByTestId("legacy-quality-rules")).toHaveTextContent("Needs dataset assignment");
+
+    const checkItem = await screen.findByTestId("quality-check-15");
+    fireEvent.click(within(checkItem).getByText(/Check #15/));
+    await waitFor(() => {
+      expect(checkItem).toHaveTextContent("24 duplicate values");
+      expect(checkItem).toHaveTextContent("Blocks training: Yes");
+    });
+  });
+
+  it("creates rules with multiple dynamic conditions", async () => {
+    renderPage();
+    await screen.findByTestId("quality-create");
+    fireEvent.click(screen.getByTestId("quality-create"));
+    fireEvent.change(screen.getByTestId("quality-rule-name"), { target: { value: "Multi" } });
+    fireEvent.click(screen.getByTestId("quality-add-condition"));
+    expect(screen.getByTestId("quality-condition-1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("quality-condition-type-1"), { target: { value: "regex" } });
+    expect(screen.getByTestId("quality-condition-pattern-1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "allowed_values" } });
+    expect(screen.getByTestId("quality-condition-values-0")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("quality-remove-condition-1"));
+    expect(screen.queryByTestId("quality-condition-1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("quality-save-rule"));
+    await waitFor(() => {
+      const createCall = apiMock.mock.calls.find(
+        ([path, init]) => path === "/projects/7/quality-rules" && init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+      const body = JSON.parse(String(createCall![1].body));
+      expect(body.dataset_id).toBe(3);
+      expect(body.rules[0].type).toBe("allowed_values");
+    });
+  });
+
+  it("pre-fills edit form and runs individual / all checks", async () => {
+    renderPage();
+    await screen.findByTestId("quality-edit-12");
+    fireEvent.click(screen.getByTestId("quality-edit-12"));
+    expect(screen.getByTestId("quality-rule-name")).toHaveValue("Unique site ID");
+    expect(screen.getByTestId("quality-rule-blocking")).toBeChecked();
+
+    fireEvent.click(screen.getByTestId("quality-run-12"));
+    await waitFor(() => {
+      const runCall = apiMock.mock.calls.find(
+        ([path, init]) =>
+          String(path).includes("/quality-checks") &&
+          init?.method === "POST" &&
+          String(init.body).includes('"quality_rule_id":12'),
+      );
+      expect(runCall).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("quality-run-all"));
+    await waitFor(() => {
+      const runAll = apiMock.mock.calls.find(
+        ([path, init]) =>
+          String(path).includes("/quality-checks") &&
+          init?.method === "POST" &&
+          init.body === "{}",
+      );
+      expect(runAll).toBeTruthy();
+    });
+  });
+
+  it("shows delete 409 guidance, deactivate, and legacy assign", async () => {
+    renderPage();
+    await screen.findByTestId("quality-delete-12");
+    fireEvent.click(screen.getByTestId("quality-delete-12"));
+    await screen.findByText(/This rule has check history\. Deactivate it instead\./);
+
+    fireEvent.click(screen.getByTestId("quality-toggle-12"));
+    await waitFor(() => {
+      const patch = apiMock.mock.calls.find(
+        ([path, init]) =>
+          path === "/projects/7/quality-rules/12" &&
+          init?.method === "PATCH" &&
+          String(init.body).includes('"is_active":false'),
+      );
+      expect(patch).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("quality-assign-99"));
+    await waitFor(() => {
+      const assign = apiMock.mock.calls.find(
+        ([path, init]) =>
+          path === "/projects/7/quality-rules/99" &&
+          init?.method === "PATCH" &&
+          String(init.body).includes('"dataset_id":3'),
+      );
+      expect(assign).toBeTruthy();
+    });
+  });
+
+  it("hides write actions without DATA_WRITE permission", async () => {
+    canWriteRef.value = false;
+    renderPage();
+    await screen.findByTestId("quality-rule-12");
+    expect(screen.queryByTestId("quality-create")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-run-all")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-edit-12")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-delete-12")).not.toBeInTheDocument();
+  });
+});
