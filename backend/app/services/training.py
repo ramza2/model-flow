@@ -36,36 +36,24 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from app.core.config import settings
+from app.services.algorithm_catalog import (
+    ALGORITHM_ALIASES,
+    CLASSIFICATION_ALGORITHMS,
+    REGRESSION_ALGORITHMS,
+    normalize_problem_type as _normalise_problem_type,
+    resolve_algorithm as _resolve_algorithm,
+)
 
-ALGORITHM_ALIASES = {
-    "logistic": "logistic_regression",
-    "logistic_regression": "logistic_regression",
-    "lr": "logistic_regression",
-    "random_forest": "random_forest",
-    "random_forest_classifier": "random_forest",
-    "rf": "random_forest",
-    "rf_classifier": "random_forest",
-    "gradient_boosting": "gradient_boosting",
-    "gradient_boosting_classifier": "gradient_boosting",
-    "gb": "gradient_boosting",
-    "gb_classifier": "gradient_boosting",
-    "ridge": "ridge",
-    "ridge_regression": "ridge",
-    "random_forest_regressor": "random_forest_regressor",
-    "rf_regressor": "random_forest_regressor",
-    "gradient_boosting_regressor": "gradient_boosting_regressor",
-    "gb_regressor": "gradient_boosting_regressor",
-}
-CLASSIFICATION_ALGORITHMS = {
-    "logistic_regression",
-    "random_forest",
-    "gradient_boosting",
-}
-REGRESSION_ALGORITHMS = {
-    "ridge",
-    "random_forest_regressor",
-    "gradient_boosting_regressor",
-}
+# Re-export catalog constants for callers that historically imported them here.
+__all__ = (
+    "ALGORITHM_ALIASES",
+    "CLASSIFICATION_ALGORITHMS",
+    "REGRESSION_ALGORITHMS",
+    "SklearnTrainingRunner",
+    "TrainingJobContext",
+    "TrainingResult",
+    "TrainingRunner",
+)
 
 
 @dataclass
@@ -117,43 +105,8 @@ def _read_frame(data: bytes, data_format: str) -> pd.DataFrame:
     raise ValueError(f"Unsupported training data format: {data_format}")
 
 
-def _detect_problem_type(target: pd.Series) -> str:
-    if (
-        pd.api.types.is_bool_dtype(target)
-        or pd.api.types.is_string_dtype(target)
-        or isinstance(target.dtype, pd.CategoricalDtype)
-    ):
-        return "classification"
-    unique = target.nunique(dropna=True)
-    if pd.api.types.is_integer_dtype(target) and unique <= max(20, int(len(target) * 0.2)):
-        return "classification"
-    return "regression"
-
-
-def _normalise_problem_type(value: str, target: pd.Series) -> str:
-    value = value.lower().strip()
-    if value == "auto":
-        return _detect_problem_type(target)
-    if value not in {"classification", "regression"}:
-        raise ValueError("problem_type must be classification, regression, or auto.")
-    return value
-
-
 def _algorithm(value: str, problem_type: str) -> str:
-    canonical = ALGORITHM_ALIASES.get(value.lower().strip())
-    if canonical is None:
-        raise ValueError(
-            f"Unsupported algorithm '{value}'. Supported algorithms: "
-            + ", ".join(sorted(set(ALGORITHM_ALIASES.values())))
-        )
-    allowed = (
-        CLASSIFICATION_ALGORITHMS
-        if problem_type == "classification"
-        else REGRESSION_ALGORITHMS
-    )
-    if canonical not in allowed:
-        raise ValueError(f"Algorithm '{canonical}' does not support {problem_type}.")
-    return canonical
+    return _resolve_algorithm(value, problem_type)
 
 
 def _filtered_params(estimator: Any, values: dict[str, Any]) -> dict[str, Any]:
@@ -167,7 +120,9 @@ def _filtered_params(estimator: Any, values: dict[str, Any]) -> dict[str, Any]:
     }
     unknown = sorted(set(values) - set(accepted) - ignored)
     if unknown:
-        raise ValueError(f"Unsupported hyperparameters for this algorithm: {unknown}")
+        raise ValueError(
+            f"Unsupported hyperparameters for this algorithm: {', '.join(unknown)}"
+        )
     return {key: value for key, value in values.items() if key in accepted}
 
 

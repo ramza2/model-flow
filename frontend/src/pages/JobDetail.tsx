@@ -59,7 +59,7 @@ export default function JobDetail() {
     }
   }
 
-  async function action(name: "cancel" | "retry" | "clone") {
+  async function action(name: "cancel" | "retry") {
     if (!job) return;
     if (name === "cancel" && !confirmAction(`Cancel training job “${job.name}”?`)) return;
     setBusy(name);
@@ -67,7 +67,6 @@ export default function JobDetail() {
     try {
       const next = await api<Job>(`/projects/${projectId}/jobs/${job.id}/${name}`, {
         method: "POST",
-        body: name === "clone" ? JSON.stringify({ name: `${job.name} (clone)` }) : undefined,
       });
       if (name === "cancel") {
         setJob(next);
@@ -97,8 +96,24 @@ export default function JobDetail() {
         <>
           <div className="row-actions toolbar-actions">
             {canTrain && active && <button className="btn danger" disabled={busy === "cancel"} onClick={() => action("cancel")}>Stop job</button>}
-            {canTrain && ["failed", "cancelled"].includes(job.status) && <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")}>Retry</button>}
-            {canTrain && <button className="btn secondary" disabled={Boolean(busy)} onClick={() => action("clone")}>Clone configuration</button>}
+            {canTrain && ["failed", "cancelled"].includes(job.status) && (
+              <div className="retry-group">
+                <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")} data-testid="job-retry">Retry</button>
+                <p className="form-hint" data-testid="retry-hint">
+                  Retry reruns this job with the same configuration.
+                  Use Clone configuration to modify settings.
+                </p>
+              </div>
+            )}
+            {canTrain && (
+              <Link
+                className="btn secondary"
+                to={`/projects/${projectId}/jobs/new?cloneFrom=${job.id}`}
+                data-testid="job-clone"
+              >
+                Clone configuration
+              </Link>
+            )}
             {job.mlflow_run_id && <Link className="btn secondary" to={`/projects/${projectId}/experiments?run=${job.mlflow_run_id}`}>Open experiment</Link>}
             {canRegister && job.status === "succeeded" && job.model_uri && (
               <button className="btn" type="button" disabled={busy === "register"} onClick={register} data-testid="register-model">
@@ -119,7 +134,7 @@ export default function JobDetail() {
                 <div><dt>Target column</dt><dd className="mono">{job.target_column}</dd></div>
                 <div><dt>Dataset</dt><dd><Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link></dd></div>
                 <div><dt>Created</dt><dd>{formatDate(job.created_at)}</dd></div>
-                <div><dt>Finished</dt><dd>{formatDate(job.finished_at)}</dd></div>
+                <div><dt>Finished</dt><dd data-testid="job-finished-at">{formatDate(job.finished_at)}</dd></div>
               </dl>
             </section>
             <section className="panel">

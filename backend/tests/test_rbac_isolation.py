@@ -217,6 +217,9 @@ def test_data_scientist_can_train_but_cannot_approve(client, world):
             "dataset_id": dataset["id"],
             "dataset_version_id": dataset["version"]["id"],
             "target_column": "target",
+            "feature_columns": ["feature"],
+            "algorithm": "random_forest",
+            "hyperparameters": {"n_estimators": 10, "max_depth": 3},
         },
     )
     assert job.status_code == 201, job.text
