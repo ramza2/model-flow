@@ -98,7 +98,7 @@ const check = {
   ],
 };
 
-function mockApiRouter() {
+function stubQualityApi() {
   apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
     const method = (init?.method || "GET").toUpperCase();
     if (path === "/projects/7/datasets/3") return dataset;
@@ -151,7 +151,7 @@ describe("DatasetDetail quality management", () => {
   beforeEach(() => {
     canWriteRef.value = true;
     apiMock.mockReset();
-    mockApiRouter();
+    stubQualityApi();
   });
 
   it("filters dataset rules, shows badges, and expands check details", async () => {
