@@ -660,3 +660,16 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 @media (max-width: 760px) {
   .quality-rule-head { flex-direction: column; }
 }
+
+.quality-action-error { margin: .65rem 0 .35rem; }
+.quality-check-detail-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.quality-check-detail-heading strong,
+.quality-check-detail-heading small {
+  display: block;
+  overflow-wrap: anywhere;
+}

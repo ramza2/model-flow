@@ -157,7 +157,7 @@ describe("DatasetDetail quality management", () => {
   it("filters dataset rules, shows badges, and expands check details", async () => {
     renderPage();
     await screen.findByTestId("quality-rule-12");
-    expect(screen.getByText("Unique site ID")).toBeInTheDocument();
+    expect(within(screen.getByTestId("quality-rule-12")).getByText("Unique site ID")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Active")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-13")).getByText("Inactive")).toBeInTheDocument();
     expect(screen.getByTestId("quality-active-count")).toHaveTextContent("1");
@@ -170,6 +170,14 @@ describe("DatasetDetail quality management", () => {
       expect(checkItem).toHaveTextContent("24 duplicate values");
       expect(checkItem).toHaveTextContent("Blocks training: Yes");
     });
+    const ruleName = screen.getByTestId("quality-check-rule-name-15-0");
+    const condition = screen.getByTestId("quality-check-condition-15-0");
+    expect(ruleName.tagName).toBe("STRONG");
+    expect(condition.tagName).toBe("SMALL");
+    expect(ruleName).toHaveTextContent("Unique site ID");
+    expect(condition).toHaveTextContent("site_id · Unique · fail · FAIL");
+    expect(ruleName.parentElement).toHaveClass("quality-check-detail-heading");
+    expect(ruleName.nextElementSibling).toBe(condition);
   });
 
   it("creates rules with multiple dynamic conditions", async () => {
@@ -227,14 +235,20 @@ describe("DatasetDetail quality management", () => {
     });
   });
 
-  it("shows delete 409 guidance, deactivate, and legacy assign", async () => {
+  it("shows delete 409 guidance inline and clears it on the next action", async () => {
     renderPage();
     await screen.findByTestId("quality-delete-12");
     fireEvent.click(screen.getByTestId("quality-delete-12"));
-    await screen.findByText(/This rule has check history\. Deactivate it instead\./);
+    const inlineError = await screen.findByTestId("quality-action-error");
+    expect(inlineError).toHaveAttribute("role", "alert");
+    expect(inlineError).toHaveTextContent("This rule has check history. Deactivate it instead.");
+    expect(within(screen.getByTestId("quality-panel")).getByTestId("quality-action-error")).toBeInTheDocument();
+    expect(screen.getByTestId("quality-rule-12")).toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid="quality-action-error"]')).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId("quality-toggle-12"));
     await waitFor(() => {
+      expect(screen.queryByTestId("quality-action-error")).not.toBeInTheDocument();
       const patch = apiMock.mock.calls.find(
         ([path, init]) =>
           path === "/projects/7/quality-rules/12" &&
@@ -254,6 +268,19 @@ describe("DatasetDetail quality management", () => {
       );
       expect(assign).toBeTruthy();
     });
+  });
+
+  it("keeps dataset load failures in the global error notice", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/datasets/3") {
+        throw new Error("Dataset could not be loaded.");
+      }
+      return [];
+    });
+    renderPage();
+    await screen.findByText("Dataset could not be loaded.");
+    expect(screen.queryByTestId("quality-action-error")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Dataset could not be loaded.");
   });
 
   it("hides write actions without DATA_WRITE permission", async () => {

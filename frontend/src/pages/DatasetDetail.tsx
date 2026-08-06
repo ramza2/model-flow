@@ -122,6 +122,7 @@ export default function DatasetDetail() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [qualityActionError, setQualityActionError] = useState("");
   const [success, setSuccess] = useState("");
   const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
@@ -220,7 +221,7 @@ export default function DatasetDetail() {
   async function saveRule(event: FormEvent) {
     event.preventDefault();
     setBusy("rule");
-    setError("");
+    setQualityActionError("");
     setSuccess("");
     const payload = {
       name: ruleName,
@@ -246,7 +247,7 @@ export default function DatasetDetail() {
       resetForm();
       await loadRules();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Quality rule could not be saved.");
+      setQualityActionError(reason instanceof Error ? reason.message : "Quality rule could not be saved.");
     } finally {
       setBusy("");
     }
@@ -255,7 +256,7 @@ export default function DatasetDetail() {
   async function runQuality(ruleId?: number) {
     if (!selectedVersionId) return;
     setBusy(ruleId ? `run-${ruleId}` : "quality");
-    setError("");
+    setQualityActionError("");
     setSuccess("");
     try {
       const body = ruleId == null ? {} : { quality_rule_id: ruleId };
@@ -271,7 +272,7 @@ export default function DatasetDetail() {
       setExpandedChecks((current) => ({ ...current, [result.id]: true }));
       setSuccess(`Quality check completed: ${result.result}.`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Quality check could not run.");
+      setQualityActionError(reason instanceof Error ? reason.message : "Quality check could not run.");
     } finally {
       setBusy("");
     }
@@ -279,7 +280,8 @@ export default function DatasetDetail() {
 
   async function toggleActive(rule: QualityRule) {
     setBusy(`active-${rule.id}`);
-    setError("");
+    setQualityActionError("");
+    setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
         method: "PATCH",
@@ -288,7 +290,7 @@ export default function DatasetDetail() {
       setSuccess(rule.is_active ? "Rule deactivated." : "Rule activated.");
       await loadRules();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Rule status could not be updated.");
+      setQualityActionError(reason instanceof Error ? reason.message : "Rule status could not be updated.");
     } finally {
       setBusy("");
     }
@@ -296,7 +298,8 @@ export default function DatasetDetail() {
 
   async function deleteRule(rule: QualityRule) {
     setBusy(`delete-${rule.id}`);
-    setError("");
+    setQualityActionError("");
+    setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, { method: "DELETE" });
       setSuccess("Quality rule deleted.");
@@ -304,9 +307,9 @@ export default function DatasetDetail() {
       await loadRules();
     } catch (reason) {
       if (reason instanceof ApiRequestError && reason.status === 409) {
-        setError("This rule has check history. Deactivate it instead.");
+        setQualityActionError("This rule has check history. Deactivate it instead.");
       } else {
-        setError(reason instanceof Error ? reason.message : "Quality rule could not be deleted.");
+        setQualityActionError(reason instanceof Error ? reason.message : "Quality rule could not be deleted.");
       }
     } finally {
       setBusy("");
@@ -315,7 +318,8 @@ export default function DatasetDetail() {
 
   async function assignLegacy(rule: QualityRule) {
     setBusy(`legacy-${rule.id}`);
-    setError("");
+    setQualityActionError("");
+    setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
         method: "PATCH",
@@ -324,7 +328,7 @@ export default function DatasetDetail() {
       setSuccess("Legacy rule assigned to this dataset and activated.");
       await loadRules();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Legacy rule could not be assigned.");
+      setQualityActionError(reason instanceof Error ? reason.message : "Legacy rule could not be assigned.");
     } finally {
       setBusy("");
     }
@@ -485,6 +489,11 @@ export default function DatasetDetail() {
                   </div>
                 )}
               </div>
+              {qualityActionError ? (
+                <div className="error quality-action-error" role="alert" data-testid="quality-action-error">
+                  {qualityActionError}
+                </div>
+              ) : null}
               {rules.length === 0 ? (
                 <p className="muted">No quality rules are assigned to this dataset yet.</p>
               ) : (
@@ -621,10 +630,14 @@ export default function DatasetDetail() {
                           {(check.details || []).map((detail, index) => {
                             const rule = detail.rule || {};
                             return (
-                              <div key={`${check.id}-${index}`} className="quality-check-detail">
-                                <div>
-                                  <strong>{detail.quality_rule_name || `Rule #${detail.quality_rule_id ?? "—"}`}</strong>
-                                  <small>{summarizeCondition(rule)} · {(detail.passed ? "PASS" : "FAIL")}</small>
+                              <div key={`${check.id}-${index}`} className="quality-check-detail" data-testid={`quality-check-detail-${check.id}-${index}`}>
+                                <div className="quality-check-detail-heading">
+                                  <strong data-testid={`quality-check-rule-name-${check.id}-${index}`}>
+                                    {detail.quality_rule_name || `Rule #${detail.quality_rule_id ?? "—"}`}
+                                  </strong>
+                                  <small data-testid={`quality-check-condition-${check.id}-${index}`}>
+                                    {summarizeCondition(rule)} · {detail.passed ? "PASS" : "FAIL"}
+                                  </small>
                                 </div>
                                 <div className="muted">{detail.message || "—"}</div>
                                 <small>
