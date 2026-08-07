@@ -676,3 +676,6 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 
 .quality-rule-card .quality-action-error { margin: .55rem 0 .15rem; }
 .quality-rule-form .quality-action-error { margin: 0 0 .55rem; }
+
+.training-submit-footer { display: flex; flex-direction: column; gap: .65rem; margin-top: .35rem; }
+.training-submit-error { margin: 0; }

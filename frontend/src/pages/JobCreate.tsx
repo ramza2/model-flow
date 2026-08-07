@@ -54,6 +54,7 @@ export default function JobCreate() {
   const [maxRetries, setMaxRetries] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [busy, setBusy] = useState(false);
   const [cloneLoaded, setCloneLoaded] = useState(!cloneFrom);
 
@@ -228,12 +229,14 @@ export default function JobCreate() {
   }, [algorithm, catalog, detectedType, problemType]);
 
   function onAlgorithmChange(nextId: string) {
+    setSubmitError("");
     setAlgorithm(nextId);
     const next = catalog.find((item) => item.id === nextId);
     if (next) setHyperparameters(formatHyperparameters(next.default_hyperparameters));
   }
 
   function toggleFeature(column: string) {
+    setSubmitError("");
     setFeatureColumns((current) => (
       current.includes(column)
         ? current.filter((item) => item !== column)
@@ -244,7 +247,7 @@ export default function JobCreate() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
-    setError("");
+    setSubmitError("");
     try {
       if (featureColumns.length === 0) {
         throw new Error("Select at least one feature column.");
@@ -279,7 +282,7 @@ export default function JobCreate() {
       });
       nav(`/projects/${projectId}/jobs/${job.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Training job could not be created.");
+      setSubmitError(err instanceof Error ? err.message : "Training job could not be created.");
     } finally {
       setBusy(false);
     }
@@ -301,7 +304,14 @@ export default function JobCreate() {
             <div className="form-grid">
               <label>Job name<input value={name} onChange={(event) => setName(event.target.value)} required data-testid="job-name" /></label>
               <label>Problem type
-                <select value={problemType} onChange={(event) => setProblemType(event.target.value)} data-testid="job-problem-type">
+                <select
+                  value={problemType}
+                  onChange={(event) => {
+                    setSubmitError("");
+                    setProblemType(event.target.value);
+                  }}
+                  data-testid="job-problem-type"
+                >
                   <option value="auto">Detect automatically</option>
                   <option value="classification">Classification</option>
                   <option value="regression">Regression</option>
@@ -332,6 +342,7 @@ export default function JobCreate() {
                 <select
                   value={datasetId}
                   onChange={(event) => {
+                    setSubmitError("");
                     setDatasetId(event.target.value);
                     setDatasetVersionId(null);
                     setFeatureColumns([]);
@@ -343,7 +354,15 @@ export default function JobCreate() {
                 </select>
               </label>
               <label>Target column
-                <select value={target} onChange={(event) => setTarget(event.target.value)} required data-testid="job-target">
+                <select
+                  value={target}
+                  onChange={(event) => {
+                    setSubmitError("");
+                    setTarget(event.target.value);
+                  }}
+                  required
+                  data-testid="job-target"
+                >
                   {selected?.columns.map((column) => <option key={column} value={column}>{column}</option>)}
                 </select>
               </label>
@@ -352,7 +371,10 @@ export default function JobCreate() {
               <label>Dataset version
                 <select
                   value={datasetVersionId ?? ""}
-                  onChange={(event) => setDatasetVersionId(Number(event.target.value))}
+                  onChange={(event) => {
+                    setSubmitError("");
+                    setDatasetVersionId(Number(event.target.value));
+                  }}
                   data-testid="job-dataset-version"
                 >
                   {versions.map((version) => (
@@ -398,22 +420,32 @@ export default function JobCreate() {
               <textarea
                 className="code-input"
                 value={hyperparameters}
-                onChange={(event) => setHyperparameters(event.target.value)}
+                onChange={(event) => {
+                  setSubmitError("");
+                  setHyperparameters(event.target.value);
+                }}
                 spellCheck={false}
                 data-testid="job-hyperparameters"
               />
             </label>
           </div>
-          <div className="row-actions form-actions">
-            <button
-              className="btn"
-              type="submit"
-              disabled={busy || !datasetId || featureColumns.length === 0 || waitingForDetection}
-              data-testid="job-submit"
-            >
-              {busy ? "Queuing…" : "Start training"}
-            </button>
-            <button className="btn secondary" type="button" onClick={() => nav(`/projects/${projectId}/jobs`)}>Cancel</button>
+          <div className="training-submit-footer" data-testid="training-submit-actions">
+            {submitError ? (
+              <div className="error training-submit-error" role="alert" data-testid="training-submit-error">
+                {submitError}
+              </div>
+            ) : null}
+            <div className="row-actions form-actions">
+              <button
+                className="btn"
+                type="submit"
+                disabled={busy || !datasetId || featureColumns.length === 0 || waitingForDetection}
+                data-testid="job-submit"
+              >
+                {busy ? "Queuing…" : "Start training"}
+              </button>
+              <button className="btn secondary" type="button" onClick={() => nav(`/projects/${projectId}/jobs`)}>Cancel</button>
+            </div>
           </div>
         </form>
       )}
