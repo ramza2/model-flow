@@ -235,20 +235,21 @@ describe("DatasetDetail quality management", () => {
     });
   });
 
-  it("shows delete 409 guidance inline and clears it on the next action", async () => {
+  it("shows delete 409 on the rule card and clears it on the next action", async () => {
     renderPage();
     await screen.findByTestId("quality-delete-12");
     fireEvent.click(screen.getByTestId("quality-delete-12"));
-    const inlineError = await screen.findByTestId("quality-action-error");
-    expect(inlineError).toHaveAttribute("role", "alert");
-    expect(inlineError).toHaveTextContent("This rule has check history. Deactivate it instead.");
-    expect(within(screen.getByTestId("quality-panel")).getByTestId("quality-action-error")).toBeInTheDocument();
+    const ruleError = await screen.findByTestId("quality-rule-error-12");
+    expect(ruleError).toHaveAttribute("role", "alert");
+    expect(ruleError).toHaveTextContent("This rule has check history. Deactivate it instead.");
+    expect(within(screen.getByTestId("quality-rule-12")).getByTestId("quality-rule-error-12")).toBeInTheDocument();
+    expect(screen.queryByTestId("quality-rule-error-13")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-action-error")).not.toBeInTheDocument();
     expect(screen.getByTestId("quality-rule-12")).toBeInTheDocument();
-    expect(document.querySelectorAll('[data-testid="quality-action-error"]')).toHaveLength(1);
 
     fireEvent.click(screen.getByTestId("quality-toggle-12"));
     await waitFor(() => {
-      expect(screen.queryByTestId("quality-action-error")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("quality-rule-error-12")).not.toBeInTheDocument();
       const patch = apiMock.mock.calls.find(
         ([path, init]) =>
           path === "/projects/7/quality-rules/12" &&
@@ -257,17 +258,65 @@ describe("DatasetDetail quality management", () => {
       );
       expect(patch).toBeTruthy();
     });
+  });
 
-    fireEvent.click(screen.getByTestId("quality-assign-99"));
-    await waitFor(() => {
-      const assign = apiMock.mock.calls.find(
-        ([path, init]) =>
-          path === "/projects/7/quality-rules/99" &&
-          init?.method === "PATCH" &&
-          String(init.body).includes('"dataset_id":3'),
-      );
-      expect(assign).toBeTruthy();
+  it("shows legacy assign failures on the legacy rule card only", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/datasets/3") return dataset;
+      if (path === "/projects/7/datasets/3/versions") return [version];
+      if (path.includes("/quality-rules?") && path.includes("include_unassigned=true") && !path.includes("dataset_id=")) {
+        return [activeRule, inactiveRule, legacyRule];
+      }
+      if (path.includes("/quality-rules?dataset_id=3")) return [activeRule, inactiveRule];
+      if (path.includes("/versions/1/preview")) {
+        return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/quality-checks?dataset_version_id=11")) return [check];
+      if (path.includes("/splits")) return [];
+      if (path === "/projects/7/quality-rules/99" && method === "PATCH") {
+        throw new ApiRequestError(422, "Column 'heat_demand' was not found in the dataset.");
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
     });
+
+    renderPage();
+    await screen.findByTestId("quality-assign-99");
+    fireEvent.click(screen.getByTestId("quality-assign-99"));
+    const legacyError = await screen.findByTestId("quality-rule-error-99");
+    expect(legacyError).toHaveTextContent("Column 'heat_demand' was not found in the dataset.");
+    expect(within(screen.getByTestId("quality-rule-99")).getByTestId("quality-rule-error-99")).toBeInTheDocument();
+    expect(screen.queryByTestId("quality-rule-error-12")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-action-error")).not.toBeInTheDocument();
+  });
+
+  it("shows run-all failures at the panel top", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/datasets/3") return dataset;
+      if (path === "/projects/7/datasets/3/versions") return [version];
+      if (path.includes("/quality-rules?") && path.includes("include_unassigned=true") && !path.includes("dataset_id=")) {
+        return [activeRule, inactiveRule, legacyRule];
+      }
+      if (path.includes("/quality-rules?dataset_id=3")) return [activeRule, inactiveRule];
+      if (path.includes("/versions/1/preview")) {
+        return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/quality-checks?dataset_version_id=11") && method === "GET") return [check];
+      if (path.includes("/splits")) return [];
+      if (path.includes("/quality-checks") && method === "POST") {
+        throw new ApiRequestError(400, "No active quality rules are configured for this dataset.");
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    renderPage();
+    await screen.findByTestId("quality-run-all");
+    fireEvent.click(screen.getByTestId("quality-run-all"));
+    const panelError = await screen.findByTestId("quality-action-error");
+    expect(panelError).toHaveTextContent("No active quality rules are configured for this dataset.");
+    expect(within(screen.getByTestId("quality-panel")).getByTestId("quality-action-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("quality-rule-error-12")).not.toBeInTheDocument();
   });
 
   it("keeps dataset load failures in the global error notice", async () => {

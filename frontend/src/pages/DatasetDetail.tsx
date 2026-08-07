@@ -39,6 +39,12 @@ const RULE_TYPES = [
   { value: "regex", label: "Regex" },
 ] as const;
 
+type QualityActionError = {
+  message: string;
+  scope: "panel" | "rule" | "form";
+  ruleId?: number;
+};
+
 function emptyCondition(column = "target"): ConditionDraft {
   return {
     column,
@@ -122,13 +128,31 @@ export default function DatasetDetail() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [qualityActionError, setQualityActionError] = useState("");
+  const [qualityActionError, setQualityActionError] = useState<QualityActionError | null>(null);
   const [success, setSuccess] = useState("");
   const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   const numericDatasetId = Number(datasetId);
   const activeRules = useMemo(() => rules.filter((rule) => rule.is_active), [rules]);
   const latestResult = checks[0]?.result ?? "—";
+
+  function clearQualityActionError() {
+    setQualityActionError(null);
+  }
+
+  function renderQualityActionError(
+    scope: QualityActionError["scope"],
+    ruleId?: number,
+    testId = "quality-action-error",
+  ) {
+    if (!qualityActionError || qualityActionError.scope !== scope) return null;
+    if (scope === "rule" && qualityActionError.ruleId !== ruleId) return null;
+    return (
+      <div className="error quality-action-error" role="alert" data-testid={testId}>
+        {qualityActionError.message}
+      </div>
+    );
+  }
 
   const loadRules = useCallback(async () => {
     const [scoped, legacy] = await Promise.all([
@@ -221,7 +245,7 @@ export default function DatasetDetail() {
   async function saveRule(event: FormEvent) {
     event.preventDefault();
     setBusy("rule");
-    setQualityActionError("");
+    clearQualityActionError();
     setSuccess("");
     const payload = {
       name: ruleName,
@@ -247,7 +271,10 @@ export default function DatasetDetail() {
       resetForm();
       await loadRules();
     } catch (reason) {
-      setQualityActionError(reason instanceof Error ? reason.message : "Quality rule could not be saved.");
+      setQualityActionError({
+        message: reason instanceof Error ? reason.message : "Quality rule could not be saved.",
+        scope: "form",
+      });
     } finally {
       setBusy("");
     }
@@ -256,7 +283,7 @@ export default function DatasetDetail() {
   async function runQuality(ruleId?: number) {
     if (!selectedVersionId) return;
     setBusy(ruleId ? `run-${ruleId}` : "quality");
-    setQualityActionError("");
+    clearQualityActionError();
     setSuccess("");
     try {
       const body = ruleId == null ? {} : { quality_rule_id: ruleId };
@@ -272,7 +299,12 @@ export default function DatasetDetail() {
       setExpandedChecks((current) => ({ ...current, [result.id]: true }));
       setSuccess(`Quality check completed: ${result.result}.`);
     } catch (reason) {
-      setQualityActionError(reason instanceof Error ? reason.message : "Quality check could not run.");
+      const message = reason instanceof Error ? reason.message : "Quality check could not run.";
+      if (ruleId == null) {
+        setQualityActionError({ message, scope: "panel" });
+      } else {
+        setQualityActionError({ message, scope: "rule", ruleId });
+      }
     } finally {
       setBusy("");
     }
@@ -280,7 +312,7 @@ export default function DatasetDetail() {
 
   async function toggleActive(rule: QualityRule) {
     setBusy(`active-${rule.id}`);
-    setQualityActionError("");
+    clearQualityActionError();
     setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
@@ -290,7 +322,11 @@ export default function DatasetDetail() {
       setSuccess(rule.is_active ? "Rule deactivated." : "Rule activated.");
       await loadRules();
     } catch (reason) {
-      setQualityActionError(reason instanceof Error ? reason.message : "Rule status could not be updated.");
+      setQualityActionError({
+        message: reason instanceof Error ? reason.message : "Rule status could not be updated.",
+        scope: "rule",
+        ruleId: rule.id,
+      });
     } finally {
       setBusy("");
     }
@@ -298,7 +334,7 @@ export default function DatasetDetail() {
 
   async function deleteRule(rule: QualityRule) {
     setBusy(`delete-${rule.id}`);
-    setQualityActionError("");
+    clearQualityActionError();
     setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, { method: "DELETE" });
@@ -306,11 +342,13 @@ export default function DatasetDetail() {
       if (editingRuleId === rule.id) resetForm();
       await loadRules();
     } catch (reason) {
-      if (reason instanceof ApiRequestError && reason.status === 409) {
-        setQualityActionError("This rule has check history. Deactivate it instead.");
-      } else {
-        setQualityActionError(reason instanceof Error ? reason.message : "Quality rule could not be deleted.");
-      }
+      const message =
+        reason instanceof ApiRequestError && reason.status === 409
+          ? "This rule has check history. Deactivate it instead."
+          : reason instanceof Error
+            ? reason.message
+            : "Quality rule could not be deleted.";
+      setQualityActionError({ message, scope: "rule", ruleId: rule.id });
     } finally {
       setBusy("");
     }
@@ -318,7 +356,7 @@ export default function DatasetDetail() {
 
   async function assignLegacy(rule: QualityRule) {
     setBusy(`legacy-${rule.id}`);
-    setQualityActionError("");
+    clearQualityActionError();
     setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, {
@@ -328,7 +366,11 @@ export default function DatasetDetail() {
       setSuccess("Legacy rule assigned to this dataset and activated.");
       await loadRules();
     } catch (reason) {
-      setQualityActionError(reason instanceof Error ? reason.message : "Legacy rule could not be assigned.");
+      setQualityActionError({
+        message: reason instanceof Error ? reason.message : "Legacy rule could not be assigned.",
+        scope: "rule",
+        ruleId: rule.id,
+      });
     } finally {
       setBusy("");
     }
@@ -417,6 +459,7 @@ export default function DatasetDetail() {
             </div>
           )}
         </div>
+        {renderQualityActionError("rule", rule.id, `quality-rule-error-${rule.id}`)}
         <ul className="quality-condition-list">
           {conditionLines.map((line) => <li key={line}>{line}</li>)}
         </ul>
@@ -489,11 +532,7 @@ export default function DatasetDetail() {
                   </div>
                 )}
               </div>
-              {qualityActionError ? (
-                <div className="error quality-action-error" role="alert" data-testid="quality-action-error">
-                  {qualityActionError}
-                </div>
-              ) : null}
+              {renderQualityActionError("panel", undefined, "quality-action-error")}
               {rules.length === 0 ? (
                 <p className="muted">No quality rules are assigned to this dataset yet.</p>
               ) : (
@@ -504,6 +543,7 @@ export default function DatasetDetail() {
               {canWrite && showForm && (
                 <form className="quality-rule-form" data-testid="quality-rule-form" onSubmit={saveRule}>
                   <div className="panel-title"><div><h3>{editingRuleId == null ? "Create rule" : "Edit rule"}</h3></div></div>
+                  {renderQualityActionError("form", undefined, "quality-form-error")}
                   <label>
                     Rule name
                     <input aria-label="Rule name" data-testid="quality-rule-name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
