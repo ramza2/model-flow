@@ -185,9 +185,13 @@ def test_dataset_versions_quality_split_job_and_pipeline(
         headers=auth_headers,
         json={
             "name": "target-present",
-            "rules": [{"type": "not_null", "column": "target"}],
+            "dataset_id": dataset_id,
+            "rules": [{"type": "not_null", "column": "target", "severity": "fail"}],
         },
     )
+    assert rule.status_code == 201, rule.text
+    assert rule.json()["dataset_id"] == dataset_id
+    assert rule.json()["is_active"] is True
     check = client.post(
         f"/api/v1/projects/{project_id}/dataset-versions/{dataset_version_id}/quality-checks",
         headers=auth_headers,

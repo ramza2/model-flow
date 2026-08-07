@@ -636,3 +636,46 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   .compact-form { grid-template-columns: 1fr; }
   .danger-zone { align-items: flex-start; flex-direction: column; }
 }
+
+.quality-rule-list, .legacy-quality-rules, .quality-check-history { display: flex; flex-direction: column; gap: .75rem; margin-top: .85rem; }
+.quality-rule-card, .quality-condition-editor, .quality-check-detail {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: .75rem .85rem;
+  background: rgba(10, 14, 18, .35);
+}
+.quality-rule-head { display: flex; justify-content: space-between; gap: .75rem; align-items: flex-start; }
+.quality-rule-meta { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .35rem; }
+.quality-condition-list { margin: .55rem 0 0; padding-left: 1.1rem; color: var(--muted); font-size: .82rem; }
+.quality-rule-form { display: flex; flex-direction: column; gap: .65rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--border); }
+.quality-form-toggles { display: flex; flex-wrap: wrap; gap: 1rem; }
+.quality-form-toggles label { flex-direction: row; align-items: center; gap: .4rem; }
+.quality-form-toggles input { width: auto; }
+.quality-condition-editor { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; }
+.quality-check-item { border-top: 1px solid var(--border); padding: .55rem 0; }
+.quality-check-item summary { display: flex; flex-wrap: wrap; gap: .55rem; align-items: center; cursor: pointer; list-style: none; }
+.quality-check-item summary::-webkit-details-marker { display: none; }
+.quality-check-details { display: flex; flex-direction: column; gap: .55rem; margin-top: .65rem; }
+.legacy-quality-rules h3, .quality-check-history h3 { margin: .4rem 0 0; font-size: .95rem; }
+@media (max-width: 760px) {
+  .quality-rule-head { flex-direction: column; }
+}
+
+.quality-action-error { margin: .65rem 0 .35rem; }
+.quality-check-detail-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+.quality-check-detail-heading strong,
+.quality-check-detail-heading small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.quality-rule-card .quality-action-error { margin: .55rem 0 .15rem; }
+.quality-rule-form .quality-action-error { margin: 0 0 .55rem; }
+
+.training-submit-footer { display: flex; flex-direction: column; gap: .65rem; margin-top: .35rem; }
+.training-submit-error { margin: 0; }

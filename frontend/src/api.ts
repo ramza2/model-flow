@@ -156,16 +156,33 @@ export type DatasetSplit = {
 
 export type QualityRule = {
   id: number;
+  project_id: number;
+  dataset_id: number | null;
+  dataset_name: string | null;
   name: string;
   rules: Array<Record<string, unknown>>;
   block_training_on_fail: boolean;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type QualityCheckDetail = {
+  quality_rule_id?: number;
+  quality_rule_name?: string;
+  rule?: Record<string, unknown>;
+  severity?: string;
+  block_training_on_fail?: boolean;
+  passed?: boolean;
+  message?: string;
 };
 
 export type QualityCheck = {
   id: number;
+  project_id?: number;
   dataset_version_id: number;
+  quality_rule_id?: number | null;
   result: string;
-  details: Array<Record<string, unknown>>;
+  details: QualityCheckDetail[];
   created_at: string;
 };
 

@@ -211,10 +211,18 @@ class QualityRule(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    dataset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("datasets.id", name="fk_quality_rules_dataset_id"),
+        nullable=True,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     rules_json: Mapped[str] = mapped_column(Text, default="[]")
     block_training_on_fail: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    dataset: Mapped[Dataset | None] = relationship()
 
 
 class QualityCheck(Base):

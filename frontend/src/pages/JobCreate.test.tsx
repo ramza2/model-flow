@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import JobCreate from "../pages/JobCreate";
@@ -519,6 +519,351 @@ describe("JobCreate UX", () => {
       expect(screen.getByTestId("job-submit")).not.toBeDisabled();
     });
     expect(screen.getByTestId("job-algorithm")).toHaveTextContent("Random forest");
+  });
+
+  it("shows quality blocking 409 near Start training without navigating", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            detail: "Training is blocked by failed data quality rules.",
+            hint: "Blocking rules: TEST_RULL",
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    const submitError = await screen.findByTestId("training-submit-error");
+    expect(submitError).toHaveAttribute("role", "alert");
+    expect(submitError).toHaveTextContent("Training is blocked by failed data quality rules.");
+    expect(submitError).toHaveTextContent("Blocking rules: TEST_RULL");
+    expect(within(screen.getByTestId("training-submit-actions")).getByTestId("training-submit-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("job-detail-page")).not.toBeInTheDocument();
+    expect(document.querySelectorAll('[data-testid="training-submit-error"]')).toHaveLength(1);
+  });
+
+  it("shows other submit validation errors near Start training", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 1,
+                name: "iris",
+                latest_version: 1,
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 11,
+                dataset_id: 1,
+                version: 1,
+                original_filename: "iris.csv",
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              requested_problem_type: "auto",
+              resolved_problem_type: "classification",
+              target_column: "target",
+              dataset_id: 1,
+              dataset_version_id: 11,
+            }),
+          };
+        }
+        if (url.endsWith("/jobs") && init?.method === "POST") {
+          return {
+            ok: false,
+            status: 422,
+            json: async () => ({
+              detail: "Invalid training configuration",
+              hint: "Correct the request and try again.",
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    const submitError = await screen.findByTestId("training-submit-error");
+    expect(submitError).toHaveTextContent("Invalid training configuration");
+    expect(within(screen.getByTestId("training-submit-actions")).getByTestId("training-submit-error")).toBeInTheDocument();
+  });
+
+  it("clears submit errors when training settings change", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 1,
+                name: "iris",
+                latest_version: 1,
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 11,
+                dataset_id: 1,
+                version: 1,
+                original_filename: "iris.csv",
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              requested_problem_type: "auto",
+              resolved_problem_type: "classification",
+              target_column: "target",
+              dataset_id: 1,
+              dataset_version_id: 11,
+            }),
+          };
+        }
+        if (url.endsWith("/jobs") && init?.method === "POST") {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({
+              detail: "Training is blocked by failed data quality rules.",
+              hint: "Blocking rules: TEST_RULL",
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("training-submit-error");
+    fireEvent.change(screen.getByTestId("job-algorithm"), { target: { value: "logistic_regression" } });
+    expect(screen.queryByTestId("training-submit-error")).not.toBeInTheDocument();
+  });
+
+  it("clears the previous submit error when a new Start training begins", async () => {
+    let resolveSecond: ((value: {
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ detail: string; hint: string | null }>;
+    }) => void) | null = null;
+    let postCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 1,
+                name: "iris",
+                latest_version: 1,
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 11,
+                dataset_id: 1,
+                version: 1,
+                original_filename: "iris.csv",
+                columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              requested_problem_type: "auto",
+              resolved_problem_type: "classification",
+              target_column: "target",
+              dataset_id: 1,
+              dataset_version_id: 11,
+            }),
+          };
+        }
+        if (url.endsWith("/jobs") && init?.method === "POST") {
+          postCount += 1;
+          if (postCount === 1) {
+            return {
+              ok: false,
+              status: 409,
+              json: async () => ({
+                detail: "Training is blocked by failed data quality rules.",
+                hint: "Blocking rules: TEST_RULL",
+              }),
+            };
+          }
+          return await new Promise<{
+            ok: boolean;
+            status: number;
+            json: () => Promise<{ detail: string; hint: string | null }>;
+          }>((resolve) => {
+            resolveSecond = resolve;
+          });
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("training-submit-error");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("training-submit-error")).not.toBeInTheDocument();
+      expect(postCount).toBe(2);
+      expect(resolveSecond).not.toBeNull();
+    });
+    resolveSecond!({
+      ok: false,
+      status: 422,
+      json: async () => ({ detail: "Invalid training configuration", hint: null }),
+    });
+    expect(await screen.findByTestId("training-submit-error")).toHaveTextContent("Invalid training configuration");
   });
 });
 
