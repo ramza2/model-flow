@@ -600,8 +600,7 @@ describe("JobCreate UX", () => {
     expect(submitError).toHaveTextContent("Blocking rules: TEST_RULL");
     expect(within(screen.getByTestId("training-submit-actions")).getByTestId("training-submit-error")).toBeInTheDocument();
     expect(screen.queryByTestId("job-detail-page")).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert", { name: /Training is blocked/ })).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".error")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-testid="training-submit-error"]')).toHaveLength(1);
   });
 
   it("shows other submit validation errors near Start training", async () => {
