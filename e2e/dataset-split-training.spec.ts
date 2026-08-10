@@ -48,7 +48,8 @@ test("saved dataset split drives training job", async ({ page }) => {
   await page.getByRole("link", { name: "Train on this dataset" }).click();
   await page.getByTestId("job-name").fill("e2e-saved-split");
   await expect(page.getByTestId("job-data-split")).toBeVisible();
-  await page.getByTestId("job-data-split").selectOption({ label: /e2e-split/ });
+  await expect(page.getByTestId("job-data-split")).toContainText("e2e-split");
+  await page.getByTestId("job-data-split").selectOption({ label: "e2e-split · 70/15/15 · seed 42" });
   await page.getByTestId("job-submit").click();
 
   await expect(page.getByTestId("job-logs")).toBeVisible();
