@@ -24,6 +24,29 @@ def _signature(train_ratio: float, val_ratio: float, test_ratio: float, random_s
     )
 
 
+def assign_legacy_config_signatures(
+    rows: list[tuple[int, int, float, float, float, int]],
+) -> list[tuple[int, str]]:
+    """Map legacy split rows to config_signature values.
+
+    Duplicate detection matches the UNIQUE scope ``(dataset_version_id, config_signature)``.
+    Rows must be ``(id, dataset_version_id, train_ratio, val_ratio, test_ratio, random_seed)``
+    ordered by ``id`` ascending so the first row keeps the canonical signature.
+    """
+    used: set[tuple[int, str]] = set()
+    assigned: list[tuple[int, str]] = []
+    for row_id, dataset_version_id, train_ratio, val_ratio, test_ratio, random_seed in rows:
+        canonical = _signature(train_ratio, val_ratio, test_ratio, random_seed)
+        key = (int(dataset_version_id), canonical)
+        if key in used:
+            signature = f"{canonical}#legacy-{row_id}"
+        else:
+            signature = canonical
+        used.add((int(dataset_version_id), signature))
+        assigned.append((int(row_id), signature))
+    return assigned
+
+
 def upgrade() -> None:
     op.add_column(
         "dataset_splits",
@@ -45,24 +68,29 @@ def upgrade() -> None:
     connection = op.get_bind()
     rows = connection.execute(
         sa.text(
-            "SELECT id, train_ratio, val_ratio, test_ratio, random_seed "
+            "SELECT id, dataset_version_id, train_ratio, val_ratio, test_ratio, random_seed "
             "FROM dataset_splits ORDER BY id"
         )
     ).fetchall()
-    used: set[str] = set()
-    for row in rows:
-        signature = _signature(
-            row.train_ratio, row.val_ratio, row.test_ratio, row.random_seed
-        )
-        # Preserve uniqueness if legacy duplicates already exist.
-        if signature in used:
-            signature = f"{signature}#legacy-{row.id}"
-        used.add(signature)
+    assigned = assign_legacy_config_signatures(
+        [
+            (
+                row.id,
+                row.dataset_version_id,
+                row.train_ratio,
+                row.val_ratio,
+                row.test_ratio,
+                row.random_seed,
+            )
+            for row in rows
+        ]
+    )
+    for row_id, signature in assigned:
         connection.execute(
             sa.text(
                 "UPDATE dataset_splits SET config_signature = :signature WHERE id = :id"
             ),
-            {"signature": signature, "id": row.id},
+            {"signature": signature, "id": row_id},
         )
 
     op.alter_column(
