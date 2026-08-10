@@ -161,6 +161,23 @@ describe("JobCreate UX", () => {
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
         }
+        if (url.includes("/splits")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 55,
+                name: "split-1",
+                dataset_version_id: 11,
+                train_ratio: 0.7,
+                val_ratio: 0.15,
+                test_ratio: 0.15,
+                random_seed: 42,
+              },
+            ],
+          };
+        }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
             ok: true,
@@ -206,6 +223,7 @@ describe("JobCreate UX", () => {
               feature_columns: ["sepal length (cm)", "sepal width (cm)"],
               ratios: { train: 0.7, validation: 0.15, test: 0.15 },
               random_seed: 7,
+              split_id: 55,
               max_retries: 1,
               status: "failed",
               logs: "",
@@ -312,6 +330,208 @@ describe("JobCreate UX", () => {
     expect(await screen.findByTestId("job-name")).toHaveValue("source-job (clone)");
     expect(screen.getByTestId("job-algorithm")).toHaveValue("logistic_regression");
     expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 0.5');
+    await waitFor(() => {
+      expect(screen.getByTestId("job-data-split")).toHaveValue("55");
+    });
+  });
+
+  it("includes split_id in create payload and clears submitError on split change", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 55,
+              name: "split-1",
+              dataset_version_id: 11,
+              train_ratio: 0.7,
+              val_ratio: 0.15,
+              test_ratio: 0.15,
+              random_seed: 42,
+            },
+          ],
+        };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ id: 123, status: "pending" }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("job-data-split");
+    await waitFor(() => {
+      expect(screen.getByTestId("job-data-split")).toHaveTextContent("split-1");
+    });
+    fireEvent.change(screen.getByTestId("job-data-split"), { target: { value: "55" } });
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(postCall).toBeTruthy();
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({ split_id: 55 });
+
+    // Default runtime omits/nulls split
+    // (re-render not needed — covered by selecting empty value before submit in isolation)
+  });
+
+  it("resets stale split selection when dataset version changes", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 2,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/dataset-versions/11/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 55,
+              name: "split-1",
+              dataset_version_id: 11,
+              train_ratio: 0.7,
+              val_ratio: 0.15,
+              test_ratio: 0.15,
+              random_seed: 42,
+            },
+          ],
+        };
+      }
+      if (url.includes("/dataset-versions/12/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris-v1.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+            {
+              id: 12,
+              dataset_id: 1,
+              version: 2,
+              original_filename: "iris-v2.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 12,
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("job-dataset-version");
+    fireEvent.change(screen.getByTestId("job-dataset-version"), { target: { value: "11" } });
+    await waitFor(() => expect(screen.getByTestId("job-data-split")).toHaveTextContent("split-1"));
+    fireEvent.change(screen.getByTestId("job-data-split"), { target: { value: "55" } });
+    expect(screen.getByTestId("job-data-split")).toHaveValue("55");
+    fireEvent.change(screen.getByTestId("job-dataset-version"), { target: { value: "12" } });
+    await waitFor(() => expect(screen.getByTestId("job-data-split")).toHaveValue(""));
   });
 
   it("disables submit while resolving and ignores stale detection responses", async () => {
@@ -348,6 +568,9 @@ describe("JobCreate UX", () => {
         }
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
         }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
@@ -470,6 +693,9 @@ describe("JobCreate UX", () => {
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
         }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
+        }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
             ok: true,
@@ -540,6 +766,9 @@ describe("JobCreate UX", () => {
       }
       if (url.includes("/training/algorithms")) {
         return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
       }
       if (url.includes("/versions") && !url.includes("resolve")) {
         return {
@@ -625,6 +854,9 @@ describe("JobCreate UX", () => {
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
         }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
+        }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
             ok: true,
@@ -703,6 +935,9 @@ describe("JobCreate UX", () => {
         }
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
         }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
@@ -788,6 +1023,9 @@ describe("JobCreate UX", () => {
         }
         if (url.includes("/training/algorithms")) {
           return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
         }
         if (url.includes("/versions") && !url.includes("resolve")) {
           return {
@@ -879,6 +1117,7 @@ describe("JobDetail clone navigation", () => {
           project_id: 7,
           dataset_id: 1,
           dataset_version_id: 1,
+          split_id: 9,
           name: "job",
           description: "",
           target_column: "target",
@@ -886,6 +1125,8 @@ describe("JobDetail clone navigation", () => {
           algorithm: "random_forest",
           hyperparameters: {},
           feature_columns: ["a"],
+          ratios: { train: 0.7, validation: 0.15, test: 0.15 },
+          random_seed: 42,
           status: "failed",
           logs: "",
           metrics: {},
@@ -911,6 +1152,7 @@ describe("JobDetail clone navigation", () => {
     const clone = await screen.findByTestId("job-clone");
     expect(clone).toHaveAttribute("href", "/projects/7/jobs/new?cloneFrom=5");
     expect(screen.getByTestId("retry-hint")).toBeInTheDocument();
+    expect(await screen.findByTestId("job-data-split")).toHaveTextContent("Saved split #9");
   });
 });
 

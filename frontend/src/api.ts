@@ -151,6 +151,12 @@ export type DatasetSplit = {
   val_ratio: number;
   test_ratio: number;
   random_seed: number;
+  config_signature?: string;
+  hashes?: {
+    train: string | null;
+    validation: string | null;
+    test: string | null;
+  };
   created_at: string;
 };
 
@@ -191,6 +197,7 @@ export type Job = {
   project_id: number;
   dataset_id: number;
   dataset_version_id: number | null;
+  split_id?: number | null;
   name: string;
   description: string;
   target_column: string;

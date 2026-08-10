@@ -240,6 +240,13 @@ class QualityCheck(Base):
 
 class DatasetSplit(Base):
     __tablename__ = "dataset_splits"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "config_signature",
+            name="uq_dataset_splits_version_config",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
@@ -249,9 +256,13 @@ class DatasetSplit(Base):
     val_ratio: Mapped[float] = mapped_column(Float, default=0.15)
     test_ratio: Mapped[float] = mapped_column(Float, default=0.15)
     random_seed: Mapped[int] = mapped_column(Integer, default=42)
+    config_signature: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     train_object_key: Mapped[str] = mapped_column(String(500), default="")
     val_object_key: Mapped[str] = mapped_column(String(500), default="")
     test_object_key: Mapped[str] = mapped_column(String(500), default="")
+    train_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    validation_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    test_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

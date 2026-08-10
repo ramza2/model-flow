@@ -222,6 +222,9 @@ def test_dataset_versions_quality_split_job_and_pipeline(
     )
     assert job.status_code == 201
     assert job.json()["status"] == "pending"
+    assert job.json()["split_id"] == split.json()["id"]
+    assert job.json()["ratios"]["train"] == split.json()["train_ratio"]
+    assert job.json()["random_seed"] == split.json()["random_seed"]
 
     pipeline = client.post(
         f"/api/v1/projects/{project_id}/pipelines",

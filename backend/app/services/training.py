@@ -64,8 +64,11 @@ class TrainingJobContext:
     target_column: str
     algorithm: str
     hyperparameters: dict[str, Any]
-    csv_bytes: bytes
     experiment_name: str
+    csv_bytes: bytes | None = None
+    train_bytes: bytes | None = None
+    validation_bytes: bytes | None = None
+    test_bytes: bytes | None = None
     problem_type: str = "auto"
     preprocessing: dict[str, Any] = field(default_factory=dict)
     feature_columns: list[str] = field(default_factory=list)
@@ -74,6 +77,14 @@ class TrainingJobContext:
     test_ratio: float = 0.15
     random_seed: int = 42
     data_format: str = "csv"
+    split_id: int | None = None
+    dataset_version_id: int | None = None
+    split_train_hash: str | None = None
+    split_validation_hash: str | None = None
+    split_test_hash: str | None = None
+    train_object_key: str | None = None
+    validation_object_key: str | None = None
+    test_object_key: str | None = None
 
 
 @dataclass
@@ -307,51 +318,120 @@ class SklearnTrainingRunner:
         def log(message: str) -> None:
             logs.append(message)
 
-        frame = _read_frame(ctx.csv_bytes, ctx.data_format)
-        if ctx.target_column not in frame.columns:
-            raise ValueError(
-                f"Target column '{ctx.target_column}' not found. "
-                f"Available columns: {list(frame.columns)}"
+        using_saved_split = ctx.split_id is not None or ctx.train_bytes is not None
+        if using_saved_split:
+            if ctx.train_bytes is None or ctx.validation_bytes is None or ctx.test_bytes is None:
+                raise ValueError(
+                    "Saved split requires train, validation, and test artifacts."
+                )
+            if not ctx.train_bytes or not ctx.validation_bytes or not ctx.test_bytes:
+                raise ValueError("Saved split artifact is empty.")
+            train_frame = _read_frame(ctx.train_bytes, ctx.data_format)
+            val_frame = _read_frame(ctx.validation_bytes, ctx.data_format)
+            test_frame = _read_frame(ctx.test_bytes, ctx.data_format)
+            frames = ("train", train_frame), ("validation", val_frame), ("test", test_frame)
+            for label, frame in frames:
+                if frame.empty:
+                    raise ValueError(f"Saved {label} split artifact has no rows.")
+                if ctx.target_column not in frame.columns:
+                    raise ValueError(
+                        f"Target column '{ctx.target_column}' not found in {label} split. "
+                        f"Available columns: {list(frame.columns)}"
+                    )
+
+            def _partition_xy(
+                frame: pd.DataFrame,
+            ) -> tuple[pd.DataFrame, pd.Series, list[str]]:
+                target = frame[ctx.target_column]
+                valid_target = target.notna()
+                frame = frame.loc[valid_target]
+                target = target.loc[valid_target]
+                selected_columns = (
+                    ctx.feature_columns
+                    or list(ctx.preprocessing.get("feature_columns", []))
+                    or [
+                        str(column)
+                        for column in frame.columns
+                        if column != ctx.target_column
+                    ]
+                )
+                if ctx.target_column in selected_columns:
+                    raise ValueError("The target column cannot also be a feature column.")
+                missing = [
+                    column
+                    for column in selected_columns
+                    if column not in frame.columns
+                ]
+                if missing:
+                    raise ValueError(
+                        f"Feature columns were not found in saved split: {missing}"
+                    )
+                if not selected_columns:
+                    raise ValueError("Select at least one feature column.")
+                return frame[selected_columns].copy(), target, selected_columns
+
+            x_train, y_train, selected = _partition_xy(train_frame)
+            x_val, y_val, _ = _partition_xy(val_frame)
+            x_test, y_test, _ = _partition_xy(test_frame)
+            if len(x_train) < 1:
+                raise ValueError("Saved train split has no usable rows after removing null targets.")
+            problem_type = _normalise_problem_type(ctx.problem_type, y_train)
+            algorithm = _algorithm(ctx.algorithm, problem_type)
+            features_for_schema = x_train
+            log(
+                f"Using saved dataset split #{ctx.split_id} "
+                f"(artifacts, no runtime re-split)"
             )
-        target = frame[ctx.target_column]
-        valid_target = target.notna()
-        frame, target = frame.loc[valid_target], target.loc[valid_target]
-        problem_type = _normalise_problem_type(ctx.problem_type, target)
-        algorithm = _algorithm(ctx.algorithm, problem_type)
+        else:
+            if ctx.csv_bytes is None:
+                raise ValueError("Training data is missing.")
+            frame = _read_frame(ctx.csv_bytes, ctx.data_format)
+            if ctx.target_column not in frame.columns:
+                raise ValueError(
+                    f"Target column '{ctx.target_column}' not found. "
+                    f"Available columns: {list(frame.columns)}"
+                )
+            target = frame[ctx.target_column]
+            valid_target = target.notna()
+            frame, target = frame.loc[valid_target], target.loc[valid_target]
+            problem_type = _normalise_problem_type(ctx.problem_type, target)
+            algorithm = _algorithm(ctx.algorithm, problem_type)
 
-        selected = (
-            ctx.feature_columns
-            or list(ctx.preprocessing.get("feature_columns", []))
-            or [str(column) for column in frame.columns if column != ctx.target_column]
-        )
-        if ctx.target_column in selected:
-            raise ValueError("The target column cannot also be a feature column.")
-        missing = [column for column in selected if column not in frame.columns]
-        if missing:
-            raise ValueError(f"Feature columns were not found: {missing}")
-        if not selected:
-            raise ValueError("Select at least one feature column.")
-        features = frame[selected].copy()
+            selected = (
+                ctx.feature_columns
+                or list(ctx.preprocessing.get("feature_columns", []))
+                or [str(column) for column in frame.columns if column != ctx.target_column]
+            )
+            if ctx.target_column in selected:
+                raise ValueError("The target column cannot also be a feature column.")
+            missing = [column for column in selected if column not in frame.columns]
+            if missing:
+                raise ValueError(f"Feature columns were not found: {missing}")
+            if not selected:
+                raise ValueError("Select at least one feature column.")
+            features = frame[selected].copy()
 
-        splits = _split(
-            features,
-            target,
-            train_ratio=ctx.train_ratio,
-            val_ratio=ctx.val_ratio,
-            test_ratio=ctx.test_ratio,
-            seed=ctx.random_seed,
-            classification=problem_type == "classification",
-        )
-        x_train, x_val, x_test, y_train, y_val, y_test = splits
+            splits = _split(
+                features,
+                target,
+                train_ratio=ctx.train_ratio,
+                val_ratio=ctx.val_ratio,
+                test_ratio=ctx.test_ratio,
+                seed=ctx.random_seed,
+                classification=problem_type == "classification",
+            )
+            x_train, x_val, x_test, y_train, y_val, y_test = splits
+            features_for_schema = features
+
         estimator = _estimator(algorithm, ctx.hyperparameters, ctx.random_seed)
         model = Pipeline(
             [
-                ("preprocessing", _preprocessor(features, ctx.preprocessing)),
+                ("preprocessing", _preprocessor(features_for_schema, ctx.preprocessing)),
                 ("estimator", estimator),
             ]
         )
         log(
-            f"task={problem_type}, algorithm={algorithm}, rows={len(features)}, "
+            f"task={problem_type}, algorithm={algorithm}, "
             f"features={selected}, split={len(x_train)}/{len(x_val)}/{len(x_test)}"
         )
 
@@ -376,16 +456,40 @@ class SklearnTrainingRunner:
             "numpy_version": np.__version__,
             "mlflow_version": mlflow.__version__,
         }
+        if ctx.dataset_version_id is not None:
+            logged_params["dataset_version_id"] = ctx.dataset_version_id
+        if ctx.split_id is not None:
+            logged_params["split_id"] = ctx.split_id
+            logged_params["split_train_ratio"] = ctx.train_ratio
+            logged_params["split_validation_ratio"] = ctx.val_ratio
+            logged_params["split_test_ratio"] = ctx.test_ratio
+            logged_params["split_random_seed"] = ctx.random_seed
+            if ctx.split_train_hash:
+                logged_params["split_train_hash"] = ctx.split_train_hash
+            if ctx.split_validation_hash:
+                logged_params["split_validation_hash"] = ctx.split_validation_hash
+            if ctx.split_test_hash:
+                logged_params["split_test_hash"] = ctx.split_test_hash
+            if ctx.train_object_key:
+                logged_params["split_train_object_key"] = ctx.train_object_key
+            if ctx.validation_object_key:
+                logged_params["split_validation_object_key"] = ctx.validation_object_key
+            if ctx.test_object_key:
+                logged_params["split_test_object_key"] = ctx.test_object_key
 
         with mlflow.start_run(run_name=ctx.job_name) as run:
             mlflow.log_params({key: str(value) for key, value in logged_params.items()})
-            mlflow.set_tags(
-                {
-                    "modelflow.git_sha": settings.git_sha,
-                    "modelflow.problem_type": problem_type,
-                    "modelflow.algorithm": algorithm,
-                }
-            )
+            tags = {
+                "modelflow.git_sha": settings.git_sha,
+                "modelflow.problem_type": problem_type,
+                "modelflow.algorithm": algorithm,
+            }
+            if ctx.split_id is not None:
+                tags["modelflow.split_id"] = str(ctx.split_id)
+                tags["modelflow.split_source"] = "saved"
+            else:
+                tags["modelflow.split_source"] = "runtime"
+            mlflow.set_tags(tags)
             log("Fitting preprocessing pipeline and estimator...")
             model.fit(x_train, y_train)
 
@@ -408,23 +512,40 @@ class SklearnTrainingRunner:
                     metric_values.update(values)
 
             mlflow.log_metrics(metric_values)
-            feature_schema = _schema(features)
+            feature_schema = _schema(features_for_schema)
             mlflow.log_dict(feature_schema, "feature_schema.json")
-            mlflow.log_dict(
-                {
-                    "git_sha": settings.git_sha,
-                    "libraries": {
-                        "python": platform.python_version(),
-                        "scikit-learn": sklearn.__version__,
-                        "pandas": pd.__version__,
-                        "numpy": np.__version__,
-                        "mlflow": mlflow.__version__,
-                    },
-                    "preprocessing": ctx.preprocessing,
-                    "feature_schema": feature_schema,
+            metadata: dict[str, Any] = {
+                "git_sha": settings.git_sha,
+                "libraries": {
+                    "python": platform.python_version(),
+                    "scikit-learn": sklearn.__version__,
+                    "pandas": pd.__version__,
+                    "numpy": np.__version__,
+                    "mlflow": mlflow.__version__,
                 },
-                "training_metadata.json",
-            )
+                "preprocessing": ctx.preprocessing,
+                "feature_schema": feature_schema,
+            }
+            if ctx.split_id is not None:
+                metadata["split"] = {
+                    "split_id": ctx.split_id,
+                    "dataset_version_id": ctx.dataset_version_id,
+                    "train_ratio": ctx.train_ratio,
+                    "validation_ratio": ctx.val_ratio,
+                    "test_ratio": ctx.test_ratio,
+                    "random_seed": ctx.random_seed,
+                    "hashes": {
+                        "train": ctx.split_train_hash,
+                        "validation": ctx.split_validation_hash,
+                        "test": ctx.split_test_hash,
+                    },
+                    "object_keys": {
+                        "train": ctx.train_object_key,
+                        "validation": ctx.validation_object_key,
+                        "test": ctx.test_object_key,
+                    },
+                }
+            mlflow.log_dict(metadata, "training_metadata.json")
             if problem_type == "classification" and primary_predictions is not None:
                 labels = sorted(
                     set(primary_target.tolist()) | set(primary_predictions.tolist()),

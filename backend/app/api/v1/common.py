@@ -254,10 +254,16 @@ def split_out(row: DatasetSplit) -> dict[str, Any]:
         "val_ratio": row.val_ratio,
         "test_ratio": row.test_ratio,
         "random_seed": row.random_seed,
+        "config_signature": row.config_signature,
         "object_keys": {
             "train": row.train_object_key,
             "validation": row.val_object_key,
             "test": row.test_object_key,
+        },
+        "hashes": {
+            "train": row.train_hash,
+            "validation": row.validation_hash,
+            "test": row.test_hash,
         },
         "created_at": row.created_at,
     }
