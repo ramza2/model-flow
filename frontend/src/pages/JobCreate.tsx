@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, type Dataset, type DatasetVersion, type Job } from "../api";
+import { api, type Dataset, type DatasetSplit, type DatasetVersion, type Job } from "../api";
 import { EmptyState, ErrorNotice, Loading, PageHeader } from "../components";
 import {
   algorithmsForProblemType,
@@ -52,6 +52,8 @@ export default function JobCreate() {
   const [testRatio, setTestRatio] = useState(0.15);
   const [randomSeed, setRandomSeed] = useState(42);
   const [maxRetries, setMaxRetries] = useState(1);
+  const [savedSplits, setSavedSplits] = useState<DatasetSplit[]>([]);
+  const [splitId, setSplitId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -99,6 +101,7 @@ export default function JobCreate() {
         setDescription(job.description || "");
         setDatasetId(String(job.dataset_id));
         setDatasetVersionId(job.dataset_version_id);
+        setSplitId(typeof job.split_id === "number" ? job.split_id : null);
         setTarget(job.target_column);
         setProblemType(job.problem_type || "auto");
         setAlgorithm(job.algorithm);
@@ -148,6 +151,32 @@ export default function JobCreate() {
       cancelled = true;
     };
   }, [projectId, selected]);
+
+  useEffect(() => {
+    if (!projectId || !datasetVersionId) {
+      setSavedSplits([]);
+      return;
+    }
+    let cancelled = false;
+    api<DatasetSplit[]>(`/projects/${projectId}/dataset-versions/${datasetVersionId}/splits`)
+      .then((rows) => {
+        if (cancelled) return;
+        setSavedSplits(rows);
+        setSplitId((current) => {
+          if (current != null && rows.some((row) => row.id === current)) return current;
+          return null;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSavedSplits([]);
+          setSplitId(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetVersionId, projectId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -268,6 +297,7 @@ export default function JobCreate() {
           description,
           dataset_id: Number(datasetId),
           dataset_version_id: datasetVersionId,
+          split_id: splitId,
           target_column: target,
           problem_type: problemType,
           algorithm,
@@ -345,6 +375,8 @@ export default function JobCreate() {
                     setSubmitError("");
                     setDatasetId(event.target.value);
                     setDatasetVersionId(null);
+                    setSplitId(null);
+                    setSavedSplits([]);
                     setFeatureColumns([]);
                   }}
                   required
@@ -373,6 +405,7 @@ export default function JobCreate() {
                   value={datasetVersionId ?? ""}
                   onChange={(event) => {
                     setSubmitError("");
+                    setSplitId(null);
                     setDatasetVersionId(Number(event.target.value));
                   }}
                   data-testid="job-dataset-version"
@@ -400,7 +433,48 @@ export default function JobCreate() {
               </div>
               {featureColumns.length === 0 && <p className="form-hint">Select at least one feature column.</p>}
             </fieldset>
-            <p className="form-hint">Default split: {(trainRatio * 100).toFixed(0)}% training, {(valRatio * 100).toFixed(0)}% validation, {(testRatio * 100).toFixed(0)}% test · seed {randomSeed}</p>
+            <label>
+              Data split
+              <select
+                value={splitId ?? ""}
+                onChange={(event) => {
+                  setSubmitError("");
+                  const value = event.target.value;
+                  if (!value) {
+                    setSplitId(null);
+                    setTrainRatio(0.7);
+                    setValRatio(0.15);
+                    setTestRatio(0.15);
+                    setRandomSeed(42);
+                    return;
+                  }
+                  const nextId = Number(value);
+                  setSplitId(nextId);
+                  const selectedSplit = savedSplits.find((row) => row.id === nextId);
+                  if (selectedSplit) {
+                    setTrainRatio(selectedSplit.train_ratio);
+                    setValRatio(selectedSplit.val_ratio);
+                    setTestRatio(selectedSplit.test_ratio);
+                    setRandomSeed(selectedSplit.random_seed);
+                  }
+                }}
+                data-testid="job-data-split"
+              >
+                <option value="">
+                  Default runtime split · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)} · seed {randomSeed}
+                </option>
+                {savedSplits.map((split) => (
+                  <option key={split.id} value={split.id}>
+                    {split.name} · {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)} · seed {split.random_seed}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="form-hint">
+              {splitId
+                ? `Using saved split #${splitId}: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`
+                : `Default runtime split: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`}
+            </p>
           </div>
           <div className="form-section">
             <span className="eyebrow">Estimator</span>

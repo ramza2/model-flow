@@ -133,6 +133,32 @@ export default function JobDetail() {
                 <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
                 <div><dt>Target column</dt><dd className="mono">{job.target_column}</dd></div>
                 <div><dt>Dataset</dt><dd><Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link></dd></div>
+                <div data-testid="job-data-split">
+                  <dt>Data split</dt>
+                  <dd>
+                    {job.split_id ? (
+                      <>
+                        <div>Saved split #{job.split_id}</div>
+                        <small>
+                          {job.ratios
+                            ? `${Math.round(job.ratios.train * 100)}% train · ${Math.round(job.ratios.validation * 100)}% validation · ${Math.round(job.ratios.test * 100)}% test`
+                            : "—"}
+                          {typeof job.random_seed === "number" ? ` · seed ${job.random_seed}` : ""}
+                        </small>
+                      </>
+                    ) : (
+                      <>
+                        <div>Runtime split</div>
+                        <small>
+                          {job.ratios
+                            ? `${Math.round(job.ratios.train * 100)}/${Math.round(job.ratios.validation * 100)}/${Math.round(job.ratios.test * 100)}`
+                            : "70/15/15"}
+                          {typeof job.random_seed === "number" ? ` · seed ${job.random_seed}` : " · seed 42"}
+                        </small>
+                      </>
+                    )}
+                  </dd>
+                </div>
                 <div><dt>Created</dt><dd>{formatDate(job.created_at)}</dd></div>
                 <div><dt>Finished</dt><dd data-testid="job-finished-at">{formatDate(job.finished_at)}</dd></div>
               </dl>

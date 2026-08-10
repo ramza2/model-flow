@@ -118,6 +118,13 @@ export default function DatasetDetail() {
   const [legacyRules, setLegacyRules] = useState<QualityRule[]>([]);
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [splits, setSplits] = useState<DatasetSplit[]>([]);
+  const [showSplitForm, setShowSplitForm] = useState(false);
+  const [splitName, setSplitName] = useState("split-1");
+  const [splitTrainRatio, setSplitTrainRatio] = useState("0.70");
+  const [splitValRatio, setSplitValRatio] = useState("0.15");
+  const [splitTestRatio, setSplitTestRatio] = useState("0.15");
+  const [splitSeed, setSplitSeed] = useState("42");
+  const [splitFormError, setSplitFormError] = useState("");
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [ruleName, setRuleName] = useState("Required target");
@@ -376,22 +383,61 @@ export default function DatasetDetail() {
     }
   }
 
+  function validateSplitForm(): { train: number; val: number; test: number; seed: number } | null {
+    const train = Number(splitTrainRatio);
+    const val = Number(splitValRatio);
+    const test = Number(splitTestRatio);
+    const seed = Number(splitSeed);
+    if (!Number.isFinite(train) || !Number.isFinite(val) || !Number.isFinite(test)) {
+      setSplitFormError("Enter numeric train, validation, and test ratios.");
+      return null;
+    }
+    if (!(train > 0 && train < 1 && val > 0 && val < 1 && test > 0 && test < 1)) {
+      setSplitFormError("Each ratio must be greater than 0 and less than 1.");
+      return null;
+    }
+    if (Math.abs(train + val + test - 1) > 1e-6) {
+      setSplitFormError("Train + validation + test ratios must equal 1.0.");
+      return null;
+    }
+    if (!Number.isInteger(seed)) {
+      setSplitFormError("Random seed must be an integer.");
+      return null;
+    }
+    setSplitFormError("");
+    return { train, val, test, seed };
+  }
+
   async function createSplit() {
     if (!selectedVersionId) return;
+    const parsed = validateSplitForm();
+    if (!parsed) return;
     setBusy("split");
     setError("");
+    setSplitFormError("");
     try {
       const split = await api<DatasetSplit>(
         `/projects/${projectId}/dataset-versions/${selectedVersionId}/splits`,
         {
           method: "POST",
-          body: JSON.stringify({ name: `split-${splits.length + 1}`, train_ratio: 0.7, val_ratio: 0.15, test_ratio: 0.15, random_seed: 42 }),
+          body: JSON.stringify({
+            name: splitName.trim() || `split-${splits.length + 1}`,
+            train_ratio: parsed.train,
+            val_ratio: parsed.val,
+            test_ratio: parsed.test,
+            random_seed: parsed.seed,
+          }),
         },
       );
-      setSplits((rows) => [split, ...rows]);
-      setSuccess("Reproducible 70/15/15 split created.");
+      setSplits((rows) => [split, ...rows.filter((row) => row.id !== split.id)]);
+      setShowSplitForm(false);
+      setSuccess(
+        split.config_signature
+          ? `Saved split #${split.id} ready (${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}, seed ${split.random_seed}).`
+          : `Saved split #${split.id} ready.`,
+      );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Dataset split could not be created.");
+      setSplitFormError(reason instanceof Error ? reason.message : "Dataset split could not be created.");
     } finally {
       setBusy("");
     }
@@ -696,9 +742,121 @@ export default function DatasetDetail() {
               </div>
             </section>
             <section className="panel">
-              <div className="panel-title"><div><span className="eyebrow">Reproducibility</span><h2>Data splits</h2></div>{canWrite && <button className="btn secondary" disabled={busy === "split"} onClick={createSplit}>{busy === "split" ? "Creating…" : "Create 70/15/15 split"}</button>}</div>
-              {splits.length === 0 ? <EmptyState title="No saved splits" description="Create a deterministic split for repeatable training." /> : (
-                <div className="activity-list compact">{splits.map((split) => <div key={split.id}><div><strong>{split.name}</strong><small>seed {split.random_seed}</small></div><span>{Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}</span></div>)}</div>
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">Reproducibility</span>
+                  <h2>Data splits</h2>
+                </div>
+                {canWrite && (
+                  <button
+                    className="btn secondary"
+                    type="button"
+                    disabled={busy === "split"}
+                    data-testid="open-create-split"
+                    onClick={() => {
+                      setShowSplitForm((open) => !open);
+                      setSplitFormError("");
+                      setSplitName(`split-${splits.length + 1}`);
+                      setSplitTrainRatio("0.70");
+                      setSplitValRatio("0.15");
+                      setSplitTestRatio("0.15");
+                      setSplitSeed("42");
+                    }}
+                  >
+                    {showSplitForm ? "Cancel" : "Create split"}
+                  </button>
+                )}
+              </div>
+              {showSplitForm && canWrite && (
+                <div className="form" data-testid="create-split-form">
+                  <div className="form-grid">
+                    <label>
+                      Name
+                      <input
+                        value={splitName}
+                        onChange={(event) => setSplitName(event.target.value)}
+                        data-testid="split-name"
+                      />
+                    </label>
+                    <label>
+                      Train ratio
+                      <input
+                        value={splitTrainRatio}
+                        onChange={(event) => {
+                          setSplitFormError("");
+                          setSplitTrainRatio(event.target.value);
+                        }}
+                        data-testid="split-train-ratio"
+                      />
+                    </label>
+                    <label>
+                      Validation ratio
+                      <input
+                        value={splitValRatio}
+                        onChange={(event) => {
+                          setSplitFormError("");
+                          setSplitValRatio(event.target.value);
+                        }}
+                        data-testid="split-val-ratio"
+                      />
+                    </label>
+                    <label>
+                      Test ratio
+                      <input
+                        value={splitTestRatio}
+                        onChange={(event) => {
+                          setSplitFormError("");
+                          setSplitTestRatio(event.target.value);
+                        }}
+                        data-testid="split-test-ratio"
+                      />
+                    </label>
+                    <label>
+                      Random seed
+                      <input
+                        value={splitSeed}
+                        onChange={(event) => {
+                          setSplitFormError("");
+                          setSplitSeed(event.target.value);
+                        }}
+                        data-testid="split-seed"
+                      />
+                    </label>
+                  </div>
+                  {splitFormError ? (
+                    <div className="error" role="alert" data-testid="split-form-error">
+                      {splitFormError}
+                    </div>
+                  ) : null}
+                  <div className="row-actions form-actions">
+                    <button
+                      className="btn"
+                      type="button"
+                      disabled={busy === "split"}
+                      onClick={createSplit}
+                      data-testid="create-split-submit"
+                    >
+                      {busy === "split" ? "Creating…" : "Save split"}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {splits.length === 0 ? (
+                <EmptyState title="No saved splits" description="Create a deterministic split for repeatable training." />
+              ) : (
+                <div className="activity-list compact" data-testid="saved-splits-list">
+                  {splits.map((split) => (
+                    <div key={split.id} data-testid={`saved-split-${split.id}`}>
+                      <div>
+                        <strong>{split.name}</strong>
+                        <small>#{split.id} · seed {split.random_seed}</small>
+                      </div>
+                      <span>
+                        {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
             </section>
           </div>

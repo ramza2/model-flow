@@ -23,6 +23,7 @@ from app.db.models import (
     DataSource,
     DataSourceType,
     Dataset,
+    DatasetSplit,
     DatasetVersion,
     DriftRun,
     Endpoint,
@@ -35,6 +36,7 @@ from app.db.models import (
 from app.db.session import SessionLocal
 from app.services import datasets, drift, inference, pipeline_engine, storage
 from app.services.alerts import create_alert
+from app.services.dataset_splits import content_sha256
 from app.services.training import TrainingJobContext, get_training_runner
 
 logger = logging.getLogger(__name__)
@@ -167,6 +169,26 @@ def _cancel_training_job(db: Session, job: TrainingJob, message: str) -> None:
     db.commit()
 
 
+def _load_split_artifact(object_key: str, expected_hash: str | None, label: str) -> bytes:
+    if not object_key:
+        raise RuntimeError(f"Saved {label} split artifact key is missing.")
+    try:
+        payload = storage.download_bytes(settings.minio_datasets_bucket, object_key)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Saved {label} split artifact could not be read ({object_key})."
+        ) from exc
+    if not payload:
+        raise RuntimeError(f"Saved {label} split artifact is empty.")
+    if expected_hash:
+        actual = content_sha256(payload)
+        if actual != expected_hash:
+            raise RuntimeError(
+                f"Saved {label} split artifact failed integrity verification."
+            )
+    return payload
+
+
 def process_job(job: TrainingJob) -> None:
     db = SessionLocal()
     try:
@@ -185,27 +207,76 @@ def process_job(job: TrainingJob) -> None:
             if live.dataset_version_id is not None
             else None
         )
-        object_key = version.object_key if version else ds.object_key
         data_format = version.format if version else "csv"
-        data_bytes = storage.download_bytes(settings.minio_datasets_bucket, object_key)
-        ctx = TrainingJobContext(
-            job_id=live.id,
-            project_id=live.project_id,
-            job_name=live.name,
-            target_column=live.target_column,
-            algorithm=live.algorithm,
-            hyperparameters=json.loads(live.hyperparameters_json or "{}"),
-            csv_bytes=data_bytes,
-            experiment_name=f"project-{live.project_id}",
-            problem_type=live.problem_type,
-            preprocessing=json.loads(live.preprocessing_json or "{}"),
-            feature_columns=json.loads(live.feature_columns_json or "[]"),
-            train_ratio=live.train_ratio,
-            val_ratio=live.val_ratio,
-            test_ratio=live.test_ratio,
-            random_seed=live.random_seed,
-            data_format=data_format,
-        )
+        ctx_kwargs: dict = {
+            "job_id": live.id,
+            "project_id": live.project_id,
+            "job_name": live.name,
+            "target_column": live.target_column,
+            "algorithm": live.algorithm,
+            "hyperparameters": json.loads(live.hyperparameters_json or "{}"),
+            "experiment_name": f"project-{live.project_id}",
+            "problem_type": live.problem_type,
+            "preprocessing": json.loads(live.preprocessing_json or "{}"),
+            "feature_columns": json.loads(live.feature_columns_json or "[]"),
+            "train_ratio": live.train_ratio,
+            "val_ratio": live.val_ratio,
+            "test_ratio": live.test_ratio,
+            "random_seed": live.random_seed,
+            "data_format": data_format,
+            "dataset_version_id": live.dataset_version_id,
+        }
+        if live.split_id is not None:
+            split = db.get(DatasetSplit, live.split_id)
+            if split is None:
+                raise RuntimeError(
+                    f"Saved dataset split #{live.split_id} is missing for this job."
+                )
+            if (
+                live.dataset_version_id is not None
+                and split.dataset_version_id != live.dataset_version_id
+            ):
+                raise RuntimeError(
+                    "Saved dataset split does not match the job dataset version."
+                )
+            train_bytes = _load_split_artifact(
+                split.train_object_key, split.train_hash, "train"
+            )
+            validation_bytes = _load_split_artifact(
+                split.val_object_key, split.validation_hash, "validation"
+            )
+            test_bytes = _load_split_artifact(
+                split.test_object_key, split.test_hash, "test"
+            )
+            ctx_kwargs.update(
+                {
+                    "csv_bytes": None,
+                    "train_bytes": train_bytes,
+                    "validation_bytes": validation_bytes,
+                    "test_bytes": test_bytes,
+                    "split_id": split.id,
+                    "train_ratio": split.train_ratio,
+                    "val_ratio": split.val_ratio,
+                    "test_ratio": split.test_ratio,
+                    "random_seed": split.random_seed,
+                    "split_train_hash": split.train_hash,
+                    "split_validation_hash": split.validation_hash,
+                    "split_test_hash": split.test_hash,
+                    "train_object_key": split.train_object_key,
+                    "validation_object_key": split.val_object_key,
+                    "test_object_key": split.test_object_key,
+                }
+            )
+            live.logs = (live.logs or "") + (
+                f"Loading saved split #{split.id} artifacts for training...\n"
+            )
+        else:
+            object_key = version.object_key if version else ds.object_key
+            data_bytes = storage.download_bytes(
+                settings.minio_datasets_bucket, object_key
+            )
+            ctx_kwargs["csv_bytes"] = data_bytes
+        ctx = TrainingJobContext(**ctx_kwargs)
         live.logs = (live.logs or "") + "Starting SklearnTrainingRunner...\n"
         db.commit()
         result = get_training_runner().run(ctx)

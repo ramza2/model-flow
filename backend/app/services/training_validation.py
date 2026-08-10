@@ -170,10 +170,34 @@ def validate_training_config(
 
     if body.split_id is not None:
         split = _get_owned(db, DatasetSplit, body.split_id, project_id, "Dataset split")
+        split_version = db.get(DatasetVersion, split.dataset_version_id)
+        if split_version is None or split_version.project_id != project_id:
+            raise TrainingConfigError(
+                400,
+                "Dataset split does not belong to this project.",
+                "Select a saved split from the same project.",
+            )
+        if split_version.dataset_id != dataset.id:
+            raise TrainingConfigError(
+                400,
+                "Dataset split does not belong to the selected dataset.",
+                "Choose a split created from this dataset, or clear the split selection.",
+            )
         if not version or split.dataset_version_id != version.id:
             raise TrainingConfigError(
-                400, "Dataset split does not belong to the selected version."
+                400,
+                "Dataset split does not belong to the selected version.",
+                "Choose a split created from this dataset version, or clear the split selection.",
             )
+        body = body.model_copy(
+            update={
+                "train_ratio": split.train_ratio,
+                "val_ratio": split.val_ratio,
+                "test_ratio": split.test_ratio,
+                "random_seed": split.random_seed,
+                "dataset_version_id": version.id,
+            }
+        )
 
     if version and not settings.allow_train_on_quality_fail:
         blockers = get_training_quality_blockers(db, version.id)

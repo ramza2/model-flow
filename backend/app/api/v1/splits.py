@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.common import audit_event, friendly, get_owned, split_out
@@ -15,6 +16,7 @@ from app.db.models import DatasetSplit, DatasetVersion
 from app.db.session import get_db
 from app.schemas.v1 import SplitCreate
 from app.services import storage
+from app.services.dataset_splits import content_sha256, split_config_signature
 
 router = APIRouter(tags=["splits"])
 
@@ -31,6 +33,17 @@ def _encode_frame(frame, format_name: str) -> tuple[bytes, str]:
     raise friendly(400, f"Dataset format '{format_name}' cannot be split.")
 
 
+def _find_existing_split(
+    db: Session, dataset_version_id: int, signature: str
+) -> DatasetSplit | None:
+    return db.scalars(
+        select(DatasetSplit).where(
+            DatasetSplit.dataset_version_id == dataset_version_id,
+            DatasetSplit.config_signature == signature,
+        )
+    ).first()
+
+
 @router.post(
     "/projects/{project_id}/dataset-versions/{dataset_version_id}/splits",
     status_code=201,
@@ -38,6 +51,7 @@ def _encode_frame(frame, format_name: str) -> tuple[bytes, str]:
 def create_split(
     project_id: int,
     dataset_version_id: int,
+    response: Response,
     body: SplitCreate | None = None,
     access=Depends(require_project_perm(Permission.DATA_WRITE)),
     db: Session = Depends(get_db),
@@ -51,6 +65,17 @@ def create_split(
         project_id,
         "Dataset version",
     )
+    signature = split_config_signature(
+        body.train_ratio,
+        body.val_ratio,
+        body.test_ratio,
+        body.random_seed,
+    )
+    existing = _find_existing_split(db, version.id, signature)
+    if existing is not None:
+        response.status_code = 200
+        return split_out(existing)
+
     try:
         data = storage.download_bytes(
             settings.minio_datasets_bucket, version.object_key
@@ -63,6 +88,9 @@ def create_split(
         raise friendly(
             502, "The dataset version could not be loaded for splitting."
         ) from exc
+    if len(frame) == 0:
+        raise friendly(400, "Cannot create a split from an empty dataset version.")
+
     train_end = int(len(frame) * body.train_ratio)
     val_end = train_end + int(len(frame) * body.val_ratio)
     partitions = {
@@ -70,6 +98,7 @@ def create_split(
         "validation": frame.iloc[train_end:val_end],
         "test": frame.iloc[val_end:],
     }
+
     row = DatasetSplit(
         project_id=project_id,
         dataset_version_id=version.id,
@@ -78,11 +107,22 @@ def create_split(
         val_ratio=body.val_ratio,
         test_ratio=body.test_ratio,
         random_seed=body.random_seed,
+        config_signature=signature,
     )
     db.add(row)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        existing = _find_existing_split(db, version.id, signature)
+        if existing is None:
+            raise friendly(409, "A matching dataset split already exists.")
+        response.status_code = 200
+        return split_out(existing)
+
     storage.ensure_buckets()
-    keys = {}
+    keys: dict[str, str] = {}
+    hashes: dict[str, str] = {}
     for partition_name, partition in partitions.items():
         payload, content_type = _encode_frame(partition, version.format)
         key = (
@@ -91,12 +131,25 @@ def create_split(
         )
         storage.upload_bytes(settings.minio_datasets_bucket, key, payload, content_type)
         keys[partition_name] = key
+        hashes[partition_name] = content_sha256(payload)
     row.train_object_key = keys["train"]
     row.val_object_key = keys["validation"]
     row.test_object_key = keys["test"]
+    row.train_hash = hashes["train"]
+    row.validation_hash = hashes["validation"]
+    row.test_hash = hashes["test"]
     audit_event(db, auth, "dataset_split.create", "dataset_split", row.id)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _find_existing_split(db, version.id, signature)
+        if existing is None:
+            raise friendly(409, "A matching dataset split already exists.")
+        response.status_code = 200
+        return split_out(existing)
     db.refresh(row)
+    response.status_code = 201
     return split_out(row)
 
 

@@ -97,9 +97,9 @@ class QualityRunRequest(BaseModel):
 class SplitCreate(BaseModel):
     name: str = Field(default="default", min_length=1, max_length=200)
     train_ratio: float = Field(default=0.7, gt=0, lt=1)
-    val_ratio: float = Field(default=0.15, ge=0, lt=1)
-    test_ratio: float = Field(default=0.15, ge=0, lt=1)
-    random_seed: int = 42
+    val_ratio: float = Field(default=0.15, gt=0, lt=1)
+    test_ratio: float = Field(default=0.15, gt=0, lt=1)
+    random_seed: int = Field(default=42)
 
     @model_validator(mode="after")
     def ratios_sum_to_one(self) -> SplitCreate:
