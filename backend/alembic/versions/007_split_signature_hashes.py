@@ -1,6 +1,6 @@
 """Add config signature and artifact hashes for dataset splits.
 
-Revision ID: 007_dataset_split_signature_hashes
+Revision ID: 007_split_signature_hashes
 Revises: 006_quality_rule_dataset_scope
 Create Date: 2026-08-10
 """
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "007_dataset_split_signature_hashes"
+revision = "007_split_signature_hashes"
 down_revision = "006_quality_rule_dataset_scope"
 branch_labels = None
 depends_on = None
