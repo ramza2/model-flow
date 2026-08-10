@@ -10,6 +10,8 @@ from io import BytesIO
 from typing import Any
 
 import pandas as pd
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -32,6 +34,7 @@ from app.db.models import (
 from app.services import datasets as dataset_service
 from app.services import inference, quality, storage
 from app.services.alerts import create_alert
+from app.services.dataset_splits import split_config_signature
 from app.services.training import TrainingJobContext, get_training_runner
 
 NODE_TYPES = {
@@ -78,6 +81,24 @@ def _node_config(node: dict[str, Any]) -> dict[str, Any]:
             config.setdefault(key, value)
     config.update(node.get("config") or {})
     return config
+
+
+def _node_label(node: dict[str, Any]) -> str:
+    data = node.get("data") or {}
+    label = data.get("label")
+    if label:
+        return str(label)
+    return str(node.get("id") or "step")
+
+
+def initial_node_state(node: dict[str, Any]) -> dict[str, Any]:
+    """Seed run node_states with readable metadata for the UI."""
+    return {
+        "status": "pending",
+        "label": _node_label(node),
+        "node_type": _node_type(node) or "unknown",
+        "attempt": 1,
+    }
 
 
 def _edge_branch(edge: dict[str, Any]) -> str:
@@ -326,18 +347,41 @@ def _execute_node(
         }
         version_id = _find(incoming, "dataset_version_id")
         split_row = None
+        seed = int(config.get("random_seed", 42))
         if version_id:
-            split_row = DatasetSplit(
-                project_id=run.project_id,
-                dataset_version_id=version_id,
-                name=str(config.get("name", "pipeline")),
-                train_ratio=train_ratio,
-                val_ratio=val_ratio,
-                test_ratio=test_ratio,
-                random_seed=int(config.get("random_seed", 42)),
+            signature = split_config_signature(
+                train_ratio, val_ratio, test_ratio, seed
             )
-            db.add(split_row)
-            db.flush()
+            split_row = db.scalars(
+                select(DatasetSplit).where(
+                    DatasetSplit.dataset_version_id == int(version_id),
+                    DatasetSplit.config_signature == signature,
+                )
+            ).first()
+            if split_row is None:
+                split_row = DatasetSplit(
+                    project_id=run.project_id,
+                    dataset_version_id=int(version_id),
+                    name=str(config.get("name", "pipeline")),
+                    train_ratio=train_ratio,
+                    val_ratio=val_ratio,
+                    test_ratio=test_ratio,
+                    random_seed=seed,
+                    config_signature=signature,
+                )
+                db.add(split_row)
+                try:
+                    with db.begin_nested():
+                        db.flush()
+                except IntegrityError:
+                    split_row = db.scalars(
+                        select(DatasetSplit).where(
+                            DatasetSplit.dataset_version_id == int(version_id),
+                            DatasetSplit.config_signature == signature,
+                        )
+                    ).first()
+                    if split_row is None:
+                        raise
         return {
             **(incoming if isinstance(incoming, dict) else {}),
             "dataframe": frame,
@@ -347,7 +391,7 @@ def _execute_node(
                 "train_ratio": train_ratio,
                 "val_ratio": val_ratio,
                 "test_ratio": test_ratio,
-                "random_seed": int(config.get("random_seed", 42)),
+                "random_seed": seed,
             },
         }
 
@@ -726,9 +770,8 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
     }
     if not failed:
         return []
-    outgoing: dict[str, list[str]] = {
-        str(node.get("id")): [] for node in graph.get("nodes", [])
-    }
+    nodes = {str(node.get("id")): node for node in graph.get("nodes", [])}
+    outgoing: dict[str, list[str]] = {node_id: [] for node_id in nodes}
     for edge in graph.get("edges", []):
         source, target = str(edge.get("source")), str(edge.get("target"))
         if source in outgoing:
@@ -745,7 +788,19 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
 
     artifacts = json.loads(run.node_artifacts_json or "{}")
     for node_id in restart:
-        states[node_id] = {"status": "pending"}
+        existing = dict(states.get(node_id) or {})
+        graph_node = nodes.get(node_id) or {"id": node_id, "data": {}}
+        previous_attempt = existing.get("attempt")
+        try:
+            attempt = int(previous_attempt) + 1 if previous_attempt is not None else 2
+        except (TypeError, ValueError):
+            attempt = 2
+        states[node_id] = {
+            "status": "pending",
+            "label": existing.get("label") or _node_label(graph_node),
+            "node_type": existing.get("node_type") or _node_type(graph_node) or "unknown",
+            "attempt": attempt,
+        }
         artifacts.pop(node_id, None)
     run.node_states_json = json.dumps(states)
     run.node_artifacts_json = json.dumps(artifacts)
@@ -754,10 +809,12 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
     run.scheduled_for = None
     run.started_at = None
     run.finished_at = None
+    restarted = sorted(restart)
     run.logs = (run.logs or "") + (
-        f"Restart requested from failed node(s): {', '.join(sorted(failed))}.\n"
+        "Rerun from failed requested.\n"
+        f"Restarting steps: {', '.join(restarted)}.\n"
     )
-    return sorted(restart)
+    return restarted
 
 
 def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
@@ -917,11 +974,21 @@ def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
             if to_start:
                 started_at = datetime.now(timezone.utc).isoformat()
                 for node_id, _ in to_start:
-                    states[node_id] = {
-                        "status": "running",
-                        "node_type": _node_type(nodes[node_id]),
-                        "started_at": started_at,
-                    }
+                    current = states.setdefault(node_id, {})
+                    current.update(
+                        {
+                            "status": "running",
+                            "node_type": current.get("node_type")
+                            or _node_type(nodes[node_id]),
+                            "label": current.get("label") or _node_label(nodes[node_id]),
+                            "attempt": current.get("attempt") or 1,
+                            "started_at": started_at,
+                        }
+                    )
+                    current.pop("error", None)
+                    current.pop("reason", None)
+                    current.pop("finished_at", None)
+                    current.pop("output", None)
                 persist_runtime_state()
                 for node_id, active in to_start:
                     node_type = _node_type(nodes[node_id])

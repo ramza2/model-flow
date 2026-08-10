@@ -371,9 +371,10 @@ def run_pipeline(
         raise friendly(
             400, "Pipeline graph is invalid.", "; ".join(validation["errors"])
         )
+    graph_nodes = pipeline_version_out(version)["graph"].get("nodes", [])
     node_states = {
-        str(node["id"]): {"status": "pending"}
-        for node in pipeline_version_out(version)["graph"].get("nodes", [])
+        str(node["id"]): pipeline_engine.initial_node_state(node)
+        for node in graph_nodes
     }
     run = PipelineRun(
         project_id=project_id,

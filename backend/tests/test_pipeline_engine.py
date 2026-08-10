@@ -66,7 +66,10 @@ def _seed_run(db, graph, *, fail_policy: str = "stop") -> PipelineRun:
         status=JobStatus.pending,
         fail_policy=fail_policy,
         node_states_json=json.dumps(
-            {str(node["id"]): {"status": "pending"} for node in graph["nodes"]}
+            {
+                str(node["id"]): pipeline_engine.initial_node_state(node)
+                for node in graph["nodes"]
+            }
         ),
     )
     db.add(run)
@@ -280,3 +283,204 @@ def test_cancel_request_stops_scheduling_pending_nodes(pipeline_db, monkeypatch)
     assert cancelled.status == JobStatus.cancelled
     assert states["running"]["status"] == "succeeded"
     assert states["pending"]["status"] == "cancelled"
+
+
+def test_initial_node_state_includes_label_type_attempt():
+    node = {
+        "id": "training-1",
+        "data": {"label": "Train classifier", "node_type": "training", "config": {}},
+    }
+    state = pipeline_engine.initial_node_state(node)
+    assert state == {
+        "status": "pending",
+        "label": "Train classifier",
+        "node_type": "training",
+        "attempt": 1,
+    }
+
+
+def test_execution_preserves_label_and_attempt(pipeline_db, monkeypatch):
+    graph = {
+        "nodes": [
+            {
+                "id": "notify",
+                "data": {
+                    "label": "Ping ops",
+                    "node_type": "notification",
+                    "config": {"test_id": "notify"},
+                },
+            }
+        ],
+        "edges": [],
+    }
+    run = _seed_run(pipeline_db, graph)
+    monkeypatch.setattr(
+        pipeline_engine,
+        "_execute_node",
+        lambda db, live_run, node_type, config, incoming: {"ok": True},
+    )
+    result = pipeline_engine.execute_pipeline_run(pipeline_db, run.id)
+    state = _states(result)["notify"]
+    assert result.status == JobStatus.succeeded
+    assert state["status"] == "succeeded"
+    assert state["label"] == "Ping ops"
+    assert state["node_type"] == "notification"
+    assert state["attempt"] == 1
+
+
+def test_rerun_increments_attempt_only_for_restarted_nodes(pipeline_db, monkeypatch):
+    graph = {
+        "nodes": [
+            {
+                "id": "a",
+                "data": {"label": "Load", "node_type": "notification", "config": {"test_id": "a"}},
+            },
+            {
+                "id": "b",
+                "data": {"label": "Train", "node_type": "notification", "config": {"test_id": "b"}},
+            },
+            {
+                "id": "c",
+                "data": {"label": "Eval", "node_type": "notification", "config": {"test_id": "c"}},
+            },
+        ],
+        "edges": [
+            {"source": "a", "target": "b"},
+            {"source": "b", "target": "c"},
+        ],
+    }
+    run = _seed_run(pipeline_db, graph)
+    calls: Counter[str] = Counter()
+
+    def execute(db, live_run, node_type, config, incoming):
+        node_id = config["test_id"]
+        calls[node_id] += 1
+        if node_id == "b" and calls[node_id] < 3:
+            raise RuntimeError("still failing")
+        return {"node": node_id}
+
+    monkeypatch.setattr(pipeline_engine, "_execute_node", execute)
+    first = pipeline_engine.execute_pipeline_run(pipeline_db, run.id)
+    assert first.status == JobStatus.failed
+    assert _states(first)["a"]["attempt"] == 1
+    assert _states(first)["b"]["attempt"] == 1
+
+    pipeline_engine.prepare_rerun_from_failed(first, graph)
+    pipeline_db.commit()
+    states = _states(pipeline_db.get(PipelineRun, run.id))
+    assert states["a"]["attempt"] == 1
+    assert states["a"]["status"] == "succeeded"
+    assert states["b"]["attempt"] == 2
+    assert states["b"]["label"] == "Train"
+    assert states["c"]["attempt"] == 2
+    assert "Rerun from failed" in (pipeline_db.get(PipelineRun, run.id).logs or "")
+
+    second = pipeline_engine.execute_pipeline_run(pipeline_db, run.id)
+    assert second.status == JobStatus.failed
+    assert _states(second)["b"]["attempt"] == 2
+
+    pipeline_engine.prepare_rerun_from_failed(second, graph)
+    pipeline_db.commit()
+    assert _states(pipeline_db.get(PipelineRun, run.id))["b"]["attempt"] == 3
+    assert _states(pipeline_db.get(PipelineRun, run.id))["a"]["attempt"] == 1
+
+    third = pipeline_engine.execute_pipeline_run(pipeline_db, run.id)
+    assert third.status == JobStatus.succeeded
+    assert _states(third)["a"]["attempt"] == 1
+    assert _states(third)["b"]["attempt"] == 3
+    assert _states(third)["c"]["attempt"] == 3
+    assert calls["a"] == 1
+
+
+def test_prepare_rerun_with_legacy_node_states(pipeline_db):
+    graph = {
+        "nodes": [_node("a"), _node("b")],
+        "edges": [{"source": "a", "target": "b"}],
+    }
+    run = _seed_run(pipeline_db, graph)
+    run.node_states_json = json.dumps(
+        {
+            "a": {"status": "succeeded"},
+            "b": {"status": "failed", "error": "boom"},
+        }
+    )
+    pipeline_db.commit()
+    restarted = pipeline_engine.prepare_rerun_from_failed(run, graph)
+    assert restarted == ["b"]
+    states = _states(run)
+    assert states["a"] == {"status": "succeeded"}
+    assert states["b"]["status"] == "pending"
+    assert states["b"]["attempt"] == 2
+    assert states["b"]["label"]
+    assert states["b"]["node_type"] == "notification"
+
+
+def test_pipeline_split_reuses_dataset_split_across_runs(pipeline_db):
+    import pandas as pd
+    from sqlalchemy import func, select
+
+    from app.db.models import Dataset, DatasetSplit, DatasetVersion
+
+    project = Project(name="split-reuse")
+    pipeline_db.add(project)
+    pipeline_db.flush()
+    pipeline = Pipeline(project_id=project.id, name="p")
+    pipeline_db.add(pipeline)
+    pipeline_db.flush()
+    version_row = PipelineVersion(
+        pipeline_id=pipeline.id,
+        project_id=project.id,
+        version=1,
+        graph_json="{}",
+    )
+    pipeline_db.add(version_row)
+    pipeline_db.flush()
+    dataset = Dataset(
+        project_id=project.id,
+        name="iris",
+        object_key="iris.csv",
+        latest_version=1,
+    )
+    pipeline_db.add(dataset)
+    pipeline_db.flush()
+    dataset_version = DatasetVersion(
+        dataset_id=dataset.id,
+        project_id=project.id,
+        version=1,
+        object_key="iris.csv",
+        original_filename="iris.csv",
+        format="csv",
+    )
+    pipeline_db.add(dataset_version)
+    pipeline_db.flush()
+    run = PipelineRun(
+        project_id=project.id,
+        pipeline_id=pipeline.id,
+        pipeline_version_id=version_row.id,
+        status=JobStatus.running,
+    )
+    pipeline_db.add(run)
+    pipeline_db.flush()
+
+    frame = pd.DataFrame(
+        {"a": list(range(10)), "b": list(range(10, 20)), "target": [0, 1] * 5}
+    )
+    incoming = {
+        "dataframe": frame,
+        "dataset_id": dataset.id,
+        "dataset_version_id": dataset_version.id,
+    }
+    config = {
+        "train_ratio": 0.7,
+        "val_ratio": 0.15,
+        "test_ratio": 0.15,
+        "random_seed": 42,
+        "name": "pipeline",
+    }
+    first = pipeline_engine._execute_node(pipeline_db, run, "split", config, incoming)
+    pipeline_db.commit()
+    second = pipeline_engine._execute_node(pipeline_db, run, "split", config, incoming)
+    pipeline_db.commit()
+    assert first["split_id"] == second["split_id"]
+    count = pipeline_db.scalar(select(func.count()).select_from(DatasetSplit))
+    assert count == 1
