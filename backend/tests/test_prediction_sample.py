@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pandas as pd
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -242,3 +243,150 @@ def test_validate_instances_still_accepts_legacy_string_schema():
         [{"site_id": "SITE_A", "supply_temp": 1.0}],
         ["site_id", "supply_temp"],
     )
+
+
+def _demand_schema():
+    from mlflow.types.schema import ColSpec, DataType, Schema
+
+    return Schema(
+        [
+            ColSpec(DataType.string, "site_id"),
+            ColSpec(DataType.string, "measured_at"),
+            ColSpec(DataType.double, "supply_temp"),
+        ]
+    )
+
+
+class _FakePyFuncModel:
+    def __init__(self, schema=None, predictions=None):
+        self._schema = schema
+        self._predictions = predictions if predictions is not None else [108.09203880467113]
+        self.last_frame = None
+
+        class _Metadata:
+            @staticmethod
+            def get_input_schema():
+                return schema
+
+        self.metadata = _Metadata()
+
+    def predict(self, frame):
+        self.last_frame = frame
+        return list(self._predictions)
+
+
+def test_normalize_double_accepts_json_int():
+    frame = pd.DataFrame(
+        [
+            {
+                "site_id": "SITE-001",
+                "measured_at": "2026-05-22 00:00:00",
+                "supply_temp": 75,
+            }
+        ]
+    )
+    assert frame["supply_temp"].dtype == "int64"
+    normalized = inference.normalize_prediction_frame(frame, _demand_schema())
+    assert str(normalized["supply_temp"].dtype) == "float64"
+    assert normalized["supply_temp"].iloc[0] == 75.0
+    assert normalized["site_id"].iloc[0] == "SITE-001"
+
+
+def test_normalize_double_accepts_float_and_rejects_string():
+    ok = inference.normalize_prediction_frame(
+        pd.DataFrame([{"site_id": "A", "measured_at": "t", "supply_temp": 75.5}]),
+        _demand_schema(),
+    )
+    assert ok["supply_temp"].dtype == "float64"
+    assert ok["supply_temp"].iloc[0] == 75.5
+
+    with pytest.raises(inference.PredictionInputError, match="supply_temp"):
+        inference.normalize_prediction_frame(
+            pd.DataFrame([{"site_id": "A", "measured_at": "t", "supply_temp": "abc"}]),
+            _demand_schema(),
+        )
+
+
+def test_normalize_integer_rejects_fractional():
+    from mlflow.types.schema import ColSpec, DataType, Schema
+
+    schema = Schema([ColSpec(DataType.integer, "hour")])
+    with pytest.raises(inference.PredictionInputError, match="hour"):
+        inference.normalize_prediction_frame(
+            pd.DataFrame([{"hour": 12.5}]),
+            schema,
+        )
+    normalized = inference.normalize_prediction_frame(
+        pd.DataFrame([{"hour": 12.0}]),
+        schema,
+    )
+    assert str(normalized["hour"].dtype) in {"int32", "Int32"}
+    assert int(normalized["hour"].iloc[0]) == 12
+
+
+def test_normalize_without_schema_is_passthrough():
+    frame = pd.DataFrame([{"supply_temp": 75}])
+    out = inference.normalize_prediction_frame(frame, None)
+    assert out is frame
+    assert out["supply_temp"].dtype == "int64"
+
+
+def test_predict_json_int_double_round_trip(monkeypatch):
+    fake = _FakePyFuncModel(schema=_demand_schema())
+    monkeypatch.setattr(inference, "load_model", lambda _uri: fake)
+    preds = inference.predict(
+        "models:/demand/1",
+        [
+            {
+                "site_id": "SITE-001",
+                "measured_at": "2026-05-22 00:00:00",
+                "supply_temp": 75,
+            }
+        ],
+    )
+    assert preds == [108.09203880467113]
+    assert fake.last_frame is not None
+    assert str(fake.last_frame["supply_temp"].dtype) == "float64"
+
+
+def test_sample_json_round_trip_then_predict(db, monkeypatch):
+    endpoint = _seed_lineage(
+        db,
+        feature_schema=["site_id", "measured_at", "supply_temp"],
+        preview=[
+            {
+                "site_id": "SITE-001",
+                "measured_at": "2026-05-22 00:00:00",
+                "supply_temp": 75.0,
+                "demand_level": "HIGH",
+            }
+        ],
+        dtypes={
+            "site_id": "object",
+            "measured_at": "object",
+            "supply_temp": "float64",
+            "demand_level": "object",
+        },
+    )
+    sample = inference.build_prediction_sample_for_endpoint(db, endpoint)
+    assert sample is not None
+
+    def _js_compatible(value):
+        """Approximate browser JSON.stringify for whole-number floats (75.0 → 75)."""
+        if isinstance(value, dict):
+            return {key: _js_compatible(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [_js_compatible(item) for item in value]
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return value
+
+    browser_like = json.loads(json.dumps([_js_compatible(sample)]))
+    assert browser_like[0]["supply_temp"] == 75
+    assert isinstance(browser_like[0]["supply_temp"], int)
+
+    fake = _FakePyFuncModel(schema=_demand_schema())
+    monkeypatch.setattr(inference, "load_model", lambda _uri: fake)
+    preds = inference.predict(endpoint.model_uri, browser_like)
+    assert preds == [108.09203880467113]
+    assert str(fake.last_frame["supply_temp"].dtype) == "float64"

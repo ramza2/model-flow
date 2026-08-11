@@ -15,6 +15,10 @@ from app.db.models import DatasetVersion, Endpoint, ModelVersion, TrainingJob
 _cache: dict[str, Any] = {}
 
 
+class PredictionInputError(ValueError):
+    """Raised when prediction instances cannot be coerced to the model input schema."""
+
+
 def load_model(model_uri: str):
     if model_uri not in _cache:
         mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -199,6 +203,141 @@ def validate_instances(
         raise ValueError("Feature schema validation failed: " + "; ".join(errors[:20]))
 
 
+def _mlflow_type_name(col_type: Any) -> str:
+    if col_type is None:
+        return ""
+    name = getattr(col_type, "name", None)
+    if name:
+        return str(name).lower()
+    text = str(col_type).lower()
+    return text.replace("datatype.", "")
+
+
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _coerce_column_to_mlflow_type(
+    series: pd.Series, type_name: str, feature_name: str
+) -> pd.Series:
+    """Coerce a column to the MLflow signature type with safe widening only."""
+
+    type_name = (type_name or "").lower()
+    if type_name in {"double", "float"}:
+        pandas_dtype = "float64" if type_name == "double" else "float32"
+        for value in series.tolist():
+            if _is_missing(value):
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise PredictionInputError(
+                    f"Feature '{feature_name}' must be numeric for model type '{type_name}'."
+                )
+            if isinstance(value, float) and not math.isfinite(value):
+                raise PredictionInputError(
+                    f"Feature '{feature_name}' must be a finite number for model type '{type_name}'."
+                )
+        try:
+            return series.astype(pandas_dtype)
+        except (TypeError, ValueError) as exc:
+            raise PredictionInputError(
+                f"Feature '{feature_name}' must be numeric for model type '{type_name}'."
+            ) from exc
+
+    if type_name in {"integer", "long"}:
+        pandas_dtype = "int64" if type_name == "long" else "int32"
+        coerced: list[Any] = []
+        for value in series.tolist():
+            if _is_missing(value):
+                coerced.append(pd.NA)
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise PredictionInputError(
+                    f"Feature '{feature_name}' must be an integer for model type '{type_name}'."
+                )
+            if isinstance(value, float):
+                if not math.isfinite(value) or not value.is_integer():
+                    raise PredictionInputError(
+                        f"Feature '{feature_name}' must be an integer for model type '{type_name}'."
+                    )
+                coerced.append(int(value))
+            else:
+                coerced.append(int(value))
+        try:
+            return pd.Series(coerced, index=series.index, dtype=pandas_dtype)
+        except (TypeError, ValueError) as exc:
+            raise PredictionInputError(
+                f"Feature '{feature_name}' must be an integer for model type '{type_name}'."
+            ) from exc
+
+    if type_name == "string":
+        for value in series.tolist():
+            if _is_missing(value):
+                continue
+            if not isinstance(value, str):
+                raise PredictionInputError(
+                    f"Feature '{feature_name}' must be a string for model type 'string'."
+                )
+        return series.astype(object)
+
+    if type_name == "boolean":
+        for value in series.tolist():
+            if _is_missing(value):
+                continue
+            if not isinstance(value, bool):
+                raise PredictionInputError(
+                    f"Feature '{feature_name}' must be a boolean for model type 'boolean'."
+                )
+        return series.astype("boolean")
+
+    if type_name == "datetime":
+        try:
+            return pd.to_datetime(series, errors="raise")
+        except (TypeError, ValueError) as exc:
+            raise PredictionInputError(
+                f"Feature '{feature_name}' must be a datetime for model type 'datetime'."
+            ) from exc
+
+    return series
+
+
+def normalize_prediction_frame(frame: pd.DataFrame, input_schema: Any) -> pd.DataFrame:
+    """Align DataFrame dtypes to an MLflow model input schema when available."""
+
+    if input_schema is None:
+        return frame
+    inputs = getattr(input_schema, "inputs", None)
+    if not inputs:
+        return frame
+
+    normalized = frame.copy()
+    for column in inputs:
+        name = getattr(column, "name", None)
+        if not name or name not in normalized.columns:
+            continue
+        type_name = _mlflow_type_name(getattr(column, "type", None))
+        if not type_name:
+            continue
+        normalized[name] = _coerce_column_to_mlflow_type(
+            normalized[name], type_name, str(name)
+        )
+    return normalized
+
+
+def _model_input_schema(model: Any) -> Any:
+    try:
+        metadata = getattr(model, "metadata", None)
+        if metadata is None or not hasattr(metadata, "get_input_schema"):
+            return None
+        return metadata.get_input_schema()
+    except Exception:
+        return None
+
+
 def predict(
     model_uri: str,
     instances: list[dict[str, Any]],
@@ -207,5 +346,6 @@ def predict(
     validate_instances(instances, feature_schema)
     model = load_model(model_uri)
     frame = pd.DataFrame(instances)
+    frame = normalize_prediction_frame(frame, _model_input_schema(model))
     preds = model.predict(frame)
     return [p.item() if hasattr(p, "item") else p for p in preds]

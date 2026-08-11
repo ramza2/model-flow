@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -34,6 +35,8 @@ from app.schemas.v1 import (
     PredictRequest,
 )
 from app.services import inference
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["endpoints"])
 
@@ -109,8 +112,20 @@ def _record_prediction(
         )
         db.add(stat)
         result = {"predictions": predictions, "model_uri": endpoint.model_uri}
+    except inference.PredictionInputError as exc:
+        raise friendly(
+            422,
+            "Prediction payload does not match the deployed model schema.",
+            str(exc),
+        ) from exc
     except Exception as exc:
         latency_ms = (time.perf_counter() - started) * 1000
+        logger.warning(
+            "endpoint_prediction_failed endpoint_id=%s error_class=%s error=%s",
+            endpoint.id,
+            exc.__class__.__name__,
+            str(exc),
+        )
         endpoint.error_count = (endpoint.error_count or 0) + 1
         recent = loads(endpoint.recent_errors_json, [])
         recent.append(

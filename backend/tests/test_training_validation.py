@@ -591,6 +591,144 @@ def test_get_endpoint_includes_prediction_sample_from_preview(client, auth_heade
     assert "demand_level" not in body["prediction_sample"]
 
 
+def test_predict_api_accepts_json_int_for_mlflow_double(client, auth_headers, monkeypatch):
+    from mlflow.types.schema import ColSpec, DataType, Schema
+
+    from app.db.models import Endpoint, ModelLifecycle, ModelVersion
+
+    project_id = _project(client, auth_headers, "predict-int-double")
+    with TestingSessionLocal() as db:
+        model = ModelVersion(
+            project_id=project_id,
+            name="demand-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-demand",
+            mlflow_version="1",
+            mlflow_run_id="run-int-double",
+            model_uri="models:/demand/1",
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json="{}",
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="demand-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(
+                ["site_id", "measured_at", "supply_temp"]
+            ),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    schema = Schema(
+        [
+            ColSpec(DataType.string, "site_id"),
+            ColSpec(DataType.string, "measured_at"),
+            ColSpec(DataType.double, "supply_temp"),
+        ]
+    )
+
+    class FakeModel:
+        class metadata:
+            @staticmethod
+            def get_input_schema():
+                return schema
+
+        def predict(self, frame):
+            assert str(frame["supply_temp"].dtype) == "float64"
+            assert float(frame["supply_temp"].iloc[0]) == 75.0
+            return [108.09203880467113]
+
+    monkeypatch.setattr(inference, "load_model", lambda _uri: FakeModel())
+    response = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={
+            "instances": [
+                {
+                    "site_id": "SITE-001",
+                    "measured_at": "2026-05-22 00:00:00",
+                    "supply_temp": 75,
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["predictions"] == [108.09203880467113]
+
+
+def test_predict_api_rejects_non_numeric_double_with_422(client, auth_headers, monkeypatch):
+    from mlflow.types.schema import ColSpec, DataType, Schema
+
+    from app.db.models import Endpoint, ModelLifecycle, ModelVersion
+
+    project_id = _project(client, auth_headers, "predict-bad-double")
+    with TestingSessionLocal() as db:
+        model = ModelVersion(
+            project_id=project_id,
+            name="demand-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-bad",
+            mlflow_version="1",
+            mlflow_run_id="run-bad-double",
+            model_uri="models:/demand/1",
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json="{}",
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="demand-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(["supply_temp"]),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    schema = Schema([ColSpec(DataType.double, "supply_temp")])
+
+    class FakeModel:
+        class metadata:
+            @staticmethod
+            def get_input_schema():
+                return schema
+
+        def predict(self, frame):  # pragma: no cover - should not run
+            raise AssertionError("predict should not be called for invalid input")
+
+    monkeypatch.setattr(inference, "load_model", lambda _uri: FakeModel())
+    response = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"supply_temp": "abc"}]},
+    )
+    assert response.status_code == 422
+    body = response.json()
+    assert "deployed model schema" in body["detail"].lower()
+    assert "supply_temp" in body["hint"]
+
+
 def test_evaluate_gates_endpoint_still_works(client, auth_headers, monkeypatch):
     project_id = _project(client, auth_headers, "gates-rerun")
     from app.db.models import ModelLifecycle, ModelVersion
