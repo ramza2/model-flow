@@ -178,9 +178,8 @@ function QualityCheckForm({
     const selected = config.quality_rule_id;
     if (selected == null || selected === "") return;
     if (!rules.some((row) => row.id === Number(selected))) {
-      const next = { ...config };
-      delete next.quality_rule_id;
-      onChange(next);
+      const { quality_rule_id: _stale, ...rest } = config;
+      onChange(rest);
     }
   }, [loadState, rules, config, onChange]);
 
@@ -517,9 +516,8 @@ function ConditionForm({
           data-testid="node-config-left"
           value={metric}
           onChange={(event) => {
-            const next = { ...config, metric: event.target.value };
-            delete next.left;
-            onChange(next);
+            const { left: _left, ...rest } = config;
+            onChange({ ...rest, metric: event.target.value });
           }}
         />
       </label>
@@ -545,12 +543,11 @@ function ConditionForm({
           onChange={(event) => {
             const raw = event.target.value;
             const asNum = Number(raw);
-            const next = {
-              ...config,
+            const { right: _right, ...rest } = config;
+            onChange({
+              ...rest,
               value: raw === "" || Number.isNaN(asNum) ? raw : asNum,
-            };
-            delete next.right;
-            onChange(next);
+            });
           }}
         />
       </label>
