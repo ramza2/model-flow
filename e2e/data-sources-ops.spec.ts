@@ -157,20 +157,22 @@ test("postgres import discovery UI when source credentials are available", async
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
   await card.getByRole("button", { name: "Test connection" }).click();
-  await expect(page.getByText(/Connection succeeded/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 30_000,
+  });
 
   await card.getByRole("button", { name: "Import data" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("import-schema")).toBeVisible();
+  // Prefer public.customers from init-source.sql
   await panel.getByTestId("import-schema").selectOption("public");
   await expect(panel.getByTestId("import-table")).toBeVisible();
   await panel.getByTestId("import-table").selectOption("customers");
-  await panel.getByTestId("import-dataset-name").fill(`customers-${Date.now()}`);
+  const datasetName = `customers-${Date.now()}`;
+  await panel.getByTestId("import-dataset-name").fill(datasetName);
   await panel.getByTestId("import-submit").click();
   await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
   await panel.getByTestId("open-imported-dataset").click();
-  await expect(page.getByText(/Column statistics|Preview|columns/i).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
 });

@@ -13,8 +13,6 @@ from app.core.security import hash_password
 from app.db.models import (
     Base,
     DataImportJob,
-    DataSource,
-    DataSourceType,
     Dataset,
     DatasetVersion,
     JobStatus,
