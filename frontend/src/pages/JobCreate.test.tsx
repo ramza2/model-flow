@@ -1259,6 +1259,6 @@ describe("Predict stopped endpoint UX", () => {
     expect(await screen.findByTestId("endpoint-stopped-notice")).toHaveTextContent("This endpoint is stopped");
     expect(screen.getByTestId("start-endpoint")).toBeInTheDocument();
     expect(screen.getByTestId("predict-submit")).toBeDisabled();
-    expect((screen.getByTestId("predict-payload") as HTMLTextAreaElement).value).toContain('"site_id": ""');
+    expect((screen.getByTestId("predict-payload") as HTMLTextAreaElement).value).toContain('"site_id": "sample"');
   });
 });

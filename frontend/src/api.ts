@@ -325,6 +325,7 @@ export type Endpoint = {
   average_latency_ms: number | null;
   latency_p95_ms: number;
   feature_schema: Array<string | Record<string, unknown>>;
+  prediction_sample?: Record<string, unknown> | null;
   recent_errors: Array<Record<string, unknown>>;
   created_at: string;
 };
