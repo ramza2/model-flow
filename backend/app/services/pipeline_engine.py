@@ -16,7 +16,6 @@ from app.core.config import settings
 from app.db.models import (
     BatchInferenceJob,
     Dataset,
-    DatasetSplit,
     DatasetVersion,
     Endpoint,
     JobStatus,
@@ -32,6 +31,7 @@ from app.db.models import (
 from app.services import datasets as dataset_service
 from app.services import inference, quality, storage
 from app.services.alerts import create_alert
+from app.services.algorithm_catalog import canonicalize_algorithm, resolve_algorithm
 from app.services.training import TrainingJobContext, get_training_runner
 
 NODE_TYPES = {
@@ -80,6 +80,27 @@ def _node_config(node: dict[str, Any]) -> dict[str, Any]:
     return config
 
 
+def _node_label(node: dict[str, Any]) -> str:
+    data = node.get("data") or {}
+    label = data.get("label")
+    if label:
+        return str(label)
+    return str(node.get("id") or "step")
+
+
+def initial_node_state(node: dict[str, Any]) -> dict[str, Any]:
+    """Seed run node_states with readable metadata for the UI."""
+    return {
+        "status": "pending",
+        "label": _node_label(node),
+        "node_type": _node_type(node) or "unknown",
+        "attempt": 1,
+    }
+
+
+CONDITION_OPERATORS = {">", ">=", "<", "<=", "==", "!="}
+
+
 def _edge_branch(edge: dict[str, Any]) -> str:
     data = edge.get("data") or {}
     value = data.get(
@@ -88,6 +109,90 @@ def _edge_branch(edge: dict[str, Any]) -> str:
     if isinstance(value, bool):
         return str(value).lower()
     return str(value or "always").strip().lower()
+
+
+def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str, Any]) -> list[str]:
+    """Node-level config checks applied only when validate_graph(strict=True)."""
+
+    errors: list[str] = []
+    if node_type == "training":
+        target = str(config.get("target_column") or "").strip()
+        if not target:
+            errors.append(f"Node '{node_id}' requires a non-empty target_column.")
+        algorithm = str(config.get("algorithm") or "").strip()
+        if not algorithm:
+            errors.append(f"Node '{node_id}' requires a non-empty algorithm.")
+        problem_type = str(config.get("problem_type") or "auto").lower().strip()
+        if problem_type not in {"auto", "classification", "regression"}:
+            errors.append(
+                f"Node '{node_id}' has unsupported problem_type '{problem_type}'."
+            )
+        elif algorithm:
+            try:
+                if problem_type == "auto":
+                    canonicalize_algorithm(algorithm)
+                else:
+                    resolve_algorithm(algorithm, problem_type)
+            except ValueError as exc:
+                errors.append(f"Node '{node_id}' {exc}")
+    elif node_type == "split":
+        try:
+            train_ratio = float(config.get("train_ratio", 0.7))
+            val_ratio = float(config.get("val_ratio", 0.15))
+            test_ratio = float(config.get("test_ratio", 0.15))
+        except (TypeError, ValueError):
+            errors.append(f"Node '{node_id}' requires numeric split ratios.")
+            return errors
+        for name, ratio in (
+            ("train_ratio", train_ratio),
+            ("val_ratio", val_ratio),
+            ("test_ratio", test_ratio),
+        ):
+            if not (0.0 < ratio < 1.0):
+                errors.append(
+                    f"Node '{node_id}' requires {name} to be greater than 0 and less than 1."
+                )
+        if abs(train_ratio + val_ratio + test_ratio - 1.0) >= 1e-9:
+            errors.append(f"Node '{node_id}' requires split ratios to sum to 1.0.")
+        seed = config.get("random_seed", 42)
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            try:
+                if isinstance(seed, float) and seed.is_integer():
+                    seed = int(seed)
+                elif isinstance(seed, str) and seed.strip().lstrip("-").isdigit():
+                    seed = int(seed)
+                else:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"Node '{node_id}' requires random_seed to be an integer.")
+    elif node_type == "evaluation":
+        metric = config.get("metric")
+        if metric is None or str(metric).strip() == "":
+            errors.append(f"Node '{node_id}' requires a metric.")
+        minimum = config.get("minimum", config.get("min"))
+        if minimum is None or (isinstance(minimum, str) and minimum.strip() == ""):
+            errors.append(f"Node '{node_id}' requires a numeric minimum (or min).")
+        else:
+            try:
+                float(minimum)
+            except (TypeError, ValueError):
+                errors.append(f"Node '{node_id}' requires a numeric minimum (or min).")
+    elif node_type == "condition":
+        metric = config.get("metric")
+        left = config.get("left")
+        if (metric is None or str(metric).strip() == "") and left is None:
+            errors.append(f"Node '{node_id}' requires metric or left.")
+        right = config.get("value", config.get("right"))
+        if right is None or (isinstance(right, str) and right.strip() == ""):
+            errors.append(f"Node '{node_id}' requires value or right.")
+        operation = config.get("operator")
+        if operation is None or str(operation).strip() == "":
+            errors.append(f"Node '{node_id}' requires an operator.")
+        elif str(operation) not in CONDITION_OPERATORS:
+            errors.append(
+                f"Node '{node_id}' has unsupported condition operator '{operation}'."
+            )
+    return errors
 
 
 def validate_graph(graph: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
@@ -167,6 +272,7 @@ def validate_graph(graph: dict[str, Any], *, strict: bool = True) -> dict[str, A
                 errors.append(
                     f"Node '{node_id}' requires dataset_version_id or dataset_id configuration."
                 )
+            errors.extend(_validate_strict_node_config(node_id, node_type, config))
 
     queue = sorted(node_id for node_id, degree in indegree.items() if degree == 0)
     order: list[str] = []
@@ -285,7 +391,24 @@ def _execute_node(
         rules = config.get("rules", [])
         rule_id = config.get("quality_rule_id")
         rule_row = db.get(QualityRule, int(rule_id)) if rule_id else None
+        if rule_id and rule_row is None:
+            raise ValueError(f"Quality rule {rule_id} was not found.")
         if rule_row:
+            if rule_row.project_id != run.project_id:
+                raise ValueError(
+                    f"Quality rule {rule_row.id} does not belong to this project."
+                )
+            if not rule_row.is_active:
+                raise ValueError(f"Quality rule {rule_row.id} is inactive.")
+            incoming_dataset_id = _find(incoming, "dataset_id")
+            if (
+                rule_row.dataset_id is not None
+                and incoming_dataset_id is not None
+                and int(rule_row.dataset_id) != int(incoming_dataset_id)
+            ):
+                raise ValueError(
+                    f"Quality rule {rule_row.id} belongs to a different dataset."
+                )
             rules = json.loads(rule_row.rules_json or "[]")
         result = quality.run_quality_rules(frame, rules)
         version_id = _find(incoming, "dataset_version_id")
@@ -316,7 +439,8 @@ def _execute_node(
         test_ratio = float(config.get("test_ratio", 0.15))
         if not abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-9:
             raise ValueError("Split ratios must sum to 1.")
-        shuffled = frame.sample(frac=1, random_state=int(config.get("random_seed", 42)))
+        seed = int(config.get("random_seed", 42))
+        shuffled = frame.sample(frac=1, random_state=seed)
         train_end = int(len(frame) * train_ratio)
         val_end = train_end + int(len(frame) * val_ratio)
         splits = {
@@ -324,30 +448,17 @@ def _execute_node(
             "val": shuffled.iloc[train_end:val_end].copy(),
             "test": shuffled.iloc[val_end:].copy(),
         }
-        version_id = _find(incoming, "dataset_version_id")
-        split_row = None
-        if version_id:
-            split_row = DatasetSplit(
-                project_id=run.project_id,
-                dataset_version_id=version_id,
-                name=str(config.get("name", "pipeline")),
-                train_ratio=train_ratio,
-                val_ratio=val_ratio,
-                test_ratio=test_ratio,
-                random_seed=int(config.get("random_seed", 42)),
-            )
-            db.add(split_row)
-            db.flush()
+        # In-memory only: do not create DatasetSplit rows (no Saved Split artifacts).
         return {
             **(incoming if isinstance(incoming, dict) else {}),
             "dataframe": frame,
             "splits": splits,
-            "split_id": split_row.id if split_row else None,
+            "split_id": None,
             "split_config": {
                 "train_ratio": train_ratio,
                 "val_ratio": val_ratio,
                 "test_ratio": test_ratio,
-                "random_seed": int(config.get("random_seed", 42)),
+                "random_seed": seed,
             },
         }
 
@@ -449,7 +560,7 @@ def _execute_node(
             "!=": operator.ne,
         }
         operation = str(config.get("operator", ">="))
-        if operation not in operators:
+        if operation not in CONDITION_OPERATORS:
             raise ValueError(f"Unsupported condition operator '{operation}'.")
         passed = bool(operators[operation](left, right))
         if not passed and config.get("fail_on_false", False):
@@ -726,9 +837,8 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
     }
     if not failed:
         return []
-    outgoing: dict[str, list[str]] = {
-        str(node.get("id")): [] for node in graph.get("nodes", [])
-    }
+    nodes = {str(node.get("id")): node for node in graph.get("nodes", [])}
+    outgoing: dict[str, list[str]] = {node_id: [] for node_id in nodes}
     for edge in graph.get("edges", []):
         source, target = str(edge.get("source")), str(edge.get("target"))
         if source in outgoing:
@@ -745,7 +855,19 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
 
     artifacts = json.loads(run.node_artifacts_json or "{}")
     for node_id in restart:
-        states[node_id] = {"status": "pending"}
+        existing = dict(states.get(node_id) or {})
+        graph_node = nodes.get(node_id) or {"id": node_id, "data": {}}
+        previous_attempt = existing.get("attempt")
+        try:
+            attempt = int(previous_attempt) + 1 if previous_attempt is not None else 2
+        except (TypeError, ValueError):
+            attempt = 2
+        states[node_id] = {
+            "status": "pending",
+            "label": existing.get("label") or _node_label(graph_node),
+            "node_type": existing.get("node_type") or _node_type(graph_node) or "unknown",
+            "attempt": attempt,
+        }
         artifacts.pop(node_id, None)
     run.node_states_json = json.dumps(states)
     run.node_artifacts_json = json.dumps(artifacts)
@@ -754,10 +876,12 @@ def prepare_rerun_from_failed(run: PipelineRun, graph: dict[str, Any]) -> list[s
     run.scheduled_for = None
     run.started_at = None
     run.finished_at = None
+    restarted = sorted(restart)
     run.logs = (run.logs or "") + (
-        f"Restart requested from failed node(s): {', '.join(sorted(failed))}.\n"
+        "Rerun from failed requested.\n"
+        f"Restarting steps: {', '.join(restarted)}.\n"
     )
-    return sorted(restart)
+    return restarted
 
 
 def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
@@ -917,11 +1041,21 @@ def execute_pipeline_run(db: Session, run_id: int) -> PipelineRun:
             if to_start:
                 started_at = datetime.now(timezone.utc).isoformat()
                 for node_id, _ in to_start:
-                    states[node_id] = {
-                        "status": "running",
-                        "node_type": _node_type(nodes[node_id]),
-                        "started_at": started_at,
-                    }
+                    current = states.setdefault(node_id, {})
+                    current.update(
+                        {
+                            "status": "running",
+                            "node_type": current.get("node_type")
+                            or _node_type(nodes[node_id]),
+                            "label": current.get("label") or _node_label(nodes[node_id]),
+                            "attempt": current.get("attempt") or 1,
+                            "started_at": started_at,
+                        }
+                    )
+                    current.pop("error", None)
+                    current.pop("reason", None)
+                    current.pop("finished_at", None)
+                    current.pop("output", None)
                 persist_runtime_state()
                 for node_id, active in to_start:
                     node_type = _node_type(nodes[node_id])

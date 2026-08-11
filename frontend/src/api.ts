@@ -275,6 +275,12 @@ export type PipelineRun = {
     error?: string;
     reason?: string;
     branch?: "true" | "false";
+    label?: string;
+    node_type?: string;
+    attempt?: number;
+    started_at?: string;
+    finished_at?: string;
+    output?: unknown;
   }>;
   node_artifacts: Record<string, unknown>;
   fail_policy: "stop" | "continue";
