@@ -483,6 +483,114 @@ def test_stopped_endpoint_prediction_returns_409(client, auth_headers, monkeypat
     assert "Start the endpoint" in body["hint"]
 
 
+def test_get_endpoint_includes_prediction_sample_from_preview(client, auth_headers):
+    from app.db.models import (
+        Dataset,
+        DatasetVersion,
+        Endpoint,
+        ModelLifecycle,
+        ModelVersion,
+        TrainingJob,
+    )
+
+    project_id = _project(client, auth_headers, "predict-sample-get")
+    with TestingSessionLocal() as db:
+        dataset = Dataset(
+            project_id=project_id,
+            name="demand",
+            object_key="demand.csv",
+            latest_version=1,
+        )
+        db.add(dataset)
+        db.flush()
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project_id,
+            version=1,
+            object_key="demand.csv",
+            original_filename="demand.csv",
+            format="csv",
+            preview_json=json.dumps(
+                [
+                    {
+                        "site_id": "SITE_A",
+                        "measured_at": "2026-07-01T09:00:00",
+                        "supply_temp": 72.4,
+                        "demand_level": "HIGH",
+                    }
+                ]
+            ),
+            dtypes_json=json.dumps(
+                {
+                    "site_id": "object",
+                    "measured_at": "datetime64[ns]",
+                    "supply_temp": "float64",
+                    "demand_level": "object",
+                }
+            ),
+        )
+        db.add(version)
+        db.flush()
+        job = TrainingJob(
+            project_id=project_id,
+            dataset_id=dataset.id,
+            dataset_version_id=version.id,
+            name="train",
+            target_column="demand_level",
+            feature_columns_json=json.dumps(
+                ["site_id", "measured_at", "supply_temp"]
+            ),
+        )
+        db.add(job)
+        db.flush()
+        model = ModelVersion(
+            project_id=project_id,
+            name="demand-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-demand",
+            mlflow_version="1",
+            mlflow_run_id="run-sample",
+            model_uri="models:/demand/1",
+            training_job_id=job.id,
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json="{}",
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="demand-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(
+                ["site_id", "measured_at", "supply_temp"]
+            ),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    response = client.get(
+        f"/api/v1/endpoints/{endpoint_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prediction_sample"] == {
+        "site_id": "SITE_A",
+        "measured_at": "2026-07-01T09:00:00",
+        "supply_temp": 72.4,
+    }
+    assert "demand_level" not in body["prediction_sample"]
+
+
 def test_evaluate_gates_endpoint_still_works(client, auth_headers, monkeypatch):
     project_id = _project(client, auth_headers, "gates-rerun")
     from app.db.models import ModelLifecycle, ModelVersion

@@ -6,6 +6,13 @@ import { ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice } from "..
 import { userCanProject, useProject } from "../ProjectContext";
 import { buildPredictionSamplePayload } from "../trainingConfig";
 
+function initialPayloadFromEndpoint(endpoint: Endpoint): string {
+  if (endpoint.prediction_sample && Object.keys(endpoint.prediction_sample).length > 0) {
+    return JSON.stringify([endpoint.prediction_sample], null, 2);
+  }
+  return JSON.stringify(buildPredictionSamplePayload(endpoint.feature_schema || []), null, 2);
+}
+
 export default function Predict() {
   const { projectId, endpointId } = useParams();
   const { user } = useAuth();
@@ -20,20 +27,21 @@ export default function Predict() {
   const canDeploy = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   useEffect(() => {
-    api<Endpoint>(`/endpoints/${endpointId}`).then((endpoint) => {
-      setEp(endpoint);
-      const irisValues: Record<string, number> = {
-        "sepal length (cm)": 5.1,
-        "sepal width (cm)": 3.5,
-        "petal length (cm)": 1.4,
-        "petal width (cm)": 0.2,
-      };
-      const sample = buildPredictionSamplePayload(
-        endpoint.feature_schema,
-        irisValues,
-      );
-      setPayload(JSON.stringify(sample, null, 2));
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Deployment could not be loaded."));
+    let cancelled = false;
+    api<Endpoint>(`/endpoints/${endpointId}`)
+      .then((endpoint) => {
+        if (cancelled) return;
+        setEp(endpoint);
+        setPayload(initialPayloadFromEndpoint(endpoint));
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : "Deployment could not be loaded.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [endpointId]);
 
   async function startEndpoint() {

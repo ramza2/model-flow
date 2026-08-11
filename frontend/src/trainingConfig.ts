@@ -109,24 +109,27 @@ export function sampleValueForDtype(dtype: string, example?: unknown): unknown {
   const lower = dtype.toLowerCase();
   if (/(bool|boolean)/.test(lower)) return false;
   if (/(datetime|date|timestamp|timedelta)/.test(lower)) return "2026-01-01T00:00:00";
-  if (/(str|string|text|object|category|categorical)/.test(lower)) return "";
+  if (/(str|string|text|object|category|categorical)/.test(lower)) return "sample";
   if (/(int|int8|int16|int32|int64|long|uint)/.test(lower)) return 0;
   if (/(float|double|decimal|number|numeric)/.test(lower)) return 0.0;
-  return "";
+  // Unknown dtype must not be treated as float (avoids all-zero regression).
+  return "sample";
 }
 
 export function buildPredictionSamplePayload(
   featureSchema: Array<string | Record<string, unknown>>,
   previewRow?: Record<string, unknown> | null,
+  dtypes?: Record<string, string> | null,
 ): Record<string, unknown>[] {
   const instance = Object.fromEntries(
     featureSchema.map((field, index) => {
       if (typeof field === "string") {
         const example = previewRow?.[field];
-        return [field, sampleValueForDtype("float", example)];
+        const dtype = String(dtypes?.[field] ?? "");
+        return [field, sampleValueForDtype(dtype, example)];
       }
       const name = String(field.name || field.field || `feature_${index + 1}`);
-      const dtype = String(field.dtype || field.type || "");
+      const dtype = String(field.dtype || field.type || dtypes?.[name] || "");
       const example =
         previewRow?.[name]
         ?? field.example

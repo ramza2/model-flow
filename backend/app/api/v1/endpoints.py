@@ -213,9 +213,13 @@ def get_endpoint(
     auth: AuthContext = Depends(get_auth),
     db: Session = Depends(get_db),
 ):
-    return endpoint_out(
-        _authorize_endpoint(db, endpoint_id, auth, Permission.DEPLOY_READ)
+    endpoint = _authorize_endpoint(db, endpoint_id, auth, Permission.DEPLOY_READ)
+    payload = endpoint_out(endpoint)
+    # Optional enrichment for Prediction Test; never fails the GET if lineage is incomplete.
+    payload["prediction_sample"] = inference.build_prediction_sample_for_endpoint(
+        db, endpoint
     )
+    return payload
 
 
 @router.patch("/endpoints/{endpoint_id}")
