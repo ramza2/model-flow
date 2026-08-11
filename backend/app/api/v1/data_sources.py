@@ -321,3 +321,33 @@ def import_data(
     db.commit()
     db.refresh(job)
     return import_job_out(job)
+
+
+@router.get("/projects/{project_id}/data-import-jobs")
+def list_import_jobs(
+    project_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=500),
+    _=Depends(require_project_perm(Permission.DATA_READ)),
+    db: Session = Depends(get_db),
+):
+    rows = db.scalars(
+        select(DataImportJob)
+        .where(DataImportJob.project_id == project_id)
+        .order_by(DataImportJob.id.desc())
+        .offset(skip)
+        .limit(limit)
+    ).all()
+    return [import_job_out(row) for row in rows]
+
+
+@router.get("/projects/{project_id}/data-import-jobs/{job_id}")
+def get_import_job(
+    project_id: int,
+    job_id: int,
+    _=Depends(require_project_perm(Permission.DATA_READ)),
+    db: Session = Depends(get_db),
+):
+    return import_job_out(
+        get_owned(db, DataImportJob, job_id, project_id, "Data import job")
+    )
