@@ -408,6 +408,11 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .project-card footer { display: flex; justify-content: space-between; gap: .5rem; margin-top: auto; padding-top: 1rem; color: var(--muted); font-size: .72rem; text-transform: capitalize; }
 .source-card { min-height: 300px; }
 .source-card .row-actions { margin-top: auto; padding-top: 1rem; }
+.source-import-panel { margin-top: 1rem; }
+.source-import-status { margin-top: .75rem; display: grid; gap: .5rem; }
+.source-recent-jobs { margin-top: .75rem; }
+.source-recent-jobs ul { list-style: none; margin: .35rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.source-recent-jobs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .9rem; }
 .source-message { padding: .55rem; background: var(--bg-soft); border-radius: 6px; font-size: .8rem; }
 
 .activity-list { display: flex; flex-direction: column; }

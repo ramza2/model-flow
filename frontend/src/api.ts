@@ -114,6 +114,19 @@ export type DataSource = {
   created_at: string;
 };
 
+export type DataImportJob = {
+  id: number;
+  project_id: number;
+  data_source_id: number;
+  dataset_id: number | null;
+  dataset_version_id: number | null;
+  table_or_query: string;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
 export type Dataset = {
   id: number;
   project_id: number;

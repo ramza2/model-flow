@@ -276,7 +276,7 @@ info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKE
 info "2) Build & start stack (clean volumes — no host volume reuse)"
 modelflow_compose --profile source down -v --remove-orphans
 modelflow_compose build
-modelflow_compose up -d
+modelflow_compose --profile source up -d
 pass "compose up"
 
 info "3) Wait for HTTP readiness and bootstrap administrator"
@@ -633,8 +633,12 @@ docker run --rm --network host \
   -v "$ROOT:/work" \
   -w /work \
   -e E2E_BASE_URL="$FRONTEND_BASE_URL" \
+  -e E2E_API_BASE="$API_BASE" \
   -e E2E_ADMIN_EMAIL="$ADMIN_EMAIL" \
   -e E2E_ADMIN_PASSWORD="$E2E_ADMIN_PASSWORD" \
+  -e E2E_SOURCE_POSTGRES_DB="${SOURCE_POSTGRES_DB:-}" \
+  -e E2E_SOURCE_POSTGRES_USER="${SOURCE_POSTGRES_USER:-}" \
+  -e E2E_SOURCE_POSTGRES_PASSWORD="${SOURCE_POSTGRES_PASSWORD:-}" \
   -e HOME=/tmp \
   -e CI=true \
   "$PLAYWRIGHT_IMAGE" \
