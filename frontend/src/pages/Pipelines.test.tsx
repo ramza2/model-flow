@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeConfigForm } from "../pipelineForms";
+import { defaultConfigFor } from "../pipelineHelpers";
 import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
 
 const apiMock = vi.fn();
@@ -231,6 +232,100 @@ describe("NodeConfigForm", () => {
     );
     expect(screen.getByTestId("node-config-split-error")).toHaveTextContent(/must equal 1\.0/i);
   });
+
+  it("uses metric/value keys for condition defaults and form edits", () => {
+    expect(defaultConfigFor("condition")).toEqual({
+      metric: "accuracy",
+      operator: ">=",
+      value: 0.8,
+      fail_on_false: false,
+    });
+
+    function Harness() {
+      const [config, setConfig] = useState(defaultConfigFor("condition"));
+      return (
+        <div>
+          <pre data-testid="condition-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm projectId="7" nodeType="condition" config={config} onChange={setConfig} />
+        </div>
+      );
+    }
+    render(<Harness />);
+    fireEvent.change(screen.getByTestId("node-config-left"), { target: { value: "f1" } });
+    fireEvent.change(screen.getByTestId("node-config-right"), { target: { value: "0.55" } });
+    expect(screen.getByTestId("condition-config")).toHaveTextContent('"metric":"f1"');
+    expect(screen.getByTestId("condition-config")).toHaveTextContent('"value":0.55');
+    expect(screen.getByTestId("condition-config")).not.toHaveTextContent('"left"');
+    expect(screen.getByTestId("condition-config")).not.toHaveTextContent('"right"');
+  });
+
+  it("clears stale quality_rule_id after upstream dataset rules reload", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("dataset_id=3")) {
+        return [{ id: 10, name: "Rule A", dataset_id: 3, is_active: true, rules: [] }];
+      }
+      if (path.includes("dataset_id=4")) {
+        return [{ id: 20, name: "Rule B", dataset_id: 4, is_active: true, rules: [] }];
+      }
+      throw new Error(`Unhandled ${path}`);
+    });
+
+    function Harness() {
+      const [datasetId, setDatasetId] = useState<number | undefined>(3);
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        quality_rule_id: 10,
+        block_on_fail: true,
+      });
+      return (
+        <div>
+          <button type="button" data-testid="switch-dataset" onClick={() => setDatasetId(4)}>
+            Switch
+          </button>
+          <pre data-testid="quality-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="quality_check"
+            config={config}
+            onChange={setConfig}
+            upstreamDatasetId={datasetId}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId("node-config-quality-rule")).toHaveValue("10"));
+    fireEvent.click(screen.getByTestId("switch-dataset"));
+    await waitFor(() => {
+      expect(screen.getByTestId("quality-config")).not.toHaveTextContent('"quality_rule_id":10');
+    });
+    expect(screen.getByTestId("node-config-quality-rule")).toHaveValue("");
+  });
+
+  it("keeps quality_rule_id when rule list fetch fails", async () => {
+    apiMock.mockRejectedValue(new Error("rules unavailable"));
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        quality_rule_id: 10,
+        block_on_fail: true,
+      });
+      return (
+        <div>
+          <pre data-testid="quality-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="quality_check"
+            config={config}
+            onChange={setConfig}
+            upstreamDatasetId={3}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await screen.findByTestId("node-config-quality-hint");
+    expect(screen.getByTestId("node-config-quality-hint")).toHaveTextContent(/unavailable/i);
+    expect(screen.getByTestId("quality-config")).toHaveTextContent('"quality_rule_id":10');
+  });
 });
 
 describe("PipelineBuilder", () => {
@@ -280,7 +375,7 @@ describe("PipelineBuilder", () => {
     stubBuilderApi({
       validate: {
         valid: false,
-        errors: ["Node 'dataset_load-1' requires dataset_version_id or dataset_id configuration."],
+        errors: ["Node 'training-1' requires a non-empty target_column."],
       },
     });
     renderBuilder();
@@ -289,7 +384,7 @@ describe("PipelineBuilder", () => {
     fireEvent.click(screen.getByTestId("pipeline-publish"));
     await waitFor(() => {
       expect(screen.getByTestId("pipeline-validation-errors")).toHaveTextContent(
-        /requires dataset_version_id/i,
+        /non-empty target_column/i,
       );
     });
     expect(

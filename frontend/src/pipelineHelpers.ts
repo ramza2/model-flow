@@ -36,7 +36,7 @@ export function defaultConfigFor(type: PipelineNodeType): Record<string, unknown
     case "evaluation":
       return { metric: "accuracy", minimum: 0.8, fail_on_gate: true };
     case "condition":
-      return { left: "accuracy", operator: ">=", right: 0.8, fail_on_false: false };
+      return { metric: "accuracy", operator: ">=", value: 0.8, fail_on_false: false };
     case "quality_check":
       return { block_on_fail: true };
     case "notification":
@@ -152,6 +152,9 @@ export function nodeConfigWarnings(
     case "condition":
       if (config.left === undefined && config.metric === undefined) {
         warnings.push("Left value / metric required");
+      }
+      if (config.value === undefined && config.right === undefined) {
+        warnings.push("Value / right required");
       }
       if (!config.operator) warnings.push("Operator required");
       break;

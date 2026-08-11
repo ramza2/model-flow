@@ -415,13 +415,13 @@ def test_prepare_rerun_with_legacy_node_states(pipeline_db):
     assert states["b"]["node_type"] == "notification"
 
 
-def test_pipeline_split_reuses_dataset_split_across_runs(pipeline_db):
+def test_pipeline_split_does_not_create_dataset_split_rows(pipeline_db):
     import pandas as pd
     from sqlalchemy import func, select
 
-    from app.db.models import Dataset, DatasetSplit, DatasetVersion
+    from app.db.models import Dataset, DatasetSplit, DatasetVersion, TrainingJob
 
-    project = Project(name="split-reuse")
+    project = Project(name="split-no-db")
     pipeline_db.add(project)
     pipeline_db.flush()
     pipeline = Pipeline(project_id=project.id, name="p")
@@ -481,6 +481,248 @@ def test_pipeline_split_reuses_dataset_split_across_runs(pipeline_db):
     pipeline_db.commit()
     second = pipeline_engine._execute_node(pipeline_db, run, "split", config, incoming)
     pipeline_db.commit()
-    assert first["split_id"] == second["split_id"]
+
+    assert first.get("split_id") is None
+    assert second.get("split_id") is None
+    assert first["split_config"] == {
+        "train_ratio": 0.7,
+        "val_ratio": 0.15,
+        "test_ratio": 0.15,
+        "random_seed": 42,
+    }
+    pd.testing.assert_frame_equal(first["splits"]["train"], second["splits"]["train"])
+    pd.testing.assert_frame_equal(first["splits"]["val"], second["splits"]["val"])
+    pd.testing.assert_frame_equal(first["splits"]["test"], second["splits"]["test"])
     count = pipeline_db.scalar(select(func.count()).select_from(DatasetSplit))
-    assert count == 1
+    assert count == 0
+
+    class _FakeRunner:
+        def run(self, ctx):
+            from app.services.training import TrainingResult
+
+            return TrainingResult(
+                mlflow_run_id="run-1",
+                model_uri="models:/x/1",
+                metrics={"accuracy": 0.9},
+                logs="ok",
+                params={},
+            )
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(pipeline_engine, "get_training_runner", lambda: _FakeRunner())
+    try:
+        trained = pipeline_engine._execute_node(
+            pipeline_db,
+            run,
+            "training",
+            {
+                "target_column": "target",
+                "algorithm": "random_forest",
+                "problem_type": "classification",
+            },
+            first,
+        )
+        pipeline_db.commit()
+        job = pipeline_db.get(TrainingJob, trained["training_job_id"])
+        assert job is not None
+        assert job.split_id is None
+        assert job.train_ratio == 0.7
+        assert job.val_ratio == 0.15
+        assert job.test_ratio == 0.15
+        assert job.random_seed == 42
+    finally:
+        monkeypatch.undo()
+
+
+def test_default_condition_uses_metric_lookup(pipeline_db):
+    project = Project(name="condition-default")
+    pipeline_db.add(project)
+    pipeline_db.flush()
+    pipeline = Pipeline(project_id=project.id, name="p")
+    pipeline_db.add(pipeline)
+    pipeline_db.flush()
+    version_row = PipelineVersion(
+        pipeline_id=pipeline.id,
+        project_id=project.id,
+        version=1,
+        graph_json="{}",
+    )
+    pipeline_db.add(version_row)
+    pipeline_db.flush()
+    run = PipelineRun(
+        project_id=project.id,
+        pipeline_id=pipeline.id,
+        pipeline_version_id=version_row.id,
+        status=JobStatus.running,
+    )
+    pipeline_db.add(run)
+    pipeline_db.flush()
+
+    default_config = {
+        "metric": "accuracy",
+        "operator": ">=",
+        "value": 0.8,
+        "fail_on_false": False,
+    }
+    passed = pipeline_engine._execute_node(
+        pipeline_db,
+        run,
+        "condition",
+        default_config,
+        {"metrics": {"accuracy": 0.9}},
+    )
+    failed = pipeline_engine._execute_node(
+        pipeline_db,
+        run,
+        "condition",
+        default_config,
+        {"metrics": {"accuracy": 0.7}},
+    )
+    assert passed["condition"] is True
+    assert passed["branch"] == "true"
+    assert failed["condition"] is False
+    assert failed["branch"] == "false"
+
+
+def test_strict_validate_graph_node_configs():
+    def graph(*nodes):
+        return {"nodes": list(nodes), "edges": []}
+
+    training_missing = pipeline_engine.validate_graph(
+        graph(_node("training-1", "training", target_column="", algorithm="random_forest")),
+        strict=True,
+    )
+    assert training_missing["valid"] is False
+    assert any("target_column" in err for err in training_missing["errors"])
+
+    draft_ok = pipeline_engine.validate_graph(
+        graph(_node("training-1", "training", target_column="", algorithm="")),
+        strict=False,
+    )
+    assert draft_ok["valid"] is True
+
+    split_sum = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "split-1",
+                "split",
+                train_ratio=0.5,
+                val_ratio=0.5,
+                test_ratio=0.5,
+                random_seed=42,
+            )
+        ),
+        strict=True,
+    )
+    assert split_sum["valid"] is False
+    assert any("sum to 1.0" in err for err in split_sum["errors"])
+
+    split_seed = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "split-2",
+                "split",
+                train_ratio=0.7,
+                val_ratio=0.15,
+                test_ratio=0.15,
+                random_seed="abc",
+            )
+        ),
+        strict=True,
+    )
+    assert split_seed["valid"] is False
+    assert any("random_seed" in err for err in split_seed["errors"])
+
+    evaluation = pipeline_engine.validate_graph(
+        graph(_node("eval-1", "evaluation", metric="", minimum="x")),
+        strict=True,
+    )
+    assert evaluation["valid"] is False
+    assert any("metric" in err for err in evaluation["errors"])
+
+    condition_op = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "condition-1",
+                "condition",
+                metric="accuracy",
+                operator="~~",
+                value=0.8,
+            )
+        ),
+        strict=True,
+    )
+    assert condition_op["valid"] is False
+    assert any("unsupported condition operator" in err for err in condition_op["errors"])
+
+    condition_value = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "condition-2",
+                "condition",
+                metric="accuracy",
+                operator=">=",
+            )
+        ),
+        strict=True,
+    )
+    assert condition_value["valid"] is False
+    assert any("value or right" in err for err in condition_value["errors"])
+
+
+def test_quality_check_rejects_rule_from_other_dataset(pipeline_db):
+    import pandas as pd
+
+    from app.db.models import Dataset, QualityRule
+
+    project = Project(name="quality-scope")
+    pipeline_db.add(project)
+    pipeline_db.flush()
+    pipeline = Pipeline(project_id=project.id, name="p")
+    pipeline_db.add(pipeline)
+    pipeline_db.flush()
+    version_row = PipelineVersion(
+        pipeline_id=pipeline.id,
+        project_id=project.id,
+        version=1,
+        graph_json="{}",
+    )
+    pipeline_db.add(version_row)
+    pipeline_db.flush()
+    dataset_a = Dataset(
+        project_id=project.id, name="a", object_key="a.csv", latest_version=1
+    )
+    dataset_b = Dataset(
+        project_id=project.id, name="b", object_key="b.csv", latest_version=1
+    )
+    pipeline_db.add_all([dataset_a, dataset_b])
+    pipeline_db.flush()
+    rule = QualityRule(
+        project_id=project.id,
+        dataset_id=dataset_b.id,
+        name="b-only",
+        rules_json="[]",
+        is_active=True,
+    )
+    pipeline_db.add(rule)
+    pipeline_db.flush()
+    run = PipelineRun(
+        project_id=project.id,
+        pipeline_id=pipeline.id,
+        pipeline_version_id=version_row.id,
+        status=JobStatus.running,
+    )
+    pipeline_db.add(run)
+    pipeline_db.flush()
+
+    with pytest.raises(ValueError, match="different dataset"):
+        pipeline_engine._execute_node(
+            pipeline_db,
+            run,
+            "quality_check",
+            {"quality_rule_id": rule.id},
+            {
+                "dataframe": pd.DataFrame({"x": [1]}),
+                "dataset_id": dataset_a.id,
+            },
+        )

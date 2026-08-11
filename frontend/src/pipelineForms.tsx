@@ -142,41 +142,57 @@ function QualityCheckForm({
 }: Pick<NodeConfigFormProps, "projectId" | "config" | "onChange" | "upstreamDatasetId">) {
   const [rules, setRules] = useState<QualityRule[]>([]);
   const [hint, setHint] = useState("");
+  const [loadState, setLoadState] = useState<"idle" | "loading" | "ok" | "error">("idle");
 
   useEffect(() => {
     if (!upstreamDatasetId) {
       setRules([]);
+      setLoadState("idle");
       setHint("Connect a Dataset Load step upstream to choose dataset rules.");
       return;
     }
     let cancelled = false;
+    setLoadState("loading");
     setHint("");
     api<QualityRule[]>(
       `/projects/${projectId}/quality-rules?dataset_id=${upstreamDatasetId}&include_inactive=false&include_unassigned=false`,
     )
       .then((rows) => {
-        if (!cancelled) setRules(rows.filter((row) => row.dataset_id != null && row.is_active));
+        if (cancelled) return;
+        setRules(rows.filter((row) => row.dataset_id != null && row.is_active));
+        setLoadState("ok");
       })
       .catch((reason) => {
-        if (!cancelled) {
-          setRules([]);
-          setHint(reason instanceof Error ? reason.message : "Quality rules could not be loaded.");
-        }
+        if (cancelled) return;
+        setRules([]);
+        setLoadState("error");
+        setHint(reason instanceof Error ? reason.message : "Quality rules could not be loaded.");
       });
     return () => {
       cancelled = true;
     };
   }, [projectId, upstreamDatasetId]);
 
+  useEffect(() => {
+    if (loadState !== "ok") return;
+    const selected = config.quality_rule_id;
+    if (selected == null || selected === "") return;
+    if (!rules.some((row) => row.id === Number(selected))) {
+      const next = { ...config };
+      delete next.quality_rule_id;
+      onChange(next);
+    }
+  }, [loadState, rules, config, onChange]);
+
   return (
     <div className="node-config-form" data-testid="node-config-quality-check">
-      {hint && <p className="form-hint">{hint}</p>}
+      {hint && <p className="form-hint" data-testid="node-config-quality-hint">{hint}</p>}
       <label>
         Quality rule
         <select
           data-testid="node-config-quality-rule"
           value={config.quality_rule_id != null ? String(config.quality_rule_id) : ""}
-          disabled={!upstreamDatasetId}
+          disabled={!upstreamDatasetId || loadState === "loading"}
           onChange={(event) => {
             onChange({
               ...config,
@@ -490,17 +506,21 @@ function ConditionForm({
   config,
   onChange,
 }: Pick<NodeConfigFormProps, "config" | "onChange">) {
-  const left = asString(config.left ?? config.metric, "accuracy");
+  const metric = asString(config.metric ?? config.left, "accuracy");
   const operator = asString(config.operator, ">=");
-  const right = config.right ?? config.value ?? 0.8;
+  const value = config.value ?? config.right ?? 0.8;
   return (
     <div className="node-config-form" data-testid="node-config-condition">
       <label>
-        Left / metric
+        Metric / left
         <input
           data-testid="node-config-left"
-          value={left}
-          onChange={(event) => onChange({ ...config, left: event.target.value, metric: event.target.value })}
+          value={metric}
+          onChange={(event) => {
+            const next = { ...config, metric: event.target.value };
+            delete next.left;
+            onChange(next);
+          }}
         />
       </label>
       <label>
@@ -518,17 +538,19 @@ function ConditionForm({
         </select>
       </label>
       <label>
-        Right
+        Value / right
         <input
           data-testid="node-config-right"
-          value={String(right)}
+          value={String(value)}
           onChange={(event) => {
             const raw = event.target.value;
             const asNum = Number(raw);
-            onChange({
+            const next = {
               ...config,
-              right: raw === "" || Number.isNaN(asNum) ? raw : asNum,
-            });
+              value: raw === "" || Number.isNaN(asNum) ? raw : asNum,
+            };
+            delete next.right;
+            onChange(next);
           }}
         />
       </label>
