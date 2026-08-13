@@ -33,14 +33,15 @@ jobs:
           command -v curl
           command -v bash
 
-      - name: Clean previous Compose state
+      - name: Clean previous verification Compose state
         run: |
           set -euo pipefail
-          docker compose down -v --remove-orphans || true
+          docker compose -p modelflow-verify --profile source down -v --remove-orphans || true
 
       - name: Run full verification gate
         id: verify
         env:
+          MODELFLOW_COMPOSE_PROJECT_NAME: modelflow-verify
           # Non-default host ports — exercise the same custom-port path local
           # developers use when other Docker stacks occupy the defaults.
           POSTGRES_HOST_PORT: "15432"
@@ -61,19 +62,19 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts/verify
           {
-            echo "=== docker compose ps ==="
-            docker compose ps -a || true
+            echo "=== docker compose ps (modelflow-verify) ==="
+            docker compose -p modelflow-verify ps -a || true
             echo
             echo "=== docker compose ps (plain) ==="
-            docker compose ps -a --format 'table {{.Name}}\t{{.Service}}\t{{.Status}}\t{{.Health}}' || true
+            docker compose -p modelflow-verify ps -a --format 'table {{.Name}}\t{{.Service}}\t{{.Status}}\t{{.Health}}' || true
           } | tee artifacts/verify/compose-ps-ci.txt
 
           for svc in postgres minio mlflow backend worker frontend; do
-            docker compose logs --no-color --tail=200 "$svc" \
+            docker compose -p modelflow-verify logs --no-color --tail=200 "$svc" \
               > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
               echo "(no logs for $svc)" > "artifacts/verify/logs-${svc}.txt"
           done
-          docker compose logs --no-color --tail=400 \
+          docker compose -p modelflow-verify logs --no-color --tail=400 \
             > artifacts/verify/logs-all.txt 2>&1 || true
 
       - name: Upload failure artifacts
