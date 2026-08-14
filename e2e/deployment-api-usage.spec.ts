@@ -83,7 +83,7 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await expect(revokeButton).toBeVisible();
   page.once("dialog", (dialog) => dialog.accept());
   await revokeButton.click();
-  await expect(page.getByText("Revoked")).toBeVisible();
+  await expect(page.getByTestId("service-key-row").getByText("Revoked")).toBeVisible();
 
   await page.reload();
   await expect(page.getByTestId("service-key-plaintext")).toHaveCount(0);
