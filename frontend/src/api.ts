@@ -343,6 +343,30 @@ export type Endpoint = {
   created_at: string;
 };
 
+export type ServiceApiKey = {
+  id: number;
+  project_id: number;
+  endpoint_id: number | null;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+};
+
+/** Plaintext `key` is present only in the create response. */
+export type CreatedServiceApiKey = ServiceApiKey & {
+  key: string;
+};
+
+export type ServiceApiKeyCreatePayload = {
+  name: string;
+  endpoint_id?: number | null;
+  expires_at?: string | null;
+};
+
 export type BatchJob = {
   id: number;
   dataset_version_id: number;
