@@ -471,6 +471,60 @@ echo "$PRED" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert len(d["predictions"]) == 1'
 pass "endpoint deployment and realtime inference"
 
+info "8a) Service API Key external inference"
+SVC_KEY_JSON=$(api -X POST "$API_BASE/projects/$PID/service-api-keys" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"verify-erp-$RUN_TAG\",\"endpoint_id\":$EID}")
+SVC_KEY_ID=$(echo "$SVC_KEY_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+SVC_KEY_PREFIX=$(echo "$SVC_KEY_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["key_prefix"])')
+SVC_PLAINTEXT=$(echo "$SVC_KEY_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["key"])')
+[[ "$SVC_PLAINTEXT" == mfk_* ]] || fail "service key plaintext missing from create response"
+[[ "$SVC_KEY_PREFIX" == mfk_* ]] || fail "service key prefix missing"
+echo "$SVC_KEY_JSON" | json_get 'import sys,json; d=json.load(sys.stdin); assert "key_hash" not in d'
+
+SVC_LIST=$(api "$API_BASE/projects/$PID/service-api-keys")
+echo "$SVC_LIST" | json_get \
+  'import sys,json; rows=json.load(sys.stdin); assert rows; assert all("key" not in r and "key_hash" not in r for r in rows)'
+# Ensure list JSON does not embed the one-time plaintext (prefix alone is fine).
+if echo "$SVC_LIST" | grep -F -- "$SVC_PLAINTEXT" >/dev/null; then
+  fail "service key plaintext leaked into list response"
+fi
+
+EXT_PRED=$(curl -fsS -X POST "$API_BASE/inference/endpoints/$EID/predict" \
+  -H "Authorization: Bearer $SVC_PLAINTEXT" \
+  -H 'Content-Type: application/json' \
+  -d '{"instances":[{"sepal length (cm)":5.1,"sepal width (cm)":3.5,"petal length (cm)":1.4,"petal width (cm)":0.2}]}')
+echo "$EXT_PRED" | tee artifacts/verify/external-predict.json
+echo "$EXT_PRED" | json_get 'import sys,json; d=json.load(sys.stdin); assert len(d["predictions"])==1 and "model_uri" not in d'
+
+# JWT must not work on external inference
+JWT_EXT_CODE=$(curl -sS -o /tmp/verify-jwt-ext.json -w '%{http_code}' \
+  -X POST "$API_BASE/inference/endpoints/$EID/predict" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"instances":[{"sepal length (cm)":5.1,"sepal width (cm)":3.5,"petal length (cm)":1.4,"petal width (cm)":0.2}]}')
+[[ "$JWT_EXT_CODE" == "401" ]] || fail "user JWT unexpectedly authorized external inference ($JWT_EXT_CODE)"
+
+# Service key must not work on internal prediction
+KEY_INT_CODE=$(curl -sS -o /tmp/verify-key-int.json -w '%{http_code}' \
+  -X POST "$API_BASE/endpoints/$EID/predict" \
+  -H "Authorization: Bearer $SVC_PLAINTEXT" \
+  -H 'Content-Type: application/json' \
+  -d '{"instances":[{"sepal length (cm)":5.1,"sepal width (cm)":3.5,"petal length (cm)":1.4,"petal width (cm)":0.2}]}')
+[[ "$KEY_INT_CODE" == "401" ]] || fail "service key unexpectedly authorized internal prediction ($KEY_INT_CODE)"
+
+api -X POST "$API_BASE/projects/$PID/service-api-keys/$SVC_KEY_ID/revoke" >/dev/null
+REVOKED_CODE=$(curl -sS -o /tmp/verify-key-revoked.json -w '%{http_code}' \
+  -X POST "$API_BASE/inference/endpoints/$EID/predict" \
+  -H "Authorization: Bearer $SVC_PLAINTEXT" \
+  -H 'Content-Type: application/json' \
+  -d '{"instances":[{"sepal length (cm)":5.1,"sepal width (cm)":3.5,"petal length (cm)":1.4,"petal width (cm)":0.2}]}')
+[[ "$REVOKED_CODE" == "401" ]] || fail "revoked service key still authorized ($REVOKED_CODE)"
+# Clear plaintext from shell environment before continuing
+unset SVC_PLAINTEXT
+pass "service API key create/list/external predict/auth boundary/revoke"
+echo "prefix=${SVC_KEY_PREFIX}" > artifacts/verify/service-api-key-prefix.txt
+
 BATCH=$(api -X POST "$API_BASE/projects/$PID/batch-jobs" \
   -H 'Content-Type: application/json' \
   -d "{\"dataset_version_id\":$DVID,\"endpoint_id\":$EID,\"result_format\":\"csv\"}")

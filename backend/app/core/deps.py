@@ -9,10 +9,16 @@ from sqlalchemy.orm import Session
 from app.core.audit import write_audit
 from app.core.rbac import Permission, role_has
 from app.core.security import decode_access_token
-from app.db.models import Project, ProjectMembership, ProjectRole, User
+from app.db.models import Endpoint, Project, ProjectMembership, ProjectRole, ServiceApiKey, User
 from app.db.session import get_db
+from app.services import service_api_keys as service_key_service
 
 bearer = HTTPBearer(auto_error=False)
+service_api_key_bearer = HTTPBearer(
+    auto_error=False,
+    scheme_name="ServiceApiKey",
+    description="Service API key (mfk_...) for external inference only.",
+)
 
 
 class AuthContext:
@@ -26,6 +32,36 @@ class AuthContext:
     @property
     def is_system_admin(self) -> bool:
         return bool(self.user.is_system_admin)
+
+
+class ServiceApiKeyContext:
+    """Authenticated external caller — never treated as a ModelFlow user."""
+
+    def __init__(
+        self,
+        key: ServiceApiKey,
+        request_id: str | None = None,
+        ip: str | None = None,
+    ):
+        self.key = key
+        self.request_id = request_id
+        self.ip = ip
+
+    @property
+    def project_id(self) -> int:
+        return self.key.project_id
+
+    @property
+    def endpoint_id(self) -> int | None:
+        return self.key.endpoint_id
+
+    @property
+    def key_id(self) -> int:
+        return self.key.id
+
+    @property
+    def key_prefix(self) -> str:
+        return self.key.key_prefix
 
 
 def client_ip(request: Request) -> str | None:
@@ -56,8 +92,18 @@ def get_current_user(
                 "hint": "Sign in and pass Authorization: Bearer <token>.",
             },
         )
+    token = creds.credentials
+    # Service API keys are never accepted as user JWTs.
+    if token.startswith("mfk_"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "detail": "Invalid or expired token.",
+                "hint": "Sign in again.",
+            },
+        )
     try:
-        payload = decode_access_token(creds.credentials)
+        payload = decode_access_token(token)
         user_id = int(payload["sub"])
         token_version = int(payload.get("tv", 0))
     except (PyJWTError, KeyError, ValueError):
@@ -90,6 +136,83 @@ def get_current_user(
             },
         )
     return user
+
+
+def _invalid_service_api_key() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={
+            "detail": "Invalid service API key.",
+            "hint": None,
+        },
+    )
+
+
+def authenticate_service_api_key(
+    request: Request,
+    creds: HTTPAuthorizationCredentials | None = Depends(service_api_key_bearer),
+    db: Session = Depends(get_db),
+) -> ServiceApiKeyContext:
+    """Authenticate an external inference caller with a Service API Key.
+
+    Does not authorize endpoint scope — callers must call authorize_service_key_for_endpoint.
+    """
+    if creds is None or not creds.credentials:
+        raise _invalid_service_api_key()
+    plaintext = creds.credentials
+    if not plaintext.startswith("mfk_"):
+        raise _invalid_service_api_key()
+    row = service_key_service.find_key_by_plaintext(db, plaintext)
+    if row is None or not service_key_service.is_key_currently_usable(row):
+        raise _invalid_service_api_key()
+    return ServiceApiKeyContext(
+        key=row,
+        request_id=get_request_id(request),
+        ip=client_ip(request),
+    )
+
+
+def authorize_service_key_for_endpoint(
+    db: Session,
+    ctx: ServiceApiKeyContext,
+    endpoint_id: int,
+) -> Endpoint:
+    """Authorize project/endpoint scope and persist last_used_at on success.
+
+    last_used_at is committed independently of subsequent prediction outcomes.
+    """
+    endpoint = db.get(Endpoint, endpoint_id)
+    if not endpoint:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "detail": f"Endpoint {endpoint_id} was not found.",
+                "hint": None,
+            },
+        )
+    if endpoint.project_id != ctx.project_id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "detail": "Service API key is not authorized for this endpoint.",
+                "hint": None,
+            },
+        )
+    if ctx.endpoint_id is not None and ctx.endpoint_id != endpoint.id:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "detail": "Service API key is not authorized for this endpoint.",
+                "hint": None,
+            },
+        )
+    from datetime import datetime, timezone
+
+    ctx.key.last_used_at = datetime.now(timezone.utc)
+    db.add(ctx.key)
+    db.commit()
+    db.refresh(endpoint)
+    return endpoint
 
 
 def get_auth(

@@ -243,6 +243,20 @@ class PredictRequest(BaseModel):
     instances: list[dict[str, Any]] = Field(min_length=1)
 
 
+class ServiceApiKeyCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    endpoint_id: int | None = None
+    expires_at: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("name must not be blank")
+        return cleaned
+
+
 class BatchCreate(BaseModel):
     dataset_version_id: int
     endpoint_id: int | None = None
