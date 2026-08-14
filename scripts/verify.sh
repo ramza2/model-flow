@@ -23,6 +23,16 @@ USER_ENV_FILE="$ROOT/.env"
 USER_ENV_EXISTED=0
 USER_ENV_SHA=""
 VERIFY_ENV_FILE=""
+VERIFY_STACK_STARTED=0
+
+# Host ports for the isolated verification Compose project (same values as CI).
+VERIFY_POSTGRES_HOST_PORT=15432
+VERIFY_SOURCE_POSTGRES_HOST_PORT=15433
+VERIFY_MINIO_API_HOST_PORT=19000
+VERIFY_MINIO_CONSOLE_HOST_PORT=19001
+VERIFY_MLFLOW_HOST_PORT=15000
+VERIFY_BACKEND_HOST_PORT=18000
+VERIFY_FRONTEND_HOST_PORT=13000
 
 pass() { echo "[PASS] $*"; }
 fail() { echo "[FAIL] $*"; exit 1; }
@@ -73,6 +83,18 @@ api() {
   curl -fsS -H "Authorization: Bearer $TOKEN" "$@"
 }
 
+cleanup_verify_stack() {
+  # Tear down only the isolated verification project and its dedicated volumes.
+  if [[ -z "${MODELFLOW_COMPOSE_PROJECT_NAME:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${MODELFLOW_ENV_FILE:-}" || ! -f "${MODELFLOW_ENV_FILE}" ]]; then
+    return 0
+  fi
+  info "Stopping isolated verification stack (${MODELFLOW_COMPOSE_PROJECT_NAME})"
+  modelflow_compose --profile source down -v --remove-orphans || true
+}
+
 collect_diagnostics() {
   local ec="${1:-$?}"
   mkdir -p artifacts/verify
@@ -85,6 +107,8 @@ collect_diagnostics() {
     echo "user_env_existed=${USER_ENV_EXISTED}"
     echo "user_env_sha_before=${USER_ENV_SHA}"
     echo "verify_env_file=${VERIFY_ENV_FILE}"
+    echo "compose_project_name=${MODELFLOW_COMPOSE_PROJECT_NAME:-}"
+    echo "verify_stack_started=${VERIFY_STACK_STARTED}"
     echo "frontend_host_port=${FRONTEND_HOST_PORT:-}"
     echo "backend_host_port=${BACKEND_HOST_PORT:-}"
   } > artifacts/verify/meta.txt
@@ -115,6 +139,7 @@ on_exit() {
   trap - EXIT
   VERIFY_EXIT="$ec"
   collect_diagnostics "$ec" || true
+  cleanup_verify_stack || true
   if [[ -n "${VERIFY_ENV_FILE:-}" && -e "${VERIFY_ENV_FILE}" ]]; then
     rm -f "$VERIFY_ENV_FILE"
   fi
@@ -151,32 +176,27 @@ assert_services_healthy() {
 
 require_host_tools
 
-# Capture the caller's .env (if any) and never rewrite it. Host ports from that file
-# (or from the process environment / CI) are preserved into a temporary verify env.
+# Capture the caller's .env checksum (if any) and never rewrite or source it into
+# the verification stack. Verification uses an isolated Compose project, dedicated
+# host ports, and temporary credentials so the developer stack is left untouched.
 if [[ -f "$USER_ENV_FILE" ]]; then
   USER_ENV_EXISTED=1
   USER_ENV_SHA="$(sha256_file "$USER_ENV_FILE")"
-  info "Preserving existing project .env (sha256=${USER_ENV_SHA})"
-  set -a
-  # shellcheck disable=SC1091
-  source "$USER_ENV_FILE"
-  set +a
-  info "Stopping stack with current project env before verification"
-  docker compose --profile source down -v --remove-orphans || true
+  info "Preserving existing project .env (sha256=${USER_ENV_SHA}); developer stack will not be stopped"
 else
   info "No project .env present; verification will not create one"
 fi
 
-POSTGRES_HOST_PORT="${POSTGRES_HOST_PORT:-5432}"
-SOURCE_POSTGRES_HOST_PORT="${SOURCE_POSTGRES_HOST_PORT:-5433}"
-MINIO_API_HOST_PORT="${MINIO_API_HOST_PORT:-9000}"
-MINIO_CONSOLE_HOST_PORT="${MINIO_CONSOLE_HOST_PORT:-9001}"
-MLFLOW_HOST_PORT="${MLFLOW_HOST_PORT:-5000}"
-BACKEND_HOST_PORT="${BACKEND_HOST_PORT:-8000}"
-FRONTEND_HOST_PORT="${FRONTEND_HOST_PORT:-3000}"
-export POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
-export MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
-export MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
+export MODELFLOW_COMPOSE_PROJECT_NAME="${MODELFLOW_COMPOSE_PROJECT_NAME:-$MODELFLOW_VERIFY_COMPOSE_PROJECT}"
+info "Verification Compose project: ${MODELFLOW_COMPOSE_PROJECT_NAME}"
+
+export POSTGRES_HOST_PORT="$VERIFY_POSTGRES_HOST_PORT"
+export SOURCE_POSTGRES_HOST_PORT="$VERIFY_SOURCE_POSTGRES_HOST_PORT"
+export MINIO_API_HOST_PORT="$VERIFY_MINIO_API_HOST_PORT"
+export MINIO_CONSOLE_HOST_PORT="$VERIFY_MINIO_CONSOLE_HOST_PORT"
+export MLFLOW_HOST_PORT="$VERIFY_MLFLOW_HOST_PORT"
+export BACKEND_HOST_PORT="$VERIFY_BACKEND_HOST_PORT"
+export FRONTEND_HOST_PORT="$VERIFY_FRONTEND_HOST_PORT"
 
 # Nested forced-fail run: proves EXIT cleanup never mutates the caller's .env.
 # Skipped when we *are* the forced-fail child (MODELFLOW_VERIFY_FORCE_FAIL=1).
@@ -273,11 +293,12 @@ pass "default host ports reflected in compose config"
 
 info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKEND_HOST_PORT} MLflow=${MLFLOW_HOST_PORT}"
 
-info "2) Build & start stack (clean volumes — no host volume reuse)"
+info "2) Build & start isolated verification stack (clean verification volumes only)"
 modelflow_compose --profile source down -v --remove-orphans
 modelflow_compose build
-modelflow_compose up -d
-pass "compose up"
+modelflow_compose --profile source up -d
+VERIFY_STACK_STARTED=1
+pass "compose up (${MODELFLOW_COMPOSE_PROJECT_NAME})"
 
 info "3) Wait for HTTP readiness and bootstrap administrator"
 # 10 minutes max — enough for cold images, migrations, and password hashing on CI.
@@ -633,8 +654,12 @@ docker run --rm --network host \
   -v "$ROOT:/work" \
   -w /work \
   -e E2E_BASE_URL="$FRONTEND_BASE_URL" \
+  -e E2E_API_BASE="$API_BASE" \
   -e E2E_ADMIN_EMAIL="$ADMIN_EMAIL" \
   -e E2E_ADMIN_PASSWORD="$E2E_ADMIN_PASSWORD" \
+  -e E2E_SOURCE_POSTGRES_DB="${SOURCE_POSTGRES_DB:-}" \
+  -e E2E_SOURCE_POSTGRES_USER="${SOURCE_POSTGRES_USER:-}" \
+  -e E2E_SOURCE_POSTGRES_PASSWORD="${SOURCE_POSTGRES_PASSWORD:-}" \
   -e HOME=/tmp \
   -e CI=true \
   "$PLAYWRIGHT_IMAGE" \

@@ -16,6 +16,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck disable=SC1091
+source "$ROOT/scripts/lib.sh"
 
 UNIT_ONLY=false
 if [[ "${1:-}" == "--unit-only" ]]; then
@@ -346,6 +348,35 @@ register_temp "$OUT_SIDE"
 assert_user_env_unchanged "after-side-output" || fail "init-env --output mutated project .env"
 [[ -s "$OUT_SIDE" ]] || fail "init-env --output did not write target file"
 pass "init-env --output leaves project .env untouched"
+
+# --- Unit: verification must not delete the developer Compose project's volumes ---
+if [[ "${MODELFLOW_VERIFY_FORCE_FAIL:-}" != "1" \
+  && "${MODELFLOW_ENV_PRESERVATION_SKIP_VOLUME:-}" != "1" ]]; then
+  USER_PROJECT="$(modelflow_default_compose_project "$ROOT")"
+  USER_VOL="$(modelflow_compose_volume_name "$USER_PROJECT" postgres_data)"
+  VOL_MARKER="preserve-$(date +%s)-$$"
+  echo "[INFO] env-preservation: volume regression using developer volume ${USER_VOL}"
+  docker volume create "$USER_VOL" >/dev/null 2>&1 || true
+  docker run --rm -v "$USER_VOL:/data:rw" "$PYTHON_IMAGE" \
+    python -c "from pathlib import Path; Path('/data/.modelflow-verify-preservation-test').write_text('${VOL_MARKER}')"
+  set +e
+  MODELFLOW_VERIFY_FORCE_FAIL=1 \
+    MODELFLOW_ENV_PRESERVATION_SKIP_VOLUME=1 \
+    "$ROOT/scripts/verify.sh"
+  VOL_VERIFY_RC=$?
+  set -e
+  [[ "$VOL_VERIFY_RC" -ne 0 ]] \
+    || fail "expected forced-fail verify to exit non-zero (volume preservation test)"
+  if ! docker run --rm -v "$USER_VOL:/data:ro" "$PYTHON_IMAGE" \
+    python -c "import sys; from pathlib import Path; sys.exit(0 if Path('/data/.modelflow-verify-preservation-test').read_text() == '${VOL_MARKER}' else 1)"; then
+    fail "verification removed or corrupted developer volume ${USER_VOL}"
+  fi
+  pass "forced-fail verify preserves developer compose volume ${USER_VOL}"
+  if docker volume ls -q | grep -qx "${MODELFLOW_VERIFY_COMPOSE_PROJECT}_postgres_data"; then
+    fail "verification left behind isolated volume ${MODELFLOW_VERIFY_COMPOSE_PROJECT}_postgres_data after forced fail"
+  fi
+  pass "forced-fail verify did not leave isolated verification postgres volume behind"
+fi
 
 if [[ "$UNIT_ONLY" == true ]]; then
   # Record fixtures that must disappear after EXIT cleanup on success.

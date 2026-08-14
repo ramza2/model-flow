@@ -11,6 +11,7 @@ from app.api.v1.common import (
     audit_event,
     data_source_out,
     dumps,
+    enum_value,
     friendly,
     get_owned,
     import_job_out,
@@ -19,12 +20,43 @@ from app.api.v1.common import (
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
 from app.core.security import decrypt_secret, encrypt_secret
-from app.db.models import DataImportJob, DataSource, DataSourceType, Dataset, JobStatus
+from app.db.models import (
+    DataImportJob,
+    DataSource,
+    DataSourceType,
+    Dataset,
+    DatasetVersion,
+    JobStatus,
+)
 from app.db.session import get_db
 from app.schemas.v1 import DataImportRequest, DataSourceCreate, DataSourceUpdate
 
 router = APIRouter(tags=["data-sources"])
 _SECRET_KEYS = {"password", "passwd", "secret", "token", "api_key", "url", "dsn"}
+
+
+def _source_has_usage(db: Session, source_id: int) -> bool:
+    """True when any import job or dataset version references this source."""
+    if db.scalar(
+        select(DataImportJob.id).where(DataImportJob.data_source_id == source_id).limit(1)
+    ):
+        return True
+    if db.scalar(
+        select(DatasetVersion.id)
+        .where(DatasetVersion.data_source_id == source_id)
+        .limit(1)
+    ):
+        return True
+    return False
+
+
+def _audit_source_meta(source: DataSource) -> dict:
+    """Minimal metadata for audits — never includes secrets or connection creds."""
+    return {
+        "id": source.id,
+        "name": source.name,
+        "source_type": enum_value(source.source_type),
+    }
 
 
 def _separate_secrets(
@@ -173,6 +205,56 @@ def update_data_source(
     return data_source_out(source)
 
 
+@router.post("/projects/{project_id}/data-sources/{source_id}/activate")
+def activate_data_source(
+    project_id: int,
+    source_id: int,
+    access=Depends(require_project_perm(Permission.DATA_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    source = get_owned(db, DataSource, source_id, project_id, "Data source")
+    if source.is_active:
+        return data_source_out(source)
+    source.is_active = True
+    audit_event(
+        db,
+        auth,
+        "data_source.activate",
+        "data_source",
+        source.id,
+        after=_audit_source_meta(source),
+    )
+    db.commit()
+    db.refresh(source)
+    return data_source_out(source)
+
+
+@router.post("/projects/{project_id}/data-sources/{source_id}/deactivate")
+def deactivate_data_source(
+    project_id: int,
+    source_id: int,
+    access=Depends(require_project_perm(Permission.DATA_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    source = get_owned(db, DataSource, source_id, project_id, "Data source")
+    if not source.is_active:
+        return data_source_out(source)
+    source.is_active = False
+    audit_event(
+        db,
+        auth,
+        "data_source.deactivate",
+        "data_source",
+        source.id,
+        after=_audit_source_meta(source),
+    )
+    db.commit()
+    db.refresh(source)
+    return data_source_out(source)
+
+
 @router.delete("/projects/{project_id}/data-sources/{source_id}")
 def delete_data_source(
     project_id: int,
@@ -182,10 +264,24 @@ def delete_data_source(
 ):
     auth, _, _ = access
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
-    source.is_active = False
-    audit_event(db, auth, "data_source.delete", "data_source", source.id)
+    if _source_has_usage(db, source.id):
+        raise friendly(
+            409,
+            "This data source has import history and cannot be permanently deleted.",
+            "Deactivate it to prevent future imports while preserving lineage.",
+        )
+    meta = _audit_source_meta(source)
+    audit_event(
+        db,
+        auth,
+        "data_source.delete",
+        "data_source",
+        source.id,
+        before=meta,
+    )
+    db.delete(source)
     db.commit()
-    return {"detail": "Data source deactivated.", "hint": None}
+    return {"detail": "Data source permanently deleted.", "hint": None}
 
 
 @router.post("/projects/{project_id}/data-sources/{source_id}/test")
@@ -197,6 +293,12 @@ def test_data_source(
 ):
     auth, _, _ = access
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
+    if not source.is_active:
+        raise friendly(
+            409,
+            "This data source is inactive.",
+            "Activate it before testing the connection.",
+        )
     engine = None
     try:
         if source.source_type == DataSourceType.file:
@@ -328,15 +430,16 @@ def list_import_jobs(
     project_id: int,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    data_source_id: int | None = Query(default=None),
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
+    statement = select(DataImportJob).where(DataImportJob.project_id == project_id)
+    if data_source_id is not None:
+        get_owned(db, DataSource, data_source_id, project_id, "Data source")
+        statement = statement.where(DataImportJob.data_source_id == data_source_id)
     rows = db.scalars(
-        select(DataImportJob)
-        .where(DataImportJob.project_id == project_id)
-        .order_by(DataImportJob.id.desc())
-        .offset(skip)
-        .limit(limit)
+        statement.order_by(DataImportJob.id.desc()).offset(skip).limit(limit)
     ).all()
     return [import_job_out(row) for row in rows]
 
