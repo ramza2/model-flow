@@ -70,7 +70,8 @@ def mask_secrets(obj: Any) -> Any:
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
-            if _SECRET_RE.search(str(k)):
+            key_name = str(k)
+            if _SECRET_RE.search(key_name) or key_name in {"key", "key_hash"}:
                 out[k] = "***"
             else:
                 out[k] = mask_secrets(v)

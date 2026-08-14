@@ -335,6 +335,30 @@ class Endpoint(Base):
     project: Mapped[Project] = relationship(back_populates="endpoints")
 
 
+class ServiceApiKey(Base):
+    """Project- or endpoint-scoped credential for external inference only."""
+
+    __tablename__ = "service_api_keys"
+    __table_args__ = (
+        Index("ix_service_api_keys_project_id", "project_id"),
+        Index("ix_service_api_keys_endpoint_id", "endpoint_id"),
+        UniqueConstraint("key_prefix", name="uq_service_api_keys_key_prefix"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    endpoint_id: Mapped[int | None] = mapped_column(ForeignKey("endpoints.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class ModelGatePolicy(Base):
     """Server-managed evaluation policy for model gates (not client-supplied)."""
 
