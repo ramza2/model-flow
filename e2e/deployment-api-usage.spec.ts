@@ -34,6 +34,8 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "iris.csv" }).click();
+  await expect(page.getByText(/Column statistics/i)).toBeVisible();
   await page.getByRole("link", { name: "Train on this dataset" }).click();
   await page.getByTestId("job-name").fill("api-usage-rf");
   await page.getByTestId("job-submit").click();
