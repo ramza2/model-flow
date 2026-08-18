@@ -636,6 +636,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .api-key-create-form { margin: 1rem 0; padding-top: 1rem; border-top: 1px solid var(--border); }
 .radio-fieldset { border: 0; margin: 0 0 1rem; padding: 0; display: grid; gap: .45rem; }
 .radio-fieldset legend { font-size: .78rem; color: var(--muted); margin-bottom: .35rem; }
+.radio-fieldset > label { display: flex; flex-direction: row; align-items: center; gap: .5rem; }
+.radio-fieldset input[type="radio"] { margin: 0; padding: 0; flex: 0 0 auto; width: auto; }
 .service-key-list { display: grid; gap: .75rem; margin-top: 1rem; }
 .service-key-card { padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
 .service-key-card header { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .75rem; }
