@@ -103,7 +103,11 @@ export default function Endpoints() {
             <header><div><span className="eyebrow">Online service</span><h2>{endpoint.name}</h2></div><StatusBadge status={endpoint.status} /></header>
             <p className="mono">{endpoint.model_name} · v{endpoint.model_version}</p>
             <div className="deployment-metrics"><div><strong>{endpoint.request_count.toLocaleString()}</strong><span>Requests</span></div><div><strong>{endpoint.success_rate === null ? "—" : `${metric(endpoint.success_rate * 100, 1)}%`}</strong><span>Success</span></div><div><strong>{metric(endpoint.latency_p95_ms, 1)} ms</strong><span>p95 latency</span></div></div>
-            <footer><Link className="btn" to={`/projects/${projectId}/deployments/${endpoint.id}/predict`}>Test prediction</Link>{canDeploy && (endpoint.status === "ready" ? <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "stop")}>Stop</button> : <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "start")}>Start</button>)}</footer>
+            <footer>
+              <Link className="btn" to={`/projects/${projectId}/deployments/${endpoint.id}/predict`}>Test prediction</Link>
+              <Link className="btn secondary" to={`/projects/${projectId}/deployments/${endpoint.id}/api`} data-testid={`endpoint-api-usage-${endpoint.id}`}>API usage</Link>
+              {canDeploy && (endpoint.status === "ready" ? <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "stop")}>Stop</button> : <button className="btn secondary" disabled={Boolean(busy)} onClick={() => endpointAction(endpoint, "start")}>Start</button>)}
+            </footer>
           </article>)}
         </div>
       )}
