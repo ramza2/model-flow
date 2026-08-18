@@ -18,6 +18,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.security import decrypt_secret
 from app.db.models import (
+    Alert,
+    AlertSeverity,
     BatchInferenceJob,
     DataImportJob,
     DataSource,
@@ -158,6 +160,76 @@ def _failure_alert(
         message=message,
         resource_type=job_kind,
         resource_id=job_id,
+    )
+
+
+def _drift_alert_summary(result: dict) -> str:
+    columns = result.get("columns")
+    if not isinstance(columns, dict):
+        return ""
+    affected: list[tuple[str, str, float]] = []
+    for column, details in columns.items():
+        if not isinstance(details, dict):
+            continue
+        status = str(details.get("status") or "").lower()
+        if status not in {"watch", "critical"}:
+            continue
+        try:
+            score = float(details.get("score", 0.0))
+        except (TypeError, ValueError):
+            score = 0.0
+        affected.append((str(column), status, score))
+    if not affected:
+        return ""
+    # Critical columns first, then higher score, then deterministic name ordering.
+    affected.sort(key=lambda row: (0 if row[1] == "critical" else 1, -row[2], row[0]))
+    snippets = [f"{name} ({status}, {score:.2f})" for name, status, score in affected[:5]]
+    return f"Affected columns: {', '.join(snippets)}."
+
+
+def _create_drift_alert_for_success(db: Session, run: DriftRun, result: dict) -> None:
+    overall = str(result.get("overall_status") or "").lower()
+    if overall == "ok":
+        return
+
+    if overall == "watch":
+        severity = AlertSeverity.warning
+        title = "Data drift requires attention"
+    elif overall == "critical":
+        severity = AlertSeverity.critical
+        title = "Critical data drift detected"
+    else:
+        return
+
+    existing = db.scalar(
+        select(Alert.id).where(
+            Alert.project_id == run.project_id,
+            Alert.alert_type == "drift",
+            Alert.resource_type == "drift_run",
+            Alert.resource_id == str(run.id),
+        )
+    )
+    if existing is not None:
+        return
+
+    summary = _drift_alert_summary(result)
+    message = (
+        f"Drift run #{run.id} detected {overall} drift between dataset versions "
+        f"#{run.reference_version_id} and #{run.current_version_id}."
+    )
+    if summary:
+        message = f"{message} {summary}"
+
+    create_alert(
+        db,
+        project_id=run.project_id,
+        alert_type="drift",
+        severity=severity,
+        title=title,
+        message=message,
+        resource_type="drift_run",
+        resource_id=run.id,
+        link_path=f"/projects/{run.project_id}/monitoring",
     )
 
 
@@ -515,6 +587,7 @@ def process_drift_run(run: DriftRun) -> None:
         live.results_json = json.dumps(result, default=str)
         live.error_message = None
         live.finished_at = datetime.now(timezone.utc)
+        _create_drift_alert_for_success(db, live, result)
         db.commit()
     except Exception as exc:
         db.rollback()
