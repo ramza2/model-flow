@@ -242,7 +242,7 @@ describe("DeploymentApiUsage page", () => {
       "/projects/1/service-api-keys/11/revoke",
       expect.objectContaining({ method: "POST" }),
     ));
-    await waitFor(() => expect(screen.getByText(/Revoked/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/revoked/i));
   });
 
   it("hides key management without deploy write permission", async () => {
@@ -256,5 +256,49 @@ describe("DeploymentApiUsage page", () => {
     expect(screen.getByTestId("api-usage-keys-permission")).toBeInTheDocument();
     expect(screen.queryByTestId("create-service-key")).not.toBeInTheDocument();
     expect(apiMock).not.toHaveBeenCalledWith("/projects/1/service-api-keys");
+  });
+
+  it("radio fieldsets have row-aligned labels", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/endpoints/7") return endpoint;
+      if (path === "/projects/1/service-api-keys") return [];
+      throw new Error(`unexpected api ${path}`);
+    });
+    renderPage();
+    await screen.findByTestId("create-service-key");
+    fireEvent.click(screen.getByTestId("create-service-key"));
+    const fieldsets = document.querySelectorAll(".radio-fieldset");
+    expect(fieldsets.length).toBeGreaterThanOrEqual(2);
+    fieldsets.forEach((fs) => {
+      const labels = fs.querySelectorAll(":scope > label");
+      labels.forEach((lbl) => {
+        expect(lbl.querySelector("input[type='radio']")).toBeTruthy();
+      });
+    });
+  });
+
+  it("revoke button has accessible tooltip", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/endpoints/7") return endpoint;
+      if (path === "/projects/1/service-api-keys") return [
+        { id: 11, project_id: 1, endpoint_id: 7, name: "erp-production", key_prefix: "mfk_abcd1234", is_active: true, created_at: "2026-08-14T00:00:00Z", expires_at: null, last_used_at: null, revoked_at: null },
+      ];
+      throw new Error(`unexpected api ${path}`);
+    });
+    renderPage();
+    const revokeBtn = await screen.findByTestId("revoke-service-key-11");
+    expect(revokeBtn.getAttribute("title")).toContain("cannot be reactivated");
+    expect(revokeBtn.getAttribute("aria-label")).toContain("Permanently disables");
+  });
+
+  it("shows revoke help text for users with key management permission", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/endpoints/7") return endpoint;
+      if (path === "/projects/1/service-api-keys") return [];
+      throw new Error(`unexpected api ${path}`);
+    });
+    renderPage();
+    await screen.findByTestId("api-usage-keys-revoke-help");
+    expect(screen.getByTestId("api-usage-keys-revoke-help").textContent).toContain("cannot be reactivated");
   });
 });

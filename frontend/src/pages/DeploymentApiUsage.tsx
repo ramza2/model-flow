@@ -386,6 +386,13 @@ export default function DeploymentApiUsage() {
               )}
             </div>
 
+            {canManageKeys && (
+              <p className="muted-copy" data-testid="api-usage-keys-revoke-help">
+                Revoking a key immediately blocks applications using it. Revoked keys cannot be
+                reactivated.
+              </p>
+            )}
+
             {!canManageKeys && (
               <p className="muted-copy" data-testid="api-usage-keys-permission">
                 A Project Admin or ML Engineer can create a Service API Key for this deployment.
@@ -570,6 +577,8 @@ export default function DeploymentApiUsage() {
                             className="btn secondary"
                             disabled={Boolean(busy)}
                             data-testid={`revoke-service-key-${key.id}`}
+                            title="Permanently disables this API key. It cannot be reactivated."
+                            aria-label={`Revoke service key ${key.name}. Permanently disables this API key. It cannot be reactivated.`}
                             onClick={() => void onRevokeKey(key)}
                           >
                             {busy === `revoke-${key.id}` ? "Revoking…" : "Revoke"}
