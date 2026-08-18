@@ -86,7 +86,9 @@ test("drift run generates operational alert and resolves through UI", async ({ p
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/monitoring`));
 
   await page.goto(`/projects/${projectId}/alerts`);
-  const resolve = page.getByRole("button", { name: "Resolve" });
+  const resolve = page.getByTitle(
+    "Mark this alert as resolved. It remains available in the Resolved tab.",
+  );
   await expect(resolve).toHaveAttribute(
     "title",
     "Mark this alert as resolved. It remains available in the Resolved tab.",
