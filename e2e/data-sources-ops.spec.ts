@@ -11,13 +11,40 @@ function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {
 const adminEmail = requiredEnv("E2E_ADMIN_EMAIL");
 const adminPassword = requiredEnv("E2E_ADMIN_PASSWORD");
 
-async function login(page: import("@playwright/test").Page) {
+type PlaywrightPage = import("@playwright/test").Page;
+
+async function login(page: PlaywrightPage) {
   await page.goto("/");
   await expect(page).toHaveURL(/\/login$/);
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
   await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+}
+
+async function createPostgresSource(
+  page: PlaywrightPage,
+  options: {
+    name: string;
+    host?: string;
+    port?: string;
+    database: string;
+    user: string;
+    password: string;
+  },
+) {
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(options.name);
+  await page.getByTestId("data-source-type").selectOption("postgres");
+  await expect(page.getByTestId("data-source-host")).toBeVisible();
+  await expect(page.getByTestId("data-source-config")).toHaveCount(0);
+  await page.getByTestId("data-source-host").fill(options.host ?? "postgres-source");
+  await page.getByTestId("data-source-port").fill(options.port ?? "5432");
+  await page.getByTestId("data-source-database").fill(options.database);
+  await page.getByTestId("data-source-user").fill(options.user);
+  await page.getByTestId("data-source-password").fill(options.password);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: options.name })).toBeVisible();
 }
 
 test("data source lifecycle activate deactivate and permanent delete", async ({ page }) => {
@@ -54,30 +81,12 @@ test("data source lifecycle activate deactivate and permanent delete", async ({ 
   await expect(page.getByRole("heading", { name: unusedName })).toHaveCount(0);
 
   // Create a postgres source and give it import history via API, then assert delete blocked.
-  await page.getByTestId("add-data-source").click();
-  await page.getByTestId("data-source-name").fill(usedName);
-  await page.getByTestId("data-source-type").selectOption("postgres");
-  await page
-    .getByTestId("data-source-config")
-    .fill(
-      JSON.stringify(
-        {
-          host: "postgres-source",
-          port: 5432,
-          database: process.env.E2E_SOURCE_POSTGRES_DB || "source",
-          user: process.env.E2E_SOURCE_POSTGRES_USER || "source",
-        },
-        null,
-        2,
-      ),
-    );
-  if (process.env.E2E_SOURCE_POSTGRES_PASSWORD) {
-    await page.getByTestId("data-source-password").fill(process.env.E2E_SOURCE_POSTGRES_PASSWORD);
-  } else {
-    await page.getByTestId("data-source-password").fill("unused-password");
-  }
-  await page.getByTestId("data-source-save").click();
-  await expect(page.getByRole("heading", { name: usedName })).toBeVisible();
+  await createPostgresSource(page, {
+    name: usedName,
+    database: process.env.E2E_SOURCE_POSTGRES_DB || "source",
+    user: process.env.E2E_SOURCE_POSTGRES_USER || "source",
+    password: process.env.E2E_SOURCE_POSTGRES_PASSWORD || "unused-password",
+  });
 
   const usedCard = page.locator("article.source-card").filter({ hasText: usedName });
   const testIdAttr = await usedCard.getAttribute("data-testid");
@@ -145,21 +154,20 @@ test("postgres import discovery UI when source credentials are available", async
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
   await page.getByRole("link", { name: "Data Sources", exact: true }).click();
-  await page.getByTestId("add-data-source").click();
-  await page.getByTestId("data-source-name").fill(sourceName);
-  await page.getByTestId("data-source-type").selectOption("postgres");
-  await page.getByTestId("data-source-config").fill(
-    JSON.stringify({ host: "postgres-source", port: 5432, database: sourceDb, user: sourceUser }, null, 2),
-  );
-  await page.getByTestId("data-source-password").fill(sourcePassword!);
-  await page.getByTestId("data-source-save").click();
-  await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
+  await createPostgresSource(page, {
+    name: sourceName,
+    database: sourceDb!,
+    user: sourceUser!,
+    password: sourcePassword!,
+  });
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
   await card.getByRole("button", { name: "Test connection" }).click();
-  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
-    timeout: 30_000,
-  });
+  const successNotice = page.getByRole("status").filter({ hasText: /Connection succeeded/i });
+  await expect(successNotice).toBeVisible({ timeout: 30_000 });
+  await expect(successNotice).toHaveClass(/success/);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(card.getByTestId(/last-test-message-/)).toHaveClass(/ok/);
 
   await card.getByRole("button", { name: "Import data" }).click();
   const panel = page.getByTestId(/import-panel-/);
@@ -175,4 +183,37 @@ test("postgres import discovery UI when source credentials are available", async
   await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
   await panel.getByTestId("open-imported-dataset").click();
   await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
+});
+
+test("typed postgres form connection test shows error styling on refused connection", async ({ page }) => {
+  const projectName = `ds-test-fail-${Date.now()}`;
+  const sourceName = `pg-bad-${Date.now()}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  // 127.0.0.1:1 is refused inside the API container; connect_timeout is 5s.
+  await createPostgresSource(page, {
+    name: sourceName,
+    host: "127.0.0.1",
+    port: "1",
+    database: "unreachable",
+    user: "unreachable",
+    password: "unreachable",
+  });
+
+  const card = page.locator("article.source-card").filter({ hasText: sourceName });
+  await card.getByRole("button", { name: "Test connection" }).click();
+  const alert = page.getByRole("alert");
+  await expect(alert).toBeVisible({ timeout: 20_000 });
+  await expect(alert).toHaveClass(/error/);
+  await expect(alert).toHaveTextContent(/Connection failed/i);
+  await expect(page.locator(".success")).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toHaveCount(0);
+  await expect(card.getByTestId(/last-test-message-/)).toHaveClass(/err/);
+  await expect(card.getByTestId(/last-test-message-/)).toHaveTextContent(/Connection failed/i);
 });

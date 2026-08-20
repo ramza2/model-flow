@@ -12,6 +12,13 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
+import {
+  DEFAULT_POSTGRES_FORM,
+  extraPostgresConfig,
+  postgresConfigFromForm,
+  postgresFormFromConfig,
+  postgresSecretsFromPassword,
+} from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
 type ImportMode = "table" | "sql";
@@ -66,9 +73,9 @@ export default function DataSources() {
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [name, setName] = useState("");
   const [sourceType, setSourceType] = useState<"file" | "postgres">("postgres");
-  const [config, setConfig] = useState(
-    '{\n  "host": "postgres-source",\n  "port": 5432,\n  "database": "modelflow",\n  "user": "modelflow"\n}',
-  );
+  const [config, setConfig] = useState("{}");
+  const [postgresForm, setPostgresForm] = useState(DEFAULT_POSTGRES_FORM);
+  const [postgresExtraConfig, setPostgresExtraConfig] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
@@ -121,9 +128,9 @@ export default function DataSources() {
     setEditing(null);
     setName("");
     setSourceType("postgres");
-    setConfig(
-      '{\n  "host": "postgres-source",\n  "port": 5432,\n  "database": "modelflow",\n  "user": "modelflow"\n}',
-    );
+    setConfig("{}");
+    setPostgresForm(DEFAULT_POSTGRES_FORM);
+    setPostgresExtraConfig({});
     setPassword("");
     setShowForm(false);
   }
@@ -133,6 +140,8 @@ export default function DataSources() {
     setName(source.name);
     setSourceType(source.source_type);
     setConfig(JSON.stringify(source.config, null, 2));
+    setPostgresForm(postgresFormFromConfig(source.config));
+    setPostgresExtraConfig(extraPostgresConfig(source.config));
     setPassword("");
     setShowForm(true);
   }
@@ -143,8 +152,11 @@ export default function DataSources() {
     setError("");
     setSuccess("");
     try {
-      const parsed = JSON.parse(config) as Record<string, unknown>;
-      const secrets = password ? { password } : {};
+      const parsed =
+        sourceType === "postgres"
+          ? postgresConfigFromForm(postgresForm, postgresExtraConfig)
+          : (JSON.parse(config) as Record<string, unknown>);
+      const secrets = postgresSecretsFromPassword(password);
       if (editing) {
         await api(`/projects/${projectId}/data-sources/${editing.id}`, {
           method: "PATCH",
@@ -176,12 +188,20 @@ export default function DataSources() {
   async function testSource(source: DataSource) {
     setBusy(`test-${source.id}`);
     setError("");
+    setSuccess("");
     try {
       const result = await api<{ status: string; message: string }>(
         `/projects/${projectId}/data-sources/${source.id}/test`,
         { method: "POST" },
       );
-      setSuccess(result.message);
+      const message = result.message?.trim() || (
+        result.status === "ok" ? "Connection succeeded." : "Connection test failed."
+      );
+      if (result.status === "ok") {
+        setSuccess(message);
+      } else {
+        setError(message);
+      }
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Connection test failed.");
@@ -449,28 +469,95 @@ export default function DataSources() {
               <option value="file">Managed file source</option>
             </select>
           </label>
-          <label>
-            Configuration
-            <textarea
-              className="code-input"
-              value={config}
-              onChange={(event) => setConfig(event.target.value)}
-              spellCheck={false}
-              data-testid="data-source-config"
-            />
-            <small>Connection metadata is visible to project members. Put passwords below.</small>
-          </label>
-          {sourceType === "postgres" && (
+          {sourceType === "postgres" ? (
+            <>
+              <div className="form-grid">
+                <label htmlFor="data-source-host">
+                  Host
+                  <input
+                    id="data-source-host"
+                    value={postgresForm.host}
+                    onChange={(event) =>
+                      setPostgresForm((current) => ({ ...current, host: event.target.value }))
+                    }
+                    required
+                    autoComplete="off"
+                    data-testid="data-source-host"
+                  />
+                </label>
+                <label htmlFor="data-source-port">
+                  Port
+                  <input
+                    id="data-source-port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    value={postgresForm.port}
+                    onChange={(event) =>
+                      setPostgresForm((current) => ({ ...current, port: event.target.value }))
+                    }
+                    required
+                    data-testid="data-source-port"
+                  />
+                </label>
+                <label htmlFor="data-source-database">
+                  Database
+                  <input
+                    id="data-source-database"
+                    value={postgresForm.database}
+                    onChange={(event) =>
+                      setPostgresForm((current) => ({ ...current, database: event.target.value }))
+                    }
+                    required
+                    autoComplete="off"
+                    data-testid="data-source-database"
+                  />
+                </label>
+                <label htmlFor="data-source-user">
+                  User
+                  <input
+                    id="data-source-user"
+                    value={postgresForm.user}
+                    onChange={(event) =>
+                      setPostgresForm((current) => ({ ...current, user: event.target.value }))
+                    }
+                    required
+                    autoComplete="off"
+                    data-testid="data-source-user"
+                  />
+                </label>
+              </div>
+              <label htmlFor="data-source-password">
+                Password
+                <input
+                  id="data-source-password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder={
+                    editing?.has_secrets ? "Leave blank to keep saved password" : "Database password"
+                  }
+                  data-testid="data-source-password"
+                />
+                <small>
+                  {editing
+                    ? "Leave blank to keep the saved password. Enter a new value only to replace it."
+                    : "Stored separately from connection metadata. Project members cannot read this value."}
+                </small>
+              </label>
+            </>
+          ) : (
             <label>
-              Password
-              <input
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder={editing?.has_secrets ? "Leave blank to keep saved password" : "Database password"}
-                data-testid="data-source-password"
+              Configuration
+              <textarea
+                className="code-input"
+                value={config}
+                onChange={(event) => setConfig(event.target.value)}
+                spellCheck={false}
+                data-testid="data-source-config"
               />
+              <small>Connection metadata is visible to project members. Do not put passwords in this JSON.</small>
             </label>
           )}
           <div className="row-actions">
@@ -526,7 +613,14 @@ export default function DataSources() {
                   <dd>{formatDate(source.last_tested_at)}</dd>
                 </div>
               </dl>
-              {source.last_test_message && <p className="source-message">{source.last_test_message}</p>}
+              {source.last_test_message && (
+                <p
+                  className={`source-message ${source.last_test_status === "ok" ? "ok" : source.last_test_status === "error" ? "err" : ""}`}
+                  data-testid={`last-test-message-${source.id}`}
+                >
+                  {source.last_test_message}
+                </p>
+              )}
               {(recentJobs[source.id] || []).length > 0 && (
                 <div className="source-recent-jobs" data-testid={`recent-imports-${source.id}`}>
                   <span className="eyebrow">Recent imports</span>
