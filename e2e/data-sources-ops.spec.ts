@@ -211,9 +211,9 @@ test("typed postgres form connection test shows error styling on refused connect
   const alert = page.getByRole("alert");
   await expect(alert).toBeVisible({ timeout: 20_000 });
   await expect(alert).toHaveClass(/error/);
-  await expect(alert).toHaveTextContent(/Connection failed/i);
+  await expect(alert).toContainText(/Connection failed/i);
   await expect(page.locator(".success")).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toHaveCount(0);
   await expect(card.getByTestId(/last-test-message-/)).toHaveClass(/err/);
-  await expect(card.getByTestId(/last-test-message-/)).toHaveTextContent(/Connection failed/i);
+  await expect(card.getByTestId(/last-test-message-/)).toContainText(/Connection failed/i);
 });
