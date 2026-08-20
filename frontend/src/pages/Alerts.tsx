@@ -58,7 +58,7 @@ export default function Alerts() {
       <div className="alert-list">
         {alerts.map((alert) => <article className={`alert-card ${alert.is_read ? "" : "unread"}`} key={alert.id}>
           <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
-          <div className="alert-copy"><div className="row-actions"><StatusBadge status={alert.severity} /><span>{formatDate(alert.created_at)}</span>{!alert.is_read && <span className="unread-label">Unread</span>}</div><h2>{alert.title}</h2><p>{alert.message}</p><div className="row-actions">{alert.link_path && <Link to={alert.link_path}>View related item →</Link>}{!alert.is_read && <button className="btn link" onClick={() => action(alert, "read")}>Mark read</button>}{canResolve && !alert.is_resolved && <button className="btn secondary" onClick={() => action(alert, "resolve")}>Resolve</button>}</div></div>
+          <div className="alert-copy"><div className="row-actions"><StatusBadge status={alert.severity} /><span>{formatDate(alert.created_at)}</span>{!alert.is_read && <span className="unread-label">Unread</span>}</div><h2>{alert.title}</h2><p>{alert.message}</p><div className="row-actions">{alert.link_path && <Link to={alert.link_path}>View related item →</Link>}{!alert.is_read && <button className="btn link" onClick={() => action(alert, "read")}>Mark read</button>}{canResolve && !alert.is_resolved && <button className="btn secondary" title="Mark this alert as resolved. It remains available in the Resolved tab." aria-label={`Resolve alert ${alert.title}. Mark this alert as resolved. It remains available in the Resolved tab.`} onClick={() => action(alert, "resolve")}>Resolve</button>}</div></div>
         </article>)}
       </div>
     )}

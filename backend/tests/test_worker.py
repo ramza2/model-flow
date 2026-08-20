@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.models import (
     Alert,
+    AlertSeverity,
     Base,
     BatchInferenceJob,
     Dataset,
@@ -186,6 +187,213 @@ def test_process_drift_run_persists_result(monkeypatch):
         assert run.status == JobStatus.succeeded
         assert run.overall_status in {"ok", "watch", "critical"}
         assert '"columns"' in run.results_json
+
+
+def test_process_drift_run_ok_creates_no_alert(monkeypatch):
+    with TestingSessionLocal() as db:
+        project, dataset, reference = _seed_dataset(db)
+        current = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project.id,
+            version=2,
+            object_key="same.csv",
+            original_filename="same.csv",
+            format="csv",
+        )
+        db.add(current)
+        db.flush()
+        run = DriftRun(
+            project_id=project.id,
+            reference_version_id=reference.id,
+            current_version_id=current.id,
+            status=JobStatus.running,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "load_dataset_version_dataframe",
+        lambda _: pd.DataFrame({"value": [1, 2, 3]}),
+    )
+    monkeypatch.setattr(
+        runner.drift,
+        "compute_drift",
+        lambda *_args, **_kwargs: {
+            "overall_status": "ok",
+            "columns": {"value": {"status": "ok", "score": 0.0}},
+        },
+    )
+    runner.process_drift_run(type("Claim", (), {"id": run_id})())
+
+    with TestingSessionLocal() as db:
+        run = db.get(DriftRun, run_id)
+        assert run.status == JobStatus.succeeded
+        alerts = db.scalars(select(Alert).where(Alert.resource_id == str(run_id))).all()
+        assert alerts == []
+
+
+def test_process_drift_run_watch_creates_warning_alert(monkeypatch):
+    with TestingSessionLocal() as db:
+        project, dataset, reference = _seed_dataset(db)
+        current = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project.id,
+            version=2,
+            object_key="watch.csv",
+            original_filename="watch.csv",
+            format="csv",
+        )
+        db.add(current)
+        db.flush()
+        run = DriftRun(
+            project_id=project.id,
+            reference_version_id=reference.id,
+            current_version_id=current.id,
+            status=JobStatus.running,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "load_dataset_version_dataframe",
+        lambda _: pd.DataFrame({"a": [1, 2], "b": [3, 4]}),
+    )
+    monkeypatch.setattr(
+        runner.drift,
+        "compute_drift",
+        lambda *_args, **_kwargs: {
+            "overall_status": "watch",
+            "columns": {
+                "income": {"status": "watch", "score": 0.18},
+                "age": {"status": "ok", "score": 0.01},
+            },
+        },
+    )
+    runner.process_drift_run(type("Claim", (), {"id": run_id})())
+
+    with TestingSessionLocal() as db:
+        alert = db.scalar(
+            select(Alert).where(
+                Alert.alert_type == "drift",
+                Alert.resource_type == "drift_run",
+                Alert.resource_id == str(run_id),
+            )
+        )
+        assert alert is not None
+        assert alert.severity == AlertSeverity.warning
+        assert alert.title == "Data drift requires attention"
+        assert alert.link_path == f"/projects/{alert.project_id}/monitoring"
+        assert "Drift run" in alert.message
+        assert "income (watch, 0.18)" in alert.message
+
+
+def test_process_drift_run_critical_creates_single_critical_alert_with_summary(monkeypatch):
+    with TestingSessionLocal() as db:
+        project, dataset, reference = _seed_dataset(db)
+        current = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project.id,
+            version=2,
+            object_key="critical.csv",
+            original_filename="critical.csv",
+            format="csv",
+        )
+        db.add(current)
+        db.flush()
+        run = DriftRun(
+            project_id=project.id,
+            reference_version_id=reference.id,
+            current_version_id=current.id,
+            status=JobStatus.running,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "load_dataset_version_dataframe",
+        lambda _: pd.DataFrame({"a": [1, 2], "b": [3, 4]}),
+    )
+    monkeypatch.setattr(
+        runner.drift,
+        "compute_drift",
+        lambda *_args, **_kwargs: {
+            "overall_status": "critical",
+            "columns": {
+                "age": {"status": "critical", "score": 0.41},
+                "income": {"status": "watch", "score": 0.18},
+                "zip": {"status": "critical", "score": 0.22},
+                "city": {"status": "ok", "score": 0.05},
+            },
+        },
+    )
+
+    # Simulate worker retry / duplicate processing on the same drift run.
+    runner.process_drift_run(type("Claim", (), {"id": run_id})())
+    runner.process_drift_run(type("Claim", (), {"id": run_id})())
+
+    with TestingSessionLocal() as db:
+        alerts = db.scalars(
+            select(Alert).where(
+                Alert.alert_type == "drift",
+                Alert.resource_type == "drift_run",
+                Alert.resource_id == str(run_id),
+            )
+        ).all()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.severity == AlertSeverity.critical
+        assert alert.title == "Critical data drift detected"
+        assert "age (critical, 0.41)" in alert.message
+        assert "zip (critical, 0.22)" in alert.message
+        assert "income (watch, 0.18)" in alert.message
+
+
+def test_process_drift_run_failure_does_not_create_drift_success_alert(monkeypatch):
+    with TestingSessionLocal() as db:
+        project, dataset, reference = _seed_dataset(db)
+        current = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project.id,
+            version=2,
+            object_key="broken.csv",
+            original_filename="broken.csv",
+            format="csv",
+        )
+        db.add(current)
+        db.flush()
+        run = DriftRun(
+            project_id=project.id,
+            reference_version_id=reference.id,
+            current_version_id=current.id,
+            status=JobStatus.running,
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "load_dataset_version_dataframe",
+        lambda _: (_ for _ in ()).throw(RuntimeError("dataset unavailable")),
+    )
+    runner.process_drift_run(type("Claim", (), {"id": run_id})())
+
+    with TestingSessionLocal() as db:
+        run = db.get(DriftRun, run_id)
+        assert run.status == JobStatus.failed
+        alerts = db.scalars(
+            select(Alert).where(
+                Alert.resource_type == "drift_run",
+                Alert.resource_id == str(run_id),
+            )
+        ).all()
+        assert alerts == []
 
 
 def test_training_recovery_and_cancellation_create_terminal_states():
