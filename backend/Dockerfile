@@ -3,9 +3,6 @@ FROM python:3.11-slim-bookworm
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    -o Acquire::Retries=5 \
-    -o Acquire::http::Pipeline-Depth=0 \
-    -o Acquire::http::No-Cache=true \
     build-essential curl libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
