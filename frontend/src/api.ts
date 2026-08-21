@@ -100,6 +100,8 @@ export type Membership = {
   created_at: string;
 };
 
+export type DataSourceConnectionMode = "host_port" | "connection_url" | null;
+
 export type DataSource = {
   id: number;
   project_id: number;
@@ -107,6 +109,8 @@ export type DataSource = {
   source_type: "file" | "postgres";
   config: Record<string, unknown>;
   has_secrets: boolean;
+  /** Non-sensitive hint; never includes secret values. Null for non-postgres sources. */
+  connection_mode: DataSourceConnectionMode;
   is_active: boolean;
   last_test_status: string | null;
   last_test_message: string | null;

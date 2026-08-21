@@ -190,6 +190,18 @@ def update_data_source(
         existing = _secret_dict(source)
         existing.update(body.secrets)
         source.secret_encrypted = encrypt_secret(dumps(existing)) if existing else None
+    if body.clear_secrets:
+        unknown = [key for key in body.clear_secrets if key.lower() not in _SECRET_KEYS]
+        if unknown:
+            raise friendly(400, f"Unsupported clear_secrets keys: {', '.join(unknown)}.")
+        existing = _secret_dict(source)
+        for key in body.clear_secrets:
+            existing.pop(key, None)
+            # Also drop case-variant matches stored historically.
+            for stored in list(existing):
+                if stored.lower() == key.lower():
+                    existing.pop(stored, None)
+        source.secret_encrypted = encrypt_secret(dumps(existing)) if existing else None
     if body.is_active is not None:
         source.is_active = body.is_active
     audit_event(

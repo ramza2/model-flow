@@ -375,3 +375,206 @@ def test_delete_audit_excludes_secrets(client, auth_headers):
         )
         assert "super-secret-password" not in blob
         assert "secret_encrypted" not in blob
+
+
+def _assert_no_secret_leak(payload: object, *secret_fragments: str) -> None:
+    blob = json.dumps(payload)
+    for fragment in secret_fragments:
+        assert fragment not in blob
+
+
+def test_postgres_dsn_url_backward_compat(client, auth_headers):
+    from app.api.v1.data_sources import _connection_url, _secret_dict
+    from app.db.models import AuditLog, DataSource
+
+    project_id = _project(client, auth_headers)
+    dsn_token = secrets.token_urlsafe(12)
+    original_dsn = f"postgresql://compat_user:{dsn_token}@legacy-dsn-host:5432/compat_db"
+    replacement_token = secrets.token_urlsafe(12)
+    replacement_dsn = f"postgresql://compat_user:{replacement_token}@legacy-dsn-host:5432/compat_db"
+
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "legacy-dsn",
+            "source_type": "postgres",
+            "config": {},
+            "secrets": {"dsn": original_dsn},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["connection_mode"] == "connection_url"
+    assert body["has_secrets"] is True
+    assert body["config"] == {}
+    _assert_no_secret_leak(body, dsn_token, original_dsn, "legacy-dsn-host")
+
+    fetched = client.get(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+    )
+    assert fetched.status_code == 200
+    fetched_body = fetched.json()
+    assert fetched_body["connection_mode"] == "connection_url"
+    _assert_no_secret_leak(fetched_body, dsn_token, original_dsn, "legacy-dsn-host")
+
+    renamed = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+        json={"name": "legacy-dsn-renamed", "config": {}, "secrets": {}},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "legacy-dsn-renamed"
+    assert renamed.json()["connection_mode"] == "connection_url"
+    _assert_no_secret_leak(renamed.json(), dsn_token, original_dsn)
+
+    with TestingSessionLocal() as db:
+        row = db.get(DataSource, body["id"])
+        assert row is not None
+        stored = _secret_dict(row)
+        assert stored.get("dsn") == original_dsn
+        assert _connection_url(row) == original_dsn
+
+    replaced = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+        json={
+            "config": {},
+            "secrets": {"dsn": replacement_dsn},
+            "clear_secrets": ["password", "url"],
+        },
+    )
+    assert replaced.status_code == 200
+    assert replaced.json()["connection_mode"] == "connection_url"
+    _assert_no_secret_leak(replaced.json(), dsn_token, replacement_token, replacement_dsn)
+
+    with TestingSessionLocal() as db:
+        row = db.get(DataSource, body["id"])
+        assert row is not None
+        stored = _secret_dict(row)
+        assert stored.get("dsn") == replacement_dsn
+        assert dsn_token not in json.dumps(stored)
+        assert _connection_url(row) == replacement_dsn
+
+    switched = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+        json={
+            "config": {
+                "host": "typed-host-after-switch",
+                "port": 5432,
+                "database": "typed_db",
+                "user": "typed_user",
+            },
+            "secrets": {"password": "typed-secret"},
+            "clear_secrets": ["dsn", "url"],
+        },
+    )
+    assert switched.status_code == 200
+    switched_body = switched.json()
+    assert switched_body["connection_mode"] == "host_port"
+    assert switched_body["config"]["host"] == "typed-host-after-switch"
+    _assert_no_secret_leak(
+        switched_body,
+        dsn_token,
+        replacement_token,
+        "typed-secret",
+        original_dsn,
+        replacement_dsn,
+    )
+
+    with TestingSessionLocal() as db:
+        row = db.get(DataSource, body["id"])
+        assert row is not None
+        stored = _secret_dict(row)
+        assert "dsn" not in stored
+        assert "url" not in stored
+        assert stored.get("password") == "typed-secret"
+        conn = _connection_url(row)
+        assert "typed-host-after-switch" in conn
+        assert "legacy-dsn-host" not in conn
+        assert replacement_token not in conn
+
+    back_to_url = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+        json={
+            "config": {},
+            "secrets": {"dsn": original_dsn},
+            "clear_secrets": ["password", "url"],
+        },
+    )
+    assert back_to_url.status_code == 200
+    assert back_to_url.json()["connection_mode"] == "connection_url"
+    _assert_no_secret_leak(back_to_url.json(), dsn_token, "typed-secret")
+
+    with TestingSessionLocal() as db:
+        row = db.get(DataSource, body["id"])
+        assert row is not None
+        stored = _secret_dict(row)
+        assert stored.get("dsn") == original_dsn
+        assert "password" not in stored
+        assert _connection_url(row) == original_dsn
+
+        audit_rows = db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.resource_type == "data_source",
+                AuditLog.resource_id == str(body["id"]),
+            )
+            .order_by(AuditLog.id.desc())
+        ).all()
+        assert audit_rows
+        blob = " ".join(
+            [
+                (entry.before_summary or "")
+                + (entry.after_summary or "")
+                + (entry.failure_reason or "")
+                for entry in audit_rows
+            ]
+        )
+        assert dsn_token not in blob
+        assert replacement_token not in blob
+        assert "typed-secret" not in blob
+        assert original_dsn not in blob
+
+
+def test_create_with_url_secret_sets_connection_mode(client, auth_headers):
+    project_id = _project(client, auth_headers)
+    url_token = secrets.token_urlsafe(10)
+    url_value = f"postgresql://u:{url_token}@url-only-host:5432/db"
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "url-source",
+            "source_type": "postgres",
+            "config": {"sslmode": "require"},
+            "secrets": {"url": url_value},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["connection_mode"] == "connection_url"
+    assert body["config"] == {"sslmode": "require"}
+    _assert_no_secret_leak(body, url_token, url_value, "url-only-host")
+
+
+def test_clear_secrets_rejects_unknown_keys(client, auth_headers):
+    project_id = _project(client, auth_headers)
+    source = _create_source(client, auth_headers, project_id)
+    response = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source['id']}",
+        headers=auth_headers,
+        json={"clear_secrets": ["not_a_secret"]},
+    )
+    assert response.status_code == 400
+    assert "clear_secrets" in response.json()["detail"].lower()
+
+
+def test_typed_source_reports_host_port_mode(client, auth_headers):
+    project_id = _project(client, auth_headers)
+    source = _create_source(client, auth_headers, project_id)
+    assert source["connection_mode"] == "host_port"
+

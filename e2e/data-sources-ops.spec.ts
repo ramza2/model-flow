@@ -36,6 +36,7 @@ async function createPostgresSource(
   await page.getByTestId("add-data-source").click();
   await page.getByTestId("data-source-name").fill(options.name);
   await page.getByTestId("data-source-type").selectOption("postgres");
+  await page.getByTestId("data-source-connection-mode").selectOption("host_port");
   await expect(page.getByTestId("data-source-host")).toBeVisible();
   await expect(page.getByTestId("data-source-config")).toHaveCount(0);
   await page.getByTestId("data-source-host").fill(options.host ?? "postgres-source");
@@ -183,6 +184,76 @@ test("postgres import discovery UI when source credentials are available", async
   await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
   await panel.getByTestId("open-imported-dataset").click();
   await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
+});
+
+test("postgres DSN connection mode create edit and typed switch", async ({ page }) => {
+  const sourceDb = process.env.E2E_SOURCE_POSTGRES_DB;
+  const sourceUser = process.env.E2E_SOURCE_POSTGRES_USER;
+  const sourcePassword = process.env.E2E_SOURCE_POSTGRES_PASSWORD;
+  test.skip(!sourceDb || !sourceUser || !sourcePassword, "Source Postgres credentials not provided");
+
+  const projectName = `ds-dsn-${Date.now()}`;
+  const sourceName = `pg-dsn-${Date.now()}`;
+  const renamed = `${sourceName}-renamed`;
+  const host = process.env.E2E_SOURCE_POSTGRES_HOST || "postgres-source";
+  const port = process.env.E2E_SOURCE_POSTGRES_PORT || "5432";
+  const dsn = `postgresql://${sourceUser}:${sourcePassword}@${host}:${port}/${sourceDb}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(sourceName);
+  await page.getByTestId("data-source-type").selectOption("postgres");
+  await page.getByTestId("data-source-connection-mode").selectOption("connection_url");
+  await expect(page.getByTestId("data-source-connection-url")).toBeVisible();
+  await expect(page.getByTestId("data-source-host")).toHaveCount(0);
+  await page.getByTestId("data-source-connection-url").fill(dsn);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
+
+  const card = page.locator("article.source-card").filter({ hasText: sourceName });
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await card.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("data-source-connection-mode")).toHaveValue("connection_url");
+  await expect(page.getByTestId("data-source-connection-url")).toHaveValue("");
+  await expect(page.getByText(/saved connection URL is not shown/i)).toBeVisible();
+  await expect(page.getByText(sourcePassword!)).toHaveCount(0);
+  await expect(page.locator(`text=${dsn}`)).toHaveCount(0);
+
+  await page.getByTestId("data-source-name").fill(renamed);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: renamed })).toBeVisible();
+
+  const renamedCard = page.locator("article.source-card").filter({ hasText: renamed });
+  await renamedCard.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await renamedCard.getByRole("button", { name: "Edit" }).click();
+  await page.getByTestId("data-source-connection-mode").selectOption("host_port");
+  await page.getByTestId("data-source-host").fill(host);
+  await page.getByTestId("data-source-port").fill(port);
+  await page.getByTestId("data-source-database").fill(sourceDb!);
+  await page.getByTestId("data-source-user").fill(sourceUser!);
+  await page.getByTestId("data-source-password").fill(sourcePassword!);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: renamed })).toBeVisible();
+
+  await renamedCard.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByText(sourcePassword!)).toHaveCount(0);
 });
 
 test("typed postgres form connection test shows error styling on refused connection", async ({ page }) => {
