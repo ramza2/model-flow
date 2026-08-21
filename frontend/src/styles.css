@@ -414,6 +414,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .source-recent-jobs ul { list-style: none; margin: .35rem 0 0; padding: 0; display: grid; gap: .35rem; }
 .source-recent-jobs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .9rem; }
 .source-message { padding: .55rem; background: var(--bg-soft); border-radius: 6px; font-size: .8rem; }
+.source-message.ok { background: rgba(94,207,138,.1); border: 1px solid rgba(94,207,138,.3); color: #baf6cf; }
+.source-message.err { background: rgba(232,106,106,.12); border: 1px solid rgba(232,106,106,.35); color: #ffd4d4; }
 
 .activity-list { display: flex; flex-direction: column; }
 .activity-list > a, .activity-list > div, .activity-button {

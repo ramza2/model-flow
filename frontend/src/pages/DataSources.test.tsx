@@ -285,4 +285,149 @@ describe("DataSources operations UX", () => {
     expect(screen.queryByTestId("delete-3")).not.toBeInTheDocument();
     expect(screen.queryByTestId("add-data-source")).not.toBeInTheDocument();
   });
+
+  it("shows typed PostgreSQL fields instead of raw JSON", async () => {
+    apiMock.mockResolvedValueOnce([]);
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    expect(screen.getByTestId("data-source-host")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-port")).toHaveAttribute("type", "number");
+    expect(screen.getByTestId("data-source-port")).toHaveValue(5432);
+    expect(screen.getByTestId("data-source-database")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-user")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-password")).toHaveAttribute("type", "password");
+    expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
+  });
+
+  it("keeps JSON configuration for managed file sources", async () => {
+    apiMock.mockResolvedValueOnce([]);
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-type"), { target: { value: "file" } });
+    expect(screen.getByTestId("data-source-config")).toBeInTheDocument();
+    expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
+  });
+
+  it("converts typed PostgreSQL fields into the existing API configuration payload", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];
+      if (path === "/projects/7/data-sources" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "warehouse",
+          source_type: "postgres",
+          config: { host: "db.internal", port: 5433, database: "analytics", user: "reader" },
+          secrets: { password: "s3cret" },
+        });
+        return { ...activePostgres, id: 8, name: "warehouse", config: body.config };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-name"), { target: { value: "warehouse" } });
+    fireEvent.change(screen.getByTestId("data-source-host"), { target: { value: "db.internal" } });
+    fireEvent.change(screen.getByTestId("data-source-port"), { target: { value: "5433" } });
+    fireEvent.change(screen.getByTestId("data-source-database"), { target: { value: "analytics" } });
+    fireEvent.change(screen.getByTestId("data-source-user"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("data-source-password"), { target: { value: "s3cret" } });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("loads saved non-secret values into the edit form without exposing a password", async () => {
+    apiMock.mockResolvedValueOnce([activePostgres]);
+    renderPage();
+    fireEvent.click(await screen.findByTestId("edit-3"));
+    expect(screen.getByTestId("data-source-host")).toHaveValue("postgres-source");
+    expect(screen.getByTestId("data-source-port")).toHaveValue(5432);
+    expect(screen.getByTestId("data-source-database")).toHaveValue("db");
+    expect(screen.getByTestId("data-source-user")).toHaveValue("u");
+    expect(screen.getByTestId("data-source-password")).toHaveValue("");
+    expect(screen.getByTestId("data-source-password")).toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep saved password",
+    );
+    expect(screen.queryByDisplayValue("super-secret-password")).not.toBeInTheDocument();
+    expect(screen.queryByText(/super-secret-password/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the saved password when the edit form password is left blank", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources") return [activePostgres];
+      if (path === "/projects/7/data-sources/3" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body.secrets).toEqual({});
+        expect(body.config).toEqual({
+          host: "postgres-source",
+          port: 5432,
+          database: "db",
+          user: "u",
+        });
+        return activePostgres;
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("edit-3"));
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources/3",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("shows connection test success with success styling", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources") return [activePostgres];
+      if (path.endsWith("/test") && init?.method === "POST") {
+        return { status: "ok", message: "Connection succeeded." };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("test-connection-3"));
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveClass("success");
+    expect(notice).toHaveTextContent(/Connection succeeded/i);
+    expect(screen.getByTestId("last-test-message-3")).toHaveClass("ok");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows connection test failure with error styling instead of success", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources") {
+        return [
+          {
+            ...activePostgres,
+            last_test_status: "error",
+            last_test_message: "Connection failed. Check the host, database, and credentials.",
+          },
+        ];
+      }
+      if (path.endsWith("/test") && init?.method === "POST") {
+        return {
+          status: "error",
+          message: "Connection failed. Check the host, database, and credentials.",
+        };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("test-connection-3"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveClass("error");
+    expect(alert).toHaveTextContent(/Connection failed/i);
+    expect(screen.queryByRole("status", { name: /Connection succeeded/i })).toBeNull();
+    expect(document.querySelector(".success")).toBeNull();
+    expect(screen.getByTestId("last-test-message-3")).toHaveClass("err");
+    expect(screen.getByTestId("last-test-message-3")).toHaveTextContent(/Connection failed/i);
+  });
 });
