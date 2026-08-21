@@ -187,3 +187,9 @@ Historical; see D-016.
 - **Context:** Advisory-only dependency scans allowed release verification to pass with serious known vulnerabilities.
 - **Choice:** `pip-audit` and `npm audit` produce JSON artifacts for Python, frontend, and E2E dependencies; `scripts/check-security-audits.py` blocks unallowlisted High/Critical findings and treats scanner/schema failures as gate failures. Exceptions require package, vulnerability ID, reason, and ISO expiry in `security/allowlist.json`; expired entries never suppress.
 - **Consequences:** Dependency updates or a time-bounded, reviewed exception are required to restore the gate. Because `pip-audit` currently omits severity, its findings are treated as High to fail closed.
+
+## D-034: PostgreSQL data-source connection mode metadata and explicit secret clears
+
+- **Context:** Legacy Postgres sources may store encrypted `dsn`/`url` secrets. Typed Host/Port edit UI must not expose those values, and switching modes must not leave stale DSN/URL secrets that override typed config.
+- **Choice:** API responses include non-sensitive `connection_mode` (`host_port` | `connection_url` | null). PATCH accepts `clear_secrets` for explicit removals; empty `secrets: {}` still means keep. Frontend Connection mode selector drives blank-keep vs clear semantics.
+- **Consequences:** Name-only edits of DSN/URL sources work without secret disclosure; mode switches clear conflicting secret keys so `_connection_url()` matches the UI mode.
