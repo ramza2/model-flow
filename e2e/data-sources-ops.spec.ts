@@ -224,10 +224,16 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
 
   await card.getByRole("button", { name: "Edit" }).click();
   await expect(page.getByTestId("data-source-connection-mode")).toHaveValue("connection_url");
-  await expect(page.getByTestId("data-source-connection-url")).toHaveValue("");
+  const connectionUrlInput = page.getByTestId("data-source-connection-url");
+  await expect(connectionUrlInput).toHaveValue("");
+  await expect(connectionUrlInput).toHaveAttribute("type", "password");
+  await expect(connectionUrlInput).toHaveAttribute(
+    "placeholder",
+    "Leave blank to keep saved connection URL",
+  );
   await expect(page.getByText(/saved connection URL is not shown/i)).toBeVisible();
-  await expect(page.getByText(sourcePassword!)).toHaveCount(0);
-  await expect(page.locator(`text=${dsn}`)).toHaveCount(0);
+  await expect(page.getByTestId("data-source-host")).toHaveCount(0);
+  await expect(page.getByTestId("data-source-password")).toHaveCount(0);
 
   await page.getByTestId("data-source-name").fill(renamed);
   await page.getByTestId("data-source-save").click();
@@ -253,7 +259,14 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByText(sourcePassword!)).toHaveCount(0);
+
+  await renamedCard.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("data-source-connection-mode")).toHaveValue("host_port");
+  const passwordInput = page.getByTestId("data-source-password");
+  await expect(passwordInput).toHaveValue("");
+  await expect(passwordInput).toHaveAttribute("type", "password");
+  await expect(passwordInput).toHaveAttribute("placeholder", "Leave blank to keep saved password");
+  await expect(page.getByTestId("data-source-connection-url")).toHaveCount(0);
 });
 
 test("typed postgres form connection test shows error styling on refused connection", async ({ page }) => {
