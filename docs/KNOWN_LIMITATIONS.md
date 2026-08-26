@@ -1,18 +1,27 @@
 # Known limitations (v1.0 RC)
 
-- Single-node Compose deployment only (no Kubernetes / HA).
+- Single-node Docker Compose deployment only (no Kubernetes / HA).
 - Inference runs in the API process (in-memory model cache); not a separate serving mesh.
 - No SSO/LDAP; local JWT + bcrypt users only.
 - No GPU / distributed training; sklearn tabular models only.
 - Visual pipeline engine is DB-worker DAG execution, not Airflow/Prefect.
-- Dependency advisory scans (`pip-audit`, `npm audit`) are informational in verify/CI and do not fail the gate (avoid breaking upgrades).
-- Compose credentials are generated into an ignored `.env` for local/self-hosted trust boundaries only — do not expose the stack to the public internet.
 - Soft-deleted projects/users are hidden; hard purge follows retention settings.
 - Inference payloads are not stored by default (`store_inference_payloads=false`).
 - Retrain automation never auto-promotes models to PRODUCTION.
+- Compose credentials are generated into an ignored `.env` for local/self-hosted trust boundaries only — do not expose the stack to the public internet.
 
-## Post-remediation notes
+## Dependency security gate
+
+Local `./scripts/verify.sh` and GitHub Actions run the same dependency checks:
+
+1. `pip-audit` against `backend/requirements.txt`
+2. Frontend `npm audit`
+3. E2E package `npm audit`
+
+`scripts/check-security-audits.py` **fails the gate** when High or Critical findings are present unless each finding is listed in `security/allowlist.json` with package, vulnerability id, reason, and ISO expiry. Scanner/schema failures also fail the gate (fail closed). This is **not** an informational-only scan.
+
+## Operational notes
 
 - Rate limit defaults to 120/min; `init-env.sh --non-interactive-test` raises it for CI/verify volume.
 - Logout increments `token_version`, invalidating tokens on all devices for that user (D-029).
-- Dependency High/Critical findings fail verify unless listed in `security/allowlist.json` with reason and expiry.
+- PostgreSQL data sources support Host/Port fields or Connection URL/DSN mode; secrets (`password`, `dsn`, `url`) are encrypted and never returned in API responses (`connection_mode` is non-sensitive metadata only; D-034).
