@@ -7,10 +7,12 @@ ModelFlow v1.0 Release Candidate readiness.
 ## Current baseline
 
 - Branch: `main`
-- Current commit: `26953064c487fdc7a9b2f37453d9e4fb09008362`
-- Open pull requests: none (documentation Draft PR may be open for this refresh)
+- Current commit: `2d2f3dac9e2013b2c19f814f950134437d91b004`
+- Open pull requests: documentation Draft PR #21 (this refresh); no other release blockers
 - GitHub Releases: none yet (pre-tag documentation only)
-- Latest completed compatibility fix: PR #20 — PostgreSQL DSN/URL edit compatibility
+- Latest merged fixes:
+  - PR #20 — PostgreSQL DSN/URL edit compatibility
+  - PR #22 — Playwright `Datasets` heading selector (`exact: true`; E2E only)
 
 ## Completed release-readiness work
 
@@ -26,24 +28,24 @@ ModelFlow v1.0 Release Candidate readiness.
 - Backup / restore destructive round-trip in verify
 - Dependency security gate (High/Critical fail closed with allowlist)
 - Playwright E2E suite and GitHub Actions full verification gate
+- Training E2E empty-state heading selector hardened (PR #22)
 
-## Latest verification (counts collected on tip)
+## Latest verification
 
 | Suite | Count | How measured |
 |-------|------:|--------------|
-| Backend pytest | **137** collected | `cd backend && python3.11 -m pytest --collect-only -q` |
-| Frontend Vitest | **98** passed | `cd frontend && npx vitest run` |
-| Playwright E2E | **18** tests | `e2e/*.spec.ts` (`test(` / `test.skip(` count) |
+| Backend pytest | **137** passed | `./scripts/verify.sh` / container pytest |
+| Frontend Vitest | **98** passed | `./scripts/verify.sh` section 6 |
+| Playwright E2E | **18** passed | `e2e/*.spec.ts` via verify Playwright container |
 
-- `./scripts/verify.sh` on this documentation branch (`d63fcad`): **PASS** (backend **137** passed, frontend Vitest **98**, Playwright **18**)
-- GitHub CI on PR #20 tip: PASS before merge
-- Note: push to `main` after PR #20 (`2695306`) reported a Playwright strict-mode failure in `e2e/training-ux.spec.ts` (`heading` name `Datasets` matched two elements). Treat as a **tagging blocker** until `main` is re-verified green; do not tag `v1.0.0-rc.1` while `main` CI is red.
+- `./scripts/verify.sh`: **PASS** on documentation branch after merge of `main`
+- GitHub Actions on `main` tip `2d2f3da`: **SUCCESS** (run [#100](https://github.com/ramza2/model-flow/actions/runs/32930610543))
+- Production code unchanged by this documentation PR
 
 ## Blockers
 
-- `main` CI after PR #20 merge: Playwright `clone configuration opens editable create form` failed (strict mode: `getByRole('heading', { name: 'Datasets' })`). Documentation-only; fix in a separate follow-up before RC tagging.
+None.
 
 ## Next step
 
-1. Clear the `main` Playwright CI failure (separate PR).
-2. v1.0.0-rc.1 release smoke test and pre-release tagging (no tag/release in this docs PR).
+v1.0.0-rc.1 release smoke test and pre-release tagging (no tag/release in this docs PR).

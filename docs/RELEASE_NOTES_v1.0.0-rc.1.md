@@ -20,6 +20,7 @@ Pre-release documentation for the first Release Candidate. **No GitHub Release o
 - PostgreSQL typed Host/Port connection UX (PR #18)
 - DSN/URL backward compatibility, `connection_mode`, and `clear_secrets` (PR #20)
 - Secret handling and E2E assertion hygiene (no plaintext secrets in locators)
+- Playwright training UX `Datasets` heading selector stability (`exact: true`, PR #22; E2E only)
 - CI / dependency security gate hardening (High/Critical fail closed with allowlist)
 - Backup/restore destructive verification in the gate
 
@@ -29,16 +30,15 @@ See [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md).
 
 ## Verification baseline
 
-| Check | Expected |
-|-------|----------|
-| Backend pytest | 137 collected (tip measurement) |
-| Frontend Vitest | 98 passed (tip measurement) |
-| Playwright | 18 tests |
-| `./scripts/verify.sh` | PASS on documentation PR |
-| GitHub CI | Must be green on `main` before tagging |
+| Check | Status on tip `2d2f3da` |
+|-------|-------------------------|
+| Backend pytest | **137** passed |
+| Frontend Vitest | **98** passed |
+| Playwright | **18** passed |
+| `./scripts/verify.sh` | PASS |
+| GitHub CI on `main` | **SUCCESS** (Actions run [#100](https://github.com/ramza2/model-flow/actions/runs/32930610543)) |
 
 ## Remaining before tag
 
-- Confirm `main` GitHub Actions is green (Playwright heading strict-mode flake observed on `2695306` must be cleared).
-- Manual release smoke test against a clean stack.
-- Create annotated tag `v1.0.0-rc.1` and GitHub Release **only after** the above.
+- Manual release smoke test against a clean stack
+- Create annotated tag `v1.0.0-rc.1` and GitHub Release **only after** smoke test sign-off

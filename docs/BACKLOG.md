@@ -86,6 +86,6 @@ Phases execute sequentially without waiting for user approval. Mark items done i
 - [x] Extend verify.sh for auth + all E2E-01..09 gates
 - [x] Playwright scenarios
 - [x] Clean volume PASS
-- [x] GitHub Actions PASS (re-confirm on tip before RC tag)
+- [x] GitHub Actions PASS on `main` tip (`2d2f3da`, run #100)
 - [x] Screenshots/video evidence
 - [x] Acceptance criteria table maintained; release docs for RC

@@ -2,9 +2,9 @@
 
 Existing MVP criteria are retained and v1.0 criteria are additive. Status values are `PASS`, `FAIL`, and `NOT_VERIFIED`. `PASS` requires repeatable evidence for the current revision; implementation alone is not evidence.
 
-**Current tip:** `26953064c487fdc7a9b2f37453d9e4fb09008362` (`main`, includes PR #20)  
-**GitHub Actions:** Full verification gate via `.github/workflows/ci.yml` (PRs and pushes to `main`). Re-confirm green on tip before RC tagging.  
-**Clean gate:** `./scripts/verify.sh` (isolated Compose project; does not rewrite project `.env`) → expect **PASS** with `artifacts/verify/RESULT.txt` = OK.
+**Current tip:** `2d2f3dac9e2013b2c19f814f950134437d91b004` (`main`, includes PR #20 and PR #22)  
+**GitHub Actions:** [run #100](https://github.com/ramza2/model-flow/actions/runs/32930610543) on tip `2d2f3da` — **SUCCESS**  
+**Clean gate:** `./scripts/verify.sh` (isolated Compose project; does not rewrite project `.env`) → **PASS** with `artifacts/verify/RESULT.txt` = OK.
 
 ## MVP criteria (retained)
 
@@ -86,7 +86,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented | PASS | Doc present | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full gate PASS on tip before release | PASS | Workflow on `main` / release docs PR | `.github/workflows/ci.yml` | Actions UI (re-check before tag) |
+| AC-72 | GitHub Actions Full gate PASS on tip before release | PASS | Workflow on `main` tip | `.github/workflows/ci.yml` | Actions run [#100](https://github.com/ramza2/model-flow/actions/runs/32930610543) SUCCESS on `2d2f3da` |
 
 ## Additional remediation checks (Release Review)
 
@@ -101,7 +101,8 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | Pipeline parallel/branch/restart/schedule | PASS | `test_pipeline_engine.py`; migration 004 |
 | Security High/Critical gate fails CI | PASS | verify 8e; `security/allowlist.json`; D-033 |
 | Postgres DSN/URL edit compatibility without secret leakage | PASS | PR #20; D-034; lifecycle + E2E |
+| Training E2E Datasets heading selector stable under strict mode | PASS | PR #22; `exact: true` in `e2e/training-ux.spec.ts` |
 
 ## Remaining NOT_VERIFIED
 
-None for AC-01…AC-72 on tip `2695306` pending a green `main` Actions run before `v1.0.0-rc.1` tagging. Clear the observed Playwright heading strict-mode failure on `main` first (see `docs/PROGRESS.md`).
+None.
