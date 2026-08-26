@@ -121,6 +121,10 @@ Use the generated `SOURCE_POSTGRES_USER`, `SOURCE_POSTGRES_PASSWORD`, and
 `SOURCE_POSTGRES_DB` values from `.env`. The host is `postgres-source` from Compose
 services and `localhost:${SOURCE_POSTGRES_HOST_PORT}` from the host.
 
+In the UI, PostgreSQL data sources support **Host / Port** fields or a **Connection URL / DSN**
+mode. Secrets (`password`, `dsn`, `url`) are encrypted at rest, never returned by the API, and
+blank password/URL fields on edit keep the saved value. See `docs/DECISIONS.md` (D-034).
+
 ## Backup, restore, and reset
 
 Back up the application and `mlflow` PostgreSQL databases plus the `datasets`, `mlflow`,
@@ -204,7 +208,10 @@ npm run dev
 
 ## Docs
 
-See `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/ACCEPTANCE_CRITERIA.md`, `docs/DECISIONS.md`, and `docs/PROGRESS.md`.
+- Product and architecture: `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
+- Acceptance and progress: `docs/ACCEPTANCE_CRITERIA.md`, `docs/PROGRESS.md`
+- Known limitations: `docs/KNOWN_LIMITATIONS.md`
+- RC release notes (draft): `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
 
 ## Security
 

@@ -2,35 +2,48 @@
 
 ## Current phase
 
-**Release Review remediation COMPLETE** on `cursor/modelflow-v1-rc-71f2` / Draft PR #4 (not merged).
+ModelFlow v1.0 Release Candidate readiness.
 
-## Baseline
+## Current baseline
 
-- Base commit: `df2fc421d32fa2c6fbcd7fd86f0fad4c2c10173b`
-- Draft PR: https://github.com/ramza2/model-flow/pull/4
+- Branch: `main`
+- Current commit: `26953064c487fdc7a9b2f37453d9e4fb09008362`
+- Open pull requests: none (documentation Draft PR may be open for this refresh)
+- GitHub Releases: none yet (pre-tag documentation only)
+- Latest completed compatibility fix: PR #20 — PostgreSQL DSN/URL edit compatibility
 
-## Remediation completed
+## Completed release-readiness work
 
-1. Legacy unauthenticated `/api` router removed (health-only `/api/health`)
-2. Hardcoded credentials removed; `scripts/init-env.sh` + required Compose env
-3. Server-side model gates (client `gates_passed` removed)
-4. Pipeline parallel nodes, condition branches, restart-from-failed, schedules
-5. Logout bumps `token_version` (all user tokens revoked)
-6. Backup/restore destructive round-trip in verify
-7. RBAC isolation tests + Playwright role menus
-8. Security gate fails on High/Critical unless allowlisted
-9. AC evidence columns; contested items re-verified to PASS
+- Authentication, bootstrap admin, logout token revocation, RBAC
+- Generated environment secrets (`scripts/init-env.sh`) and Compose required env
+- Dataset versioning, quality rules, splits linked to training
+- Training, MLflow experiments, server-side model gate policies, approval lifecycle
+- Visual pipeline design / publish / execute
+- PostgreSQL and managed-file data sources with encrypted secrets
+- Typed Host/Port PostgreSQL UX plus DSN/URL connection mode and `clear_secrets` (PR #18 / #20)
+- Endpoint realtime and batch inference; service API keys
+- Drift monitoring and operational alerts
+- Backup / restore destructive round-trip in verify
+- Dependency security gate (High/Critical fail closed with allowlist)
+- Playwright E2E suite and GitHub Actions full verification gate
 
-## Latest local gate
+## Latest verification (counts collected on tip)
 
-```text
-docker compose down -v --remove-orphans
-rm -f .env
-./scripts/init-env.sh --non-interactive-test
-./scripts/verify.sh
-→ PASS (backend 37; frontend 3; Playwright 5)
-```
+| Suite | Count | How measured |
+|-------|------:|--------------|
+| Backend pytest | **137** collected | `cd backend && python3.11 -m pytest --collect-only -q` |
+| Frontend Vitest | **98** passed | `cd frontend && npx vitest run` |
+| Playwright E2E | **18** tests | `e2e/*.spec.ts` (`test(` / `test.skip(` count) |
+
+- `./scripts/verify.sh`: run on this documentation branch after updates (isolated Compose project)
+- GitHub CI on PR #20 tip: PASS before merge
+- Note: push to `main` after PR #20 (`2695306`) reported a Playwright strict-mode failure in `e2e/training-ux.spec.ts` (`heading` name `Datasets` matched two elements). Treat as a **tagging blocker** until re-verified; do not tag `v1.0.0-rc.1` while `main` CI is red. See `docs/KNOWN_LIMITATIONS.md` / release notes remaining work.
 
 ## Blockers
 
-None.
+- `main` CI after PR #20 merge: Playwright `clone configuration opens editable create form` failed (strict mode: `getByRole('heading', { name: 'Datasets' })`). Documentation-only; fix in a separate follow-up before RC tagging.
+
+## Next step
+
+1. Clear the `main` Playwright CI failure (separate PR).
+2. v1.0.0-rc.1 release smoke test and pre-release tagging (no tag/release in this docs PR).

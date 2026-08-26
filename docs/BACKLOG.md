@@ -79,13 +79,13 @@ Phases execute sequentially without waiting for user approval. Mark items done i
 
 - [x] Security headers, CORS, rate limit, validation, XSS/SQLi hygiene
 - [x] `backup.sh` / `restore.sh` / `reset-dev.sh` / `seed-demo.sh`
-- [x] Dependency vulnerability scan in CI (informational / non-breaking)
+- [x] Dependency vulnerability scan in CI (High/Critical fail closed; allowlist with expiry)
 
 ## Phase 12 — Release verification
 
 - [x] Extend verify.sh for auth + all E2E-01..09 gates
 - [x] Playwright scenarios
 - [x] Clean volume PASS
-- [x] GitHub Actions PASS
+- [x] GitHub Actions PASS (re-confirm on tip before RC tag)
 - [x] Screenshots/video evidence
-- [x] Draft PR with full report; AC table all PASS
+- [x] Acceptance criteria table maintained; release docs for RC

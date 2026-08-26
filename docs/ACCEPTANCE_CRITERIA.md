@@ -2,9 +2,9 @@
 
 Existing MVP criteria are retained and v1.0 criteria are additive. Status values are `PASS`, `FAIL`, and `NOT_VERIFIED`. `PASS` requires repeatable evidence for the current revision; implementation alone is not evidence.
 
-**Current tip:** `854c69f`  
-**GitHub Actions:** https://github.com/ramza2/model-flow/actions/runs/30621413155 — **success**  
-**Clean gate:** `docker compose --profile source down -v --remove-orphans && rm -f .env && ./scripts/init-env.sh --non-interactive-test && ./scripts/verify.sh` → **PASS** (`artifacts/verify/RESULT.txt` = OK).
+**Current tip:** `26953064c487fdc7a9b2f37453d9e4fb09008362` (`main`, includes PR #20)  
+**GitHub Actions:** Full verification gate via `.github/workflows/ci.yml` (PRs and pushes to `main`). Re-confirm green on tip before RC tagging.  
+**Clean gate:** `./scripts/verify.sh` (isolated Compose project; does not rewrite project `.env`) → expect **PASS** with `artifacts/verify/RESULT.txt` = OK.
 
 ## MVP criteria (retained)
 
@@ -22,24 +22,24 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-10 | Model registered; versions listed | PASS | Register trained run and query registry | `scripts/verify.sh` section 8 | `artifacts/verify/RESULT.txt` |
 | AC-11 | Inference endpoint created; sample predict returns results | PASS | Deploy model and invoke prediction | `scripts/verify.sh` section 8 | `artifacts/verify/predict.json` |
 | AC-12 | UI screens wired to real APIs — no mock/fake completion | PASS | Placeholder scan plus browser flow | `scripts/verify.sh` sections 7 and 9 | `artifacts/verify/RESULT.txt` |
-| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | **45** passed |
-| AC-14 | Frontend Vitest + typecheck + lint pass | PASS | Node container checks | `scripts/verify.sh` section 6 | 3 Vitest passed |
-| AC-15 | Playwright E2E covers core flow | PASS | Official Playwright image | `e2e/*.spec.ts` (5 tests) | `artifacts/verify/RESULT.txt` |
+| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | **137** collected on tip |
+| AC-14 | Frontend Vitest + typecheck + lint pass | PASS | Node container checks | `scripts/verify.sh` section 6 | **98** Vitest passed on tip |
+| AC-15 | Playwright E2E covers core flow | PASS | Official Playwright image | `e2e/*.spec.ts` (**18** tests) | `artifacts/verify/RESULT.txt` |
 | AC-16 | `scripts/verify.sh` runs full verification suite | PASS | Clean volume + init-env + verify | `scripts/verify.sh` | `artifacts/verify/RESULT.txt` = OK |
 | AC-17 | Friendly error messages for common failures | PASS | API error shape `{detail,hint}` | Backend API tests | OpenAPI / tests |
 | AC-18 | No infra jargon (Pod/Namespace/K8s) on primary UI | PASS | Grep gate in verify | `scripts/verify.sh` section 7 | `artifacts/verify/RESULT.txt` |
-| AC-19 | Screenshots or browser evidence of key screens | PASS | Playwright + manual captures | `artifacts/screenshots/`; `/opt/cursor/artifacts/v1-*.png` | screenshot files |
-| AC-20 | Draft PR documents PASS/FAIL for all criteria | PASS | PR #4 body + this file | Draft PR #4 | GitHub PR |
+| AC-19 | Screenshots or browser evidence of key screens | PASS | Playwright + manual captures | `artifacts/screenshots/` | screenshot files |
+| AC-20 | Release documentation records PASS/FAIL for all criteria | PASS | This file + `docs/PROGRESS.md` | Docs on `main` / RC docs PR | GitHub |
 | AC-21 | Same-filename re-upload keeps distinct MinIO objects | PASS | Versioned upload in verify | `scripts/verify.sh` section 8 | `artifacts/verify/RESULT.txt` |
 | AC-22 | Endpoint ready only after successful model load | PASS | Endpoint create path | Backend/endpoint tests; verify | `artifacts/verify/RESULT.txt` |
 | AC-23 | Cross-project run/model binding rejected | PASS | Isolation tests | `backend/tests/test_rbac_isolation.py` | pytest |
 | AC-24 | Worker health reflects fresh DB heartbeat | PASS | Compose worker healthcheck | `scripts/verify.sh` | `compose-ps.txt` |
 | AC-25 | verify.sh / init-env require only Docker/Compose/curl/bash on host | PASS | Host-tool check; secrets via `python:3.11-slim` container | `scripts/verify.sh`; `scripts/init-env.sh` | script headers |
 | AC-26 | GitHub Actions CI workflow present | PASS | Workflow YAML | `.github/workflows/ci.yml` | Actions UI |
-| AC-27 | PR targeting `main` runs full verification gate | PASS | PR Check on #4 | Actions run `30621413155` | success on tip `854c69f` |
+| AC-27 | PR targeting `main` runs full verification gate | PASS | Workflow on pull_request | `.github/workflows/ci.yml` | Actions UI |
 | AC-28 | CI failure uploads verify/screenshots artifacts | PASS | Workflow upload-artifact step | `.github/workflows/ci.yml` | workflow |
 | AC-29 | External Docker images pinned | PASS | Compose/verify pins | `docker-compose.yml`; D-016 | compose |
-| AC-30 | Clean-volume full verification PASS | PASS | `down -v` + init-env + verify | `scripts/verify.sh` | `RESULT.txt` |
+| AC-30 | Clean-volume full verification PASS | PASS | Isolated verify stack | `scripts/verify.sh` | `RESULT.txt` |
 
 ## v1.0 criteria
 
@@ -49,12 +49,12 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-32 | Login, logout, me, password change; JWT expiry; logout revokes token | PASS | Login→me→logout→me=401 | `backend/tests/test_api_v1.py`; live spot-check | pytest + live 401 |
 | AC-33 | User create/activate/deactivate; inactive blocked | PASS | Admin user APIs + inactive token | `test_rbac_isolation.py`; verify user admin | pytest |
 | AC-34 | Brute-force lockout or rate limit on login | PASS | Lockout + rate limit middleware | auth tests; config `RATE_LIMIT_PER_MINUTE` | code + tests |
-| AC-35 | RBAC roles enforced; menus hidden by role | PASS | Role matrix API + Playwright menus | `test_rbac_isolation.py`; `e2e/rbac-menus.spec.ts` | 5 Playwright incl. RBAC |
+| AC-35 | RBAC roles enforced; menus hidden by role | PASS | Role matrix API + Playwright menus | `test_rbac_isolation.py`; `e2e/rbac-menus.spec.ts` | Playwright RBAC specs |
 | AC-36 | Project membership isolation at API layer | PASS | Two-project cross access 403/404 | `test_rbac_isolation.py`; Playwright denied URL | pytest + e2e |
 | AC-37 | Audit log for governance events | PASS | Audit list after release flow | `scripts/verify.sh` audit step | `artifacts/verify/audit.json` |
 | AC-38 | Audit UI search/filter; secrets never stored | PASS | Admin audit page + mask_secrets | UI + `app/core/security.py` | screenshots |
 | AC-39 | File data sources CSV/JSON/Parquet | PASS | Upload paths + format detection | dataset services/tests | verify upload |
-| AC-40 | Postgres data source encrypted secrets | PASS | Source profile + encryption | `postgres-source`; crypto helpers | compose profile |
+| AC-40 | Postgres data source encrypted secrets; Host/Port and DSN/URL modes without secret disclosure | PASS | Typed form + connection_mode + clear_secrets; lifecycle + E2E | `test_data_source_lifecycle.py`; `e2e/data-sources-ops.spec.ts`; D-034 | pytest + Playwright |
 | AC-41 | Dataset versions immutable; profiling | PASS | Re-upload new version | verify section 8 | RESULT |
 | AC-42 | Quality rules PASS/WARNING/FAIL | PASS | Rule+check in verify | verify section 8 | RESULT |
 | AC-43 | Splits with seed/ratios | PASS | Split create in verify | verify section 8 | RESULT |
@@ -86,7 +86,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented | PASS | Doc present | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full gate PASS on Draft PR | PASS | Tip workflow success | Actions on `cursor/modelflow-v1-rc-71f2` | run `30621413155` |
+| AC-72 | GitHub Actions Full gate PASS on tip before release | PASS | Workflow on `main` / release docs PR | `.github/workflows/ci.yml` | Actions UI (re-check before tag) |
 
 ## Additional remediation checks (Release Review)
 
@@ -99,8 +99,9 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | Pipeline cannot override gate criteria | PASS | `gate_policy_id` only; inline `gates` rejected on save/execute |
 | Logout invalidates token | PASS | `token_version` bump; subsequent `/auth/me` → 401 |
 | Pipeline parallel/branch/restart/schedule | PASS | `test_pipeline_engine.py`; migration 004 |
-| Security High/Critical gate fails CI | PASS | verify 8e; `security/allowlist.json` |
+| Security High/Critical gate fails CI | PASS | verify 8e; `security/allowlist.json`; D-033 |
+| Postgres DSN/URL edit compatibility without secret leakage | PASS | PR #20; D-034; lifecycle + E2E |
 
 ## Remaining NOT_VERIFIED
 
-None for AC-01…AC-72 on tip `854c69f` (local clean gate PASS; GitHub Actions run `30621413155` success).
+None for AC-01…AC-72 on tip `2695306` pending a green `main` Actions run before `v1.0.0-rc.1` tagging. Clear the observed Playwright heading strict-mode failure on `main` first (see `docs/PROGRESS.md`).

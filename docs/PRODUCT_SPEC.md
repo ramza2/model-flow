@@ -76,4 +76,4 @@ Interfaces remain replaceable for future runners, identity providers, and orches
 
 ## Success metric for v1.0 RC
 
-Clean Compose volumes + `./scripts/verify.sh` PASS, all Acceptance Criteria PASS, GitHub Actions Full verification gate green, README-only install works, evidence (screenshots/video) attached to Draft PR.
+Clean Compose volumes + `./scripts/verify.sh` PASS, all Acceptance Criteria PASS, GitHub Actions Full verification gate green on `main`, README-only install works, and release documentation (`docs/PROGRESS.md`, `docs/ACCEPTANCE_CRITERIA.md`, `docs/RELEASE_NOTES_v1.0.0-rc.1.md`) matches the tip.
