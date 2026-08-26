@@ -22,7 +22,7 @@ Existing MVP criteria are retained and v1.0 criteria are additive. Status values
 | AC-10 | Model registered; versions listed | PASS | Register trained run and query registry | `scripts/verify.sh` section 8 | `artifacts/verify/RESULT.txt` |
 | AC-11 | Inference endpoint created; sample predict returns results | PASS | Deploy model and invoke prediction | `scripts/verify.sh` section 8 | `artifacts/verify/predict.json` |
 | AC-12 | UI screens wired to real APIs — no mock/fake completion | PASS | Placeholder scan plus browser flow | `scripts/verify.sh` sections 7 and 9 | `artifacts/verify/RESULT.txt` |
-| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | **137** collected on tip |
+| AC-13 | Backend pytest pass | PASS | Container pytest | `pytest -q` in backend | **137** passed on tip |
 | AC-14 | Frontend Vitest + typecheck + lint pass | PASS | Node container checks | `scripts/verify.sh` section 6 | **98** Vitest passed on tip |
 | AC-15 | Playwright E2E covers core flow | PASS | Official Playwright image | `e2e/*.spec.ts` (**18** tests) | `artifacts/verify/RESULT.txt` |
 | AC-16 | `scripts/verify.sh` runs full verification suite | PASS | Clean volume + init-env + verify | `scripts/verify.sh` | `artifacts/verify/RESULT.txt` = OK |
