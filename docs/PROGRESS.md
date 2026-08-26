@@ -35,9 +35,9 @@ ModelFlow v1.0 Release Candidate readiness.
 | Frontend Vitest | **98** passed | `cd frontend && npx vitest run` |
 | Playwright E2E | **18** tests | `e2e/*.spec.ts` (`test(` / `test.skip(` count) |
 
-- `./scripts/verify.sh`: run on this documentation branch after updates (isolated Compose project)
+- `./scripts/verify.sh` on this documentation branch (`d63fcad`): **PASS** (backend **137** passed, frontend Vitest **98**, Playwright **18**)
 - GitHub CI on PR #20 tip: PASS before merge
-- Note: push to `main` after PR #20 (`2695306`) reported a Playwright strict-mode failure in `e2e/training-ux.spec.ts` (`heading` name `Datasets` matched two elements). Treat as a **tagging blocker** until re-verified; do not tag `v1.0.0-rc.1` while `main` CI is red. See `docs/KNOWN_LIMITATIONS.md` / release notes remaining work.
+- Note: push to `main` after PR #20 (`2695306`) reported a Playwright strict-mode failure in `e2e/training-ux.spec.ts` (`heading` name `Datasets` matched two elements). Treat as a **tagging blocker** until `main` is re-verified green; do not tag `v1.0.0-rc.1` while `main` CI is red.
 
 ## Blockers
 
