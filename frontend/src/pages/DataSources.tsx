@@ -14,10 +14,11 @@ import {
 } from "../components";
 import {
   DEFAULT_POSTGRES_FORM,
+  buildPostgresSavePayload,
   extraPostgresConfig,
-  postgresConfigFromForm,
   postgresFormFromConfig,
-  postgresSecretsFromPassword,
+  resolvePostgresConnectionMode,
+  type PostgresConnectionMode,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
@@ -77,6 +78,10 @@ export default function DataSources() {
   const [postgresForm, setPostgresForm] = useState(DEFAULT_POSTGRES_FORM);
   const [postgresExtraConfig, setPostgresExtraConfig] = useState<Record<string, unknown>>({});
   const [password, setPassword] = useState("");
+  const [connectionMode, setConnectionMode] = useState<PostgresConnectionMode>("host_port");
+  const [connectionUrl, setConnectionUrl] = useState("");
+  const [previousConnectionMode, setPreviousConnectionMode] =
+    useState<PostgresConnectionMode | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -132,6 +137,9 @@ export default function DataSources() {
     setPostgresForm(DEFAULT_POSTGRES_FORM);
     setPostgresExtraConfig({});
     setPassword("");
+    setConnectionMode("host_port");
+    setConnectionUrl("");
+    setPreviousConnectionMode(null);
     setShowForm(false);
   }
 
@@ -143,6 +151,10 @@ export default function DataSources() {
     setPostgresForm(postgresFormFromConfig(source.config));
     setPostgresExtraConfig(extraPostgresConfig(source.config));
     setPassword("");
+    const mode = resolvePostgresConnectionMode(source.connection_mode);
+    setConnectionMode(mode);
+    setPreviousConnectionMode(mode);
+    setConnectionUrl("");
     setShowForm(true);
   }
 
@@ -152,23 +164,59 @@ export default function DataSources() {
     setError("");
     setSuccess("");
     try {
-      const parsed =
-        sourceType === "postgres"
-          ? postgresConfigFromForm(postgresForm, postgresExtraConfig)
-          : (JSON.parse(config) as Record<string, unknown>);
-      const secrets = postgresSecretsFromPassword(password);
-      if (editing) {
-        await api(`/projects/${projectId}/data-sources/${editing.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ name, config: parsed, secrets }),
+      if (sourceType === "postgres") {
+        const payload = buildPostgresSavePayload({
+          mode: connectionMode,
+          form: postgresForm,
+          extra: postgresExtraConfig,
+          password,
+          connectionUrl,
+          editing: Boolean(editing),
+          previousMode: previousConnectionMode,
         });
-        setSuccess("Data source updated.");
+        if (editing) {
+          await api(`/projects/${projectId}/data-sources/${editing.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name,
+              config: payload.config,
+              secrets: payload.secrets,
+              ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
+            }),
+          });
+          setSuccess("Data source updated.");
+        } else {
+          await api(`/projects/${projectId}/data-sources`, {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              source_type: sourceType,
+              config: payload.config,
+              secrets: payload.secrets,
+            }),
+          });
+          setSuccess("Data source created.");
+        }
       } else {
-        await api(`/projects/${projectId}/data-sources`, {
-          method: "POST",
-          body: JSON.stringify({ name, source_type: sourceType, config: parsed, secrets }),
-        });
-        setSuccess("Data source created.");
+        const parsed = JSON.parse(config) as Record<string, unknown>;
+        if (editing) {
+          await api(`/projects/${projectId}/data-sources/${editing.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ name, config: parsed, secrets: {} }),
+          });
+          setSuccess("Data source updated.");
+        } else {
+          await api(`/projects/${projectId}/data-sources`, {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              source_type: sourceType,
+              config: parsed,
+              secrets: {},
+            }),
+          });
+          setSuccess("Data source created.");
+        }
       }
       resetForm();
       await load();
@@ -471,81 +519,127 @@ export default function DataSources() {
           </label>
           {sourceType === "postgres" ? (
             <>
-              <div className="form-grid">
-                <label htmlFor="data-source-host">
-                  Host
-                  <input
-                    id="data-source-host"
-                    value={postgresForm.host}
-                    onChange={(event) =>
-                      setPostgresForm((current) => ({ ...current, host: event.target.value }))
-                    }
-                    required
-                    autoComplete="off"
-                    data-testid="data-source-host"
-                  />
-                </label>
-                <label htmlFor="data-source-port">
-                  Port
-                  <input
-                    id="data-source-port"
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={postgresForm.port}
-                    onChange={(event) =>
-                      setPostgresForm((current) => ({ ...current, port: event.target.value }))
-                    }
-                    required
-                    data-testid="data-source-port"
-                  />
-                </label>
-                <label htmlFor="data-source-database">
-                  Database
-                  <input
-                    id="data-source-database"
-                    value={postgresForm.database}
-                    onChange={(event) =>
-                      setPostgresForm((current) => ({ ...current, database: event.target.value }))
-                    }
-                    required
-                    autoComplete="off"
-                    data-testid="data-source-database"
-                  />
-                </label>
-                <label htmlFor="data-source-user">
-                  User
-                  <input
-                    id="data-source-user"
-                    value={postgresForm.user}
-                    onChange={(event) =>
-                      setPostgresForm((current) => ({ ...current, user: event.target.value }))
-                    }
-                    required
-                    autoComplete="off"
-                    data-testid="data-source-user"
-                  />
-                </label>
-              </div>
-              <label htmlFor="data-source-password">
-                Password
-                <input
-                  id="data-source-password"
-                  type="password"
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={
-                    editing?.has_secrets ? "Leave blank to keep saved password" : "Database password"
+              <label htmlFor="data-source-connection-mode">
+                Connection mode
+                <select
+                  id="data-source-connection-mode"
+                  value={connectionMode}
+                  onChange={(event) =>
+                    setConnectionMode(event.target.value as PostgresConnectionMode)
                   }
-                  data-testid="data-source-password"
-                />
-                <small>
-                  {editing
-                    ? "Leave blank to keep the saved password. Enter a new value only to replace it."
-                    : "Stored separately from connection metadata. Project members cannot read this value."}
-                </small>
+                  data-testid="data-source-connection-mode"
+                >
+                  <option value="host_port">Host / Port</option>
+                  <option value="connection_url">Connection URL / DSN</option>
+                </select>
               </label>
+              {connectionMode === "connection_url" ? (
+                <label htmlFor="data-source-connection-url">
+                  Connection URL / DSN
+                  <input
+                    id="data-source-connection-url"
+                    type="password"
+                    autoComplete="off"
+                    value={connectionUrl}
+                    onChange={(event) => setConnectionUrl(event.target.value)}
+                    required={!editing || previousConnectionMode === "host_port"}
+                    placeholder={
+                      editing && previousConnectionMode === "connection_url"
+                        ? "Leave blank to keep saved connection URL"
+                        : "postgresql://user:password@host:5432/database"
+                    }
+                    data-testid="data-source-connection-url"
+                  />
+                  <small>
+                    {editing && previousConnectionMode === "connection_url"
+                      ? "The saved connection URL is not shown. Leave blank to keep it, or enter a new value to replace it."
+                      : "Stored separately from connection metadata. Project members cannot read this value."}
+                  </small>
+                </label>
+              ) : (
+                <>
+                  <div className="form-grid">
+                    <label htmlFor="data-source-host">
+                      Host
+                      <input
+                        id="data-source-host"
+                        value={postgresForm.host}
+                        onChange={(event) =>
+                          setPostgresForm((current) => ({ ...current, host: event.target.value }))
+                        }
+                        required
+                        autoComplete="off"
+                        data-testid="data-source-host"
+                      />
+                    </label>
+                    <label htmlFor="data-source-port">
+                      Port
+                      <input
+                        id="data-source-port"
+                        type="number"
+                        min={1}
+                        max={65535}
+                        value={postgresForm.port}
+                        onChange={(event) =>
+                          setPostgresForm((current) => ({ ...current, port: event.target.value }))
+                        }
+                        required
+                        data-testid="data-source-port"
+                      />
+                    </label>
+                    <label htmlFor="data-source-database">
+                      Database
+                      <input
+                        id="data-source-database"
+                        value={postgresForm.database}
+                        onChange={(event) =>
+                          setPostgresForm((current) => ({
+                            ...current,
+                            database: event.target.value,
+                          }))
+                        }
+                        required
+                        autoComplete="off"
+                        data-testid="data-source-database"
+                      />
+                    </label>
+                    <label htmlFor="data-source-user">
+                      User
+                      <input
+                        id="data-source-user"
+                        value={postgresForm.user}
+                        onChange={(event) =>
+                          setPostgresForm((current) => ({ ...current, user: event.target.value }))
+                        }
+                        required
+                        autoComplete="off"
+                        data-testid="data-source-user"
+                      />
+                    </label>
+                  </div>
+                  <label htmlFor="data-source-password">
+                    Password
+                    <input
+                      id="data-source-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder={
+                        editing?.has_secrets && previousConnectionMode === "host_port"
+                          ? "Leave blank to keep saved password"
+                          : "Database password"
+                      }
+                      data-testid="data-source-password"
+                    />
+                    <small>
+                      {editing && previousConnectionMode === "host_port"
+                        ? "Leave blank to keep the saved password. Enter a new value only to replace it."
+                        : "Stored separately from connection metadata. Project members cannot read this value."}
+                    </small>
+                  </label>
+                </>
+              )}
             </>
           ) : (
             <label>

@@ -41,6 +41,22 @@ const activePostgres = {
   source_type: "postgres" as const,
   config: { host: "postgres-source", port: 5432, database: "db", user: "u" },
   has_secrets: true,
+  connection_mode: "host_port" as const,
+  is_active: true,
+  last_test_status: "ok",
+  last_test_message: "Connection succeeded.",
+  last_tested_at: "2026-08-11T05:00:00Z",
+  created_at: "2026-08-11T04:00:00Z",
+};
+
+const dsnPostgres = {
+  id: 5,
+  project_id: 7,
+  name: "postgres-dsn",
+  source_type: "postgres" as const,
+  config: {},
+  has_secrets: true,
+  connection_mode: "connection_url" as const,
   is_active: true,
   last_test_status: "ok",
   last_test_message: "Connection succeeded.",
@@ -290,6 +306,7 @@ describe("DataSources operations UX", () => {
     apiMock.mockResolvedValueOnce([]);
     renderPage();
     fireEvent.click(await screen.findByTestId("add-data-source"));
+    expect(screen.getByTestId("data-source-connection-mode")).toHaveValue("host_port");
     expect(screen.getByTestId("data-source-host")).toBeInTheDocument();
     expect(screen.getByTestId("data-source-port")).toHaveAttribute("type", "number");
     expect(screen.getByTestId("data-source-port")).toHaveValue(5432);
@@ -369,6 +386,7 @@ describe("DataSources operations UX", () => {
           database: "db",
           user: "u",
         });
+        expect(body.clear_secrets).toEqual(["dsn", "url"]);
         return activePostgres;
       }
       return [];
@@ -379,6 +397,89 @@ describe("DataSources operations UX", () => {
     await waitFor(() =>
       expect(apiMock).toHaveBeenCalledWith(
         "/projects/7/data-sources/3",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("edits an existing DSN source without exposing the URL and allows name-only save", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") {
+        return [dsnPostgres];
+      }
+      if (path === "/projects/7/data-sources/5" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "postgres-dsn-renamed",
+          config: {},
+          secrets: {},
+        });
+        expect(JSON.stringify(body)).not.toMatch(/postgresql:\/\//i);
+        return { ...dsnPostgres, name: "postgres-dsn-renamed" };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("edit-5"));
+    expect(screen.getByTestId("data-source-connection-mode")).toHaveValue("connection_url");
+    expect(screen.getByTestId("data-source-connection-url")).toHaveValue("");
+    expect(screen.getByTestId("data-source-connection-url")).toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep saved connection URL",
+    );
+    expect(screen.getByText(/saved connection URL is not shown/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
+    expect(screen.queryByDisplayValue(/postgresql:/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("data-source-name"), {
+      target: { value: "postgres-dsn-renamed" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources/5",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("clears DSN secrets when switching connection mode to Host / Port", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources") return [dsnPostgres];
+      if (path === "/projects/7/data-sources/5" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body.clear_secrets).toEqual(["dsn", "url"]);
+        expect(body.config).toEqual({
+          host: "db.internal",
+          port: 5432,
+          database: "analytics",
+          user: "reader",
+        });
+        expect(body.secrets).toEqual({ password: "typed-pass" });
+        return {
+          ...dsnPostgres,
+          connection_mode: "host_port",
+          config: body.config,
+        };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("edit-5"));
+    fireEvent.change(screen.getByTestId("data-source-connection-mode"), {
+      target: { value: "host_port" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-host"), { target: { value: "db.internal" } });
+    fireEvent.change(screen.getByTestId("data-source-database"), {
+      target: { value: "analytics" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-user"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("data-source-password"), {
+      target: { value: "typed-pass" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources/5",
         expect.objectContaining({ method: "PATCH" }),
       ),
     );

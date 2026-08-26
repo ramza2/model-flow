@@ -66,6 +66,8 @@ class DataSourceUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     config: dict[str, Any] | None = None
     secrets: dict[str, Any] | None = None
+    # Explicit removals only. Empty secrets {} still means "keep existing secrets".
+    clear_secrets: list[str] | None = None
     is_active: bool | None = None
 
 

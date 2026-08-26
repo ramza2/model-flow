@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.core.deps import AuthContext
+from app.core.security import decrypt_secret
 from app.db.models import (
     BatchInferenceJob,
     DataImportJob,
@@ -139,6 +140,18 @@ def membership_out(row: ProjectMembership) -> dict[str, Any]:
     }
 
 
+def data_source_connection_mode(row: DataSource) -> str | None:
+    """Non-sensitive mode hint for the UI. Never returns secret values."""
+    if enum_value(row.source_type) != "postgres":
+        return None
+    if not row.secret_encrypted:
+        return "host_port"
+    secrets = loads(decrypt_secret(row.secret_encrypted), {})
+    if secrets.get("url") or secrets.get("dsn"):
+        return "connection_url"
+    return "host_port"
+
+
 def data_source_out(row: DataSource) -> dict[str, Any]:
     return {
         "id": row.id,
@@ -147,6 +160,7 @@ def data_source_out(row: DataSource) -> dict[str, Any]:
         "source_type": enum_value(row.source_type),
         "config": loads(row.config_json, {}),
         "has_secrets": bool(row.secret_encrypted),
+        "connection_mode": data_source_connection_mode(row),
         "is_active": row.is_active,
         "last_test_status": row.last_test_status,
         "last_test_message": row.last_test_message,
