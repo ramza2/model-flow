@@ -1,0 +1,54 @@
+# Production Traefik overlay for GPU / Linux servers.
+# Use with: docker compose -f docker-compose.yml -f docker-compose.traefik.yml
+#
+# Requires Docker Compose v2.24+ for `ports: !reset` merge semantics.
+# See docs/DEPLOYMENT_TRAEFIK.md.
+
+services:
+  postgres:
+    ports: !reset []
+    restart: unless-stopped
+
+  postgres-source:
+    ports: !reset []
+    restart: unless-stopped
+
+  minio:
+    ports: !reset []
+    restart: unless-stopped
+
+  mlflow:
+    ports: !reset []
+    restart: unless-stopped
+
+  backend:
+    ports: !reset []
+    restart: unless-stopped
+
+  worker:
+    restart: unless-stopped
+
+  frontend:
+    ports: !reset []
+    restart: unless-stopped
+    networks:
+      - default
+      - traefik_proxy
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik_proxy
+      - traefik.http.middlewares.modelflow-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.modelflow-redirect.redirectscheme.permanent=true
+      - traefik.http.routers.modelflow-web-http.rule=Host(`${MODELFLOW_WEB_HOST:?MODELFLOW_WEB_HOST is required}`)
+      - traefik.http.routers.modelflow-web-http.entrypoints=web
+      - traefik.http.routers.modelflow-web-http.middlewares=modelflow-redirect
+      - traefik.http.routers.modelflow-web.rule=Host(`${MODELFLOW_WEB_HOST:?MODELFLOW_WEB_HOST is required}`)
+      - traefik.http.routers.modelflow-web.entrypoints=websecure
+      - traefik.http.routers.modelflow-web.tls=true
+      - traefik.http.routers.modelflow-web.tls.certresolver=letsencrypt
+      - traefik.http.routers.modelflow-web.service=modelflow-service
+      - traefik.http.services.modelflow-service.loadbalancer.server.port=80
+
+networks:
+  traefik_proxy:
+    external: true

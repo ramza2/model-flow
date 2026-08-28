@@ -211,6 +211,7 @@ npm run dev
 - Product and architecture: `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
 - Acceptance and progress: `docs/ACCEPTANCE_CRITERIA.md`, `docs/PROGRESS.md`
 - Enhancement roadmap (post-RC): `docs/ENHANCEMENT_ROADMAP.md`
+- Traefik GPU server deployment: `docs/DEPLOYMENT_TRAEFIK.md`
 - Known limitations: `docs/KNOWN_LIMITATIONS.md`
 - RC release notes: `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
 
