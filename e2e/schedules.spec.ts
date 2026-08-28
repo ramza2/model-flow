@@ -1,7 +1,4 @@
 import { expect, test } from "@playwright/test";
-import path from "path";
-
-const iris = path.resolve(__dirname, "../samples/iris.csv");
 
 function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {
   const value = process.env[name];
@@ -32,11 +29,13 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await page.getByRole("button", { name: /New pipeline/i }).click();
   await page.getByTestId("pipeline-name").fill(`sched-pipe-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
-  await expect(page.getByTestId("pipeline-save")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId("pipeline-add-node")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("pipeline-node-type").selectOption("notification");
+  await page.getByTestId("pipeline-add-node").click();
   await page.getByTestId("pipeline-save").click();
   await expect(page.getByText(/Pipeline version saved/i)).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: /Publish/i }).click();
-  await expect(page.getByText(/published/i)).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("pipeline-publish").click();
+  await expect(page.getByText(/Pipeline published/i)).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("link", { name: "Schedules", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
