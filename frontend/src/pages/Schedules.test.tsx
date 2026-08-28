@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import Schedules from "./Schedules";
 
-const apiMock = vi.fn(async (path: string) => {
+const apiMock = vi.fn(async (path: string, _init?: RequestInit) => {
   if (path.endsWith("/schedules")) return [];
   if (path.endsWith("/data-sources")) return [];
   if (path.endsWith("/datasets")) return [];
