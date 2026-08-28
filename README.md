@@ -210,7 +210,15 @@ npm run dev
 
 - Product and architecture: `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
 - Acceptance and progress: `docs/ACCEPTANCE_CRITERIA.md`, `docs/PROGRESS.md`
+<<<<<<< HEAD
 - Enhancement roadmap (post-RC): `docs/ENHANCEMENT_ROADMAP.md`
+=======
+<<<<<<< HEAD
+=======
+- Enhancement roadmap (post-RC): `docs/ENHANCEMENT_ROADMAP.md`
+- Traefik GPU server deployment: `docs/DEPLOYMENT_TRAEFIK.md`
+>>>>>>> 07b7d36 (ops: add Traefik one-command deploy for GPU servers)
+>>>>>>> a7467f6 (ops: add Traefik one-command deploy for GPU servers)
 - Known limitations: `docs/KNOWN_LIMITATIONS.md`
 - RC release notes: `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
 
