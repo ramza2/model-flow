@@ -196,6 +196,9 @@ if [[ "$NON_INTERACTIVE" != true ]]; then
   prompt_value FRONTEND_HOST_PORT "Frontend UI host port"
 fi
 
+# Traefik production hostname (empty for local/non-Traefik development).
+MODELFLOW_WEB_HOST=""
+
 # Always derive CORS from the final frontend host port.
 CORS_ORIGINS="http://localhost:${FRONTEND_HOST_PORT},http://localhost:5173,http://localhost"
 if [[ "$NON_INTERACTIVE" != true ]]; then
@@ -291,6 +294,7 @@ MINIO_CONSOLE_HOST_PORT=$MINIO_CONSOLE_HOST_PORT
 MLFLOW_HOST_PORT=$MLFLOW_HOST_PORT
 BACKEND_HOST_PORT=$BACKEND_HOST_PORT
 FRONTEND_HOST_PORT=$FRONTEND_HOST_PORT
+MODELFLOW_WEB_HOST=$MODELFLOW_WEB_HOST
 CORS_ORIGINS=$CORS_ORIGINS
 RATE_LIMIT_PER_MINUTE=$RATE_LIMIT_PER_MINUTE
 EOF
