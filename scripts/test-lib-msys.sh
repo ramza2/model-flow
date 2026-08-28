@@ -50,7 +50,6 @@ test_docker_host_path_passthrough() {
 test_docker_host_path_cygpath() {
   local fake_bin
   fake_bin="$(mktemp -d)"
-  trap 'rm -rf "$fake_bin"' EXIT
   cat >"$fake_bin/cygpath" <<'EOF'
 #!/usr/bin/env bash
 if [[ "${1:-}" == "-m" && -n "${2:-}" ]]; then
@@ -62,6 +61,7 @@ EOF
   OSTYPE="msys"
   MSYSTEM="MINGW64"
   assert_eq "C:/Users/test/minio" "$(modelflow_docker_host_path "/d/backups/minio")" "cygpath conversion"
+  rm -rf "$fake_bin"
   pass "modelflow_docker_host_path uses cygpath on MSYS"
 }
 
