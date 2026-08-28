@@ -1,6 +1,6 @@
 # Backlog — ModelFlow v1.0 RC
 
-Phases execute sequentially without waiting for user approval. Mark items done in PROGRESS.md as they complete.
+Phases execute sequentially without waiting for user approval. Mark items done in [`PROGRESS.md`](./PROGRESS.md) as they complete. Post-RC enhancement work is tracked in [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md).
 
 ## Phase 1 — Foundation
 
@@ -80,12 +80,16 @@ Phases execute sequentially without waiting for user approval. Mark items done i
 - [x] Security headers, CORS, rate limit, validation, XSS/SQLi hygiene
 - [x] `backup.sh` / `restore.sh` / `reset-dev.sh` / `seed-demo.sh`
 - [x] Dependency vulnerability scan in CI (High/Critical fail closed; allowlist with expiry)
+- [x] Windows Git Bash/MSYS backup/restore compatibility (PR #23)
 
 ## Phase 12 — Release verification
 
 - [x] Extend verify.sh for auth + all E2E-01..09 gates
 - [x] Playwright scenarios
 - [x] Clean volume PASS
-- [x] GitHub Actions PASS on `main` tip (`2d2f3da`, run #100)
+- [x] GitHub Actions PASS on `main` tip `92c59db` (CI #107, [run](https://github.com/ramza2/model-flow/actions/runs/33142251221))
+- [x] Manual clean-stack RC smoke PASS
+- [x] RC smoke follow-up fixes merged (PR #23)
+- [x] Annotated tag `v1.0.0-rc.1` and GitHub pre-release created
 - [x] Screenshots/video evidence
 - [x] Acceptance criteria table maintained; release docs for RC
