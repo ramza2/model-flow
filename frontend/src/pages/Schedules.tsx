@@ -346,7 +346,7 @@ export default function Schedules() {
     <div className="page-stack">
       <PageHeader
         title="Schedules"
-        subtitle="Automate data imports, batch predictions, and pipeline runs with cron schedules."
+        description="Automate data imports, batch predictions, and pipeline runs with cron schedules."
         actions={
           canWrite ? (
             <button type="button" className="primary" onClick={openCreate} disabled={busy}>

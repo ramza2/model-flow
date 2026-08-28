@@ -17,7 +17,7 @@ vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
   return {
     ...actual,
-    api: (...args: unknown[]) => apiMock(...args),
+    api: (path: string, init?: RequestInit) => apiMock(path, init),
   };
 });
 
