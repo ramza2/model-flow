@@ -44,7 +44,8 @@ cd model-flow
 chmod 600 .env.deploy
 ```
 
-Edit `.env.deploy` for production (minimum):
+The generated `.env.deploy` already includes `MODELFLOW_WEB_HOST=` (empty) and `CORS_ORIGINS=...`.
+Edit those values for production (minimum):
 
 ```dotenv
 MODELFLOW_WEB_HOST=modelflow.openlink.kr
@@ -96,13 +97,13 @@ git switch main
 git pull
 ```
 
-Traefik 배포 서버는 `deploy.sh`와 동일하게 **`.env.deploy`** 를 사용합니다. 업그레이드 전 백업 예시:
+On Traefik deploy servers, use **`.env.deploy`** (same as `deploy.sh`), not the default `.env`. Recommended backup before upgrade:
 
 ```bash
 MODELFLOW_ENV_FILE=.env.deploy BACKUP_DIR=/path/to/backups ./scripts/backup.sh
 ```
 
-기본 `backups/` 디렉터리에 저장할 경우:
+To write under the default `backups/` directory:
 
 ```bash
 MODELFLOW_ENV_FILE=.env.deploy ./scripts/backup.sh
@@ -170,7 +171,7 @@ docker compose \
 
 | Variable | Purpose |
 |----------|---------|
-| `MODELFLOW_WEB_HOST` | Public hostname for Traefik `Host()` rules (Traefik deploy only) |
+| `MODELFLOW_WEB_HOST` | Public hostname for Traefik `Host()` rules (generated empty; set before Traefik deploy) |
 | `CORS_ORIGINS` | Must include `https://${MODELFLOW_WEB_HOST}` |
 | `MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` | First admin account email |
 
