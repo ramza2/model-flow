@@ -405,3 +405,41 @@ export type AuditEvent = {
   failure_reason: string | null;
   created_at: string;
 };
+
+export type AutomationSchedule = {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string;
+  target_type: "data_import" | "batch_inference" | "pipeline_run";
+  target_config: Record<string, unknown>;
+  cron_expression: string;
+  timezone: string;
+  is_enabled: boolean;
+  concurrency_policy: "skip" | "queue";
+  max_concurrent_runs: number;
+  max_retries: number;
+  retry_delay_seconds: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AutomationScheduleRun = {
+  id: number;
+  schedule_id: number;
+  project_id: number;
+  target_type: AutomationSchedule["target_type"];
+  scheduled_for: string;
+  attempt: number;
+  trigger_source: "cron" | "manual";
+  status: string;
+  target_resource_id: number | null;
+  error_message: string | null;
+  ready_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+};

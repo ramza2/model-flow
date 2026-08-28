@@ -2,20 +2,13 @@
 
 ## Current phase
 
-**v1.0.0-rc.1 release complete** — enhancement planning.
-
-See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) for post-RC priorities.
+**Enhancement Phase 1 — Scheduling / Automation** complete on feature branch; see [`SCHEDULING.md`](./SCHEDULING.md).
 
 ## Current baseline
 
-- Branch: `main`
-- Current commit: `92c59dbcd7da4f799b65c94c8347c8154aa63d4a`
-- Git tag: `v1.0.0-rc.1` (annotated)
-- GitHub Release: [ModelFlow v1.0.0-rc.1](https://github.com/ramza2/model-flow/releases/tag/v1.0.0-rc.1) (pre-release)
-- Latest merged fixes:
-  - PR #23 — RC smoke follow-ups (Windows Git Bash backup/restore, batch inference polling, dataset `latest_version_created_at`)
-  - PR #22 — Playwright `Datasets` heading selector (`exact: true`; E2E only)
-  - PR #20 — PostgreSQL DSN/URL edit compatibility
+- Branch: `main` (Phase 1 implemented on `cursor/phase1-scheduling-automation-71f2`)
+- Starting main SHA: `9acf964c7c45e52f087306ab4336cc5620caec6d`
+- Git tag: `v1.0.0-rc.1` (unchanged)
 
 ## Completed release-readiness work
 
@@ -52,4 +45,4 @@ None for the v1.0.0-rc.1 baseline.
 
 ## Next step
 
-**Enhancement Phase 1 — Scheduling / Automation** (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)).
+**Enhancement Phase 1.5 — Figma UX Architecture** (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)).
