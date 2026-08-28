@@ -12,6 +12,8 @@ from app.core.audit import write_audit
 from app.core.deps import AuthContext
 from app.core.security import decrypt_secret
 from app.db.models import (
+    AutomationSchedule,
+    AutomationScheduleRun,
     BatchInferenceJob,
     DataImportJob,
     DataSource,
@@ -472,6 +474,48 @@ def retrain_out(row: RetrainTrigger) -> dict[str, Any]:
         "config": loads(row.config_json, {}),
         "last_triggered_at": row.last_triggered_at,
         "created_training_job_id": row.created_training_job_id,
+        "created_at": row.created_at,
+    }
+
+
+def schedule_out(row: AutomationSchedule) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "name": row.name,
+        "description": row.description,
+        "target_type": enum_value(row.target_type),
+        "target_config": loads(row.target_config_json, {}),
+        "cron_expression": row.cron_expression,
+        "timezone": row.timezone,
+        "is_enabled": row.is_enabled,
+        "concurrency_policy": enum_value(row.concurrency_policy),
+        "max_concurrent_runs": row.max_concurrent_runs,
+        "max_retries": row.max_retries,
+        "retry_delay_seconds": row.retry_delay_seconds,
+        "last_run_at": row.last_run_at,
+        "next_run_at": row.next_run_at,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def schedule_run_out(row: AutomationScheduleRun) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "schedule_id": row.schedule_id,
+        "project_id": row.project_id,
+        "target_type": enum_value(row.target_type),
+        "scheduled_for": row.scheduled_for,
+        "attempt": row.attempt,
+        "trigger_source": enum_value(row.trigger_source),
+        "status": enum_value(row.status),
+        "target_resource_id": row.target_resource_id,
+        "error_message": row.error_message,
+        "ready_at": row.ready_at,
+        "started_at": row.started_at,
+        "finished_at": row.finished_at,
         "created_at": row.created_at,
     }
 

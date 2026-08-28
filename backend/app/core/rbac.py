@@ -23,6 +23,8 @@ class Permission(str, Enum):
     DEPLOY_WRITE = "deploy:write"
     MONITOR_READ = "monitor:read"
     MONITOR_WRITE = "monitor:write"
+    SCHEDULE_READ = "schedule:read"
+    SCHEDULE_WRITE = "schedule:write"
     AUDIT_READ = "audit:read"
     ADMIN = "admin"
 
@@ -36,6 +38,7 @@ ROLE_PERMISSIONS: dict[ProjectRole, set[Permission]] = {
         Permission.REGISTRY_READ,
         Permission.DEPLOY_READ,
         Permission.MONITOR_READ,
+        Permission.SCHEDULE_READ,
     },
     ProjectRole.DATA_SCIENTIST: {
         Permission.PROJECT_READ,
@@ -47,6 +50,7 @@ ROLE_PERMISSIONS: dict[ProjectRole, set[Permission]] = {
         Permission.REGISTRY_READ,
         Permission.DEPLOY_READ,
         Permission.MONITOR_READ,
+        Permission.SCHEDULE_READ,
     },
     ProjectRole.ML_ENGINEER: {
         Permission.PROJECT_READ,
@@ -62,6 +66,8 @@ ROLE_PERMISSIONS: dict[ProjectRole, set[Permission]] = {
         Permission.DEPLOY_WRITE,
         Permission.MONITOR_READ,
         Permission.MONITOR_WRITE,
+        Permission.SCHEDULE_READ,
+        Permission.SCHEDULE_WRITE,
     },
     ProjectRole.PROJECT_ADMIN: set(Permission),  # all except we still gate SYSTEM via is_system_admin
 }

@@ -302,3 +302,69 @@ class RetentionPolicyUpdate(BaseModel):
     audit_logs_days: int = Field(ge=0)
     batch_results_days: int = Field(ge=0)
     archived_models_days: int = Field(ge=0)
+
+
+class ScheduleDataImportTarget(BaseModel):
+    data_source_id: int
+    dataset_id: int | None = None
+    dataset_name: str | None = Field(default=None, min_length=1, max_length=200)
+    query_or_table: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def dataset_selector(self) -> ScheduleDataImportTarget:
+        if self.dataset_id is None and not self.dataset_name:
+            raise ValueError("Provide dataset_id or dataset_name.")
+        return self
+
+
+class ScheduleBatchTarget(BaseModel):
+    dataset_id: int
+    dataset_version_strategy: Literal["latest", "fixed"] = "latest"
+    dataset_version_id: int | None = None
+    endpoint_id: int | None = None
+    model_version_id: int | None = None
+    result_format: Literal["csv", "json", "parquet"] = "csv"
+
+    @model_validator(mode="after")
+    def batch_target_valid(self) -> ScheduleBatchTarget:
+        if self.endpoint_id is None and self.model_version_id is None:
+            raise ValueError("Provide endpoint_id or model_version_id.")
+        if self.dataset_version_strategy == "fixed" and self.dataset_version_id is None:
+            raise ValueError("dataset_version_id is required when strategy is fixed.")
+        return self
+
+
+class SchedulePipelineTarget(BaseModel):
+    pipeline_id: int
+    pipeline_version_id: int | None = None
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    fail_policy: Literal["stop", "continue"] = "stop"
+    refresh_pinned_version: bool = False
+
+
+class ScheduleCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    target_type: Literal["data_import", "batch_inference", "pipeline_run"]
+    target_config: dict[str, Any]
+    cron_expression: str = Field(min_length=1, max_length=120)
+    timezone: str = Field(default="UTC", min_length=1, max_length=100)
+    is_enabled: bool = True
+    concurrency_policy: Literal["skip", "queue"] = "skip"
+    max_concurrent_runs: int = Field(default=1, ge=1, le=10)
+    max_retries: int = Field(default=0, ge=0, le=10)
+    retry_delay_seconds: int = Field(default=60, ge=1, le=86400)
+
+
+class ScheduleUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    target_config: dict[str, Any] | None = None
+    cron_expression: str | None = Field(default=None, min_length=1, max_length=120)
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    is_enabled: bool | None = None
+    concurrency_policy: Literal["skip", "queue"] | None = None
+    max_concurrent_runs: int | None = Field(default=None, ge=1, le=10)
+    max_retries: int | None = Field(default=None, ge=0, le=10)
+    retry_delay_seconds: int | None = Field(default=None, ge=1, le=86400)
+    refresh_pinned_version: bool = False

@@ -26,10 +26,10 @@ from app.db.models import (
     DataSourceType,
     Dataset,
     DatasetVersion,
-    JobStatus,
 )
 from app.db.session import get_db
 from app.schemas.v1 import DataImportRequest, DataSourceCreate, DataSourceUpdate
+from app.services import job_factories
 
 router = APIRouter(tags=["data-sources"])
 _SECRET_KEYS = {"password", "passwd", "secret", "token", "api_key", "url", "dsn"}
@@ -421,16 +421,14 @@ def import_data(
         )
         db.add(dataset)
         db.flush()
-    job = DataImportJob(
+    job = job_factories.create_data_import_job(
+        db,
         project_id=project_id,
         data_source_id=source.id,
         dataset_id=dataset.id,
         query_or_table=body.table_or_query,
-        status=JobStatus.pending,
         created_by=auth.user.id,
     )
-    db.add(job)
-    db.flush()
     audit_event(db, auth, "data_source.import", "data_import_job", job.id)
     db.commit()
     db.refresh(job)
