@@ -8,10 +8,11 @@ Post–v1.0.0-rc.1 planning. This document tracks **future** work; the RC1 MVP s
 
 ## Phase 0 — RC1 Baseline
 
-- Release and documentation baseline (`v1.0.0-rc.1`, verify gate, acceptance criteria)
-- Repository governance (branch protection, CI, tagged releases)
+- Release and documentation baseline: **complete** (`v1.0.0-rc.1`, verify gate, acceptance criteria)
+- Tagged release / CI baseline: **complete** (annotated tag, GitHub pre-release, Actions gate at `92c59db`)
+- Repository governance / branch protection: **pending**
 
-**Status:** complete at `92c59db`.
+**Status:** release baseline complete at `92c59db`; branch protection not yet configured.
 
 ---
 

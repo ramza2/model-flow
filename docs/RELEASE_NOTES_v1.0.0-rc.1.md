@@ -16,7 +16,7 @@ First Release Candidate for self-hosted tabular MLOps on Docker Compose.
 - Visual pipeline design, publish, and execute
 - Drift monitoring, alerts, and retrain requests (no auto PRODUCTION promotion)
 - Project RBAC and audit logging
-- Backup / restore scripts with verify round-trip (Linux, macOS Bash 3.2+, Windows Git Bash/MSYS)
+- Backup / restore scripts with verified Linux CI and Windows Git Bash/MSYS round-trip; macOS Bash 3.2 compatibility handling included
 - Full verification gate (`./scripts/verify.sh` + GitHub Actions)
 
 ## RC smoke follow-up fixes (PR #23)
