@@ -32,12 +32,30 @@ Post–v1.0.0-rc.1 planning. This document tracks **future** work; the RC1 MVP s
 
 ## Phase 1.5 — Figma UX Architecture
 
-**Goal:** UX structure design, not visual polish.
+**Goal:** UX structure design for upcoming feature work — **not** final visual polish (that is Phase 9).
+
+### Scope
 
 - Information architecture (IA)
+- Korean-first menu and terminology system
+  - Non-proprietary menu and workflow labels use beginner-friendly Korean centered on task meaning
+  - English technical terms may appear as secondary labels where helpful
+- Beginner-friendly guided workflows
+- Empty-state guidance
+- Contextual help / tooltip / glossary
+- Beginner / Advanced user interaction patterns
 - Pipeline builder UX flows
 - Node / Inspector interaction patterns
+- Common validation / error / run-state UX
 - Design system draft (components, states, validation feedback)
+
+### Principles
+
+1. Terminology is designed around **what the user is trying to accomplish**, not literal English→Korean translation.
+2. Proper technical names (e.g. Random Forest, MLflow, SHAP, Cron) are **not** forced into awkward Korean equivalents.
+3. Beginners should easily follow the flow: data preparation → training → model management → deploy/predict → monitoring.
+4. Guided UX must **not** block advanced users from working freely.
+5. Final typography, color, and visual polish belong in **Phase 9**.
 
 **Depends on:** Phase 1 requirements sketch; informs Phase 3 and Phase 9.
 
