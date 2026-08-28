@@ -88,7 +88,9 @@ export default function BatchInference() {
     }
   }, [projectId, schedulePoll, stopPolling]);
 
-  pollJobsRef.current = pollJobs;
+  useEffect(() => {
+    pollJobsRef.current = pollJobs;
+  }, [pollJobs]);
 
   const load = useCallback(async () => {
     try {
@@ -116,7 +118,10 @@ export default function BatchInference() {
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const shouldPoll = hasActiveBatchJobs(jobs);
-  shouldPollRef.current = shouldPoll;
+
+  useEffect(() => {
+    shouldPollRef.current = shouldPoll;
+  }, [shouldPoll]);
 
   useEffect(() => {
     if (!projectId || !shouldPoll) {
