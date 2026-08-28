@@ -69,9 +69,9 @@ for database in "$POSTGRES_DB" mlflow; do
 done
 
 echo "Restoring MinIO buckets"
-mapfile -t MINIO_MOUNT < <(modelflow_compose_bind_mount_args "$BACKUP_DIR/minio" /backup ro)
+MINIO_MOUNT="$(modelflow_compose_bind_mount_spec "$BACKUP_DIR/minio" /backup ro)"
 modelflow_compose_sh run --rm --no-deps \
-  "${MINIO_MOUNT[@]}" \
+  -v "$MINIO_MOUNT" \
   --entrypoint sh \
   minio-init -c '
     set -eu

@@ -78,18 +78,17 @@ modelflow_docker_host_path() {
   fi
 }
 
-# Print -v and HOST:CONTAINER[:mode] on separate lines for safe array construction.
-modelflow_compose_bind_mount_args() {
+# Return HOST:CONTAINER[:mode] for use with docker compose -v "$spec".
+modelflow_compose_bind_mount_spec() {
   local host_path="$1"
   local container_path="$2"
   local mode="${3:-}"
   local host_native
   host_native="$(modelflow_docker_host_path "$host_path")"
-  printf '%s\n' "-v"
   if [[ "$mode" == "ro" ]]; then
-    printf '%s\n' "${host_native}:${container_path}:ro"
+    printf '%s:%s:ro' "$host_native" "$container_path"
   else
-    printf '%s\n' "${host_native}:${container_path}"
+    printf '%s:%s' "$host_native" "$container_path"
   fi
 }
 

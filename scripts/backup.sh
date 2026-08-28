@@ -30,9 +30,9 @@ modelflow_compose exec -T postgres \
   > "$BACKUP_DIR/postgres/mlflow.dump"
 
 echo "Mirroring MinIO buckets"
-mapfile -t MINIO_MOUNT < <(modelflow_compose_bind_mount_args "$BACKUP_DIR/minio" /backup)
+MINIO_MOUNT="$(modelflow_compose_bind_mount_spec "$BACKUP_DIR/minio" /backup)"
 modelflow_compose_sh run --rm --no-deps \
-  "${MINIO_MOUNT[@]}" \
+  -v "$MINIO_MOUNT" \
   --entrypoint sh \
   minio-init -c '
     set -eu

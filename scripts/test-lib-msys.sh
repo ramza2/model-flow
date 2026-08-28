@@ -3,6 +3,8 @@
 #
 # Usage:
 #   ./scripts/test-lib-msys.sh
+#
+# Intentionally avoids Bash 4+ builtins (e.g. mapfile) so these checks run on macOS Bash 3.2.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -65,28 +67,41 @@ EOF
   pass "modelflow_docker_host_path uses cygpath on MSYS"
 }
 
-test_bind_mount_args_linux() {
+test_bind_mount_spec_linux() {
   unset MSYSTEM
   OSTYPE="linux-gnu"
-  mapfile -t mount < <(modelflow_compose_bind_mount_args "/data/backup/minio" /backup)
-  assert_eq "-v" "${mount[0]}" "bind mount flag"
-  assert_eq "/data/backup/minio:/backup" "${mount[1]}" "bind mount spec"
-  pass "modelflow_compose_bind_mount_args on Linux"
+  assert_eq "/data/backup/minio:/backup" \
+    "$(modelflow_compose_bind_mount_spec "/data/backup/minio" /backup)" \
+    "bind mount spec"
+  pass "modelflow_compose_bind_mount_spec on Linux"
 }
 
-test_bind_mount_args_readonly() {
+test_bind_mount_spec_readonly() {
   unset MSYSTEM
   OSTYPE="linux-gnu"
-  mapfile -t mount < <(modelflow_compose_bind_mount_args "/data/backup/minio" /backup ro)
-  assert_eq "/data/backup/minio:/backup:ro" "${mount[1]}" "readonly bind mount spec"
-  pass "modelflow_compose_bind_mount_args readonly mode"
+  assert_eq "/data/backup/minio:/backup:ro" \
+    "$(modelflow_compose_bind_mount_spec "/data/backup/minio" /backup ro)" \
+    "readonly bind mount spec"
+  pass "modelflow_compose_bind_mount_spec readonly mode"
+}
+
+test_no_mapfile_dependency() {
+  if type mapfile >/dev/null 2>&1; then
+    pass "mapfile available in this shell (helpers still avoid requiring it)"
+    return
+  fi
+  assert_eq "/tmp/minio:/backup" \
+    "$(modelflow_compose_bind_mount_spec "/tmp/minio" /backup)" \
+    "bind mount spec without mapfile"
+  pass "helpers work without mapfile (Bash 3.x compatible)"
 }
 
 test_is_msys_default_linux
 test_is_msys_detects_msys
 test_docker_host_path_passthrough
 test_docker_host_path_cygpath
-test_bind_mount_args_linux
-test_bind_mount_args_readonly
+test_bind_mount_spec_linux
+test_bind_mount_spec_readonly
+test_no_mapfile_dependency
 
 echo "[PASS] lib-msys: all unit checks"

@@ -183,6 +183,56 @@ describe("BatchInference polling", () => {
     expect(batchCalls).toBe(initialCalls);
   });
 
+  it("does not overlap batch job poll requests when responses are slow", async () => {
+    const pending = {
+      id: 55,
+      project_id: 7,
+      dataset_version_id: 11,
+      endpoint_id: 3,
+      model_version_id: null,
+      status: "running",
+      result_object_key: null,
+      result_format: "csv",
+      error_message: null,
+      failure_details: [],
+      row_count: null,
+      created_by: 1,
+      created_at: "2026-08-28T00:00:00Z",
+      finished_at: null,
+    };
+    let inFlight = 0;
+    let maxInFlight = 0;
+    let batchCalls = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/batch-jobs") {
+        batchCalls += 1;
+        if (batchCalls === 1) {
+          return [pending];
+        }
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 4000);
+        });
+        inFlight -= 1;
+        return [pending];
+      }
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/1/versions") return versions;
+      if (path === "/projects/7/endpoints") return endpoints;
+      if (path === "/projects/7/models") return [];
+      return [];
+    });
+
+    renderPage();
+    await screen.findByText("Batch #55");
+    const callsAfterMount = batchCalls;
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(maxInFlight).toBe(1);
+    expect(batchCalls).toBeGreaterThan(callsAfterMount);
+  });
+
   it("cleans up polling on unmount", async () => {
     const pending = {
       id: 99,
