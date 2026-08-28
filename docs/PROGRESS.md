@@ -30,14 +30,11 @@
 
 | Suite | Count | How measured |
 |-------|------:|--------------|
-| Backend pytest | **138** passed | `./scripts/verify.sh` / container pytest |
-| Frontend Vitest | **105** passed | `./scripts/verify.sh` section 6 |
-| Playwright E2E | **18** passed | `e2e/*.spec.ts` via verify Playwright container |
+| Backend pytest | **155** passed | `./scripts/verify.sh` |
+| Frontend Vitest | **106** passed | `./scripts/verify.sh` section 6 |
+| Playwright E2E | **19** passed | `e2e/*.spec.ts` via verify Playwright container |
 
-- `./scripts/verify.sh`: **PASS** on `main` at `92c59db`
-- GitHub Actions on `main` (CI #107): **SUCCESS** ([run](https://github.com/ramza2/model-flow/actions/runs/33142251221))
-- Manual clean-stack RC smoke: **PASS**
-- Windows Git Bash/MSYS PostgreSQL + MinIO backup/restore (real environment): **PASS**
+- `./scripts/verify.sh`: **PASS** on Phase 1 branch (`cursor/phase1-scheduling-automation-71f2`)
 
 ## Blockers
 
