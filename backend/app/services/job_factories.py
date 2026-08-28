@@ -170,11 +170,12 @@ def resolve_published_pipeline_version(
     project_id: int,
     pipeline_id: int,
     pipeline_version_id: int | None = None,
+    require_published: bool = False,
 ) -> tuple[Pipeline, PipelineVersion]:
     pipeline = db.get(Pipeline, pipeline_id)
     if pipeline is None or pipeline.project_id != project_id:
         raise ValueError("Pipeline was not found in this project.")
-    if pipeline.status != PipelineStatus.published:
+    if require_published and pipeline.status != PipelineStatus.published:
         raise ValueError("Pipeline must be published before scheduling runs.")
     if pipeline_version_id is not None:
         version = db.get(PipelineVersion, pipeline_version_id)
@@ -202,12 +203,14 @@ def create_pipeline_run(
     fail_policy: str = "stop",
     scheduled_for=None,
     created_by: int | None,
+    require_published: bool = False,
 ) -> PipelineRun:
     pipeline, version = resolve_published_pipeline_version(
         db,
         project_id=project_id,
         pipeline_id=pipeline_id,
         pipeline_version_id=pipeline_version_id,
+        require_published=require_published,
     )
     graph = _loads(version.graph_json)
     validation = pipeline_engine.validate_graph(graph)

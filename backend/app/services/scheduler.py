@@ -153,6 +153,7 @@ def _dispatch_child_job(
             parameters=config.get("parameters") or {},
             fail_policy=str(config.get("fail_policy", "stop")),
             created_by=created_by,
+            require_published=True,
         )
         return run.id
     raise ValueError(f"Unsupported schedule target type '{schedule.target_type.value}'.")

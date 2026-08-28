@@ -137,6 +137,7 @@ def _resolve_pipeline_config(
         project_id=project_id,
         pipeline_id=pipeline.id,
         pipeline_version_id=version_id,
+        require_published=True,
     )
     return {
         "pipeline_id": pipeline.id,
