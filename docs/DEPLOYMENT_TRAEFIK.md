@@ -96,13 +96,17 @@ git switch main
 git pull
 ```
 
-Recommended backup before upgrade:
+Traefik 배포 서버는 `deploy.sh`와 동일하게 **`.env.deploy`** 를 사용합니다. 업그레이드 전 백업 예시:
 
 ```bash
-BACKUP_DIR=/path/to/backups ./scripts/backup.sh
+MODELFLOW_ENV_FILE=.env.deploy BACKUP_DIR=/path/to/backups ./scripts/backup.sh
 ```
 
-(Uses the project `.env` by default; for deploy env, set `MODELFLOW_ENV_FILE=.env.deploy` or symlink as documented in `scripts/backup.sh`.)
+기본 `backups/` 디렉터리에 저장할 경우:
+
+```bash
+MODELFLOW_ENV_FILE=.env.deploy ./scripts/backup.sh
+```
 
 Redeploy:
 
