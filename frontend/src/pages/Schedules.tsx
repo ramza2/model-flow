@@ -349,7 +349,7 @@ export default function Schedules() {
         description="Automate data imports, batch predictions, and pipeline runs with cron schedules."
         actions={
           canWrite ? (
-            <button type="button" className="primary" onClick={openCreate} disabled={busy}>
+            <button type="button" className="primary" data-testid="schedule-create-open" onClick={openCreate} disabled={busy}>
               Create schedule
             </button>
           ) : undefined
@@ -790,7 +790,7 @@ export default function Schedules() {
               <button type="button" onClick={() => setShowForm(false)} disabled={busy}>
                 Cancel
               </button>
-              <button type="submit" className="primary" disabled={busy}>
+              <button type="submit" className="primary" data-testid="schedule-submit" disabled={busy}>
                 {editing ? "Save changes" : "Create schedule"}
               </button>
             </div>
