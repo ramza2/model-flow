@@ -42,6 +42,14 @@ ModelFlow v1.0 Release Candidate readiness.
 - GitHub Actions on `main` tip `2d2f3da`: **SUCCESS** (run [#100](https://github.com/ramza2/model-flow/actions/runs/32930610543))
 - Production code unchanged by this documentation PR
 
+## RC smoke follow-up fixes (in progress)
+
+Branch `cursor/rc-smoke-followups-71f2` addresses manual v1.0 RC smoke findings:
+
+- Windows Git Bash backup/restore MSYS path conversion compatibility
+- Batch inference status polling on the history page
+- Dataset list `Updated` column uses latest version timestamp (`latest_version_created_at`)
+
 ## Blockers
 
 None.

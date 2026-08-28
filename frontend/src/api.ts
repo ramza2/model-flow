@@ -142,6 +142,7 @@ export type Dataset = {
   columns: string[];
   stats: Record<string, Record<string, unknown>>;
   created_at: string;
+  latest_version_created_at?: string;
 };
 
 export type DatasetVersion = {

@@ -103,7 +103,7 @@ export default function Datasets() {
                   <td>v{dataset.latest_version}</td>
                   <td>{dataset.row_count.toLocaleString()}</td>
                   <td>{dataset.column_count}</td>
-                  <td>{formatDate(dataset.created_at)}</td>
+                  <td>{formatDate(dataset.latest_version_created_at ?? dataset.created_at)}</td>
                 </tr>
               ))}
             </tbody>

@@ -506,3 +506,55 @@ def test_approve_requires_server_gates(client, auth_headers, monkeypatch):
     )
     assert approved.status_code == 200
     assert approved.json()["lifecycle"] == "APPROVED"
+
+
+def test_dataset_latest_version_created_at(client, auth_headers):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dataset-updated-at"},
+    )
+    assert project.status_code == 201
+    project_id = project.json()["id"]
+    csv_v1 = b"a,b,target\n1,2,0\n2,3,0\n"
+    csv_v2 = csv_v1 + b"3,4,1\n"
+
+    first = client.post(
+        f"/api/v1/projects/{project_id}/datasets",
+        headers=auth_headers,
+        files={"file": ("iris.csv", csv_v1, "text/csv")},
+    )
+    assert first.status_code == 201
+    dataset_id = first.json()["id"]
+    dataset_created_at = first.json()["created_at"]
+    v1_created_at = first.json()["version"]["created_at"]
+    assert first.json()["latest_version_created_at"] == v1_created_at
+
+    second = client.post(
+        f"/api/v1/projects/{project_id}/datasets",
+        headers=auth_headers,
+        files={"file": ("iris.csv", csv_v2, "text/csv")},
+    )
+    assert second.status_code == 201
+    assert second.json()["id"] == dataset_id
+    assert second.json()["created_at"] == dataset_created_at
+    v2_created_at = second.json()["version"]["created_at"]
+    assert second.json()["latest_version_created_at"] == v2_created_at
+    assert v2_created_at >= v1_created_at
+
+    listed = client.get(
+        f"/api/v1/projects/{project_id}/datasets",
+        headers=auth_headers,
+    )
+    assert listed.status_code == 200
+    row = next(item for item in listed.json() if item["id"] == dataset_id)
+    assert row["created_at"] == dataset_created_at
+    assert row["latest_version_created_at"] == v2_created_at
+
+    detail = client.get(
+        f"/api/v1/projects/{project_id}/datasets/{dataset_id}",
+        headers=auth_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["created_at"] == dataset_created_at
+    assert detail.json()["latest_version_created_at"] == v2_created_at

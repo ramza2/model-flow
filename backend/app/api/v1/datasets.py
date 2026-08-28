@@ -97,6 +97,27 @@ def _dataset_version(
     return row
 
 
+def _latest_version_created_at_map(
+    db: Session, dataset_ids: list[int]
+) -> dict[int, datetime]:
+    if not dataset_ids:
+        return {}
+    rows = db.execute(
+        select(DatasetVersion.dataset_id, func.max(DatasetVersion.created_at))
+        .where(DatasetVersion.dataset_id.in_(dataset_ids))
+        .group_by(DatasetVersion.dataset_id)
+    ).all()
+    return {dataset_id: created_at for dataset_id, created_at in rows}
+
+
+def _latest_version_created_at(db: Session, dataset_id: int) -> datetime | None:
+    return db.scalar(
+        select(func.max(DatasetVersion.created_at)).where(
+            DatasetVersion.dataset_id == dataset_id
+        )
+    )
+
+
 @router.get("/projects/{project_id}/datasets")
 def list_datasets(
     project_id: int,
@@ -112,7 +133,14 @@ def list_datasets(
         .offset(skip)
         .limit(limit)
     ).all()
-    return [dataset_out(row) for row in rows]
+    latest_by_dataset = _latest_version_created_at_map(db, [row.id for row in rows])
+    return [
+        dataset_out(
+            row,
+            latest_version_created_at=latest_by_dataset.get(row.id),
+        )
+        for row in rows
+    ]
 
 
 @router.post("/projects/{project_id}/datasets", status_code=201)
@@ -214,7 +242,7 @@ async def upload_dataset(
     db.commit()
     db.refresh(dataset)
     db.refresh(version)
-    result = dataset_out(dataset)
+    result = dataset_out(dataset, latest_version_created_at=version.created_at)
     result["version"] = dataset_version_out(version)
     return result
 
@@ -226,7 +254,11 @@ def get_dataset(
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
-    return dataset_out(get_owned(db, Dataset, dataset_id, project_id, "Dataset"))
+    dataset = get_owned(db, Dataset, dataset_id, project_id, "Dataset")
+    return dataset_out(
+        dataset,
+        latest_version_created_at=_latest_version_created_at(db, dataset.id),
+    )
 
 
 @router.get("/projects/{project_id}/datasets/{dataset_id}/versions")
