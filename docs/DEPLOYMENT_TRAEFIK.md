@@ -23,7 +23,7 @@ Traefik labels route HTTPS traffic to `frontend:80`. The frontend nginx config a
 - Existing Traefik with:
   - entrypoints: `web`, `websecure`
   - certificate resolver: `letsencrypt`
-  - external network: `traefik_proxy` (or set `MODELFLOW_TRAEFIK_NETWORK`)
+  - external network: `traefik_proxy`
 - Git checkout of ModelFlow at the commit you intend to run
 
 ## Standard deploy command
