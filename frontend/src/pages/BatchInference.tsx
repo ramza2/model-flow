@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   api,
@@ -9,6 +9,7 @@ import {
   type ModelVersion,
 } from "../api";
 import { useAuth } from "../AuthContext";
+import { hasActiveBatchJobs } from "../batchInferencePolling";
 import {
   EmptyState,
   ErrorNotice,
@@ -39,6 +40,57 @@ export default function BatchInference() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const canDeploy = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+  const pollTimeoutRef = useRef<number | null>(null);
+  const pollInFlightRef = useRef(false);
+  const shouldPollRef = useRef(false);
+  const pollJobsRef = useRef<(() => Promise<void>) | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimeoutRef.current !== null) {
+      window.clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+  }, []);
+
+  const schedulePoll = useCallback((delayMs = 2500) => {
+    if (!projectId || !shouldPollRef.current) {
+      return;
+    }
+    if (pollTimeoutRef.current !== null) {
+      return;
+    }
+    pollTimeoutRef.current = window.setTimeout(() => {
+      pollTimeoutRef.current = null;
+      void pollJobsRef.current?.();
+    }, delayMs);
+  }, [projectId]);
+
+  const pollJobs = useCallback(async () => {
+    if (!projectId || !shouldPollRef.current || pollInFlightRef.current) {
+      return;
+    }
+    pollInFlightRef.current = true;
+    try {
+      const jobRows = await api<BatchJob[]>(`/projects/${projectId}/batch-jobs`);
+      setJobs(jobRows);
+      if (!hasActiveBatchJobs(jobRows)) {
+        stopPolling();
+        return;
+      }
+      schedulePoll();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Batch inference data could not be loaded.");
+      if (shouldPollRef.current) {
+        schedulePoll();
+      }
+    } finally {
+      pollInFlightRef.current = false;
+    }
+  }, [projectId, schedulePoll, stopPolling]);
+
+  useEffect(() => {
+    pollJobsRef.current = pollJobs;
+  }, [pollJobs]);
 
   const load = useCallback(async () => {
     try {
@@ -62,6 +114,23 @@ export default function BatchInference() {
   }, [projectId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
+
+  const shouldPoll = hasActiveBatchJobs(jobs);
+
+  useEffect(() => {
+    shouldPollRef.current = shouldPoll;
+  }, [shouldPoll]);
+
+  useEffect(() => {
+    if (!projectId || !shouldPoll) {
+      stopPolling();
+      return;
+    }
+    schedulePoll();
+    return stopPolling;
+  }, [projectId, shouldPoll, schedulePoll, stopPolling]);
 
   useEffect(() => {
     if (!datasetId) {

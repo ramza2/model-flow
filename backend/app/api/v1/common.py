@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from enum import Enum
 from typing import Any, TypeVar
 
@@ -186,8 +187,10 @@ def import_job_out(row: DataImportJob) -> dict[str, Any]:
     }
 
 
-def dataset_out(row: Dataset) -> dict[str, Any]:
-    return {
+def dataset_out(
+    row: Dataset, *, latest_version_created_at: datetime | None = None
+) -> dict[str, Any]:
+    result = {
         "id": row.id,
         "project_id": row.project_id,
         "name": row.name,
@@ -201,6 +204,9 @@ def dataset_out(row: Dataset) -> dict[str, Any]:
         "created_by": row.created_by,
         "created_at": row.created_at,
     }
+    if latest_version_created_at is not None:
+        result["latest_version_created_at"] = latest_version_created_at
+    return result
 
 
 def dataset_version_out(

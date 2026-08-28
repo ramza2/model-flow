@@ -49,9 +49,9 @@ api() {
 }
 
 object_checksum() {
-  modelflow_compose run --rm --no-deps -T \
+  modelflow_compose_sh run --rm --no-deps -T \
     -e OBJECT_KEY="$OBJECT_KEY" \
-    --entrypoint /bin/sh \
+    --entrypoint sh \
     minio-init -c '
       set -eu
       MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
@@ -97,9 +97,9 @@ BACKUP_DIR="$BACKUP_DIR" ./scripts/backup.sh \
   | tee "$ARTIFACT_DIR/backup-roundtrip-backup.log"
 
 api -X DELETE "$API_BASE/projects/$PROJECT_ID" >/dev/null
-modelflow_compose run --rm --no-deps -T \
+modelflow_compose_sh run --rm --no-deps -T \
   -e OBJECT_KEY="$OBJECT_KEY" \
-  --entrypoint /bin/sh \
+  --entrypoint sh \
   minio-init -c '
     set -eu
     MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
@@ -112,9 +112,9 @@ PROJECT_STATUS="$(curl -sS -o "$ARTIFACT_DIR/backup-roundtrip-mutated-project.js
   -H "Authorization: Bearer $TOKEN" \
   "$API_BASE/projects/$PROJECT_ID")"
 [[ "$PROJECT_STATUS" == "404" ]] || fail "deleted marker project remained visible (HTTP $PROJECT_STATUS)"
-if modelflow_compose run --rm --no-deps -T \
+if modelflow_compose_sh run --rm --no-deps -T \
   -e OBJECT_KEY="$OBJECT_KEY" \
-  --entrypoint /bin/sh \
+  --entrypoint sh \
   minio-init -c '
     MC_HOST_local="http://$MINIO_ROOT_USER:$MINIO_ROOT_PASSWORD@minio:9000"
     export MC_HOST_local

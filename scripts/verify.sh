@@ -257,6 +257,11 @@ info "0b) Env preservation unit checks"
 ./scripts/test-env-preservation.sh --unit-only
 pass "env preservation unit checks"
 
+info "0c) MSYS Docker path helper unit checks"
+chmod +x ./scripts/test-lib-msys.sh
+./scripts/test-lib-msys.sh
+pass "MSYS Docker path helper unit checks"
+
 info "1) Docker Compose config (active verify ports)"
 modelflow_compose config -q
 pass "compose config"

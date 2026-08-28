@@ -59,3 +59,44 @@ modelflow_compose() {
     fi
   fi
 }
+
+# True when running under Git Bash / MSYS / Cygwin on Windows.
+modelflow_is_msys() {
+  case "${OSTYPE:-}" in
+    msys* | cygwin*) return 0 ;;
+  esac
+  [[ -n "${MSYSTEM:-}" ]]
+}
+
+# Convert a host path for Docker bind mounts (native Windows path on MSYS).
+modelflow_docker_host_path() {
+  local path="$1"
+  if modelflow_is_msys && command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$path"
+  else
+    printf '%s' "$path"
+  fi
+}
+
+# Return HOST:CONTAINER[:mode] for use with docker compose -v "$spec".
+modelflow_compose_bind_mount_spec() {
+  local host_path="$1"
+  local container_path="$2"
+  local mode="${3:-}"
+  local host_native
+  host_native="$(modelflow_docker_host_path "$host_path")"
+  if [[ "$mode" == "ro" ]]; then
+    printf '%s:%s:ro' "$host_native" "$container_path"
+  else
+    printf '%s:%s' "$host_native" "$container_path"
+  fi
+}
+
+# Run docker compose with MSYS path conversion disabled for this invocation only.
+modelflow_compose_sh() {
+  if modelflow_is_msys; then
+    MSYS_NO_PATHCONV=1 modelflow_compose "$@"
+  else
+    modelflow_compose "$@"
+  fi
+}
