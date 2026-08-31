@@ -323,6 +323,9 @@ class TrainingJob(Base):
     max_retries: Mapped[int] = mapped_column(Integer, default=1)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     parent_job_id: Mapped[int | None] = mapped_column(ForeignKey("training_jobs.id"), nullable=True)
+    retrain_source_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_jobs.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

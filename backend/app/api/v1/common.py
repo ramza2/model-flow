@@ -324,6 +324,8 @@ def job_out(row: TrainingJob) -> dict[str, Any]:
         "max_retries": row.max_retries,
         "created_by": row.created_by,
         "parent_job_id": row.parent_job_id,
+        "retrain_source_job_id": row.retrain_source_job_id,
+        "is_retrain": row.retrain_source_job_id is not None,
         "created_at": row.created_at,
         "started_at": row.started_at,
         "finished_at": row.finished_at,

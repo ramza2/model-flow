@@ -297,6 +297,7 @@ def process_job(job: TrainingJob) -> None:
             "random_seed": live.random_seed,
             "data_format": data_format,
             "dataset_version_id": live.dataset_version_id,
+            "retrain_source_job_id": live.retrain_source_job_id,
         }
         if live.split_id is not None:
             split = db.get(DatasetSplit, live.split_id)

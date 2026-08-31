@@ -142,6 +142,13 @@ class JobCloneRequest(BaseModel):
     overrides: dict[str, Any] = Field(default_factory=dict)
 
 
+class JobRetrainRequest(BaseModel):
+    dataset_version_id: int
+    split_id: int | None = None
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+
+
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
@@ -280,6 +287,8 @@ class DriftCreate(BaseModel):
 
 
 class RetrainRequest(BaseModel):
+    """Deprecated drift/manual trigger payload kept for RetrainTrigger records."""
+
     source_job_id: int
     dataset_version_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=200)
