@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -64,6 +65,19 @@ def _validate_cron_timezone(cron_expression: str, timezone_name: str) -> tuple[s
     return cron, tz
 
 
+def _target_config_validation_error(exc: ValidationError):
+    """Build a friendly 400 from Pydantic target_config validation failures."""
+
+    errors = exc.errors()
+    if not errors:
+        return friendly(400, "Invalid schedule target_config.")
+    first = errors[0]
+    loc = ".".join(str(part) for part in first.get("loc", ()) if part != "body")
+    message = first.get("msg") or "Invalid schedule target_config."
+    detail = f"{loc}: {message}" if loc else str(message)
+    return friendly(400, detail, "Check target_config fields for this schedule type.")
+
+
 def _resolve_data_import_config(
     db: Session,
     *,
@@ -71,7 +85,10 @@ def _resolve_data_import_config(
     raw: dict[str, Any],
     created_by: int | None,
 ) -> dict[str, Any]:
-    body = ScheduleDataImportTarget.model_validate(raw)
+    try:
+        body = ScheduleDataImportTarget.model_validate(raw)
+    except ValidationError as exc:
+        raise _target_config_validation_error(exc) from exc
     get_owned(db, DataSource, body.data_source_id, project_id, "Data source")
     dataset = job_factories.resolve_dataset(
         db,
@@ -93,7 +110,10 @@ def _resolve_batch_config(
     project_id: int,
     raw: dict[str, Any],
 ) -> dict[str, Any]:
-    body = ScheduleBatchTarget.model_validate(raw)
+    try:
+        body = ScheduleBatchTarget.model_validate(raw)
+    except ValidationError as exc:
+        raise _target_config_validation_error(exc) from exc
     get_owned(db, Dataset, body.dataset_id, project_id, "Dataset")
     if body.endpoint_id is not None:
         get_owned(db, Endpoint, body.endpoint_id, project_id, "Endpoint")
@@ -125,7 +145,10 @@ def _resolve_pipeline_config(
     refresh_pinned_version: bool = False,
     existing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    body = SchedulePipelineTarget.model_validate(raw)
+    try:
+        body = SchedulePipelineTarget.model_validate(raw)
+    except ValidationError as exc:
+        raise _target_config_validation_error(exc) from exc
     pipeline = get_owned(db, Pipeline, body.pipeline_id, project_id, "Pipeline")
     if pipeline.status != PipelineStatus.published:
         raise friendly(400, "Pipeline must be published before it can be scheduled.")

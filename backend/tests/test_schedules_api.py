@@ -248,3 +248,72 @@ def test_unpublished_pipeline_rejected(client, auth_headers):
         },
     )
     assert response.status_code == 400
+
+
+def test_target_config_validation_returns_400_not_500(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+
+    data_import = client.post(
+        f"/api/v1/projects/{project_id}/schedules",
+        headers=auth_headers,
+        json={
+            "name": "import missing dataset",
+            "target_type": "data_import",
+            "target_config": {
+                "data_source_id": 1,
+                "query_or_table": "public.t",
+            },
+            "cron_expression": "0 * * * *",
+            "timezone": "UTC",
+        },
+    )
+    assert data_import.status_code == 400, data_import.text
+    assert data_import.status_code != 500
+    assert "detail" in data_import.json()
+
+    batch_missing_target = client.post(
+        f"/api/v1/projects/{project_id}/schedules",
+        headers=auth_headers,
+        json={
+            "name": "batch missing target",
+            "target_type": "batch_inference",
+            "target_config": {
+                "dataset_id": 1,
+                "dataset_version_strategy": "latest",
+            },
+            "cron_expression": "0 * * * *",
+            "timezone": "UTC",
+        },
+    )
+    assert batch_missing_target.status_code == 400, batch_missing_target.text
+
+    batch_fixed_missing_version = client.post(
+        f"/api/v1/projects/{project_id}/schedules",
+        headers=auth_headers,
+        json={
+            "name": "batch fixed missing version",
+            "target_type": "batch_inference",
+            "target_config": {
+                "dataset_id": 1,
+                "dataset_version_strategy": "fixed",
+                "endpoint_id": 1,
+            },
+            "cron_expression": "0 * * * *",
+            "timezone": "UTC",
+        },
+    )
+    assert batch_fixed_missing_version.status_code == 400, batch_fixed_missing_version.text
+
+    pipeline_missing = client.post(
+        f"/api/v1/projects/{project_id}/schedules",
+        headers=auth_headers,
+        json={
+            "name": "pipeline missing id",
+            "target_type": "pipeline_run",
+            "target_config": {},
+            "cron_expression": "0 * * * *",
+            "timezone": "UTC",
+        },
+    )
+    assert pipeline_missing.status_code == 400, pipeline_missing.text
+    assert set(pipeline_missing.json()) == {"detail", "hint"} or "detail" in pipeline_missing.json()

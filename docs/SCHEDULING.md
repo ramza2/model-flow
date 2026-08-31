@@ -46,6 +46,15 @@ The scheduler **only creates child job/run records**. Import, batch, and pipelin
 - On child job **failed** terminal status, a new `AutomationScheduleRun` is created with the same `scheduled_for` and `attempt + 1` after the delay
 - Retries do **not** affect the next cron `next_run_at`
 - Failed child records are never modified; each retry creates a new child job/run
+- Reconciliation of dispatched/running schedule runs uses `SELECT … FOR UPDATE SKIP LOCKED`
+- Retry occurrence inserts are idempotent (pre-check + unique constraint); a duplicate conflict does not abort the scheduler tick
+- Unit tests cover idempotent retry creation; full multi-worker `SKIP LOCKED` contention requires PostgreSQL (SQLite tests document this limit)
+
+## Pipeline pinned versions
+
+- Schedule **create** / **refresh pinned version** require the pipeline to be **published**
+- Cron / retry / run-now **dispatch** uses the stored `pipeline_version_id` and does **not** require `pipeline.status == published`
+- Editing a new draft version after scheduling must not block runs of the previously pinned version
 
 ## Disable / enable
 

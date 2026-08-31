@@ -237,3 +237,117 @@ def test_retry_creates_new_attempt_after_child_failure():
         )
         assert retry is not None
         assert retry.status == ScheduleRunStatus.pending
+
+
+def test_pinned_pipeline_version_dispatches_after_pipeline_returns_to_draft():
+    """Pinned v1 must still run when a later edit puts the pipeline back in draft."""
+
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=True)
+        pinned_version_id = json.loads(schedule.target_config_json)["pipeline_version_id"]
+        pipeline = db.get(Pipeline, json.loads(schedule.target_config_json)["pipeline_id"])
+        assert pipeline is not None
+        # Simulate saving a new draft version after the schedule pinned published v1.
+        draft = PipelineVersion(
+            pipeline_id=pipeline.id,
+            project_id=pipeline.project_id,
+            version=2,
+            graph_json=json.dumps(MINIMAL_GRAPH),
+        )
+        db.add(draft)
+        pipeline.status = PipelineStatus.draft
+        pipeline.latest_version = 2
+        db.commit()
+
+        stats = scheduler.scheduler_tick(db, now=datetime.now(timezone.utc))
+        assert stats["occurrences_created"] == 1
+        assert stats["dispatched"] == 1
+        run = db.scalar(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id
+            )
+        )
+        assert run is not None
+        assert run.status == ScheduleRunStatus.dispatched
+        assert run.target_resource_id is not None
+        child = db.get(PipelineRun, run.target_resource_id)
+        assert child is not None
+        assert child.pipeline_version_id == pinned_version_id
+
+
+def test_retry_creation_is_idempotent_across_reconcile_calls():
+    """Reconciling the same failed run twice must not create duplicate retries.
+
+    Note: SQLite test sessions do not fully exercise PostgreSQL SKIP LOCKED
+    multi-worker contention; this verifies the idempotent pre-check /
+    UniqueConstraint path that backs multi-worker safety.
+    """
+
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=True)
+        now = datetime.now(timezone.utc)
+        scheduler.scheduler_tick(db, now=now)
+        run = db.scalar(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.attempt == 1,
+            )
+        )
+        assert run is not None and run.target_resource_id is not None
+        child = db.get(PipelineRun, run.target_resource_id)
+        child.status = JobStatus.failed
+        db.commit()
+
+        scheduler.reconcile_active_runs(db, now=now)
+        db.commit()
+        scheduler.reconcile_active_runs(db, now=now)
+        db.commit()
+
+        retries = db.scalars(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.attempt == 2,
+            )
+        ).all()
+        assert len(retries) == 1
+
+
+def test_schedule_retry_skips_when_attempt_already_exists():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=False)
+        now = datetime.now(timezone.utc)
+        scheduled_for = now - timedelta(minutes=1)
+        failed = AutomationScheduleRun(
+            schedule_id=schedule.id,
+            project_id=schedule.project_id,
+            scheduled_for=scheduled_for,
+            attempt=1,
+            trigger_source=ScheduleTriggerSource.cron,
+            status=ScheduleRunStatus.failed,
+            target_type=schedule.target_type,
+            finished_at=now,
+        )
+        existing_retry = AutomationScheduleRun(
+            schedule_id=schedule.id,
+            project_id=schedule.project_id,
+            scheduled_for=scheduled_for,
+            attempt=2,
+            trigger_source=ScheduleTriggerSource.cron,
+            status=ScheduleRunStatus.pending,
+            target_type=schedule.target_type,
+            ready_at=now,
+        )
+        db.add_all([failed, existing_retry])
+        db.commit()
+        schedule.max_retries = 1
+        db.commit()
+
+        scheduler._schedule_retry(db, schedule, failed, now=now)
+        db.commit()
+        retries = db.scalars(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.attempt == 2,
+            )
+        ).all()
+        assert len(retries) == 1

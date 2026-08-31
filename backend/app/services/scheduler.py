@@ -145,6 +145,9 @@ def _dispatch_child_job(
         )
         return job.id
     if schedule.target_type == ScheduleTargetType.pipeline_run:
+        # Dispatch uses the already-validated pinned pipeline_version_id.
+        # Do not require pipeline.status == published: editing a new draft
+        # version must not block schedules that still pin a prior version.
         run = job_factories.create_pipeline_run(
             db,
             project_id=schedule.project_id,
@@ -153,7 +156,7 @@ def _dispatch_child_job(
             parameters=config.get("parameters") or {},
             fail_policy=str(config.get("fail_policy", "stop")),
             created_by=created_by,
-            require_published=True,
+            require_published=False,
         )
         return run.id
     raise ValueError(f"Unsupported schedule target type '{schedule.target_type.value}'.")
@@ -168,18 +171,39 @@ def _schedule_retry(
 ) -> None:
     if failed_run.attempt > schedule.max_retries:
         return
-    retry = AutomationScheduleRun(
-        schedule_id=schedule.id,
-        project_id=schedule.project_id,
-        scheduled_for=failed_run.scheduled_for,
-        attempt=failed_run.attempt + 1,
-        trigger_source=failed_run.trigger_source,
-        status=ScheduleRunStatus.pending,
-        target_type=schedule.target_type,
-        ready_at=now + timedelta(seconds=schedule.retry_delay_seconds),
+    next_attempt = failed_run.attempt + 1
+    existing = db.scalar(
+        select(AutomationScheduleRun.id).where(
+            AutomationScheduleRun.schedule_id == schedule.id,
+            AutomationScheduleRun.scheduled_for == failed_run.scheduled_for,
+            AutomationScheduleRun.attempt == next_attempt,
+            AutomationScheduleRun.trigger_source == failed_run.trigger_source,
+        )
     )
-    db.add(retry)
-    db.flush()
+    if existing is not None:
+        return
+    try:
+        with db.begin_nested():
+            retry = AutomationScheduleRun(
+                schedule_id=schedule.id,
+                project_id=schedule.project_id,
+                scheduled_for=failed_run.scheduled_for,
+                attempt=next_attempt,
+                trigger_source=failed_run.trigger_source,
+                status=ScheduleRunStatus.pending,
+                target_type=schedule.target_type,
+                ready_at=now + timedelta(seconds=schedule.retry_delay_seconds),
+            )
+            db.add(retry)
+            db.flush()
+    except IntegrityError:
+        # Concurrent worker inserted the same retry occurrence.
+        logger.info(
+            "Retry occurrence already exists schedule_id=%s scheduled_for=%s attempt=%s",
+            schedule.id,
+            failed_run.scheduled_for,
+            next_attempt,
+        )
 
 
 def _finalize_run_failure(
@@ -224,6 +248,14 @@ def _reconcile_run(
 
 
 def reconcile_active_runs(db: Session, *, now: datetime | None = None) -> int:
+    """Claim dispatched/running ScheduleRuns with SKIP LOCKED, then reconcile.
+
+    Row locking prevents two workers from finalizing the same failed child and
+    racing to insert the same retry attempt. UniqueConstraint still backs
+    idempotency when a race slips through; IntegrityError is isolated via
+    savepoint so one conflict cannot abort the whole scheduler tick.
+    """
+
     now = _utc_now(now)
     rows = db.scalars(
         select(AutomationScheduleRun)
@@ -233,14 +265,26 @@ def reconcile_active_runs(db: Session, *, now: datetime | None = None) -> int:
             )
         )
         .order_by(AutomationScheduleRun.id.asc())
+        .with_for_update(skip_locked=True)
     ).all()
+    reconciled = 0
     for run in rows:
         schedule = db.get(AutomationSchedule, run.schedule_id)
         if schedule is None:
             continue
-        _reconcile_run(db, schedule, run, now=now)
-    db.flush()
-    return len(rows)
+        try:
+            with db.begin_nested():
+                _reconcile_run(db, schedule, run, now=now)
+                db.flush()
+            reconciled += 1
+        except IntegrityError:
+            logger.info(
+                "Reconcile conflict for schedule_run_id=%s (likely concurrent retry insert)",
+                run.id,
+            )
+        except Exception:
+            logger.exception("Reconcile failed for schedule_run_id=%s", run.id)
+    return reconciled
 
 
 def skip_pending_runs_for_disabled_schedules(db: Session, *, now: datetime | None = None) -> int:
