@@ -32,24 +32,13 @@ const disabledSchedule = {
   next_run_at: null,
 };
 
-const apiMock = vi.fn(async (path: string, init?: RequestInit) => {
-  if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
-    return [disabledSchedule];
-  }
-  if (path.endsWith("/run-now")) return { id: 99, status: "pending" };
-  if (path.endsWith("/data-sources")) return [];
-  if (path.endsWith("/datasets")) return [];
-  if (path.endsWith("/endpoints")) return [];
-  if (path.endsWith("/models")) return [];
-  if (path.endsWith("/pipelines")) return [];
-  return [];
-});
+const apiMock = vi.fn();
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
   return {
     ...actual,
-    api: (path: string, init?: RequestInit) => apiMock(path, init),
+    api: (...args: unknown[]) => apiMock(...args),
   };
 });
 
@@ -75,6 +64,18 @@ function renderPage() {
 describe("Schedules page", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
+        return [disabledSchedule];
+      }
+      if (path.endsWith("/run-now")) return { id: 99, status: "pending" };
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
