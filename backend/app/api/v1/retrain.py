@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.v1.common import audit_event, dumps, friendly, get_owned, job_out, retrain_out
+from app.api.v1.common import audit_event, dumps, get_owned, job_out, retrain_out
 from app.api.v1.jobs import _new_job, _raise_config_error, _raise_retrain_error
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
