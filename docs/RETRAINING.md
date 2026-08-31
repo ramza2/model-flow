@@ -16,11 +16,23 @@ The worker always builds a new sklearn pipeline/estimator and calls `fit()` from
 
 ## API
 
+### Canonical (Phase 1.1)
+
 ```
 POST /api/v1/projects/{project_id}/jobs/{job_id}/retrain
 ```
 
-Request body:
+### Legacy compatibility (deprecated)
+
+```
+POST /api/v1/projects/{project_id}/retrain
+```
+
+The legacy endpoint remains available for backward compatibility. It creates a `RetrainTrigger` record and returns `{ trigger, training_job, registry_lifecycle }` with HTTP 202. New integrations should use the canonical jobs retrain endpoint above.
+
+Both endpoints share the same retrain validation and job-creation logic. Retrain lineage is recorded on `retrain_source_job_id`, not `parent_job_id`.
+
+### Canonical request body
 
 ```json
 {

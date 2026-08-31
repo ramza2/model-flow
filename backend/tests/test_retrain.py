@@ -18,6 +18,7 @@ from app.db.models import (
     Project,
     ProjectMembership,
     ProjectRole,
+    RetrainTrigger,
     TrainingJob,
     User,
 )
@@ -461,3 +462,170 @@ def test_retrain_writes_audit_event(client, auth_headers, project_id):
             )
         )
         assert audit is not None
+
+
+def test_legacy_retrain_endpoint_returns_202_and_response_shape(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={
+            "source_job_id": source["id"],
+            "dataset_version_id": version_v2,
+            "name": "legacy-retrain-v2",
+        },
+    )
+    assert response.status_code == 202, response.text
+    payload = response.json()
+    assert set(payload.keys()) == {"trigger", "training_job", "registry_lifecycle"}
+    assert payload["registry_lifecycle"] is None
+
+    trigger = payload["trigger"]
+    assert trigger["project_id"] == project_id
+    assert trigger["trigger_type"] == "manual"
+    assert trigger["config"]["source_job_id"] == source["id"]
+    assert trigger["config"]["dataset_version_id"] == version_v2
+    assert trigger["last_triggered_at"] is not None
+    assert trigger["created_training_job_id"] == payload["training_job"]["id"]
+
+    job = payload["training_job"]
+    assert job["name"] == "legacy-retrain-v2"
+    assert job["dataset_version_id"] == version_v2
+    assert job["retrain_source_job_id"] == source["id"]
+    assert job["is_retrain"] is True
+    assert job["parent_job_id"] is None
+    assert job["status"] == "pending"
+
+
+def test_legacy_retrain_creates_retrain_trigger_record(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={"source_job_id": source["id"], "dataset_version_id": version_id},
+    )
+    assert response.status_code == 202
+    trigger_id = response.json()["trigger"]["id"]
+    job_id = response.json()["training_job"]["id"]
+
+    with TestingSessionLocal() as db:
+        trigger = db.get(RetrainTrigger, trigger_id)
+        job = db.get(TrainingJob, job_id)
+        assert trigger is not None
+        assert trigger.created_training_job_id == job_id
+        assert job.retrain_source_job_id == source["id"]
+        assert job.parent_job_id is None
+
+
+def test_legacy_retrain_rejects_non_succeeded_source(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={"source_job_id": source["id"], "dataset_version_id": version_id},
+    )
+    assert response.status_code == 409
+
+
+def test_legacy_retrain_defaults_name_and_dataset_version(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        name="baseline-job",
+    )
+    _mark_succeeded(source["id"])
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={"source_job_id": source["id"]},
+    )
+    assert response.status_code == 202, response.text
+    payload = response.json()
+    assert payload["training_job"]["name"] == "baseline-job (retrain)"
+    assert payload["training_job"]["dataset_version_id"] == version_id
+
+
+def test_legacy_retrain_accepts_dataset_version_in_overrides(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={
+            "source_job_id": source["id"],
+            "overrides": {"dataset_version_id": version_v2},
+        },
+    )
+    assert response.status_code == 202
+    assert response.json()["training_job"]["dataset_version_id"] == version_v2
+
+
+def test_legacy_retrain_writes_audit_event(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+    response = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={"source_job_id": source["id"], "dataset_version_id": version_id},
+    )
+    assert response.status_code == 202
+    trigger_id = response.json()["trigger"]["id"]
+    with TestingSessionLocal() as db:
+        audit = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "retrain.trigger",
+                AuditLog.resource_id == str(trigger_id),
+            )
+        )
+        assert audit is not None
+
+
+def test_legacy_and_canonical_retrain_share_lineage_semantics(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+
+    legacy = client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json={
+            "source_job_id": source["id"],
+            "dataset_version_id": version_v2,
+            "name": "legacy-child",
+        },
+    )
+    canonical = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/retrain",
+        headers=auth_headers,
+        json={"dataset_version_id": version_v2, "name": "canonical-child"},
+    )
+    assert legacy.status_code == 202
+    assert canonical.status_code == 201
+
+    legacy_job = legacy.json()["training_job"]
+    canonical_job = canonical.json()
+    for job in (legacy_job, canonical_job):
+        assert job["retrain_source_job_id"] == source["id"]
+        assert job["parent_job_id"] is None
+        assert job["is_retrain"] is True
+        assert job["mlflow_run_id"] is None
+        assert job["model_uri"] is None
+        assert job["status"] == "pending"

@@ -21,7 +21,7 @@ from app.db.models import DatasetVersion, JobStatus, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import JobCloneRequest, JobCreate, JobRetrainRequest
 from app.services.algorithm_catalog import list_algorithms
-from app.services.retrain_service import RetrainConfigError, build_retrain_job_create
+from app.services.retrain_service import RetrainConfigError, prepare_retrain_job
 from app.services.training_validation import (
     TrainingConfigError,
     resolve_problem_type_for_version,
@@ -306,11 +306,9 @@ def retrain_job(
     auth, _, _ = access
     source = get_owned(db, TrainingJob, job_id, project_id, "Training job")
     try:
-        retrain_body = build_retrain_job_create(source, body)
+        validated = prepare_retrain_job(db, project_id, source, body)
     except RetrainConfigError as exc:
         _raise_retrain_error(exc)
-    try:
-        validated = validate_training_config(db, project_id, retrain_body)
     except TrainingConfigError as exc:
         _raise_config_error(exc)
     job = _new_job(validated.body, project_id, auth.user.id, validated.version)

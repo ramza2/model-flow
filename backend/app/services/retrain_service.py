@@ -5,8 +5,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.db.models import JobStatus, TrainingJob
-from app.schemas.v1 import JobCreate, JobRetrainRequest
+from app.schemas.v1 import JobCreate, JobRetrainRequest, RetrainRequest
+from app.services.training_validation import ValidatedTrainingConfig, validate_training_config
 
 
 class RetrainConfigError(Exception):
@@ -63,3 +66,45 @@ def build_retrain_job_create(source: TrainingJob, body: JobRetrainRequest) -> Jo
         test_ratio=source.test_ratio,
         max_retries=source.max_retries,
     )
+
+
+def legacy_request_to_job_retrain(source: TrainingJob, body: RetrainRequest) -> JobRetrainRequest:
+    """Map the deprecated RetrainRequest payload onto JobRetrainRequest."""
+
+    overrides = dict(body.overrides)
+    dataset_version_id = body.dataset_version_id
+    if dataset_version_id is None:
+        raw = overrides.get("dataset_version_id")
+        if raw is not None:
+            dataset_version_id = int(raw)
+    if dataset_version_id is None:
+        dataset_version_id = source.dataset_version_id
+    if dataset_version_id is None:
+        raise RetrainConfigError(
+            422,
+            "dataset_version_id is required when the source job has no dataset version.",
+            "Provide dataset_version_id in the request body or overrides.",
+        )
+
+    split_id = overrides.get("split_id")
+    if split_id is not None:
+        split_id = int(split_id)
+
+    return JobRetrainRequest(
+        dataset_version_id=dataset_version_id,
+        split_id=split_id,
+        name=body.name or f"{source.name} (retrain)",
+        description=source.description or "",
+    )
+
+
+def prepare_retrain_job(
+    db: Session,
+    project_id: int,
+    source: TrainingJob,
+    body: JobRetrainRequest,
+) -> ValidatedTrainingConfig:
+    """Validate source job and target dataset version for a full retrain."""
+
+    retrain_body = build_retrain_job_create(source, body)
+    return validate_training_config(db, project_id, retrain_body)
