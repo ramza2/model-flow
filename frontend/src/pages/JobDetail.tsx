@@ -12,6 +12,7 @@ import {
   formatDate,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
+import JobRetrainDialog from "./JobRetrainDialog";
 
 export default function JobDetail() {
   const { projectId, jobId } = useParams();
@@ -22,6 +23,7 @@ export default function JobDetail() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState("");
+  const [showRetrain, setShowRetrain] = useState(false);
   const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canRegister = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
@@ -96,6 +98,16 @@ export default function JobDetail() {
         <>
           <div className="row-actions toolbar-actions">
             {canTrain && active && <button className="btn danger" disabled={busy === "cancel"} onClick={() => action("cancel")}>Stop job</button>}
+            {canTrain && job.status === "succeeded" && (
+              <button
+                type="button"
+                className="btn"
+                data-testid="job-retrain"
+                onClick={() => setShowRetrain(true)}
+              >
+                Retrain
+              </button>
+            )}
             {canTrain && ["failed", "cancelled"].includes(job.status) && (
               <div className="retry-group">
                 <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")} data-testid="job-retry">Retry</button>
@@ -128,6 +140,14 @@ export default function JobDetail() {
           <div className="two-column">
             <section className="panel">
               <span className="eyebrow">Configuration</span><h2>Training setup</h2>
+              {job.is_retrain && job.retrain_source_job_id && (
+                <p data-testid="job-retrain-lineage">
+                  Retrained from{" "}
+                  <Link to={`/projects/${projectId}/jobs/${job.retrain_source_job_id}`}>
+                    Job #{job.retrain_source_job_id}
+                  </Link>
+                </p>
+              )}
               <dl className="key-values">
                 <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
                 <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
@@ -172,6 +192,17 @@ export default function JobDetail() {
             <div className="panel-title"><div><span className="eyebrow">Execution</span><h2>Logs</h2></div>{active && <span className="live-indicator"><span /> Live</span>}</div>
             <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
           </section>
+          {showRetrain && (
+            <JobRetrainDialog
+              projectId={projectId!}
+              sourceJob={job}
+              onClose={() => setShowRetrain(false)}
+              onCreated={(created) => {
+                setShowRetrain(false);
+                navigate(`/projects/${projectId}/jobs/${created.id}`);
+              }}
+            />
+          )}
         </>
       )}
     </div>

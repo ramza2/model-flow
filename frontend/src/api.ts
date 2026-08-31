@@ -234,6 +234,8 @@ export type Job = {
   retry_count: number;
   max_retries: number;
   parent_job_id: number | null;
+  retrain_source_job_id: number | null;
+  is_retrain: boolean;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
