@@ -21,7 +21,11 @@ from app.db.models import DatasetVersion, JobStatus, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import JobCloneRequest, JobCreate, JobRetrainRequest
 from app.services.algorithm_catalog import list_algorithms
-from app.services.retrain_service import RetrainConfigError, prepare_retrain_job
+from app.services.retrain_service import (
+    RetrainConfigError,
+    build_job_create_from_source,
+    prepare_retrain_job,
+)
 from app.services.training_validation import (
     TrainingConfigError,
     resolve_problem_type_for_version,
@@ -78,28 +82,7 @@ def _new_job(
 def _body_from_job(
     job: TrainingJob, *, name: str | None = None, overrides: dict | None = None
 ) -> JobCreate:
-    values = {
-        "name": name or f"{job.name} (clone)",
-        "dataset_id": job.dataset_id,
-        "dataset_version_id": job.dataset_version_id,
-        "split_id": job.split_id,
-        "description": job.description,
-        "target_column": job.target_column,
-        "problem_type": job.problem_type,
-        "algorithm": job.algorithm,
-        "hyperparameters": loads(job.hyperparameters_json, {}),
-        "preprocessing": loads(job.preprocessing_json, {}),
-        "feature_columns": loads(job.feature_columns_json, []),
-        "metrics_config": loads(job.metrics_config_json, []),
-        "resources": loads(job.resource_json, {}),
-        "random_seed": job.random_seed,
-        "train_ratio": job.train_ratio,
-        "val_ratio": job.val_ratio,
-        "test_ratio": job.test_ratio,
-        "max_retries": job.max_retries,
-    }
-    values.update(overrides or {})
-    return JobCreate.model_validate(values)
+    return build_job_create_from_source(job, name=name, overrides=overrides)
 
 
 @router.get("/training/algorithms")

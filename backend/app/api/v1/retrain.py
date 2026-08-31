@@ -16,8 +16,7 @@ from app.db.session import get_db
 from app.schemas.v1 import RetrainRequest
 from app.services.retrain_service import (
     RetrainConfigError,
-    legacy_request_to_job_retrain,
-    prepare_retrain_job,
+    prepare_legacy_retrain_job,
 )
 from app.services.training_validation import TrainingConfigError
 
@@ -43,11 +42,7 @@ def trigger_retrain(
     auth, _, _ = access
     source = get_owned(db, TrainingJob, body.source_job_id, project_id, "Training job")
     try:
-        retrain_body = legacy_request_to_job_retrain(source, body)
-    except RetrainConfigError as exc:
-        _raise_retrain_error(exc)
-    try:
-        validated = prepare_retrain_job(db, project_id, source, retrain_body)
+        validated = prepare_legacy_retrain_job(db, project_id, source, body)
     except RetrainConfigError as exc:
         _raise_retrain_error(exc)
     except TrainingConfigError as exc:
@@ -62,7 +57,7 @@ def trigger_retrain(
         config_json=dumps(
             {
                 "source_job_id": source.id,
-                "dataset_version_id": retrain_body.dataset_version_id,
+                "dataset_version_id": validated.body.dataset_version_id,
                 "overrides": body.overrides,
             }
         ),

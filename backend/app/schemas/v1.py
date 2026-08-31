@@ -143,10 +143,12 @@ class JobCloneRequest(BaseModel):
 
 
 class JobRetrainRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     dataset_version_id: int
     split_id: int | None = None
     name: str = Field(min_length=1, max_length=200)
-    description: str = ""
+    description: str | None = None
 
 
 class PipelineCreate(BaseModel):

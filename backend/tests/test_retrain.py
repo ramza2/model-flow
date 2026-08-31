@@ -629,3 +629,274 @@ def test_legacy_and_canonical_retrain_share_lineage_semantics(client, auth_heade
         assert job["mlflow_run_id"] is None
         assert job["model_uri"] is None
         assert job["status"] == "pending"
+
+
+def _legacy_retrain(client, auth_headers, project_id, source_id, **payload):
+    body = {"source_job_id": source_id, **payload}
+    return client.post(
+        f"/api/v1/projects/{project_id}/retrain",
+        headers=auth_headers,
+        json=body,
+    )
+
+
+def _succeeded_source_with_description(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        name="described-source",
+        algorithm="logistic_regression",
+        hyperparameters={"C": 0.5},
+        random_seed=17,
+    )
+    with TestingSessionLocal() as db:
+        job = db.get(TrainingJob, source["id"])
+        job.description = "Source job notes"
+        db.commit()
+    _mark_succeeded(source["id"])
+    return source, dataset_id, version_id
+
+
+def test_legacy_retrain_applies_algorithm_override(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={"algorithm": "random_forest"},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["algorithm"] == "random_forest"
+
+
+def test_legacy_retrain_applies_hyperparameters_override(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={"hyperparameters": {"C": 2.5}},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["hyperparameters"] == {"C": 2.5}
+
+
+def test_legacy_retrain_applies_preprocessing_and_feature_columns_overrides(
+    client, auth_headers, project_id
+):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={
+            "preprocessing": {"scale_numeric": True},
+            "feature_columns": ["a"],
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = response.json()["training_job"]
+    assert job["preprocessing"] == {"scale_numeric": True}
+    assert job["feature_columns"] == ["a"]
+
+
+def test_legacy_retrain_applies_random_seed_and_ratio_overrides(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={
+            "random_seed": 99,
+            "train_ratio": 0.6,
+            "val_ratio": 0.2,
+            "test_ratio": 0.2,
+        },
+    )
+    assert response.status_code == 202, response.text
+    job = response.json()["training_job"]
+    assert job["random_seed"] == 99
+    assert job["train_ratio"] == 0.6
+    assert job["val_ratio"] == 0.2
+    assert job["test_ratio"] == 0.2
+
+
+def test_legacy_retrain_applies_split_id_override(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    split = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/splits",
+        headers=auth_headers,
+        json={},
+    ).json()
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        split_id=split["id"],
+    )
+    _mark_succeeded(source["id"])
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={"split_id": split["id"]},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["split_id"] == split["id"]
+
+
+def test_legacy_retrain_top_level_dataset_version_id_precedence(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(client, auth_headers, project_id, dataset_id, version_id)
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_v2,
+        overrides={"dataset_version_id": version_id},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["dataset_version_id"] == version_v2
+
+
+def test_legacy_retrain_rejects_other_logical_dataset_override(client, auth_headers, project_id):
+    dataset_a_id, version_a = _upload_dataset(client, auth_headers, project_id, CSV_V1, name="ds-a")
+    dataset_b_id, version_b = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="ds-b")
+    source = _create_job(client, auth_headers, project_id, dataset_a_id, version_a)
+    _mark_succeeded(source["id"])
+
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_b,
+        overrides={"dataset_id": dataset_b_id},
+    )
+    assert response.status_code == 400
+
+
+def test_legacy_retrain_override_not_silently_ignored(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_id,
+        overrides={"metrics_config": ["accuracy", "f1"]},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["metrics_config"] == ["accuracy", "f1"]
+    assert response.json()["training_job"]["retrain_source_job_id"] == source["id"]
+    assert response.json()["training_job"]["parent_job_id"] is None
+    assert "trigger" in response.json()
+
+
+def test_legacy_retrain_clears_stale_split_on_new_version_without_override(
+    client, auth_headers, project_id
+):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    split = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/splits",
+        headers=auth_headers,
+        json={},
+    ).json()
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        split_id=split["id"],
+    )
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+
+    response = _legacy_retrain(
+        client,
+        auth_headers,
+        project_id,
+        source["id"],
+        dataset_version_id=version_v2,
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["training_job"]["split_id"] is None
+
+
+def test_canonical_retrain_inherits_source_description_when_omitted(
+    client, auth_headers, project_id
+):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/retrain",
+        headers=auth_headers,
+        json={"dataset_version_id": version_id, "name": "inherits-description"},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["description"] == "Source job notes"
+
+
+def test_canonical_retrain_preserves_explicit_empty_description(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/retrain",
+        headers=auth_headers,
+        json={
+            "dataset_version_id": version_id,
+            "name": "empty-description",
+            "description": "",
+        },
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["description"] == ""
+
+
+def test_canonical_retrain_does_not_accept_arbitrary_overrides(client, auth_headers, project_id):
+    source, dataset_id, version_id = _succeeded_source_with_description(
+        client, auth_headers, project_id
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/retrain",
+        headers=auth_headers,
+        json={
+            "dataset_version_id": version_id,
+            "name": "no-overrides",
+            "overrides": {"algorithm": "random_forest"},
+        },
+    )
+    assert response.status_code == 422

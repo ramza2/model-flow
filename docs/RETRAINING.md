@@ -30,7 +30,12 @@ POST /api/v1/projects/{project_id}/retrain
 
 The legacy endpoint remains available for backward compatibility. It creates a `RetrainTrigger` record and returns `{ trigger, training_job, registry_lifecycle }` with HTTP 202. New integrations should use the canonical jobs retrain endpoint above.
 
-Both endpoints share the same retrain validation and job-creation logic. Retrain lineage is recorded on `retrain_source_job_id`, not `parent_job_id`.
+- **Canonical retrain API** = strict inherited configuration from the source job (dataset version, optional split, name, optional description).
+- **Legacy `/retrain` endpoint** = deprecated compatibility API that still honors `RetrainRequest.overrides` for configuration fields such as algorithm, hyperparameters, preprocessing, feature columns, ratios, and split selection.
+- Retrain lineage and fresh-training invariants are shared by both endpoints (`retrain_source_job_id`, succeeded source only, same logical dataset).
+- Legacy `dataset_id` overrides that point to a different logical dataset are rejected.
+
+Both endpoints share core retrain validation and job creation. Retrain lineage is recorded on `retrain_source_job_id`, not `parent_job_id`.
 
 ### Canonical request body
 
@@ -38,10 +43,11 @@ Both endpoints share the same retrain validation and job-creation logic. Retrain
 {
   "dataset_version_id": 12,
   "split_id": null,
-  "name": "sales-rf-retrain-v2",
-  "description": ""
+  "name": "sales-rf-retrain-v2"
 }
 ```
+
+`description` is optional. When omitted, the source job description is inherited. Send `""` to clear it explicitly.
 
 - Source job must be `succeeded` and in the same project.
 - `dataset_version_id` must belong to the **same logical dataset** as the source job.
