@@ -13,7 +13,6 @@ from app.api.v1.common import (
     friendly,
     get_owned,
     job_out,
-    loads,
 )
 from app.core.deps import get_auth, require_project_perm
 from app.core.rbac import Permission
