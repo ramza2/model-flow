@@ -507,6 +507,16 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .compact-form { display: grid; grid-template-columns: 1.2fr 1fr 1fr auto; gap: .5rem; margin: .8rem 0; }
 .checkbox-label { flex-direction: row; align-items: center; }
 .checkbox-label input { width: auto; }
+.checkbox-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.45rem;
+}
+.checkbox-row input[type="checkbox"] {
+  width: auto;
+  flex-shrink: 0;
+}
 .toggle-row { flex-direction: row; align-items: center; justify-content: space-between; padding: .8rem 0; border-bottom: 1px solid var(--border); }
 .toggle-row span { display: flex; flex-direction: column; color: var(--text); }
 .toggle-row input { width: 20px; height: 20px; }
