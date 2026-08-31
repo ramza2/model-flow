@@ -21,6 +21,7 @@ import Endpoints from "./pages/Endpoints";
 import Predict from "./pages/Predict";
 import DeploymentApiUsage from "./pages/DeploymentApiUsage";
 import BatchInference from "./pages/BatchInference";
+import Schedules from "./pages/Schedules";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./pages/Pipelines";
 import Monitoring from "./pages/Monitoring";
 import Alerts from "./pages/Alerts";
@@ -50,6 +51,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
     <Route path="/projects/:projectId/pipelines/:pipelineId" element={<PipelineBuilder />} />
     <Route path="/projects/:projectId/pipeline-runs/:runId" element={<PipelineRunDetail />} />
+    <Route path="/projects/:projectId/schedules" element={<Schedules />} />
     <Route path="/projects/:projectId/models" element={<Registry />} />
     <Route path="/projects/:projectId/models/:modelVersionId" element={<ModelVersion />} />
     <Route path="/projects/:projectId/deployments" element={<Endpoints />} />

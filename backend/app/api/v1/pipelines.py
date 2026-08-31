@@ -32,7 +32,7 @@ from app.schemas.v1 import (
     PipelineRunRequest,
     PipelineUpdate,
 )
-from app.services import pipeline_engine
+from app.services import job_factories, pipeline_engine
 from app.services.pipeline_engine import validate_graph
 
 router = APIRouter(tags=["pipelines"])
@@ -371,24 +371,16 @@ def run_pipeline(
         raise friendly(
             400, "Pipeline graph is invalid.", "; ".join(validation["errors"])
         )
-    graph_nodes = pipeline_version_out(version)["graph"].get("nodes", [])
-    node_states = {
-        str(node["id"]): pipeline_engine.initial_node_state(node)
-        for node in graph_nodes
-    }
-    run = PipelineRun(
+    run = job_factories.create_pipeline_run(
+        db,
         project_id=project_id,
         pipeline_id=pipeline.id,
         pipeline_version_id=version.id,
-        status=JobStatus.pending,
-        parameters_json=dumps(body.parameters),
-        node_states_json=dumps(node_states),
+        parameters=body.parameters,
         fail_policy=body.fail_policy,
         scheduled_for=body.scheduled_for,
         created_by=auth.user.id,
     )
-    db.add(run)
-    db.flush()
     audit_event(db, auth, "pipeline.run", "pipeline_run", run.id)
     db.commit()
     db.refresh(run)

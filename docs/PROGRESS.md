@@ -2,20 +2,13 @@
 
 ## Current phase
 
-**v1.0.0-rc.1 release complete** — enhancement planning.
-
-See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) for post-RC priorities.
+**Enhancement Phase 1 — Scheduling / Automation** complete on feature branch; see [`SCHEDULING.md`](./SCHEDULING.md).
 
 ## Current baseline
 
-- Branch: `main`
-- Current commit: `92c59dbcd7da4f799b65c94c8347c8154aa63d4a`
-- Git tag: `v1.0.0-rc.1` (annotated)
-- GitHub Release: [ModelFlow v1.0.0-rc.1](https://github.com/ramza2/model-flow/releases/tag/v1.0.0-rc.1) (pre-release)
-- Latest merged fixes:
-  - PR #23 — RC smoke follow-ups (Windows Git Bash backup/restore, batch inference polling, dataset `latest_version_created_at`)
-  - PR #22 — Playwright `Datasets` heading selector (`exact: true`; E2E only)
-  - PR #20 — PostgreSQL DSN/URL edit compatibility
+- Branch: `main` (Phase 1 implemented on `cursor/phase1-scheduling-automation-71f2`)
+- Starting main SHA: `9acf964c7c45e52f087306ab4336cc5620caec6d`
+- Git tag: `v1.0.0-rc.1` (unchanged)
 
 ## Completed release-readiness work
 
@@ -37,14 +30,11 @@ See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) for post-RC priorities.
 
 | Suite | Count | How measured |
 |-------|------:|--------------|
-| Backend pytest | **138** passed | `./scripts/verify.sh` / container pytest |
-| Frontend Vitest | **105** passed | `./scripts/verify.sh` section 6 |
-| Playwright E2E | **18** passed | `e2e/*.spec.ts` via verify Playwright container |
+| Backend pytest | **155** passed | `./scripts/verify.sh` |
+| Frontend Vitest | **106** passed | `./scripts/verify.sh` section 6 |
+| Playwright E2E | **19** passed | `e2e/*.spec.ts` via verify Playwright container |
 
-- `./scripts/verify.sh`: **PASS** on `main` at `92c59db`
-- GitHub Actions on `main` (CI #107): **SUCCESS** ([run](https://github.com/ramza2/model-flow/actions/runs/33142251221))
-- Manual clean-stack RC smoke: **PASS**
-- Windows Git Bash/MSYS PostgreSQL + MinIO backup/restore (real environment): **PASS**
+- `./scripts/verify.sh`: **PASS** on Phase 1 branch (`cursor/phase1-scheduling-automation-71f2`)
 
 ## Blockers
 
@@ -52,4 +42,4 @@ None for the v1.0.0-rc.1 baseline.
 
 ## Next step
 
-**Enhancement Phase 1 — Scheduling / Automation** (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)).
+**Enhancement Phase 1.5 — Figma UX Architecture** (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)).

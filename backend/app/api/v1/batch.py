@@ -20,7 +20,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas.v1 import BatchCreate
-from app.services import storage
+from app.services import job_factories, storage
 
 router = APIRouter(tags=["batch-inference"])
 
@@ -58,17 +58,15 @@ def create_batch_job(
         get_owned(db, Endpoint, body.endpoint_id, project_id, "Endpoint")
     if body.model_version_id is not None:
         get_owned(db, ModelVersion, body.model_version_id, project_id, "Model version")
-    row = BatchInferenceJob(
+    row = job_factories.create_batch_inference_job(
+        db,
         project_id=project_id,
         dataset_version_id=body.dataset_version_id,
         endpoint_id=body.endpoint_id,
         model_version_id=body.model_version_id,
         result_format=body.result_format,
-        status=JobStatus.pending,
         created_by=auth.user.id,
     )
-    db.add(row)
-    db.flush()
     audit_event(db, auth, "batch_job.create", "batch_inference_job", row.id)
     db.commit()
     db.refresh(row)

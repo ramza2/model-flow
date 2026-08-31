@@ -36,7 +36,7 @@ from app.db.models import (
     WorkerHeartbeat,
 )
 from app.db.session import SessionLocal
-from app.services import datasets, drift, inference, pipeline_engine, storage
+from app.services import datasets, drift, inference, pipeline_engine, scheduler, storage
 from app.services.alerts import create_alert
 from app.services.dataset_splits import content_sha256
 from app.services.training import TrainingJobContext, get_training_runner
@@ -782,6 +782,14 @@ def run_forever() -> None:
         processed = False
         try:
             beat()
+            db = SessionLocal()
+            try:
+                scheduler.scheduler_tick(db)
+            except Exception:
+                logger.exception("Scheduler tick failed")
+                db.rollback()
+            finally:
+                db.close()
             completed = [future for future in pipeline_futures if future.done()]
             for future in completed:
                 run_id = pipeline_futures.pop(future)

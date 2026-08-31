@@ -18,13 +18,18 @@ Post–v1.0.0-rc.1 planning. This document tracks **future** work; the RC1 MVP s
 
 ## Phase 1 — Scheduling / Automation
 
-**Priority:** next
+**Status:** complete (DB-backed worker scheduler)
 
-- Cron and timezone-aware scheduling
-- Dataset generation / import schedules
-- Batch prediction schedules
-- Pipeline run schedules
-- Run history, retry policy, and concurrency limits
+Implemented scope:
+
+- Cron and timezone-aware scheduling (`croniter` + `zoneinfo`, 5-field cron)
+- Dataset import, batch prediction, and pipeline run schedules
+- `AutomationSchedule` + `AutomationScheduleRun` history with idempotent occurrence keys
+- Concurrency policies (`skip` / `queue`) and `max_concurrent_runs`
+- Retry policy (`max_retries`, `retry_delay_seconds`) on child job failure
+- Missed-run coalesce (at most one due occurrence after downtime)
+- Run now, enable/disable, project-scoped REST API, Schedules UI
+- Docs: [`SCHEDULING.md`](./SCHEDULING.md)
 
 **Depends on:** RC1 job worker and pipeline engine.
 

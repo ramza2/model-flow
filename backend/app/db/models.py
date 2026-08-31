@@ -71,6 +71,31 @@ class AlertSeverity(str, enum.Enum):
     critical = "critical"
 
 
+class ScheduleTargetType(str, enum.Enum):
+    data_import = "data_import"
+    batch_inference = "batch_inference"
+    pipeline_run = "pipeline_run"
+
+
+class ConcurrencyPolicy(str, enum.Enum):
+    skip = "skip"
+    queue = "queue"
+
+
+class ScheduleRunStatus(str, enum.Enum):
+    pending = "pending"
+    dispatched = "dispatched"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    skipped = "skipped"
+
+
+class ScheduleTriggerSource(str, enum.Enum):
+    cron = "cron"
+    manual = "manual"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -590,3 +615,90 @@ class WorkerHeartbeat(Base):
     worker_id: Mapped[str] = mapped_column(String(100), primary_key=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class AutomationSchedule(Base):
+    __tablename__ = "automation_schedules"
+    __table_args__ = (
+        Index("ix_automation_schedules_project_id", "project_id"),
+        Index("ix_automation_schedules_enabled_next_run", "is_enabled", "next_run_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    target_type: Mapped[ScheduleTargetType] = mapped_column(
+        Enum(ScheduleTargetType), nullable=False
+    )
+    target_config_json: Mapped[str] = mapped_column(Text, default="{}")
+    cron_expression: Mapped[str] = mapped_column(String(120), nullable=False)
+    timezone: Mapped[str] = mapped_column(String(100), default="UTC", nullable=False)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    concurrency_policy: Mapped[ConcurrencyPolicy] = mapped_column(
+        Enum(ConcurrencyPolicy), default=ConcurrencyPolicy.skip, nullable=False
+    )
+    max_concurrent_runs: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    max_retries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retry_delay_seconds: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    runs: Mapped[list[AutomationScheduleRun]] = relationship(back_populates="schedule")
+
+
+class AutomationScheduleRun(Base):
+    __tablename__ = "automation_schedule_runs"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_id",
+            "scheduled_for",
+            "attempt",
+            "trigger_source",
+            name="uq_schedule_run_occurrence",
+        ),
+        Index("ix_schedule_runs_schedule_id", "schedule_id"),
+        Index("ix_schedule_runs_project_id", "project_id"),
+        Index("ix_schedule_runs_status", "status"),
+        Index("ix_schedule_runs_ready_at", "ready_at"),
+        Index("ix_schedule_runs_scheduled_for", "scheduled_for"),
+        Index(
+            "ix_schedule_runs_dispatch",
+            "status",
+            "ready_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schedule_id: Mapped[int] = mapped_column(
+        ForeignKey("automation_schedules.id"), nullable=False
+    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    trigger_source: Mapped[ScheduleTriggerSource] = mapped_column(
+        Enum(ScheduleTriggerSource), default=ScheduleTriggerSource.cron, nullable=False
+    )
+    status: Mapped[ScheduleRunStatus] = mapped_column(
+        Enum(ScheduleRunStatus), default=ScheduleRunStatus.pending, nullable=False
+    )
+    target_type: Mapped[ScheduleTargetType] = mapped_column(
+        Enum(ScheduleTargetType), nullable=False
+    )
+    target_resource_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    schedule: Mapped[AutomationSchedule] = relationship(back_populates="runs")
