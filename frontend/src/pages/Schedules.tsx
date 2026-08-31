@@ -107,9 +107,31 @@ export default function Schedules() {
   const [historySchedule, setHistorySchedule] = useState<AutomationSchedule | null>(null);
   const [form, setForm] = useState(defaultForm);
   const pollTimeoutRef = useRef<number | null>(null);
-  const pollInFlightRef = useRef(false);
+  const pollInFlightGenerationRef = useRef<number | null>(null);
   const shouldPollHistoryRef = useRef(false);
   const pollHistoryRef = useRef<(() => Promise<void>) | null>(null);
+  const historyRequestGenerationRef = useRef(0);
+  const activeHistoryScheduleIdRef = useRef<number | null>(null);
+
+  const isHistoryResponseCurrent = useCallback(
+    (generation: number, scheduleId: number) =>
+      historyRequestGenerationRef.current === generation
+      && activeHistoryScheduleIdRef.current === scheduleId,
+    [],
+  );
+
+  const beginHistorySession = useCallback((scheduleId: number) => {
+    historyRequestGenerationRef.current += 1;
+    pollInFlightGenerationRef.current = null;
+    activeHistoryScheduleIdRef.current = scheduleId;
+    return historyRequestGenerationRef.current;
+  }, []);
+
+  const endHistorySession = useCallback(() => {
+    historyRequestGenerationRef.current += 1;
+    pollInFlightGenerationRef.current = null;
+    activeHistoryScheduleIdRef.current = null;
+  }, []);
 
   const stopHistoryPolling = useCallback(() => {
     if (pollTimeoutRef.current !== null) {
@@ -119,7 +141,7 @@ export default function Schedules() {
   }, []);
 
   const scheduleHistoryPoll = useCallback((delayMs = SCHEDULE_HISTORY_POLL_INTERVAL_MS) => {
-    if (!projectId || !historySchedule || !shouldPollHistoryRef.current) {
+    if (!projectId || activeHistoryScheduleIdRef.current === null || !shouldPollHistoryRef.current) {
       return;
     }
     if (pollTimeoutRef.current !== null) {
@@ -129,22 +151,30 @@ export default function Schedules() {
       pollTimeoutRef.current = null;
       void pollHistoryRef.current?.();
     }, delayMs);
-  }, [historySchedule, projectId]);
+  }, [projectId]);
 
-  const fetchHistoryRuns = useCallback(async (schedule: AutomationSchedule) => {
+  const fetchHistoryRuns = useCallback(async (scheduleId: number) => {
     if (!projectId) return [];
     return api<AutomationScheduleRun[]>(
-      `/projects/${projectId}/schedules/${schedule.id}/runs`,
+      `/projects/${projectId}/schedules/${scheduleId}/runs`,
     );
   }, [projectId]);
 
   const pollHistoryRuns = useCallback(async () => {
-    if (!historySchedule || !shouldPollHistoryRef.current || pollInFlightRef.current) {
+    const scheduleId = activeHistoryScheduleIdRef.current;
+    if (scheduleId === null || !shouldPollHistoryRef.current) {
       return;
     }
-    pollInFlightRef.current = true;
+    const generation = historyRequestGenerationRef.current;
+    if (pollInFlightGenerationRef.current === generation) {
+      return;
+    }
+    pollInFlightGenerationRef.current = generation;
     try {
-      const rows = await fetchHistoryRuns(historySchedule);
+      const rows = await fetchHistoryRuns(scheduleId);
+      if (!isHistoryResponseCurrent(generation, scheduleId)) {
+        return;
+      }
       setRuns(rows);
       if (!hasActiveScheduleRuns(rows)) {
         stopHistoryPolling();
@@ -152,13 +182,20 @@ export default function Schedules() {
       }
       scheduleHistoryPoll();
     } catch {
-      if (shouldPollHistoryRef.current) {
+      if (isHistoryResponseCurrent(generation, scheduleId)) {
         scheduleHistoryPoll();
       }
     } finally {
-      pollInFlightRef.current = false;
+      if (pollInFlightGenerationRef.current === generation) {
+        pollInFlightGenerationRef.current = null;
+      }
     }
-  }, [fetchHistoryRuns, historySchedule, scheduleHistoryPoll, stopHistoryPolling]);
+  }, [
+    fetchHistoryRuns,
+    isHistoryResponseCurrent,
+    scheduleHistoryPoll,
+    stopHistoryPolling,
+  ]);
 
   useEffect(() => {
     pollHistoryRef.current = pollHistoryRuns;
@@ -236,17 +273,25 @@ export default function Schedules() {
   async function openHistory(schedule: AutomationSchedule) {
     if (!projectId) return;
     stopHistoryPolling();
+    const generation = beginHistorySession(schedule.id);
     setHistorySchedule(schedule);
     try {
-      const rows = await fetchHistoryRuns(schedule);
+      const rows = await fetchHistoryRuns(schedule.id);
+      if (!isHistoryResponseCurrent(generation, schedule.id)) {
+        return;
+      }
       setRuns(rows);
     } catch (reason) {
+      if (!isHistoryResponseCurrent(generation, schedule.id)) {
+        return;
+      }
       setError(reason instanceof Error ? reason.message : "Run history could not be loaded.");
     }
   }
 
   function closeHistory() {
     stopHistoryPolling();
+    endHistorySession();
     setHistorySchedule(null);
   }
 

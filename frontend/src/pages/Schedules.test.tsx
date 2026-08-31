@@ -51,6 +51,42 @@ vi.mock("../ProjectContext", () => ({
   userCanProject: () => true,
 }));
 
+type AutomationScheduleRun = {
+  id: number;
+  schedule_id: number;
+  project_id: number;
+  target_type: "pipeline_run";
+  scheduled_for: string;
+  attempt: number;
+  trigger_source: "manual" | "cron";
+  status: string;
+  target_resource_id: number | null;
+  error_message: string | null;
+  ready_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+};
+
+function makeRun(
+  overrides: Partial<AutomationScheduleRun> & Pick<AutomationScheduleRun, "id" | "schedule_id" | "status">,
+): AutomationScheduleRun {
+  return {
+    project_id: 7,
+    target_type: "pipeline_run",
+    scheduled_for: "2026-08-31T00:00:00Z",
+    attempt: 1,
+    trigger_source: "manual",
+    target_resource_id: null,
+    error_message: null,
+    ready_at: "2026-08-31T00:00:00Z",
+    started_at: null,
+    finished_at: null,
+    created_at: "2026-08-31T00:00:00Z",
+    ...overrides,
+  };
+}
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/projects/7/schedules"]}>
@@ -324,5 +360,119 @@ describe("Schedules page", () => {
     await vi.advanceTimersByTimeAsync(5200);
     expect(historyCallsFor10).toBe(callsBeforeSwitch);
     expect(historyCallsFor11).toBe(1);
+  });
+
+  it("ignores stale in-flight history responses after switching schedules", async () => {
+    let resolveStaleA: ((rows: AutomationScheduleRun[]) => void) | undefined;
+    const staleARequest = new Promise<AutomationScheduleRun[]>((resolve) => {
+      resolveStaleA = resolve;
+    });
+    const runAPending = makeRun({ id: 801, schedule_id: 10, status: "pending" });
+    const runATerminal = makeRun({
+      id: 801,
+      schedule_id: 10,
+      status: "succeeded",
+      target_resource_id: 90,
+      finished_at: "2026-08-31T00:00:05Z",
+    });
+    const runBPending = makeRun({ id: 802, schedule_id: 11, status: "pending" });
+    const runBSucceeded = makeRun({
+      id: 802,
+      schedule_id: 11,
+      status: "succeeded",
+      target_resource_id: 91,
+      finished_at: "2026-08-31T00:00:06Z",
+    });
+    let historyCallsFor10 = 0;
+    let historyCallsFor11 = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule, disabledSchedule];
+      if (path.endsWith("/schedules/10/runs")) {
+        historyCallsFor10 += 1;
+        if (historyCallsFor10 === 1) {
+          return staleARequest;
+        }
+        return [runAPending];
+      }
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCallsFor11 += 1;
+        return historyCallsFor11 === 1 ? [runBPending] : [runBSucceeded];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    const historyButtons = await screen.findAllByRole("button", { name: "History" });
+    fireEvent.click(historyButtons[0]);
+    await screen.findByText(/Run history — weekly-pipeline/i);
+    await waitFor(() => expect(historyCallsFor10).toBe(1));
+
+    fireEvent.click(historyButtons[1]);
+    await screen.findByText(/Run history — paused-import/i);
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+
+    resolveStaleA?.([runATerminal]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByText(/Run history — paused-import/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Run history — weekly-pipeline/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(2600);
+    await waitFor(() => expect(screen.getByText(/succeeded/i)).toBeInTheDocument());
+    expect(historyCallsFor11).toBeGreaterThan(1);
+  });
+
+  it("ignores stale in-flight history responses after closing the panel", async () => {
+    let resolveStale: ((rows: AutomationScheduleRun[]) => void) | undefined;
+    const staleRequest = new Promise<AutomationScheduleRun[]>((resolve) => {
+      resolveStale = resolve;
+    });
+    const runPending = makeRun({ id: 901, schedule_id: 11, status: "pending" });
+    const runTerminal = makeRun({
+      id: 901,
+      schedule_id: 11,
+      status: "succeeded",
+      target_resource_id: 99,
+      finished_at: "2026-08-31T00:00:05Z",
+    });
+    let historyCalls = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [disabledSchedule];
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCalls += 1;
+        return historyCalls === 1 ? staleRequest : [runPending];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    await screen.findByText(/Run history — paused-import/i);
+    await waitFor(() => expect(historyCalls).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByText(/Run history — paused-import/i)).not.toBeInTheDocument();
+
+    resolveStale?.([runTerminal]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(5200);
+    expect(historyCalls).toBe(1);
+    expect(screen.queryByText(/succeeded/i)).not.toBeInTheDocument();
   });
 });
