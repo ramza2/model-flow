@@ -58,7 +58,7 @@ The scheduler **only creates child job/run records**. Import, batch, and pipelin
 
 ## Disable / enable
 
-- **Disable:** stops new cron occurrences; pending (undispatched) runs → `skipped`; dispatched/running children continue
+- **Disable:** stops new cron occurrences; pending **cron** occurrences → `skipped`; **manual** run-now and manual retries still dispatch; dispatched/running children continue
 - **Enable:** recomputes `next_run_at` from now (no backlog)
 
 ## API (project-scoped)

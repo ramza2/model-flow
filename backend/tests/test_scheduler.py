@@ -194,20 +194,126 @@ def test_run_now_does_not_change_next_run_at():
         assert manual.trigger_source == ScheduleTriggerSource.manual
 
 
-def test_disable_skips_pending_runs():
+def test_disable_skips_cron_pending_runs():
     with TestingSessionLocal() as db:
         schedule = _seed_pipeline_schedule(db, due=True)
         scheduler.scheduler_tick(db, now=datetime.now(timezone.utc))
         schedule.is_enabled = False
         scheduler.disable_schedule_pending_runs(db, schedule.id)
         db.commit()
-        pending = db.scalars(
+        cron_pending = db.scalars(
             select(AutomationScheduleRun).where(
                 AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
                 AutomationScheduleRun.status == ScheduleRunStatus.pending,
             )
         ).all()
-        assert pending == []
+        assert cron_pending == []
+        skipped = db.scalars(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
+                AutomationScheduleRun.status == ScheduleRunStatus.skipped,
+            )
+        ).all()
+        assert len(skipped) == 1
+
+
+def test_disable_does_not_skip_manual_pending_runs():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=False)
+        now = datetime.now(timezone.utc)
+        manual = scheduler.create_manual_run(db, schedule, now=now)
+        db.commit()
+        scheduler.disable_schedule_pending_runs(db, schedule.id)
+        db.commit()
+        refreshed = db.get(AutomationScheduleRun, manual.id)
+        assert refreshed is not None
+        assert refreshed.status == ScheduleRunStatus.pending
+
+
+def test_disabled_schedule_manual_run_now_dispatches():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=False)
+        schedule.is_enabled = False
+        schedule.next_run_at = None
+        db.commit()
+        now = datetime.now(timezone.utc)
+        manual = scheduler.create_manual_run(db, schedule, now=now)
+        db.commit()
+        assert manual.status == ScheduleRunStatus.pending
+        stats = scheduler.scheduler_tick(db, now=now)
+        assert stats["skipped_disabled"] == 0
+        assert stats["dispatched"] == 1
+        refreshed_run = db.get(AutomationScheduleRun, manual.id)
+        assert refreshed_run is not None
+        assert refreshed_run.status == ScheduleRunStatus.dispatched
+        assert refreshed_run.target_resource_id is not None
+        child = db.get(PipelineRun, refreshed_run.target_resource_id)
+        assert child is not None
+        refreshed_schedule = db.get(AutomationSchedule, schedule.id)
+        assert refreshed_schedule.is_enabled is False
+        assert refreshed_schedule.next_run_at is None
+
+
+def test_disabled_schedule_cron_pending_skipped_on_tick():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=True)
+        now = datetime.now(timezone.utc)
+        cron_run = AutomationScheduleRun(
+            schedule_id=schedule.id,
+            project_id=schedule.project_id,
+            scheduled_for=now,
+            attempt=1,
+            trigger_source=ScheduleTriggerSource.cron,
+            status=ScheduleRunStatus.pending,
+            target_type=schedule.target_type,
+        )
+        schedule.is_enabled = False
+        db.add(cron_run)
+        db.commit()
+        stats = scheduler.scheduler_tick(db, now=now)
+        assert stats["skipped_disabled"] == 1
+        assert stats["dispatched"] == 0
+        refreshed = db.get(AutomationScheduleRun, cron_run.id)
+        assert refreshed is not None
+        assert refreshed.status == ScheduleRunStatus.skipped
+
+
+def test_disabled_schedule_manual_retry_dispatches():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=False)
+        schedule.is_enabled = False
+        schedule.next_run_at = None
+        db.commit()
+        now = datetime.now(timezone.utc)
+        manual = scheduler.create_manual_run(db, schedule, now=now)
+        db.commit()
+        scheduler.dispatch_pending_runs(db, now=now)
+        db.commit()
+        run = db.get(AutomationScheduleRun, manual.id)
+        assert run is not None and run.target_resource_id is not None
+        child = db.get(PipelineRun, run.target_resource_id)
+        child.status = JobStatus.failed
+        db.commit()
+        scheduler.reconcile_active_runs(db, now=now)
+        db.commit()
+        retry = db.scalar(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id,
+                AutomationScheduleRun.attempt == 2,
+                AutomationScheduleRun.trigger_source == ScheduleTriggerSource.manual,
+            )
+        )
+        assert retry is not None
+        assert retry.status == ScheduleRunStatus.pending
+        stats = scheduler.scheduler_tick(db, now=now + timedelta(seconds=2))
+        assert stats["dispatched"] == 1
+        refreshed_retry = db.get(AutomationScheduleRun, retry.id)
+        assert refreshed_retry is not None
+        assert refreshed_retry.status == ScheduleRunStatus.dispatched
+        assert refreshed_retry.target_resource_id is not None
+        assert db.get(AutomationSchedule, schedule.id).is_enabled is False
 
 
 def test_retry_creates_new_attempt_after_child_failure():

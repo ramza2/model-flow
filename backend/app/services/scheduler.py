@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -294,12 +294,13 @@ def skip_pending_runs_for_disabled_schedules(db: Session, *, now: datetime | Non
         .join(AutomationSchedule)
         .where(
             AutomationScheduleRun.status == ScheduleRunStatus.pending,
+            AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
             AutomationSchedule.is_enabled.is_(False),
         )
     ).all()
     for run in rows:
         run.status = ScheduleRunStatus.skipped
-        run.error_message = "Schedule is disabled."
+        run.error_message = "Schedule is disabled (cron occurrence)."
         run.finished_at = now
     db.flush()
     return len(rows)
@@ -385,7 +386,13 @@ def dispatch_pending_runs(db: Session, *, now: datetime | None = None) -> int:
         .join(AutomationSchedule)
         .where(
             AutomationScheduleRun.status == ScheduleRunStatus.pending,
-            AutomationSchedule.is_enabled.is_(True),
+            or_(
+                AutomationSchedule.is_enabled.is_(True),
+                and_(
+                    AutomationSchedule.is_enabled.is_(False),
+                    AutomationScheduleRun.trigger_source == ScheduleTriggerSource.manual,
+                ),
+            ),
             AutomationScheduleRun.ready_at.is_(None)
             | (AutomationScheduleRun.ready_at <= now),
         )
@@ -489,11 +496,12 @@ def disable_schedule_pending_runs(db: Session, schedule_id: int, *, now: datetim
         select(AutomationScheduleRun).where(
             AutomationScheduleRun.schedule_id == schedule_id,
             AutomationScheduleRun.status == ScheduleRunStatus.pending,
+            AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
         )
     ).all()
     for run in rows:
         run.status = ScheduleRunStatus.skipped
-        run.error_message = "Schedule was disabled."
+        run.error_message = "Schedule was disabled (cron occurrence)."
         run.finished_at = now
     db.flush()
     return len(rows)
