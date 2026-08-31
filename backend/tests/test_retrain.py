@@ -671,7 +671,10 @@ def test_legacy_retrain_applies_algorithm_override(client, auth_headers, project
         project_id,
         source["id"],
         dataset_version_id=version_id,
-        overrides={"algorithm": "random_forest"},
+        overrides={
+            "algorithm": "random_forest",
+            "hyperparameters": {"n_estimators": 10, "max_depth": 3},
+        },
     )
     assert response.status_code == 202, response.text
     assert response.json()["training_job"]["algorithm"] == "random_forest"
@@ -736,9 +739,9 @@ def test_legacy_retrain_applies_random_seed_and_ratio_overrides(client, auth_hea
     assert response.status_code == 202, response.text
     job = response.json()["training_job"]
     assert job["random_seed"] == 99
-    assert job["train_ratio"] == 0.6
-    assert job["val_ratio"] == 0.2
-    assert job["test_ratio"] == 0.2
+    assert job["ratios"]["train"] == 0.6
+    assert job["ratios"]["validation"] == 0.2
+    assert job["ratios"]["test"] == 0.2
 
 
 def test_legacy_retrain_applies_split_id_override(client, auth_headers, project_id):
