@@ -183,15 +183,64 @@ def test_inactive_data_source_fails_occurrence():
         assert "inactive" in (run.error_message or "").lower()
 
 
+def _assert_last_run_at(schedule: AutomationSchedule | None, expected: datetime) -> None:
+    assert schedule is not None
+    assert schedule.last_run_at is not None
+    actual = schedule.last_run_at
+    if actual.tzinfo is None:
+        actual = actual.replace(tzinfo=timezone.utc)
+    assert actual == expected
+
+
 def test_run_now_does_not_change_next_run_at():
     with TestingSessionLocal() as db:
         schedule = _seed_pipeline_schedule(db, due=False)
         original_next = schedule.next_run_at
-        manual = scheduler.create_manual_run(db, schedule, now=datetime.now(timezone.utc))
+        now = datetime.now(timezone.utc)
+        manual = scheduler.create_manual_run(db, schedule, now=now)
         db.commit()
         refreshed = db.get(AutomationSchedule, schedule.id)
         assert refreshed.next_run_at == original_next
         assert manual.trigger_source == ScheduleTriggerSource.manual
+        _assert_last_run_at(refreshed, now)
+
+
+def test_disabled_manual_run_updates_last_run_at_without_enabling():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=False)
+        schedule.is_enabled = False
+        schedule.next_run_at = None
+        db.commit()
+        now = datetime.now(timezone.utc)
+        scheduler.create_manual_run(db, schedule, now=now)
+        db.commit()
+        refreshed = db.get(AutomationSchedule, schedule.id)
+        assert refreshed.is_enabled is False
+        assert refreshed.next_run_at is None
+        _assert_last_run_at(refreshed, now)
+
+
+def test_manual_run_updates_last_run_at_after_cron():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=True)
+        cron_time = datetime.now(timezone.utc)
+        scheduler.scheduler_tick(db, now=cron_time)
+        refreshed = db.get(AutomationSchedule, schedule.id)
+        _assert_last_run_at(refreshed, cron_time)
+        manual_time = datetime.now(timezone.utc) + timedelta(seconds=5)
+        scheduler.create_manual_run(db, schedule, now=manual_time)
+        db.commit()
+        refreshed = db.get(AutomationSchedule, schedule.id)
+        _assert_last_run_at(refreshed, manual_time)
+
+
+def test_cron_occurrence_updates_last_run_at():
+    with TestingSessionLocal() as db:
+        schedule = _seed_pipeline_schedule(db, due=True)
+        now = datetime.now(timezone.utc)
+        scheduler.scheduler_tick(db, now=now)
+        refreshed = db.get(AutomationSchedule, schedule.id)
+        _assert_last_run_at(refreshed, now)
 
 
 def test_disable_skips_cron_pending_runs():

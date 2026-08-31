@@ -52,6 +52,12 @@ def _utc_now(now: datetime | None = None) -> datetime:
     return now.astimezone(timezone.utc)
 
 
+def _touch_last_run_at(schedule: AutomationSchedule, *, at: datetime) -> None:
+    """Record the most recent schedule occurrence time (cron, manual, or retry)."""
+
+    schedule.last_run_at = at
+
+
 def _loads_config(schedule: AutomationSchedule) -> dict:
     try:
         value = json.loads(schedule.target_config_json or "{}")
@@ -196,6 +202,7 @@ def _schedule_retry(
             )
             db.add(retry)
             db.flush()
+            _touch_last_run_at(schedule, at=now)
     except IntegrityError:
         # Concurrent worker inserted the same retry occurrence.
         logger.info(
@@ -366,7 +373,7 @@ def process_due_schedules(db: Session, *, now: datetime | None = None) -> int:
             attempt=1,
             trigger_source=ScheduleTriggerSource.cron,
         )
-        schedule.last_run_at = now
+        _touch_last_run_at(schedule, at=now)
         schedule.next_run_at = cron_schedule.advance_next_run(
             schedule.cron_expression,
             schedule.timezone,
@@ -459,6 +466,7 @@ def create_manual_run(
             )
             db.add(run)
             db.flush()
+            _touch_last_run_at(schedule, at=now)
             return run
     run = AutomationScheduleRun(
         schedule_id=schedule.id,
@@ -475,6 +483,7 @@ def create_manual_run(
         db.flush()
     except IntegrityError as exc:
         raise ValueError("A manual run for this schedule already exists at this time.") from exc
+    _touch_last_run_at(schedule, at=now)
     return run
 
 
