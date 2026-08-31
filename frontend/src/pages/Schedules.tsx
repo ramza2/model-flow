@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   api,
@@ -23,6 +23,10 @@ import {
   formatDate,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
+import {
+  hasActiveScheduleRuns,
+  SCHEDULE_HISTORY_POLL_INTERVAL_MS,
+} from "../scheduleHistoryPolling";
 
 const CRON_PRESETS: Record<string, string> = {
   hourly: "0 * * * *",
@@ -102,6 +106,100 @@ export default function Schedules() {
   const [editing, setEditing] = useState<AutomationSchedule | null>(null);
   const [historySchedule, setHistorySchedule] = useState<AutomationSchedule | null>(null);
   const [form, setForm] = useState(defaultForm);
+  const pollTimeoutRef = useRef<number | null>(null);
+  const pollInFlightGenerationRef = useRef<number | null>(null);
+  const shouldPollHistoryRef = useRef(false);
+  const pollHistoryRef = useRef<(() => Promise<void>) | null>(null);
+  const historyRequestGenerationRef = useRef(0);
+  const activeHistoryScheduleIdRef = useRef<number | null>(null);
+
+  const isHistoryResponseCurrent = useCallback(
+    (generation: number, scheduleId: number) =>
+      historyRequestGenerationRef.current === generation
+      && activeHistoryScheduleIdRef.current === scheduleId,
+    [],
+  );
+
+  const beginHistorySession = useCallback((scheduleId: number) => {
+    historyRequestGenerationRef.current += 1;
+    pollInFlightGenerationRef.current = null;
+    activeHistoryScheduleIdRef.current = scheduleId;
+    return historyRequestGenerationRef.current;
+  }, []);
+
+  const endHistorySession = useCallback(() => {
+    historyRequestGenerationRef.current += 1;
+    pollInFlightGenerationRef.current = null;
+    activeHistoryScheduleIdRef.current = null;
+  }, []);
+
+  const stopHistoryPolling = useCallback(() => {
+    if (pollTimeoutRef.current !== null) {
+      window.clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleHistoryPoll = useCallback((delayMs = SCHEDULE_HISTORY_POLL_INTERVAL_MS) => {
+    if (!projectId || activeHistoryScheduleIdRef.current === null || !shouldPollHistoryRef.current) {
+      return;
+    }
+    if (pollTimeoutRef.current !== null) {
+      return;
+    }
+    pollTimeoutRef.current = window.setTimeout(() => {
+      pollTimeoutRef.current = null;
+      void pollHistoryRef.current?.();
+    }, delayMs);
+  }, [projectId]);
+
+  const fetchHistoryRuns = useCallback(async (scheduleId: number) => {
+    if (!projectId) return [];
+    return api<AutomationScheduleRun[]>(
+      `/projects/${projectId}/schedules/${scheduleId}/runs`,
+    );
+  }, [projectId]);
+
+  const pollHistoryRuns = useCallback(async () => {
+    const scheduleId = activeHistoryScheduleIdRef.current;
+    if (scheduleId === null || !shouldPollHistoryRef.current) {
+      return;
+    }
+    const generation = historyRequestGenerationRef.current;
+    if (pollInFlightGenerationRef.current === generation) {
+      return;
+    }
+    pollInFlightGenerationRef.current = generation;
+    try {
+      const rows = await fetchHistoryRuns(scheduleId);
+      if (!isHistoryResponseCurrent(generation, scheduleId)) {
+        return;
+      }
+      setRuns(rows);
+      if (!hasActiveScheduleRuns(rows)) {
+        stopHistoryPolling();
+        return;
+      }
+      scheduleHistoryPoll();
+    } catch {
+      if (isHistoryResponseCurrent(generation, scheduleId)) {
+        scheduleHistoryPoll();
+      }
+    } finally {
+      if (pollInFlightGenerationRef.current === generation) {
+        pollInFlightGenerationRef.current = null;
+      }
+    }
+  }, [
+    fetchHistoryRuns,
+    isHistoryResponseCurrent,
+    scheduleHistoryPoll,
+    stopHistoryPolling,
+  ]);
+
+  useEffect(() => {
+    pollHistoryRef.current = pollHistoryRuns;
+  }, [pollHistoryRuns]);
 
   const publishedPipelines = useMemo(
     () => pipelines.filter((pipeline) => pipeline.status === "published"),
@@ -145,6 +243,23 @@ export default function Schedules() {
     void load();
   }, [load]);
 
+  useEffect(() => () => stopHistoryPolling(), [stopHistoryPolling]);
+
+  const shouldPollHistory = Boolean(historySchedule) && hasActiveScheduleRuns(runs);
+
+  useEffect(() => {
+    shouldPollHistoryRef.current = shouldPollHistory;
+  }, [shouldPollHistory]);
+
+  useEffect(() => {
+    if (!historySchedule || !shouldPollHistory) {
+      stopHistoryPolling();
+      return;
+    }
+    scheduleHistoryPoll();
+    return stopHistoryPolling;
+  }, [historySchedule, scheduleHistoryPoll, shouldPollHistory, stopHistoryPolling]);
+
   useEffect(() => {
     if (!projectId || !form.dataset_id) {
       setVersions([]);
@@ -157,15 +272,27 @@ export default function Schedules() {
 
   async function openHistory(schedule: AutomationSchedule) {
     if (!projectId) return;
+    stopHistoryPolling();
+    const generation = beginHistorySession(schedule.id);
     setHistorySchedule(schedule);
     try {
-      const rows = await api<AutomationScheduleRun[]>(
-        `/projects/${projectId}/schedules/${schedule.id}/runs`,
-      );
+      const rows = await fetchHistoryRuns(schedule.id);
+      if (!isHistoryResponseCurrent(generation, schedule.id)) {
+        return;
+      }
       setRuns(rows);
     } catch (reason) {
+      if (!isHistoryResponseCurrent(generation, schedule.id)) {
+        return;
+      }
       setError(reason instanceof Error ? reason.message : "Run history could not be loaded.");
     }
+  }
+
+  function closeHistory() {
+    stopHistoryPolling();
+    endHistorySession();
+    setHistorySchedule(null);
   }
 
   function openCreate() {
@@ -314,6 +441,7 @@ export default function Schedules() {
     try {
       await api(`/projects/${projectId}/schedules/${schedule.id}/run-now`, { method: "POST" });
       setSuccess(`Run now queued for "${schedule.name}".`);
+      await load();
       if (historySchedule?.id === schedule.id) {
         await openHistory(schedule);
       }
@@ -349,7 +477,7 @@ export default function Schedules() {
         description="Automate data imports, batch predictions, and pipeline runs with cron schedules."
         actions={
           canWrite ? (
-            <button type="button" className="primary" data-testid="schedule-create-open" onClick={openCreate} disabled={busy}>
+            <button type="button" className="btn" data-testid="schedule-create-open" onClick={openCreate} disabled={busy}>
               Create schedule
             </button>
           ) : undefined
@@ -388,24 +516,24 @@ export default function Schedules() {
                   <td>{schedule.is_enabled ? "Yes" : "No"}</td>
                   <td>{schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}</td>
                   <td>{schedule.next_run_at ? formatDate(schedule.next_run_at) : "—"}</td>
-                  <td className="table-actions">
+                  <td className="row-actions">
                     {canWrite && (
                       <>
-                        <button type="button" onClick={() => void runNow(schedule)} disabled={busy}>
+                        <button type="button" className="btn" onClick={() => void runNow(schedule)} disabled={busy}>
                           Run now
                         </button>
-                        <button type="button" onClick={() => void toggleEnabled(schedule)} disabled={busy}>
+                        <button type="button" className="btn secondary" onClick={() => void toggleEnabled(schedule)} disabled={busy}>
                           {schedule.is_enabled ? "Disable" : "Enable"}
                         </button>
-                        <button type="button" onClick={() => openEdit(schedule)} disabled={busy}>
+                        <button type="button" className="btn secondary" onClick={() => openEdit(schedule)} disabled={busy}>
                           Edit
                         </button>
-                        <button type="button" onClick={() => void deleteSchedule(schedule)} disabled={busy}>
+                        <button type="button" className="btn link danger-text" onClick={() => void deleteSchedule(schedule)} disabled={busy}>
                           Delete
                         </button>
                       </>
                     )}
-                    <button type="button" onClick={() => void openHistory(schedule)}>
+                    <button type="button" className="btn secondary" onClick={() => void openHistory(schedule)}>
                       History
                     </button>
                   </td>
@@ -418,9 +546,9 @@ export default function Schedules() {
 
       {historySchedule && (
         <section className="panel">
-          <div className="panel-header">
+          <div className="panel-header row-actions">
             <h2>Run history — {historySchedule.name}</h2>
-            <button type="button" onClick={() => setHistorySchedule(null)}>Close</button>
+            <button type="button" className="btn secondary" onClick={closeHistory}>Close</button>
           </div>
           {runs.length === 0 ? (
             <p>No runs recorded yet.</p>
@@ -786,11 +914,11 @@ export default function Schedules() {
               </>
             )}
 
-            <div className="form-actions">
-              <button type="button" onClick={() => setShowForm(false)} disabled={busy}>
+            <div className="form-actions row-actions">
+              <button type="button" className="btn secondary" onClick={() => setShowForm(false)} disabled={busy}>
                 Cancel
               </button>
-              <button type="submit" className="primary" data-testid="schedule-submit" disabled={busy}>
+              <button type="submit" className="btn" data-testid="schedule-submit" disabled={busy}>
                 {editing ? "Save changes" : "Create schedule"}
               </button>
             </div>

@@ -1,47 +1,44 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Schedules from "./Schedules";
 
-const disabledSchedule = {
-  id: 11,
+const enabledSchedule = {
+  id: 10,
   project_id: 7,
-  name: "paused-import",
+  name: "weekly-pipeline",
   description: "",
   target_type: "pipeline_run" as const,
   target_config: { pipeline_id: 1, pipeline_version_id: 1, parameters: {}, fail_policy: "stop" },
   cron_expression: "0 9 * * 1",
   timezone: "UTC",
-  is_enabled: false,
+  is_enabled: true,
   concurrency_policy: "skip" as const,
   max_concurrent_runs: 1,
   max_retries: 0,
   retry_delay_seconds: 60,
   last_run_at: null,
-  next_run_at: null,
+  next_run_at: "2026-02-01T09:00:00Z",
   created_by: 1,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
 
-const apiMock = vi.fn(async (path: string, init?: RequestInit) => {
-  if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
-    return [disabledSchedule];
-  }
-  if (path.endsWith("/run-now")) return { id: 99, status: "pending" };
-  if (path.endsWith("/data-sources")) return [];
-  if (path.endsWith("/datasets")) return [];
-  if (path.endsWith("/endpoints")) return [];
-  if (path.endsWith("/models")) return [];
-  if (path.endsWith("/pipelines")) return [];
-  return [];
-});
+const disabledSchedule = {
+  ...enabledSchedule,
+  id: 11,
+  name: "paused-import",
+  is_enabled: false,
+  next_run_at: null,
+};
+
+const apiMock = vi.fn();
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
   return {
     ...actual,
-    api: (path: string, init?: RequestInit) => apiMock(path, init),
+    api: (...args: unknown[]) => apiMock(...args),
   };
 });
 
@@ -54,9 +51,76 @@ vi.mock("../ProjectContext", () => ({
   userCanProject: () => true,
 }));
 
+type AutomationScheduleRun = {
+  id: number;
+  schedule_id: number;
+  project_id: number;
+  target_type: "pipeline_run";
+  scheduled_for: string;
+  attempt: number;
+  trigger_source: "manual" | "cron";
+  status: string;
+  target_resource_id: number | null;
+  error_message: string | null;
+  ready_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+};
+
+function makeRun(
+  overrides: Partial<AutomationScheduleRun> & Pick<AutomationScheduleRun, "id" | "schedule_id" | "status">,
+): AutomationScheduleRun {
+  return {
+    project_id: 7,
+    target_type: "pipeline_run",
+    scheduled_for: "2026-08-31T00:00:00Z",
+    attempt: 1,
+    trigger_source: "manual",
+    target_resource_id: null,
+    error_message: null,
+    ready_at: "2026-08-31T00:00:00Z",
+    started_at: null,
+    finished_at: null,
+    created_at: "2026-08-31T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={["/projects/7/schedules"]}>
+      <Routes>
+        <Route path="/projects/:projectId/schedules" element={<Schedules />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
 describe("Schedules page", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
+        return [disabledSchedule];
+      }
+      if (path.endsWith("/run-now")) return { id: 99, status: "pending" };
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders empty state", async () => {
-    apiMock.mockImplementationOnce(async (path: string) => {
+    apiMock.mockImplementation(async (path: string) => {
       if (path.endsWith("/schedules")) return [];
       if (path.endsWith("/data-sources")) return [];
       if (path.endsWith("/datasets")) return [];
@@ -65,27 +129,50 @@ describe("Schedules page", () => {
       if (path.endsWith("/pipelines")) return [];
       return [];
     });
-    render(
-      <MemoryRouter initialEntries={["/projects/7/schedules"]}>
-        <Routes>
-          <Route path="/projects/:projectId/schedules" element={<Schedules />} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderPage();
     expect(await screen.findByText("No schedules yet")).toBeInTheDocument();
     expect(
       screen.getByText(/automate data imports, batch predictions, or pipeline runs/i),
     ).toBeInTheDocument();
   });
 
-  it("allows Run now on disabled schedules", async () => {
-    render(
-      <MemoryRouter initialEntries={["/projects/7/schedules"]}>
-        <Routes>
-          <Route path="/projects/:projectId/schedules" element={<Schedules />} />
-        </Routes>
-      </MemoryRouter>,
+  it("uses shared button classes across schedule actions", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule, disabledSchedule];
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+    renderPage();
+    expect(await screen.findByTestId("schedule-create-open")).toHaveClass("btn");
+    expect(screen.getAllByRole("button", { name: "Run now" })[0]).toHaveClass("btn");
+    expect(screen.getAllByRole("button", { name: "Disable" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "Edit" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "Delete" })[0]).toHaveClass(
+      "btn",
+      "link",
+      "danger-text",
     );
+    expect(screen.getAllByRole("button", { name: "History" })[0]).toHaveClass("btn", "secondary");
+  });
+
+  it("allows Run now on disabled schedules", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
+        return [disabledSchedule];
+      }
+      if (path.endsWith("/run-now")) return { id: 99, status: "pending" };
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+    renderPage();
     expect(await screen.findByText("paused-import")).toBeInTheDocument();
     expect(screen.getByText("No")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
@@ -98,5 +185,294 @@ describe("Schedules page", () => {
     expect(
       await screen.findByText(/Run now queued for "paused-import"/i),
     ).toBeInTheDocument();
+  });
+
+  it("uses checkbox-row for the Enabled field in the create form", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule];
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("schedule-create-open"));
+    const enabledCheckbox = screen.getByRole("checkbox");
+    expect(enabledCheckbox.closest("label")).toHaveClass("checkbox-row");
+    expect(enabledCheckbox).toBeInTheDocument();
+    expect(screen.getByTestId("schedule-submit")).toHaveClass("btn");
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("btn", "secondary");
+  });
+
+  it("polls run history while active runs exist and stops at terminal status", async () => {
+    const pendingRun = {
+      id: 501,
+      schedule_id: 11,
+      project_id: 7,
+      target_type: "pipeline_run" as const,
+      scheduled_for: "2026-08-31T00:00:00Z",
+      attempt: 1,
+      trigger_source: "manual" as const,
+      status: "pending",
+      target_resource_id: null,
+      error_message: null,
+      ready_at: "2026-08-31T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+      created_at: "2026-08-31T00:00:00Z",
+    };
+    const succeededRun = {
+      ...pendingRun,
+      status: "succeeded",
+      target_resource_id: 88,
+      started_at: "2026-08-31T00:00:01Z",
+      finished_at: "2026-08-31T00:00:05Z",
+    };
+    let historyCalls = 0;
+
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/schedules") && (!init || init.method === undefined)) {
+        return [disabledSchedule];
+      }
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCalls += 1;
+        return historyCalls === 1 ? [pendingRun] : [succeededRun];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    expect(await screen.findByText(/pending/i)).toBeInTheDocument();
+    const initialCalls = historyCalls;
+
+    await vi.advanceTimersByTimeAsync(2600);
+    await waitFor(() => expect(screen.getByText(/succeeded/i)).toBeInTheDocument());
+    expect(historyCalls).toBeGreaterThan(initialCalls);
+
+    const callsAfterTerminal = historyCalls;
+    await vi.advanceTimersByTimeAsync(5200);
+    expect(historyCalls).toBe(callsAfterTerminal);
+  });
+
+  it("cleans up history polling when the panel is closed", async () => {
+    const pendingRun = {
+      id: 601,
+      schedule_id: 11,
+      project_id: 7,
+      target_type: "pipeline_run" as const,
+      scheduled_for: "2026-08-31T00:00:00Z",
+      attempt: 1,
+      trigger_source: "manual" as const,
+      status: "pending",
+      target_resource_id: null,
+      error_message: null,
+      ready_at: "2026-08-31T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+      created_at: "2026-08-31T00:00:00Z",
+    };
+    let historyCalls = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [disabledSchedule];
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCalls += 1;
+        return [pendingRun];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    await screen.findByText(/pending/i);
+    const callsBeforeClose = historyCalls;
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await vi.advanceTimersByTimeAsync(5200);
+    expect(historyCalls).toBe(callsBeforeClose);
+  });
+
+  it("cleans up polling when switching to another schedule history", async () => {
+    const pendingRun = {
+      id: 701,
+      schedule_id: 10,
+      project_id: 7,
+      target_type: "pipeline_run" as const,
+      scheduled_for: "2026-08-31T00:00:00Z",
+      attempt: 1,
+      trigger_source: "manual" as const,
+      status: "pending",
+      target_resource_id: null,
+      error_message: null,
+      ready_at: "2026-08-31T00:00:00Z",
+      started_at: null,
+      finished_at: null,
+      created_at: "2026-08-31T00:00:00Z",
+    };
+    const terminalRun = {
+      ...pendingRun,
+      id: 702,
+      schedule_id: 11,
+      status: "succeeded",
+      target_resource_id: 44,
+      finished_at: "2026-08-31T00:00:05Z",
+    };
+    let historyCallsFor10 = 0;
+    let historyCallsFor11 = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule, disabledSchedule];
+      if (path.endsWith("/schedules/10/runs")) {
+        historyCallsFor10 += 1;
+        return [pendingRun];
+      }
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCallsFor11 += 1;
+        return [terminalRun];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    const historyButtons = await screen.findAllByRole("button", { name: "History" });
+    fireEvent.click(historyButtons[0]);
+    await screen.findByText(/Run history — weekly-pipeline/i);
+    const callsBeforeSwitch = historyCallsFor10;
+    fireEvent.click(historyButtons[1]);
+    await screen.findByText(/Run history — paused-import/i);
+    await vi.advanceTimersByTimeAsync(5200);
+    expect(historyCallsFor10).toBe(callsBeforeSwitch);
+    expect(historyCallsFor11).toBe(1);
+  });
+
+  it("ignores stale in-flight history responses after switching schedules", async () => {
+    let resolveStaleA: ((rows: AutomationScheduleRun[]) => void) | undefined;
+    const staleARequest = new Promise<AutomationScheduleRun[]>((resolve) => {
+      resolveStaleA = resolve;
+    });
+    const runAPending = makeRun({ id: 801, schedule_id: 10, status: "pending" });
+    const runATerminal = makeRun({
+      id: 801,
+      schedule_id: 10,
+      status: "succeeded",
+      target_resource_id: 90,
+      finished_at: "2026-08-31T00:00:05Z",
+    });
+    const runBPending = makeRun({ id: 802, schedule_id: 11, status: "pending" });
+    const runBSucceeded = makeRun({
+      id: 802,
+      schedule_id: 11,
+      status: "succeeded",
+      target_resource_id: 91,
+      finished_at: "2026-08-31T00:00:06Z",
+    });
+    let historyCallsFor10 = 0;
+    let historyCallsFor11 = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule, disabledSchedule];
+      if (path.endsWith("/schedules/10/runs")) {
+        historyCallsFor10 += 1;
+        if (historyCallsFor10 === 1) {
+          return staleARequest;
+        }
+        return [runAPending];
+      }
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCallsFor11 += 1;
+        return historyCallsFor11 === 1 ? [runBPending] : [runBSucceeded];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    const historyButtons = await screen.findAllByRole("button", { name: "History" });
+    fireEvent.click(historyButtons[0]);
+    await screen.findByText(/Run history — weekly-pipeline/i);
+    await waitFor(() => expect(historyCallsFor10).toBe(1));
+
+    fireEvent.click(historyButtons[1]);
+    await screen.findByText(/Run history — paused-import/i);
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+
+    resolveStaleA?.([runATerminal]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByText(/Run history — paused-import/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Run history — weekly-pipeline/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+
+    await vi.advanceTimersByTimeAsync(2600);
+    await waitFor(() => expect(screen.getByText(/succeeded/i)).toBeInTheDocument());
+    expect(historyCallsFor11).toBeGreaterThan(1);
+  });
+
+  it("ignores stale in-flight history responses after closing the panel", async () => {
+    let resolveStale: ((rows: AutomationScheduleRun[]) => void) | undefined;
+    const staleRequest = new Promise<AutomationScheduleRun[]>((resolve) => {
+      resolveStale = resolve;
+    });
+    const runPending = makeRun({ id: 901, schedule_id: 11, status: "pending" });
+    const runTerminal = makeRun({
+      id: 901,
+      schedule_id: 11,
+      status: "succeeded",
+      target_resource_id: 99,
+      finished_at: "2026-08-31T00:00:05Z",
+    });
+    let historyCalls = 0;
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [disabledSchedule];
+      if (path.endsWith("/schedules/11/runs")) {
+        historyCalls += 1;
+        return historyCalls === 1 ? staleRequest : [runPending];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "History" }));
+    await screen.findByText(/Run history — paused-import/i);
+    await waitFor(() => expect(historyCalls).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByText(/Run history — paused-import/i)).not.toBeInTheDocument();
+
+    resolveStale?.([runTerminal]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    await vi.advanceTimersByTimeAsync(5200);
+    expect(historyCalls).toBe(1);
+    expect(screen.queryByText(/succeeded/i)).not.toBeInTheDocument();
   });
 });
