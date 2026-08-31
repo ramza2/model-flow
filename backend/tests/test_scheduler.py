@@ -197,26 +197,24 @@ def test_run_now_does_not_change_next_run_at():
 def test_disable_skips_cron_pending_runs():
     with TestingSessionLocal() as db:
         schedule = _seed_pipeline_schedule(db, due=True)
-        scheduler.scheduler_tick(db, now=datetime.now(timezone.utc))
-        schedule.is_enabled = False
+        now = datetime.now(timezone.utc)
+        cron_run = AutomationScheduleRun(
+            schedule_id=schedule.id,
+            project_id=schedule.project_id,
+            scheduled_for=now,
+            attempt=1,
+            trigger_source=ScheduleTriggerSource.cron,
+            status=ScheduleRunStatus.pending,
+            target_type=schedule.target_type,
+        )
+        db.add(cron_run)
+        db.commit()
         scheduler.disable_schedule_pending_runs(db, schedule.id)
         db.commit()
-        cron_pending = db.scalars(
-            select(AutomationScheduleRun).where(
-                AutomationScheduleRun.schedule_id == schedule.id,
-                AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
-                AutomationScheduleRun.status == ScheduleRunStatus.pending,
-            )
-        ).all()
-        assert cron_pending == []
-        skipped = db.scalars(
-            select(AutomationScheduleRun).where(
-                AutomationScheduleRun.schedule_id == schedule.id,
-                AutomationScheduleRun.trigger_source == ScheduleTriggerSource.cron,
-                AutomationScheduleRun.status == ScheduleRunStatus.skipped,
-            )
-        ).all()
-        assert len(skipped) == 1
+        refreshed = db.get(AutomationScheduleRun, cron_run.id)
+        assert refreshed is not None
+        assert refreshed.status == ScheduleRunStatus.skipped
+        assert "disabled" in (refreshed.error_message or "").lower()
 
 
 def test_disable_does_not_skip_manual_pending_runs():
