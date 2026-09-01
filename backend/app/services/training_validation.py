@@ -16,11 +16,15 @@ from app.db.models import (
 from app.schemas.v1 import JobCreate
 from app.services import storage
 from app.services.algorithm_catalog import (
-    normalize_problem_type,
+    normalize_problem_type_for_targets,
     resolve_algorithm,
     validate_hyperparameters,
 )
 from app.services.quality import get_training_quality_blockers
+from app.services.target_columns import (
+    effective_target_columns_from_values,
+    is_multi_output,
+)
 from app.services.training import _read_frame
 
 
@@ -126,28 +130,39 @@ def resolve_problem_type_for_version(
     project_id: int,
     *,
     dataset_id: int,
-    target_column: str,
+    target_column: str | None = None,
+    target_columns: list[str] | None = None,
     dataset_version_id: int | None = None,
     problem_type: str = "auto",
 ) -> dict[str, Any]:
     dataset = _get_owned(db, Dataset, dataset_id, project_id, "Dataset")
     version = _resolve_version(db, project_id, dataset, dataset_version_id)
+    effective_targets = effective_target_columns_from_values(
+        target_column,
+        target_columns,
+    )
     columns = _loads(version.columns_json if version else dataset.columns_json, [])
-    if target_column not in columns:
+    missing = [column for column in effective_targets if column not in columns]
+    if missing:
         raise TrainingConfigError(
             422,
-            f"Target column '{target_column}' is not in the dataset.",
+            f"Target column(s) not in the dataset: {', '.join(missing)}",
             f"Available columns: {', '.join(columns)}",
         )
     frame = _load_frame(version, dataset)
     try:
-        resolved = normalize_problem_type(problem_type, frame[target_column])
+        resolved = normalize_problem_type_for_targets(
+            problem_type,
+            frame,
+            effective_targets,
+        )
     except ValueError as exc:
         raise TrainingConfigError(422, str(exc)) from exc
     return {
         "requested_problem_type": problem_type,
         "resolved_problem_type": resolved,
-        "target_column": target_column,
+        "target_column": effective_targets[0],
+        "target_columns": effective_targets,
         "dataset_id": dataset.id,
         "dataset_version_id": version.id if version else None,
     }
@@ -159,12 +174,14 @@ def validate_training_config(
     """Validate training inputs before creating a DB job row or queueing work."""
     dataset = _get_owned(db, Dataset, body.dataset_id, project_id, "Dataset")
     version = _resolve_version(db, project_id, dataset, body.dataset_version_id)
+    effective_targets = list(body.target_columns or [body.target_column])
 
     columns = _loads(version.columns_json if version else dataset.columns_json, [])
-    if body.target_column not in columns:
+    missing_targets = [column for column in effective_targets if column not in columns]
+    if missing_targets:
         raise TrainingConfigError(
             422,
-            f"Target column '{body.target_column}' is not in the dataset.",
+            f"Target column(s) not in the dataset: {', '.join(missing_targets)}",
             f"Available columns: {', '.join(columns)}",
         )
 
@@ -218,10 +235,12 @@ def validate_training_config(
         )
     if len(feature_columns) != len(set(feature_columns)):
         raise TrainingConfigError(422, "Feature columns must be unique.")
-    if body.target_column in feature_columns:
+    overlap = [column for column in effective_targets if column in feature_columns]
+    if overlap:
         raise TrainingConfigError(
             422,
-            "The target column cannot also be a feature column.",
+            "Target columns cannot also be feature columns.",
+            f"Overlapping columns: {', '.join(overlap)}",
         )
     missing_features = [column for column in feature_columns if column not in columns]
     if missing_features:
@@ -233,9 +252,13 @@ def validate_training_config(
 
     frame = _load_frame(version, dataset)
     try:
-        resolved_problem_type = normalize_problem_type(
-            body.problem_type, frame[body.target_column]
+        resolved_problem_type = normalize_problem_type_for_targets(
+            body.problem_type,
+            frame,
+            effective_targets,
         )
+        if is_multi_output(effective_targets) and resolved_problem_type != "regression":
+            raise ValueError("Multi-output training requires regression.")
         algorithm = resolve_algorithm(body.algorithm, resolved_problem_type)
         hyperparameters = validate_hyperparameters(algorithm, body.hyperparameters)
     except ValueError as exc:
@@ -247,6 +270,8 @@ def validate_training_config(
             "hyperparameters": hyperparameters,
             "feature_columns": feature_columns,
             "dataset_version_id": version.id if version else body.dataset_version_id,
+            "target_column": effective_targets[0],
+            "target_columns": effective_targets,
         }
     )
     return ValidatedTrainingConfig(

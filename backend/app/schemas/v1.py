@@ -6,6 +6,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.db.models import AlertSeverity, DataSourceType, ProjectRole
+from app.services.target_columns import TargetColumnError, canonicalize_job_targets
 
 
 class LoginRequest(BaseModel):
@@ -116,7 +117,8 @@ class JobCreate(BaseModel):
     dataset_version_id: int | None = None
     split_id: int | None = None
     description: str = ""
-    target_column: str = Field(min_length=1, max_length=200)
+    target_column: str | None = Field(default=None, min_length=1, max_length=200)
+    target_columns: list[str] | None = None
     problem_type: Literal["auto", "classification", "regression"] = "auto"
     algorithm: str = Field(default="random_forest", min_length=1, max_length=100)
     hyperparameters: dict[str, Any] = Field(default_factory=dict)
@@ -135,6 +137,22 @@ class JobCreate(BaseModel):
         if abs(self.train_ratio + self.val_ratio + self.test_ratio - 1.0) > 1e-6:
             raise ValueError("train_ratio, val_ratio and test_ratio must total 1")
         return self
+
+    @model_validator(mode="after")
+    def canonicalize_targets(self) -> JobCreate:
+        try:
+            primary, effective = canonicalize_job_targets(
+                self.target_column,
+                self.target_columns,
+            )
+        except TargetColumnError as exc:
+            raise ValueError(str(exc)) from exc
+        return self.model_copy(
+            update={
+                "target_column": primary,
+                "target_columns": effective,
+            }
+        )
 
 
 class JobCloneRequest(BaseModel):

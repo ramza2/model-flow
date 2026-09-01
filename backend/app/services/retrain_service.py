@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import JobStatus, TrainingJob
 from app.schemas.v1 import JobCreate, JobRetrainRequest, RetrainRequest
+from app.services.target_columns import effective_target_columns_from_job
 from app.services.training_validation import ValidatedTrainingConfig, validate_training_config
 
 
@@ -48,13 +49,15 @@ def build_job_create_from_source(
     """Copy a succeeded job's saved configuration into a JobCreate payload."""
 
     default_name = f"{source.name} ({default_name_suffix})"
+    target_columns = effective_target_columns_from_job(source)
     values: dict[str, Any] = {
         "name": name or default_name,
         "dataset_id": source.dataset_id,
         "dataset_version_id": source.dataset_version_id,
         "split_id": source.split_id,
         "description": source.description,
-        "target_column": source.target_column,
+        "target_column": target_columns[0],
+        "target_columns": target_columns,
         "problem_type": source.problem_type,
         "algorithm": source.algorithm,
         "hyperparameters": _loads(source.hyperparameters_json, {}),
@@ -80,13 +83,15 @@ def build_retrain_job_create(source: TrainingJob, body: JobRetrainRequest) -> Jo
     """
 
     validate_retrain_source(source)
+    target_columns = effective_target_columns_from_job(source)
     return JobCreate(
         name=body.name.strip(),
         description=body.description if body.description is not None else source.description,
         dataset_id=source.dataset_id,
         dataset_version_id=body.dataset_version_id,
         split_id=body.split_id,
-        target_column=source.target_column,
+        target_column=target_columns[0],
+        target_columns=target_columns,
         problem_type=source.problem_type,
         algorithm=source.algorithm,
         hyperparameters=_loads(source.hyperparameters_json, {}),

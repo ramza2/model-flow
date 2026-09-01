@@ -30,6 +30,11 @@ from app.db.models import (
 )
 from app.services import datasets as dataset_service
 from app.services import inference, quality, storage
+from app.services.prediction_serialization import serialize_predictions
+from app.services.target_columns import (
+    dumps_target_columns,
+    resolve_output_target_columns,
+)
 from app.services.alerts import create_alert
 from app.services.algorithm_catalog import canonicalize_algorithm, resolve_algorithm
 from app.services.training import TrainingJobContext, get_training_runner
@@ -111,14 +116,26 @@ def _edge_branch(edge: dict[str, Any]) -> str:
     return str(value or "always").strip().lower()
 
 
+def _pipeline_target_columns(config: dict[str, Any]) -> tuple[str, list[str]]:
+    raw_list = config.get("target_columns")
+    if isinstance(raw_list, list):
+        columns = [str(column).strip() for column in raw_list if str(column).strip()]
+        if columns:
+            return columns[0], columns
+    target = str(config.get("target_column") or "").strip()
+    return target, [target] if target else []
+
+
 def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str, Any]) -> list[str]:
     """Node-level config checks applied only when validate_graph(strict=True)."""
 
     errors: list[str] = []
     if node_type == "training":
-        target = str(config.get("target_column") or "").strip()
-        if not target:
-            errors.append(f"Node '{node_id}' requires a non-empty target_column.")
+        _, targets = _pipeline_target_columns(config)
+        if not targets:
+            errors.append(
+                f"Node '{node_id}' requires target_column or target_columns configuration."
+            )
         algorithm = str(config.get("algorithm") or "").strip()
         if not algorithm:
             errors.append(f"Node '{node_id}' requires a non-empty algorithm.")
@@ -479,13 +496,15 @@ def _execute_node(
             raise ValueError("training input is missing dataset lineage.")
         split_config = _find(incoming, "split_config") or {}
         preprocessing = _find(incoming, "preprocessing") or config.get("preprocessing", {})
+        primary_target, target_columns = _pipeline_target_columns(config)
         job = TrainingJob(
             project_id=run.project_id,
             dataset_id=dataset_id,
             dataset_version_id=_find(incoming, "dataset_version_id"),
             split_id=_find(incoming, "split_id"),
             name=str(config.get("name", f"pipeline-{run.id}-training")),
-            target_column=str(config.get("target_column", "")),
+            target_column=primary_target,
+            target_columns_json=dumps_target_columns(target_columns),
             problem_type=str(config.get("problem_type", "auto")),
             algorithm=str(config.get("algorithm", "random_forest")),
             hyperparameters_json=json.dumps(config.get("hyperparameters", {})),
@@ -500,7 +519,7 @@ def _execute_node(
             created_by=run.created_by,
         )
         if not job.target_column:
-            raise ValueError("training requires target_column configuration.")
+            raise ValueError("training requires target_column or target_columns configuration.")
         db.add(job)
         db.flush()
         result = get_training_runner().run(
@@ -509,6 +528,7 @@ def _execute_node(
                 project_id=run.project_id,
                 job_name=job.name,
                 target_column=job.target_column,
+                target_columns=target_columns,
                 algorithm=job.algorithm,
                 hyperparameters=json.loads(job.hyperparameters_json),
                 csv_bytes=frame.to_csv(index=False).encode(),
@@ -653,11 +673,27 @@ def _execute_node(
             version_id = _find(incoming, "dataset_version_id")
         if frame is None or not version_id:
             raise ValueError("batch_prediction requires versioned dataset input.")
-        target_column = config.get("target_column")
-        features = frame.drop(columns=[target_column]) if target_column in frame.columns else frame
+        target_columns = config.get("target_columns") or []
+        if not isinstance(target_columns, list):
+            target_columns = []
+        legacy_target = config.get("target_column")
+        if legacy_target and legacy_target not in target_columns:
+            target_columns = [legacy_target, *target_columns]
+        drop_columns = [column for column in target_columns if column in frame.columns]
+        features = frame.drop(columns=drop_columns) if drop_columns else frame
         predictions = inference.load_model(model_uri).predict(features)
         result_frame = frame.copy()
-        result_frame[str(config.get("prediction_column", "prediction"))] = predictions
+        output_targets = resolve_output_target_columns(
+            metadata=json.loads(model.metadata_json or "{}") if isinstance(model, ModelVersion) else {},
+            job=None,
+        ) or [str(column) for column in target_columns if column]
+        serialized = serialize_predictions(predictions, target_columns=output_targets or None)
+        if output_targets and len(output_targets) > 1:
+            for name in output_targets:
+                column_name = f"prediction_{name}"
+                result_frame[column_name] = [row[name] for row in serialized]
+        else:
+            result_frame[str(config.get("prediction_column", "prediction"))] = serialized
         data = result_frame.to_csv(index=False).encode()
         key = f"project-{run.project_id}/pipeline-{run.id}/{uuid.uuid4().hex}.csv"
         storage.upload_bytes(settings.minio_batch_bucket, key, data, "text/csv")

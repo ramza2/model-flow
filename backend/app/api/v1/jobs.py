@@ -25,6 +25,7 @@ from app.services.retrain_service import (
     build_job_create_from_source,
     prepare_retrain_job,
 )
+from app.services.target_columns import dumps_target_columns
 from app.services.training_validation import (
     TrainingConfigError,
     resolve_problem_type_for_version,
@@ -37,7 +38,8 @@ router = APIRouter(tags=["training-jobs"])
 class ResolveProblemTypeRequest(BaseModel):
     dataset_id: int
     dataset_version_id: int | None = None
-    target_column: str = Field(min_length=1, max_length=200)
+    target_column: str | None = Field(default=None, min_length=1, max_length=200)
+    target_columns: list[str] | None = None
     problem_type: str = "auto"
 
 
@@ -60,6 +62,7 @@ def _new_job(
         name=body.name.strip(),
         description=body.description,
         target_column=body.target_column,
+        target_columns_json=dumps_target_columns(body.target_columns or [body.target_column]),
         problem_type=body.problem_type,
         algorithm=body.algorithm,
         hyperparameters_json=dumps(body.hyperparameters),
@@ -116,6 +119,7 @@ def resolve_problem_type(
             dataset_id=body.dataset_id,
             dataset_version_id=body.dataset_version_id,
             target_column=body.target_column,
+            target_columns=body.target_columns,
             problem_type=body.problem_type,
         )
     except TrainingConfigError as exc:

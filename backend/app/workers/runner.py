@@ -39,6 +39,11 @@ from app.db.session import SessionLocal
 from app.services import datasets, drift, inference, pipeline_engine, scheduler, storage
 from app.services.alerts import create_alert
 from app.services.dataset_splits import content_sha256
+from app.services.prediction_serialization import serialize_predictions
+from app.services.target_columns import (
+    effective_target_columns_from_job,
+    resolve_output_target_columns,
+)
 from app.services.training import TrainingJobContext, get_training_runner
 
 logger = logging.getLogger(__name__)
@@ -285,6 +290,7 @@ def process_job(job: TrainingJob) -> None:
             "project_id": live.project_id,
             "job_name": live.name,
             "target_column": live.target_column,
+            "target_columns": effective_target_columns_from_job(live),
             "algorithm": live.algorithm,
             "hyperparameters": json.loads(live.hyperparameters_json or "{}"),
             "experiment_name": f"project-{live.project_id}",
@@ -467,8 +473,11 @@ def _batch_features(
         if missing:
             raise ValueError(f"Batch dataset is missing model features: {missing}")
         return frame.loc[:, columns]
-    if training_job is not None and training_job.target_column in frame.columns:
-        return frame.drop(columns=[training_job.target_column])
+    if training_job is not None:
+        target_columns = effective_target_columns_from_job(training_job)
+        drop_columns = [column for column in target_columns if column in frame.columns]
+        if drop_columns:
+            return frame.drop(columns=drop_columns)
     return frame
 
 
@@ -511,15 +520,34 @@ def process_batch_job(job: BatchInferenceJob) -> None:
         if not model_uri:
             raise ValueError("Batch inference requires an endpoint or model version.")
 
+        training_job = (
+            db.get(TrainingJob, model_version.training_job_id)
+            if model_version is not None and model_version.training_job_id
+            else None
+        )
         frame = datasets.load_dataset_version_dataframe(version)
         features = _batch_features(db, frame, endpoint, model_version)
         predictions = inference.load_model(model_uri).predict(features)
         if len(predictions) != len(frame):
             raise RuntimeError("Model returned a different number of predictions than input rows.")
+        target_columns = resolve_output_target_columns(
+            metadata=json.loads(model_version.metadata_json or "{}") if model_version else {},
+            job=training_job,
+        )
+        serialized = serialize_predictions(predictions, target_columns=target_columns or None)
         result_frame = frame.copy()
-        result_frame["prediction"] = [
-            value.item() if hasattr(value, "item") else value for value in predictions
-        ]
+        if target_columns and len(target_columns) > 1:
+            for name in target_columns:
+                column_name = f"prediction_{name}"
+                if column_name in result_frame.columns:
+                    raise ValueError(
+                        f"Batch result column '{column_name}' already exists in the input dataset."
+                    )
+                result_frame[column_name] = [row[name] for row in serialized]
+        else:
+            if "prediction" in result_frame.columns:
+                raise ValueError("Batch result column 'prediction' already exists in the input dataset.")
+            result_frame["prediction"] = serialized
         payload, content_type = _encode_batch_result(result_frame, live.result_format)
         key = (
             f"project-{live.project_id}/batch-jobs/{live.id}/"
