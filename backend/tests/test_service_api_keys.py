@@ -481,7 +481,9 @@ def test_external_predict_dtype_normalization(client, auth_headers, monkeypatch)
     monkeypatch.setattr(
         inference,
         "predict",
-        lambda uri, instances: [{"ok": True, "value": instances[0]["supply_temp"]}],
+        lambda uri, instances, feature_schema=None, target_columns=None: [
+            {"ok": True, "value": instances[0]["supply_temp"]}
+        ],
     )
     # JSON int for double schema should pass through existing normalization
     ok = client.post(
