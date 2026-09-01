@@ -13,14 +13,18 @@ from app.api.v1.common import (
     friendly,
     get_owned,
     job_out,
-    loads,
 )
 from app.core.deps import get_auth, require_project_perm
 from app.core.rbac import Permission
 from app.db.models import DatasetVersion, JobStatus, TrainingJob
 from app.db.session import get_db
-from app.schemas.v1 import JobCloneRequest, JobCreate
+from app.schemas.v1 import JobCloneRequest, JobCreate, JobRetrainRequest
 from app.services.algorithm_catalog import list_algorithms
+from app.services.retrain_service import (
+    RetrainConfigError,
+    build_job_create_from_source,
+    prepare_retrain_job,
+)
 from app.services.training_validation import (
     TrainingConfigError,
     resolve_problem_type_for_version,
@@ -38,6 +42,10 @@ class ResolveProblemTypeRequest(BaseModel):
 
 
 def _raise_config_error(exc: TrainingConfigError) -> None:
+    raise friendly(exc.status_code, exc.detail, exc.hint) from exc
+
+
+def _raise_retrain_error(exc: RetrainConfigError) -> None:
     raise friendly(exc.status_code, exc.detail, exc.hint) from exc
 
 
@@ -73,28 +81,7 @@ def _new_job(
 def _body_from_job(
     job: TrainingJob, *, name: str | None = None, overrides: dict | None = None
 ) -> JobCreate:
-    values = {
-        "name": name or f"{job.name} (clone)",
-        "dataset_id": job.dataset_id,
-        "dataset_version_id": job.dataset_version_id,
-        "split_id": job.split_id,
-        "description": job.description,
-        "target_column": job.target_column,
-        "problem_type": job.problem_type,
-        "algorithm": job.algorithm,
-        "hyperparameters": loads(job.hyperparameters_json, {}),
-        "preprocessing": loads(job.preprocessing_json, {}),
-        "feature_columns": loads(job.feature_columns_json, []),
-        "metrics_config": loads(job.metrics_config_json, []),
-        "resources": loads(job.resource_json, {}),
-        "random_seed": job.random_seed,
-        "train_ratio": job.train_ratio,
-        "val_ratio": job.val_ratio,
-        "test_ratio": job.test_ratio,
-        "max_retries": job.max_retries,
-    }
-    values.update(overrides or {})
-    return JobCreate.model_validate(values)
+    return build_job_create_from_source(job, name=name, overrides=overrides)
 
 
 @router.get("/training/algorithms")
@@ -139,6 +126,7 @@ def resolve_problem_type(
 def list_jobs(
     project_id: int,
     status: JobStatus | None = None,
+    retrain_source_job_id: int | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _=Depends(require_project_perm(Permission.TRAIN_READ)),
@@ -147,6 +135,11 @@ def list_jobs(
     statement = select(TrainingJob).where(TrainingJob.project_id == project_id)
     if status is not None:
         statement = statement.where(TrainingJob.status == status)
+    if retrain_source_job_id is not None:
+        get_owned(db, TrainingJob, retrain_source_job_id, project_id, "Training job")
+        statement = statement.where(
+            TrainingJob.retrain_source_job_id == retrain_source_job_id
+        )
     rows = db.scalars(
         statement.order_by(TrainingJob.id.desc()).offset(skip).limit(limit)
     ).all()
@@ -278,6 +271,43 @@ def clone_job(
         "training_job",
         job.id,
         after={"parent_job_id": source.id},
+    )
+    db.commit()
+    db.refresh(job)
+    return job_out(job)
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/retrain", status_code=201)
+def retrain_job(
+    project_id: int,
+    job_id: int,
+    body: JobRetrainRequest,
+    access=Depends(require_project_perm(Permission.TRAIN_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    source = get_owned(db, TrainingJob, job_id, project_id, "Training job")
+    try:
+        validated = prepare_retrain_job(db, project_id, source, body)
+    except RetrainConfigError as exc:
+        _raise_retrain_error(exc)
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
+    job.retrain_source_job_id = source.id
+    db.add(job)
+    db.flush()
+    audit_event(
+        db,
+        auth,
+        "training_job.retrain",
+        "training_job",
+        job.id,
+        after={
+            "retrain_source_job_id": source.id,
+            "dataset_version_id": body.dataset_version_id,
+            "split_id": body.split_id,
+        },
     )
     db.commit()
     db.refresh(job)

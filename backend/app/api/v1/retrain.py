@@ -1,3 +1,5 @@
+"""Legacy retrain trigger endpoint and RetrainTrigger records for drift/automation."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -5,19 +7,32 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.v1.common import audit_event, dumps, friendly, get_owned, job_out, retrain_out
-from app.api.v1.jobs import _body_from_job, _new_job
+from app.api.v1.common import audit_event, dumps, get_owned, job_out, retrain_out
+from app.api.v1.jobs import _new_job, _raise_config_error, _raise_retrain_error
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
 from app.db.models import RetrainTrigger, TrainingJob
 from app.db.session import get_db
 from app.schemas.v1 import RetrainRequest
-from app.services.training_validation import TrainingConfigError, validate_training_config
+from app.services.retrain_service import (
+    RetrainConfigError,
+    prepare_legacy_retrain_job,
+)
+from app.services.training_validation import TrainingConfigError
 
 router = APIRouter(tags=["retraining"])
 
 
-@router.post("/projects/{project_id}/retrain", status_code=202)
+@router.post(
+    "/projects/{project_id}/retrain",
+    status_code=202,
+    deprecated=True,
+    summary="Legacy retrain trigger (deprecated)",
+    description=(
+        "Deprecated compatibility endpoint. "
+        "Use POST /projects/{project_id}/jobs/{job_id}/retrain for new integrations."
+    ),
+)
 def trigger_retrain(
     project_id: int,
     body: RetrainRequest,
@@ -26,20 +41,14 @@ def trigger_retrain(
 ):
     auth, _, _ = access
     source = get_owned(db, TrainingJob, body.source_job_id, project_id, "Training job")
-    overrides = dict(body.overrides)
-    if body.dataset_version_id is not None:
-        overrides["dataset_version_id"] = body.dataset_version_id
-    retrain_body = _body_from_job(
-        source,
-        name=body.name or f"{source.name} (retrain)",
-        overrides=overrides,
-    )
     try:
-        validated = validate_training_config(db, project_id, retrain_body)
+        validated = prepare_legacy_retrain_job(db, project_id, source, body)
+    except RetrainConfigError as exc:
+        _raise_retrain_error(exc)
     except TrainingConfigError as exc:
-        raise friendly(exc.status_code, exc.detail, exc.hint) from exc
+        _raise_config_error(exc)
     job = _new_job(validated.body, project_id, auth.user.id, validated.version)
-    job.parent_job_id = source.id
+    job.retrain_source_job_id = source.id
     db.add(job)
     db.flush()
     trigger = RetrainTrigger(
@@ -48,7 +57,7 @@ def trigger_retrain(
         config_json=dumps(
             {
                 "source_job_id": source.id,
-                "dataset_version_id": body.dataset_version_id,
+                "dataset_version_id": validated.body.dataset_version_id,
                 "overrides": body.overrides,
             }
         ),

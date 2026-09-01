@@ -79,6 +79,7 @@ class TrainingJobContext:
     data_format: str = "csv"
     split_id: int | None = None
     dataset_version_id: int | None = None
+    retrain_source_job_id: int | None = None
     split_train_hash: str | None = None
     split_validation_hash: str | None = None
     split_test_hash: str | None = None
@@ -458,6 +459,8 @@ class SklearnTrainingRunner:
         }
         if ctx.dataset_version_id is not None:
             logged_params["dataset_version_id"] = ctx.dataset_version_id
+        if ctx.retrain_source_job_id is not None:
+            logged_params["retrain_source_job_id"] = ctx.retrain_source_job_id
         if ctx.split_id is not None:
             logged_params["split_id"] = ctx.split_id
             logged_params["split_train_ratio"] = ctx.train_ratio
@@ -484,6 +487,8 @@ class SklearnTrainingRunner:
                 "modelflow.problem_type": problem_type,
                 "modelflow.algorithm": algorithm,
             }
+            if ctx.retrain_source_job_id is not None:
+                tags["modelflow.retrain_source_job_id"] = str(ctx.retrain_source_job_id)
             if ctx.split_id is not None:
                 tags["modelflow.split_id"] = str(ctx.split_id)
                 tags["modelflow.split_source"] = "saved"
