@@ -17,6 +17,18 @@
       "cve": "GHSA-g6cj-pr64-35w5",
       "reason": "Same PKCS7 oracle as CVE-2026-69247; blocked by MLflow cryptography upper bound (<50).",
       "expires": "2026-11-05"
+    },
+    {
+      "package": "mlflow",
+      "cve": "CVE-2026-71211",
+      "reason": "AI Gateway SSRF via stored api_base; ModelFlow uses MLflow tracking/registry only and does not expose the gateway proxy path. Track until MLflow image pin is upgraded.",
+      "expires": "2026-11-05"
+    },
+    {
+      "package": "mlflow",
+      "cve": "GHSA-h7x2-h6g9-p789",
+      "reason": "Same AI Gateway SSRF as CVE-2026-71211; ModelFlow does not use MLflow AI Gateway secrets or raw_proxy.",
+      "expires": "2026-11-05"
     }
   ]
 }
