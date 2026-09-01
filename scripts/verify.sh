@@ -600,6 +600,31 @@ echo "$REG_JOB_JSON" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert "rmse" in d["metrics"] or "r2" in d["metrics"]'
 pass "regression training (ridge)"
 
+info "8b2) Multi-output regression training"
+MO_DS=$(api -X POST "$API_BASE/projects/$PID/datasets" \
+  -F "name=verify-multi-output-$RUN_TAG" \
+  -F "file=@samples/multi_output_regression.csv;type=text/csv")
+MO_DID=$(echo "$MO_DS" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+MO_DVID=$(echo "$MO_DS" | json_get 'import sys,json; print(json.load(sys.stdin)["version"]["id"])')
+MO_JOB=$(api -X POST "$API_BASE/projects/$PID/jobs" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"verify-multi-output\",\"dataset_id\":$MO_DID,\"dataset_version_id\":$MO_DVID,\"target_columns\":[\"power_usage\",\"cooling_load\"],\"problem_type\":\"regression\",\"algorithm\":\"ridge\",\"feature_columns\":[\"temperature\",\"pressure\",\"wind\"],\"hyperparameters\":{}}")
+MO_JID=$(echo "$MO_JOB" | json_get 'import sys,json; print(json.load(sys.stdin)["id"])')
+for i in $(seq 1 120); do
+  MO_JOB_JSON=$(api "$API_BASE/projects/$PID/jobs/$MO_JID")
+  STATUS=$(echo "$MO_JOB_JSON" | json_get 'import sys,json; print(json.load(sys.stdin)["status"])')
+  if [[ "$STATUS" == "succeeded" ]]; then break; fi
+  if [[ "$STATUS" == "failed" || "$STATUS" == "cancelled" ]]; then
+    echo "$MO_JOB_JSON" | tee artifacts/verify/multi-output-job-failed.json
+    fail "multi-output regression training entered terminal status $STATUS"
+  fi
+  sleep 5
+  if [[ $i -eq 120 ]]; then fail "multi-output regression training timed out"; fi
+done
+echo "$MO_JOB_JSON" \
+  | json_get 'import sys,json; d=json.load(sys.stdin); assert d["target_columns"] == ["power_usage", "cooling_load"]; assert "rmse" in d["metrics"]'
+pass "multi-output regression training (ridge)"
+
 info "8c) Visual pipeline publish + execute"
 PIPE_BODY=$(DVID="$DVID" docker run --rm -i -e DVID="$DVID" "$PYTHON_IMAGE" python - <<'PY'
 import json, os

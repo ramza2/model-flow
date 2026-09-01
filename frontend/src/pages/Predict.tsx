@@ -6,6 +6,13 @@ import { ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice } from "..
 import { userCanProject, useProject } from "../ProjectContext";
 import { buildPredictionSamplePayload } from "../trainingConfig";
 
+function formatPredictionPreview(prediction: unknown): string {
+  if (prediction !== null && typeof prediction === "object") {
+    return JSON.stringify(prediction);
+  }
+  return String(prediction);
+}
+
 function initialPayloadFromEndpoint(endpoint: Endpoint): string {
   if (endpoint.prediction_sample && Object.keys(endpoint.prediction_sample).length > 0) {
     return JSON.stringify([endpoint.prediction_sample], null, 2);
@@ -110,7 +117,16 @@ export default function Predict() {
           </form>
           <section className="panel result-panel">
             <div className="panel-title"><div><span className="eyebrow">Response</span><h2>Prediction result</h2></div></div>
-            {result ? <><div className="prediction-value">{String(result.predictions[0])}</div><pre className="json-view" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre></> : <div className="result-placeholder">Run a prediction to inspect the response.</div>}
+            {result ? (
+              <>
+                <div className="prediction-value" data-testid="predict-preview">
+                  {formatPredictionPreview(result.predictions[0])}
+                </div>
+                <pre className="json-view" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre>
+              </>
+            ) : (
+              <div className="result-placeholder">Run a prediction to inspect the response.</div>
+            )}
           </section>
         </div>
       )}

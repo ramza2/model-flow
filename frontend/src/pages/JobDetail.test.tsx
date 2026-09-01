@@ -154,6 +154,7 @@ describe("JobDetail retrain", () => {
     renderPage("42");
     fireEvent.click(await screen.findByTestId("job-retrain"));
     expect(await screen.findByTestId("retrain-source-summary")).toHaveTextContent("target");
+    expect(screen.getByTestId("retrain-targets")).toHaveTextContent("target");
     expect(screen.getByTestId("retrain-source-summary")).toHaveTextContent("random forest");
     fireEvent.change(screen.getByTestId("retrain-dataset-version"), { target: { value: "31" } });
     fireEvent.change(screen.getByTestId("retrain-name"), { target: { value: "baseline v2 retrain" } });
@@ -183,5 +184,23 @@ describe("JobDetail retrain", () => {
     const lineage = await screen.findByTestId("job-retrain-lineage");
     expect(lineage).toHaveTextContent("Job #10");
     expect(lineage.querySelector("a")).toHaveAttribute("href", "/projects/7/jobs/10");
+  });
+
+  it("shows target columns label for multi-output jobs", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          target_column: "target_a",
+          target_columns: ["target_a", "target_b"],
+          problem_type: "regression",
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    const targetRow = await screen.findByTestId("job-target-columns");
+    expect(targetRow).toHaveTextContent("Target columns");
+    expect(targetRow).toHaveTextContent("target_a, target_b");
   });
 });

@@ -302,6 +302,7 @@ class TrainingJob(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     target_column: Mapped[str] = mapped_column(String(200), nullable=False)
+    target_columns_json: Mapped[str] = mapped_column(Text, nullable=False, server_default="[]")
     problem_type: Mapped[str] = mapped_column(String(50), default="auto")  # classification|regression|auto
     algorithm: Mapped[str] = mapped_column(String(100), default="random_forest")
     hyperparameters_json: Mapped[str] = mapped_column(Text, default="{}")

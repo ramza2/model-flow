@@ -64,6 +64,7 @@ class AlgorithmSpec:
     display_name: str
     problem_types: tuple[str, ...]
     hyperparameters: tuple[HyperparameterSpec, ...]
+    multi_output_strategy: str = "unsupported"  # native | wrapper | unsupported
 
     @property
     def default_hyperparameters(self) -> dict[str, Any]:
@@ -78,6 +79,7 @@ class AlgorithmSpec:
             "id": self.id,
             "display_name": self.display_name,
             "problem_types": list(self.problem_types),
+            "multi_output_strategy": self.multi_output_strategy,
             "default_hyperparameters": self.default_hyperparameters,
             "supported_hyperparameters": sorted(self.supported_parameter_names),
             "hyperparameters": [
@@ -192,18 +194,21 @@ ALGORITHM_CATALOG: dict[str, AlgorithmSpec] = {
                 maximum=1e6,
             ),
         ),
+        multi_output_strategy="native",
     ),
     "random_forest_regressor": AlgorithmSpec(
         id="random_forest_regressor",
         display_name="Random forest regressor",
         problem_types=("regression",),
         hyperparameters=_TREE_PARAMS,
+        multi_output_strategy="native",
     ),
     "gradient_boosting_regressor": AlgorithmSpec(
         id="gradient_boosting_regressor",
         display_name="Gradient boosting regressor",
         problem_types=("regression",),
         hyperparameters=_GB_PARAMS,
+        multi_output_strategy="wrapper",
     ),
 }
 
@@ -259,6 +264,54 @@ def normalize_problem_type(value: str, target: pd.Series) -> str:
     if value not in {"classification", "regression"}:
         raise ValueError("problem_type must be classification, regression, or auto.")
     return value
+
+
+def is_numeric_regression_target(target: pd.Series) -> bool:
+    return pd.api.types.is_numeric_dtype(target) and not isinstance(
+        target.dtype, pd.CategoricalDtype
+    )
+
+
+def normalize_problem_type_for_targets(
+    value: str,
+    frame: pd.DataFrame,
+    target_columns: list[str],
+) -> str:
+    requested = str(value or "auto").lower().strip()
+    if len(target_columns) > 1:
+        if requested == "classification":
+            raise ValueError("Multi-output classification is not supported.")
+        for column in target_columns:
+            if column not in frame.columns:
+                raise ValueError(f"Target column '{column}' is not in the dataset.")
+            series = frame[column]
+            if requested == "regression":
+                if pd.api.types.is_bool_dtype(series):
+                    raise ValueError(
+                        f"Target column '{column}' cannot be boolean for regression."
+                    )
+                if not is_numeric_regression_target(series):
+                    raise ValueError(
+                        f"Target column '{column}' must be numeric for multi-output regression."
+                    )
+            elif requested == "auto":
+                if detect_problem_type(series) != "regression":
+                    raise ValueError("Multi-output classification is not supported.")
+            else:
+                raise ValueError("problem_type must be regression for multi-output targets.")
+        return "regression"
+    return normalize_problem_type(value, frame[target_columns[0]])
+
+
+def wrap_estimator_for_multi_output(estimator: Any, algorithm: str) -> Any:
+    from sklearn.multioutput import MultiOutputRegressor
+
+    spec = ALGORITHM_CATALOG.get(algorithm)
+    if spec is None or spec.multi_output_strategy == "unsupported":
+        raise ValueError(f"Algorithm '{algorithm}' does not support multi-output regression.")
+    if spec.multi_output_strategy == "wrapper":
+        return MultiOutputRegressor(estimator)
+    return estimator
 
 
 def resolve_algorithm(value: str, problem_type: str) -> str:

@@ -34,6 +34,7 @@ from app.db.models import (
     TrainingJob,
     User,
 )
+from app.services.target_columns import effective_target_columns_from_job
 
 T = TypeVar("T")
 
@@ -301,6 +302,7 @@ def job_out(row: TrainingJob) -> dict[str, Any]:
         "name": row.name,
         "description": row.description,
         "target_column": row.target_column,
+        "target_columns": effective_target_columns_from_job(row),
         "problem_type": row.problem_type,
         "algorithm": row.algorithm,
         "hyperparameters": loads(row.hyperparameters_json, {}),

@@ -167,4 +167,29 @@ describe("Predict prediction sample payload", () => {
     expect(screen.getByTestId("predict-submit")).toBeDisabled();
     expect(payloadValue()).toContain("SITE_A");
   });
+
+  it("renders multi-output prediction previews as JSON objects", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/predict") && init?.method === "POST") {
+        return {
+          predictions: [
+            { demand_kw: 12.5, supply_temp: 68.2 },
+            { demand_kw: 10.1, supply_temp: 66.0 },
+          ],
+          model_uri: "models:/demand-model/1",
+        };
+      }
+      return {
+        ...baseEndpoint,
+        feature_schema: ["site_id", "hour"],
+        prediction_sample: { site_id: "SITE_A", hour: 9 },
+      };
+    });
+    renderPredict();
+    await screen.findByTestId("predict-payload");
+    fireEvent.click(screen.getByTestId("predict-submit"));
+    const preview = await screen.findByTestId("predict-preview");
+    expect(preview).toHaveTextContent('{"demand_kw":12.5,"supply_temp":68.2}');
+    expect(screen.getByTestId("predict-result")).toHaveTextContent("demand_kw");
+  });
 });

@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +14,11 @@ from sqlalchemy.orm import Session
 from app.core.audit import write_audit
 from app.db.models import DatasetVersion, ModelLifecycle, ModelVersion, TrainingJob
 from app.services import inference, mlflow_service
+from app.services.target_columns import (
+    effective_target_columns_from_job,
+    is_multi_output,
+    output_schema_for_targets,
+)
 
 CLASSIFICATION_METRICS = ("accuracy", "f1", "f1_score", "f1_macro", "f1_weighted")
 
@@ -169,10 +175,11 @@ def build_registration_feature_schema(
             if isinstance(name, str) and name
         ]
     if not names and version is not None and job is not None:
+        excluded = set(effective_target_columns_from_job(job))
         names = [
             str(name)
             for name in _json_list(version.columns_json)
-            if isinstance(name, str) and name and name != job.target_column
+            if isinstance(name, str) and name and name not in excluded
         ]
     return _enrich_schema_dtypes(
         [{"name": name, "required": True} for name in names],
@@ -279,6 +286,24 @@ def register_from_run(
         "feature_schema": feature_schema,
         "run_tags": run.get("tags") or {},
     }
+    target_columns: list[str] = []
+    if training_job is not None:
+        target_columns = effective_target_columns_from_job(training_job)
+    if params.get("target_columns"):
+        try:
+            parsed = json.loads(str(params["target_columns"]))
+        except (TypeError, ValueError):
+            parsed = [
+                part.strip()
+                for part in str(params["target_columns"]).split(",")
+                if part.strip()
+            ]
+        if isinstance(parsed, list) and parsed:
+            target_columns = [str(column) for column in parsed]
+    if target_columns:
+        metadata["target_columns"] = target_columns
+        metadata["output_schema"] = output_schema_for_targets(target_columns)
+        metadata["multi_output"] = is_multi_output(target_columns)
     if params.get("problem_type"):
         metadata["problem_type"] = params["problem_type"]
     row = ModelVersion(
@@ -378,10 +403,11 @@ def _feature_schema(
 
     feature_names: list[Any] = _json_list(job.feature_columns_json)
     if not feature_names and version is not None:
+        excluded = set(effective_target_columns_from_job(job))
         feature_names = [
             name
             for name in _json_list(version.columns_json)
-            if isinstance(name, str) and name != job.target_column
+            if isinstance(name, str) and name not in excluded
         ]
     draft = [
         {"name": str(name), "required": True}
@@ -760,8 +786,9 @@ def evaluate_gates(
                 started = time.perf_counter()
                 prediction = loaded_model.predict(pd.DataFrame([sample]))
                 latency_ms = (time.perf_counter() - started) * 1000
-                if len(prediction) != 1:
-                    raise ValueError("Model did not return exactly one prediction.")
+                prediction_rows = np.asarray(prediction).shape[0]
+                if prediction_rows != 1:
+                    raise ValueError("Model did not return exactly one prediction row.")
             except Exception as exc:
                 prediction_error = exc
         results.append(

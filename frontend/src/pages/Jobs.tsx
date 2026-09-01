@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Job } from "../api";
+import { formatJobTargets } from "../jobHelpers";
 import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
@@ -66,7 +67,7 @@ export default function Jobs() {
                   <td><Link to={`/projects/${projectId}/jobs/${job.id}`}><strong>{job.name}</strong></Link><small className="table-subtitle">{job.description || `Job #${job.id}`}</small></td>
                   <td><StatusBadge status={job.status} /></td>
                   <td>{job.algorithm.replaceAll("_", " ")}</td>
-                  <td className="mono">{job.target_column}</td>
+                  <td className="mono">{formatJobTargets(job)}</td>
                   <td>{Object.keys(job.metrics).length ? Object.entries(job.metrics).slice(0, 1).map(([key, value]) => `${key}: ${Number(value).toFixed(3)}`) : "—"}</td>
                   <td>{formatDate(job.created_at)}</td>
                 </tr>

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import DatasetVersion, Endpoint, ModelVersion, TrainingJob
+from app.services.prediction_serialization import serialize_predictions
 
 _cache: dict[str, Any] = {}
 
@@ -342,10 +343,11 @@ def predict(
     model_uri: str,
     instances: list[dict[str, Any]],
     feature_schema: str | list[str] | list[dict[str, Any]] | dict[str, Any] | None = None,
+    target_columns: list[str] | None = None,
 ) -> list[Any]:
     validate_instances(instances, feature_schema)
     model = load_model(model_uri)
     frame = pd.DataFrame(instances)
     frame = normalize_prediction_frame(frame, _model_input_schema(model))
     preds = model.predict(frame)
-    return [p.item() if hasattr(p, "item") else p for p in preds]
+    return serialize_predictions(preds, target_columns=target_columns)

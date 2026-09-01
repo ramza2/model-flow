@@ -35,6 +35,7 @@ from app.schemas.v1 import (
     PredictRequest,
 )
 from app.services import inference
+from app.services.target_columns import resolve_output_target_columns
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,17 @@ def _inferred_schema(db: Session, model: ModelVersion) -> list[Any]:
     return loads(job.feature_columns_json, []) if job else []
 
 
+def _output_target_columns(db: Session, endpoint: Endpoint) -> list[str]:
+    if not endpoint.model_version_id:
+        return []
+    model = db.get(ModelVersion, endpoint.model_version_id)
+    if model is None:
+        return []
+    metadata = loads(model.metadata_json, {})
+    job = db.get(TrainingJob, model.training_job_id) if model.training_job_id else None
+    return resolve_output_target_columns(metadata=metadata, job=job)
+
+
 def _record_prediction(
     db: Session,
     endpoint: Endpoint,
@@ -97,7 +109,13 @@ def _record_prediction(
         )
     started = time.perf_counter()
     try:
-        predictions = inference.predict(endpoint.model_uri, body.instances)
+        target_columns = _output_target_columns(db, endpoint)
+        predictions = inference.predict(
+            endpoint.model_uri,
+            body.instances,
+            endpoint.feature_schema_json,
+            target_columns=target_columns or None,
+        )
         latency_ms = (time.perf_counter() - started) * 1000
         endpoint.success_count = (endpoint.success_count or 0) + 1
         stat = InferenceStat(

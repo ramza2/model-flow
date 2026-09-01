@@ -593,7 +593,7 @@ def test_strict_validate_graph_node_configs():
         strict=True,
     )
     assert training_missing["valid"] is False
-    assert any("target_column" in err for err in training_missing["errors"])
+    assert any("target_column" in err or "target_columns" in err for err in training_missing["errors"])
 
     draft_ok = pipeline_engine.validate_graph(
         graph(_node("training-1", "training", target_column="", algorithm="")),

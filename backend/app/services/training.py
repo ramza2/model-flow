@@ -41,8 +41,11 @@ from app.services.algorithm_catalog import (
     CLASSIFICATION_ALGORITHMS,
     REGRESSION_ALGORITHMS,
     normalize_problem_type as _normalise_problem_type,
+    normalize_problem_type_for_targets,
     resolve_algorithm as _resolve_algorithm,
+    wrap_estimator_for_multi_output,
 )
+from app.services.target_columns import is_multi_output, output_schema_for_targets
 
 # Re-export catalog constants for callers that historically imported them here.
 __all__ = (
@@ -65,6 +68,7 @@ class TrainingJobContext:
     algorithm: str
     hyperparameters: dict[str, Any]
     experiment_name: str
+    target_columns: list[str] = field(default_factory=list)
     csv_bytes: bytes | None = None
     train_bytes: bytes | None = None
     validation_bytes: bytes | None = None
@@ -86,6 +90,12 @@ class TrainingJobContext:
     train_object_key: str | None = None
     validation_object_key: str | None = None
     test_object_key: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.target_columns:
+            self.target_columns = [self.target_column]
+        elif self.target_column not in self.target_columns:
+            self.target_column = self.target_columns[0]
 
 
 @dataclass
@@ -138,7 +148,13 @@ def _filtered_params(estimator: Any, values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key in accepted}
 
 
-def _estimator(algorithm: str, hyperparameters: dict[str, Any], seed: int) -> Any:
+def _estimator(
+    algorithm: str,
+    hyperparameters: dict[str, Any],
+    seed: int,
+    *,
+    multi_output: bool = False,
+) -> Any:
     if algorithm == "logistic_regression":
         estimator = LogisticRegression(max_iter=1000, random_state=seed)
     elif algorithm == "random_forest":
@@ -152,6 +168,8 @@ def _estimator(algorithm: str, hyperparameters: dict[str, Any], seed: int) -> An
     else:
         estimator = GradientBoostingRegressor(random_state=seed)
     estimator.set_params(**_filtered_params(estimator, hyperparameters))
+    if multi_output:
+        return wrap_estimator_for_multi_output(estimator, algorithm)
     return estimator
 
 
@@ -213,7 +231,7 @@ def _preprocessor(frame: pd.DataFrame, config: dict[str, Any]) -> ColumnTransfor
 
 def _split(
     features: pd.DataFrame,
-    target: pd.Series,
+    target: pd.Series | pd.DataFrame,
     *,
     train_ratio: float,
     val_ratio: float,
@@ -224,9 +242,9 @@ def _split(
     pd.DataFrame,
     pd.DataFrame,
     pd.DataFrame,
-    pd.Series,
-    pd.Series,
-    pd.Series,
+    pd.Series | pd.DataFrame,
+    pd.Series | pd.DataFrame,
+    pd.Series | pd.DataFrame,
 ]:
     ratios = (float(train_ratio), float(val_ratio), float(test_ratio))
     if any(value < 0 for value in ratios) or train_ratio <= 0:
@@ -236,7 +254,11 @@ def _split(
     if len(features) < 5:
         raise ValueError("Need at least 5 rows with a non-null target to train a model.")
 
-    stratify = target if classification and target.value_counts().min() >= 2 else None
+    multi_output = isinstance(target, pd.DataFrame)
+    if classification and not multi_output:
+        stratify = target if target.value_counts().min() >= 2 else None
+    else:
+        stratify = None
     try:
         x_train, x_temp, y_train, y_temp = train_test_split(
             features,
@@ -254,14 +276,25 @@ def _split(
         )
 
     if val_ratio == 0:
-        empty_x, empty_y = features.iloc[0:0], target.iloc[0:0]
+        empty_x = features.iloc[0:0]
+        if isinstance(target, pd.DataFrame):
+            empty_y: pd.Series | pd.DataFrame = target.iloc[0:0]
+        else:
+            empty_y = target.iloc[0:0]
         return x_train, empty_x, x_temp, y_train, empty_y, y_temp
     if test_ratio == 0:
-        empty_x, empty_y = features.iloc[0:0], target.iloc[0:0]
+        empty_x = features.iloc[0:0]
+        if isinstance(target, pd.DataFrame):
+            empty_y = target.iloc[0:0]
+        else:
+            empty_y = target.iloc[0:0]
         return x_train, x_temp, empty_x, y_train, y_temp, empty_y
 
     test_fraction = test_ratio / (val_ratio + test_ratio)
-    temp_stratify = y_temp if classification and y_temp.value_counts().min() >= 2 else None
+    if classification and not isinstance(y_temp, pd.DataFrame) and y_temp.value_counts().min() >= 2:
+        temp_stratify = y_temp
+    else:
+        temp_stratify = None
     try:
         x_val, x_test, y_val, y_test = train_test_split(
             x_temp,
@@ -299,6 +332,58 @@ def _metrics(problem_type: str, target: pd.Series, predictions: np.ndarray) -> d
     }
 
 
+def _compute_regression_metrics(
+    target: pd.Series | pd.DataFrame,
+    predictions: np.ndarray,
+    *,
+    target_names: list[str],
+    prefix: str = "",
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    if isinstance(target, pd.Series):
+        base = _metrics("regression", target, predictions)
+        return {f"{prefix}{key}": value for key, value in base.items()}, {
+            target_names[0]: base
+        }
+
+    pred_array = np.asarray(predictions)
+    per_target: dict[str, dict[str, float]] = {}
+    flat: dict[str, float] = {}
+    agg_rmse: list[float] = []
+    agg_mae: list[float] = []
+    agg_r2: list[float] = []
+    for index, name in enumerate(target_names):
+        values = _metrics("regression", target[name], pred_array[:, index])
+        per_target[name] = values
+        agg_rmse.append(values["rmse"])
+        agg_mae.append(values["mae"])
+        agg_r2.append(values["r2"])
+        for metric_name, metric_value in values.items():
+            flat[f"{prefix}target_{index}_{metric_name}"] = metric_value
+    flat[f"{prefix}rmse"] = float(np.mean(agg_rmse))
+    flat[f"{prefix}mae"] = float(np.mean(agg_mae))
+    flat[f"{prefix}r2"] = float(np.mean(agg_r2))
+    return flat, per_target
+
+
+def _evaluate_metrics(
+    problem_type: str,
+    target: pd.Series | pd.DataFrame,
+    predictions: np.ndarray,
+    *,
+    target_names: list[str],
+    prefix: str = "",
+) -> tuple[dict[str, float], dict[str, dict[str, float]] | None]:
+    if problem_type == "classification":
+        values = _metrics(problem_type, target, predictions)  # type: ignore[arg-type]
+        return {f"{prefix}{key}": value for key, value in values.items()}, None
+    return _compute_regression_metrics(
+        target,
+        predictions,
+        target_names=target_names,
+        prefix=prefix,
+    )
+
+
 def _schema(frame: pd.DataFrame) -> list[dict[str, Any]]:
     return [
         {
@@ -310,6 +395,55 @@ def _schema(frame: pd.DataFrame) -> list[dict[str, Any]]:
     ]
 
 
+def _select_feature_columns(
+    frame: pd.DataFrame,
+    target_columns: list[str],
+    feature_columns: list[str],
+    preprocessing: dict[str, Any],
+) -> list[str]:
+    selected = (
+        feature_columns
+        or list(preprocessing.get("feature_columns", []))
+        or [str(column) for column in frame.columns if column not in target_columns]
+    )
+    overlap = [column for column in target_columns if column in selected]
+    if overlap:
+        raise ValueError("Target columns cannot also be feature columns.")
+    missing = [column for column in selected if column not in frame.columns]
+    if missing:
+        raise ValueError(f"Feature columns were not found: {missing}")
+    if not selected:
+        raise ValueError("Select at least one feature column.")
+    return selected
+
+
+def _partition_frame(
+    frame: pd.DataFrame,
+    *,
+    target_columns: list[str],
+    feature_columns: list[str],
+    preprocessing: dict[str, Any],
+) -> tuple[pd.DataFrame, pd.Series | pd.DataFrame, list[str]]:
+    missing_targets = [column for column in target_columns if column not in frame.columns]
+    if missing_targets:
+        raise ValueError(
+            f"Target column(s) not found: {missing_targets}. "
+            f"Available columns: {list(frame.columns)}"
+        )
+    if len(target_columns) == 1:
+        target = frame[target_columns[0]]
+        valid = target.notna()
+        frame = frame.loc[valid]
+        target = target.loc[valid]
+    else:
+        targets = frame[target_columns]
+        valid = targets.notna().all(axis=1)
+        frame = frame.loc[valid]
+        target = targets.loc[valid]
+    selected = _select_feature_columns(frame, target_columns, feature_columns, preprocessing)
+    return frame[selected].copy(), target, selected
+
+
 class SklearnTrainingRunner:
     """Local sklearn runner with raw-feature preprocessing embedded in the model."""
 
@@ -318,6 +452,9 @@ class SklearnTrainingRunner:
 
         def log(message: str) -> None:
             logs.append(message)
+
+        target_columns = list(ctx.target_columns or [ctx.target_column])
+        multi_output = is_multi_output(target_columns)
 
         using_saved_split = ctx.split_id is not None or ctx.train_bytes is not None
         if using_saved_split:
@@ -330,53 +467,42 @@ class SklearnTrainingRunner:
             train_frame = _read_frame(ctx.train_bytes, ctx.data_format)
             val_frame = _read_frame(ctx.validation_bytes, ctx.data_format)
             test_frame = _read_frame(ctx.test_bytes, ctx.data_format)
-            frames = ("train", train_frame), ("validation", val_frame), ("test", test_frame)
-            for label, frame in frames:
+            for label, frame in (
+                ("train", train_frame),
+                ("validation", val_frame),
+                ("test", test_frame),
+            ):
                 if frame.empty:
                     raise ValueError(f"Saved {label} split artifact has no rows.")
-                if ctx.target_column not in frame.columns:
-                    raise ValueError(
-                        f"Target column '{ctx.target_column}' not found in {label} split. "
-                        f"Available columns: {list(frame.columns)}"
-                    )
 
-            def _partition_xy(
-                frame: pd.DataFrame,
-            ) -> tuple[pd.DataFrame, pd.Series, list[str]]:
-                target = frame[ctx.target_column]
-                valid_target = target.notna()
-                frame = frame.loc[valid_target]
-                target = target.loc[valid_target]
-                selected_columns = (
-                    ctx.feature_columns
-                    or list(ctx.preprocessing.get("feature_columns", []))
-                    or [
-                        str(column)
-                        for column in frame.columns
-                        if column != ctx.target_column
-                    ]
-                )
-                if ctx.target_column in selected_columns:
-                    raise ValueError("The target column cannot also be a feature column.")
-                missing = [
-                    column
-                    for column in selected_columns
-                    if column not in frame.columns
-                ]
-                if missing:
-                    raise ValueError(
-                        f"Feature columns were not found in saved split: {missing}"
-                    )
-                if not selected_columns:
-                    raise ValueError("Select at least one feature column.")
-                return frame[selected_columns].copy(), target, selected_columns
-
-            x_train, y_train, selected = _partition_xy(train_frame)
-            x_val, y_val, _ = _partition_xy(val_frame)
-            x_test, y_test, _ = _partition_xy(test_frame)
+            x_train, y_train, selected = _partition_frame(
+                train_frame,
+                target_columns=target_columns,
+                feature_columns=ctx.feature_columns,
+                preprocessing=ctx.preprocessing,
+            )
+            x_val, y_val, _ = _partition_frame(
+                val_frame,
+                target_columns=target_columns,
+                feature_columns=ctx.feature_columns,
+                preprocessing=ctx.preprocessing,
+            )
+            x_test, y_test, _ = _partition_frame(
+                test_frame,
+                target_columns=target_columns,
+                feature_columns=ctx.feature_columns,
+                preprocessing=ctx.preprocessing,
+            )
             if len(x_train) < 1:
                 raise ValueError("Saved train split has no usable rows after removing null targets.")
-            problem_type = _normalise_problem_type(ctx.problem_type, y_train)
+            if multi_output:
+                problem_type = normalize_problem_type_for_targets(
+                    ctx.problem_type,
+                    train_frame,
+                    target_columns,
+                )
+            else:
+                problem_type = _normalise_problem_type(ctx.problem_type, y_train)  # type: ignore[arg-type]
             algorithm = _algorithm(ctx.algorithm, problem_type)
             features_for_schema = x_train
             log(
@@ -386,32 +512,22 @@ class SklearnTrainingRunner:
         else:
             if ctx.csv_bytes is None:
                 raise ValueError("Training data is missing.")
-            frame = _read_frame(ctx.csv_bytes, ctx.data_format)
-            if ctx.target_column not in frame.columns:
-                raise ValueError(
-                    f"Target column '{ctx.target_column}' not found. "
-                    f"Available columns: {list(frame.columns)}"
+            full_frame = _read_frame(ctx.csv_bytes, ctx.data_format)
+            if multi_output:
+                problem_type = normalize_problem_type_for_targets(
+                    ctx.problem_type,
+                    full_frame,
+                    target_columns,
                 )
-            target = frame[ctx.target_column]
-            valid_target = target.notna()
-            frame, target = frame.loc[valid_target], target.loc[valid_target]
-            problem_type = _normalise_problem_type(ctx.problem_type, target)
-            algorithm = _algorithm(ctx.algorithm, problem_type)
-
-            selected = (
-                ctx.feature_columns
-                or list(ctx.preprocessing.get("feature_columns", []))
-                or [str(column) for column in frame.columns if column != ctx.target_column]
+            features, target, selected = _partition_frame(
+                full_frame,
+                target_columns=target_columns,
+                feature_columns=ctx.feature_columns,
+                preprocessing=ctx.preprocessing,
             )
-            if ctx.target_column in selected:
-                raise ValueError("The target column cannot also be a feature column.")
-            missing = [column for column in selected if column not in frame.columns]
-            if missing:
-                raise ValueError(f"Feature columns were not found: {missing}")
-            if not selected:
-                raise ValueError("Select at least one feature column.")
-            features = frame[selected].copy()
-
+            if not multi_output:
+                problem_type = _normalise_problem_type(ctx.problem_type, target)  # type: ignore[arg-type]
+            algorithm = _algorithm(ctx.algorithm, problem_type)
             splits = _split(
                 features,
                 target,
@@ -424,7 +540,12 @@ class SklearnTrainingRunner:
             x_train, x_val, x_test, y_train, y_val, y_test = splits
             features_for_schema = features
 
-        estimator = _estimator(algorithm, ctx.hyperparameters, ctx.random_seed)
+        estimator = _estimator(
+            algorithm,
+            ctx.hyperparameters,
+            ctx.random_seed,
+            multi_output=multi_output,
+        )
         model = Pipeline(
             [
                 ("preprocessing", _preprocessor(features_for_schema, ctx.preprocessing)),
@@ -443,6 +564,8 @@ class SklearnTrainingRunner:
             "algorithm": algorithm,
             "problem_type": problem_type,
             "target_column": ctx.target_column,
+            "target_columns": json.dumps(target_columns),
+            "output_count": len(target_columns),
             "job_id": ctx.job_id,
             "project_id": ctx.project_id,
             "features": ",".join(selected),
@@ -486,6 +609,8 @@ class SklearnTrainingRunner:
                 "modelflow.git_sha": settings.git_sha,
                 "modelflow.problem_type": problem_type,
                 "modelflow.algorithm": algorithm,
+                "modelflow.multi_output": str(multi_output).lower(),
+                "modelflow.output_count": str(len(target_columns)),
             }
             if ctx.retrain_source_job_id is not None:
                 tags["modelflow.retrain_source_job_id"] = str(ctx.retrain_source_job_id)
@@ -499,26 +624,62 @@ class SklearnTrainingRunner:
             model.fit(x_train, y_train)
 
             metric_values: dict[str, float] = {}
+            target_metrics_payload: dict[str, Any] = {"targets": target_columns}
             evaluation_sets = [
                 ("val", x_val, y_val),
                 ("test", x_test, y_test),
             ]
             primary_predictions: np.ndarray | None = None
-            primary_target: pd.Series | None = None
+            primary_target: pd.Series | pd.DataFrame | None = None
+            evaluated_prefixes: list[str] = []
             for prefix, split_features, split_target in evaluation_sets:
                 if split_features.empty:
                     continue
+                evaluated_prefixes.append(prefix)
                 predictions = model.predict(split_features)
-                values = _metrics(problem_type, split_target, predictions)
-                metric_values.update({f"{prefix}_{key}": value for key, value in values.items()})
+                values, per_target = _evaluate_metrics(
+                    problem_type,
+                    split_target,
+                    predictions,
+                    target_names=target_columns,
+                    prefix=f"{prefix}_",
+                )
+                metric_values.update(values)
+                if per_target is not None:
+                    split_name = "validation" if prefix == "val" else "test"
+                    target_metrics_payload[split_name] = per_target
                 if prefix == "test" or primary_predictions is None:
                     primary_predictions = predictions
                     primary_target = split_target
-                    metric_values.update(values)
+
+            primary_prefix = (
+                "test"
+                if "test" in evaluated_prefixes
+                else ("val" if "val" in evaluated_prefixes else None)
+            )
+            if primary_prefix:
+                if problem_type == "classification":
+                    for key, value in list(metric_values.items()):
+                        prefixed = f"{primary_prefix}_"
+                        if key.startswith(prefixed):
+                            metric_values[key.removeprefix(prefixed)] = value
+                else:
+                    for key in ("rmse", "mae", "r2"):
+                        prefixed = f"{primary_prefix}_{key}"
+                        if prefixed in metric_values:
+                            metric_values[key] = metric_values[prefixed]
 
             mlflow.log_metrics(metric_values)
             feature_schema = _schema(features_for_schema)
+            output_schema = output_schema_for_targets(
+                target_columns,
+                {name: str(dtype) for name, dtype in (
+                    y_train.dtypes.items() if isinstance(y_train, pd.DataFrame) else [(target_columns[0], y_train.dtype)]
+                )},
+            )
             mlflow.log_dict(feature_schema, "feature_schema.json")
+            if multi_output:
+                mlflow.log_dict(target_metrics_payload, "target_metrics.json")
             metadata: dict[str, Any] = {
                 "git_sha": settings.git_sha,
                 "libraries": {
@@ -530,6 +691,9 @@ class SklearnTrainingRunner:
                 },
                 "preprocessing": ctx.preprocessing,
                 "feature_schema": feature_schema,
+                "target_columns": target_columns,
+                "multi_output": multi_output,
+                "output_schema": output_schema,
             }
             if ctx.split_id is not None:
                 metadata["split"] = {

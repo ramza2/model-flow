@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Job, type ModelVersion } from "../api";
+import { effectiveTargetColumns, isMultiOutputJob } from "../jobHelpers";
 import { useAuth } from "../AuthContext";
 import {
   ErrorNotice,
@@ -151,7 +152,10 @@ export default function JobDetail() {
               <dl className="key-values">
                 <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
                 <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
-                <div><dt>Target column</dt><dd className="mono">{job.target_column}</dd></div>
+                <div data-testid="job-target-columns">
+                  <dt>{isMultiOutputJob(job) ? "Target columns" : "Target column"}</dt>
+                  <dd className="mono">{effectiveTargetColumns(job).join(", ")}</dd>
+                </div>
                 <div><dt>Dataset</dt><dd><Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link></dd></div>
                 <div data-testid="job-data-split">
                   <dt>Data split</dt>

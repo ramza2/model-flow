@@ -327,7 +327,7 @@ def test_feature_column_validations(client, auth_headers):
         },
     )
     assert with_target.status_code == 422
-    assert "target column cannot also be a feature" in with_target.json()["detail"].lower()
+    assert "target columns cannot also be feature" in with_target.json()["detail"].lower()
 
     missing = client.post(
         f"/api/v1/projects/{project_id}/jobs",
