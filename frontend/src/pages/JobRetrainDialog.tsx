@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { api, type DatasetSplit, type DatasetVersion, type Job } from "../api";
+import { effectiveTargetColumns, isMultiOutputJob } from "../jobHelpers";
 import { ErrorNotice } from "../components";
 
 type Props = {
@@ -100,7 +101,10 @@ export default function JobRetrainDialog({ projectId, sourceJob, onClose, onCrea
           <section className="form-section">
             <span className="eyebrow">Source configuration</span>
             <dl className="key-values" data-testid="retrain-source-summary">
-              <div><dt>Target</dt><dd className="mono">{sourceJob.target_column}</dd></div>
+              <div>
+                <dt>{isMultiOutputJob(sourceJob) ? "Targets" : "Target"}</dt>
+                <dd className="mono" data-testid="retrain-targets">{effectiveTargetColumns(sourceJob).join(", ")}</dd>
+              </div>
               <div><dt>Problem type</dt><dd>{sourceJob.problem_type}</dd></div>
               <div><dt>Algorithm</dt><dd>{sourceJob.algorithm.replaceAll("_", " ")}</dd></div>
               <div><dt>Features</dt><dd>{sourceJob.feature_columns.join(", ") || "—"}</dd></div>

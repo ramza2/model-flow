@@ -219,6 +219,7 @@ export type Job = {
   name: string;
   description: string;
   target_column: string;
+  target_columns?: string[];
   problem_type: string;
   algorithm: string;
   hyperparameters: Record<string, unknown>;

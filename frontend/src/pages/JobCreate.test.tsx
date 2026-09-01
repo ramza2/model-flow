@@ -312,7 +312,8 @@ describe("JobCreate UX", () => {
       </MemoryRouter>,
     );
     await screen.findByTestId("feature-columns");
-    fireEvent.change(screen.getByTestId("job-target"), { target: { value: "sepal length (cm)" } });
+    fireEvent.click(screen.getByTestId("target-sepal length (cm)"));
+    fireEvent.click(screen.getByTestId("target-target"));
     await waitFor(() => {
       expect(screen.queryByTestId("feature-sepal length (cm)")).not.toBeInTheDocument();
       expect(screen.getByTestId("feature-target")).toBeInTheDocument();
@@ -543,7 +544,7 @@ describe("JobCreate UX", () => {
       dataset_version_id: number | null;
     };
     type Deferred = {
-      targetColumn: string;
+      targetKey: string;
       resolve: (value: ResolvePayload) => void;
     };
     const pendingResolves: Deferred[] = [];
@@ -588,10 +589,13 @@ describe("JobCreate UX", () => {
           };
         }
         if (url.includes("/resolve-problem-type")) {
-          const body = JSON.parse(String(init?.body || "{}")) as { target_column?: string };
-          const targetColumn = body.target_column || "target";
+          const body = JSON.parse(String(init?.body || "{}")) as {
+            target_column?: string;
+            target_columns?: string[];
+          };
+          const targetKey = body.target_columns?.join(",") || body.target_column || "target";
           const payload = await new Promise<ResolvePayload>((resolve) => {
-            pendingResolves.push({ targetColumn, resolve });
+            pendingResolves.push({ targetKey, resolve });
           });
           return { ok: true, status: 200, json: async () => payload };
         }
@@ -611,12 +615,13 @@ describe("JobCreate UX", () => {
     expect(screen.getByTestId("job-submit")).toBeDisabled();
     expect(screen.getByTestId("job-algorithm")).toBeDisabled();
 
-    await waitFor(() => expect(pendingResolves.some((item) => item.targetColumn === "target")).toBe(true));
-    const classificationRequests = pendingResolves.filter((item) => item.targetColumn === "target");
+    await waitFor(() => expect(pendingResolves.some((item) => item.targetKey === "target")).toBe(true));
+    const classificationRequests = pendingResolves.filter((item) => item.targetKey === "target");
     // Keep the latest classification request in-flight, then switch to a regression target.
     const staleClassification = classificationRequests[classificationRequests.length - 1];
 
-    fireEvent.change(screen.getByTestId("job-target"), { target: { value: "sepal length (cm)" } });
+    fireEvent.click(screen.getByTestId("target-sepal length (cm)"));
+    fireEvent.click(screen.getByTestId("target-target"));
 
     expect(await screen.findByTestId("detecting-problem-type")).toBeInTheDocument();
     expect(screen.queryByTestId("detected-problem-type")).not.toBeInTheDocument();
@@ -624,10 +629,10 @@ describe("JobCreate UX", () => {
     expect(screen.getByTestId("job-algorithm")).toBeDisabled();
 
     await waitFor(() => (
-      expect(pendingResolves.some((item) => item.targetColumn === "sepal length (cm)")).toBe(true)
+      expect(pendingResolves.some((item) => item.targetKey === "sepal length (cm)")).toBe(true)
     ));
     const regressionRequest = [...pendingResolves].reverse().find(
-      (item) => item.targetColumn === "sepal length (cm)",
+      (item) => item.targetKey === "sepal length (cm)",
     );
     expect(regressionRequest).toBeTruthy();
 
@@ -669,6 +674,105 @@ describe("JobCreate UX", () => {
       "random_forest_regressor",
       "gradient_boosting_regressor",
     ]);
+  });
+
+  it("forces regression for multi-target jobs and submits target_columns", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ id: 321, status: "pending" }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("target-sepal length (cm)"));
+    expect(await screen.findByTestId("multi-target-hint")).toHaveTextContent(
+      "Multiple targets are trained as multi-output regression.",
+    );
+    expect(screen.getByTestId("job-problem-type")).toHaveValue("regression");
+    expect(screen.getByTestId("job-problem-type")).toBeDisabled();
+    expect(screen.queryByTestId("feature-target")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("feature-sepal length (cm)")).not.toBeInTheDocument();
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("job-algorithm") as HTMLSelectElement;
+      expect(Array.from(algorithm.options).map((option) => option.value)).toEqual([
+        "ridge",
+        "random_forest_regressor",
+        "gradient_boosting_regressor",
+      ]);
+    });
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({
+      target_columns: ["target", "sepal length (cm)"],
+      problem_type: "regression",
+    });
   });
 
   it("shows detection failure guidance and recovers after manual problem type selection", async () => {
