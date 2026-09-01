@@ -26,6 +26,14 @@ When both are provided, `target_column` must equal `target_columns[0]`.
 
 Responses always include both `target_column` and `target_columns`.
 
+## Problem type
+
+- Single target: existing auto/classification/regression behavior.
+- Multi-output (`target_columns` length > 1):
+  - `classification` → rejected (422)
+  - `regression` → allowed for numeric targets (boolean targets rejected)
+  - `auto` → each target is evaluated with the same `detect_problem_type()` rules used for single-target jobs; all targets must resolve to regression or the request is rejected as unsupported multi-output classification
+
 ## Algorithms
 
 | Algorithm | Strategy |

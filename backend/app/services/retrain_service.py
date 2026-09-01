@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.db.models import JobStatus, TrainingJob
 from app.schemas.v1 import JobCreate, JobRetrainRequest, RetrainRequest
-from app.services.target_columns import effective_target_columns_from_job
+from app.services.target_columns import (
+    apply_target_overrides_from_source,
+    effective_target_columns_from_job,
+)
 from app.services.training_validation import ValidatedTrainingConfig, validate_training_config
 
 
@@ -72,6 +75,7 @@ def build_job_create_from_source(
         "max_retries": source.max_retries,
     }
     values.update(overrides or {})
+    apply_target_overrides_from_source(values, target_columns, overrides)
     return JobCreate.model_validate(values)
 
 

@@ -39,7 +39,10 @@ from app.db.session import SessionLocal
 from app.services import datasets, drift, inference, pipeline_engine, scheduler, storage
 from app.services.alerts import create_alert
 from app.services.dataset_splits import content_sha256
-from app.services.prediction_serialization import serialize_predictions
+from app.services.prediction_serialization import (
+    assign_batch_prediction_columns,
+    serialize_predictions,
+)
 from app.services.target_columns import (
     effective_target_columns_from_job,
     resolve_output_target_columns,
@@ -535,19 +538,11 @@ def process_batch_job(job: BatchInferenceJob) -> None:
             job=training_job,
         )
         serialized = serialize_predictions(predictions, target_columns=target_columns or None)
-        result_frame = frame.copy()
-        if target_columns and len(target_columns) > 1:
-            for name in target_columns:
-                column_name = f"prediction_{name}"
-                if column_name in result_frame.columns:
-                    raise ValueError(
-                        f"Batch result column '{column_name}' already exists in the input dataset."
-                    )
-                result_frame[column_name] = [row[name] for row in serialized]
-        else:
-            if "prediction" in result_frame.columns:
-                raise ValueError("Batch result column 'prediction' already exists in the input dataset.")
-            result_frame["prediction"] = serialized
+        result_frame = assign_batch_prediction_columns(
+            frame,
+            serialized,
+            target_columns=target_columns or None,
+        )
         payload, content_type = _encode_batch_result(result_frame, live.result_format)
         key = (
             f"project-{live.project_id}/batch-jobs/{live.id}/"

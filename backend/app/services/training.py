@@ -631,9 +631,11 @@ class SklearnTrainingRunner:
             ]
             primary_predictions: np.ndarray | None = None
             primary_target: pd.Series | pd.DataFrame | None = None
+            evaluated_prefixes: list[str] = []
             for prefix, split_features, split_target in evaluation_sets:
                 if split_features.empty:
                     continue
+                evaluated_prefixes.append(prefix)
                 predictions = model.predict(split_features)
                 values, per_target = _evaluate_metrics(
                     problem_type,
@@ -649,16 +651,23 @@ class SklearnTrainingRunner:
                 if prefix == "test" or primary_predictions is None:
                     primary_predictions = predictions
                     primary_target = split_target
-                if prefix == "test":
-                    if problem_type == "classification":
-                        for key, value in values.items():
-                            if key.startswith("test_"):
-                                metric_values[key.removeprefix("test_")] = value
-                    else:
-                        for key in ("rmse", "mae", "r2"):
-                            prefixed = f"test_{key}"
-                            if prefixed in values:
-                                metric_values[key] = values[prefixed]
+
+            primary_prefix = (
+                "test"
+                if "test" in evaluated_prefixes
+                else ("val" if "val" in evaluated_prefixes else None)
+            )
+            if primary_prefix:
+                if problem_type == "classification":
+                    for key, value in list(metric_values.items()):
+                        prefixed = f"{primary_prefix}_"
+                        if key.startswith(prefixed):
+                            metric_values[key.removeprefix(prefixed)] = value
+                else:
+                    for key in ("rmse", "mae", "r2"):
+                        prefixed = f"{primary_prefix}_{key}"
+                        if prefixed in metric_values:
+                            metric_values[key] = metric_values[prefixed]
 
             mlflow.log_metrics(metric_values)
             feature_schema = _schema(features_for_schema)

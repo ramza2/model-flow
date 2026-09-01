@@ -100,6 +100,37 @@ def canonicalize_job_targets(
     return effective[0], effective
 
 
+def apply_target_overrides_from_source(
+    values: dict[str, Any],
+    source_targets: list[str],
+    overrides: dict[str, Any] | None,
+) -> None:
+    """Reconcile target_column/target_columns after clone/retry/legacy-retrain overrides.
+
+  A. overrides.target_column only -> target_columns = [target_column]
+  B. overrides.target_columns only -> target_column = target_columns[0]
+  C. both present -> JobCreate canonical validator enforces consistency
+  D. neither -> inherit source effective targets
+    """
+
+    overrides = overrides or {}
+    has_column_override = "target_column" in overrides
+    has_columns_override = "target_columns" in overrides
+
+    if has_column_override and not has_columns_override:
+        column = str(overrides["target_column"]).strip()
+        values["target_column"] = column
+        values["target_columns"] = [column] if column else []
+    elif has_columns_override and not has_column_override:
+        columns = overrides["target_columns"]
+        if isinstance(columns, list):
+            values["target_columns"] = columns
+            values["target_column"] = str(columns[0]).strip() if columns else ""
+    elif not has_column_override and not has_columns_override:
+        values["target_column"] = source_targets[0]
+        values["target_columns"] = list(source_targets)
+
+
 def is_multi_output(columns: list[str]) -> bool:
     return len(columns) > 1
 

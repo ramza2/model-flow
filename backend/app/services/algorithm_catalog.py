@@ -277,20 +277,29 @@ def normalize_problem_type_for_targets(
     frame: pd.DataFrame,
     target_columns: list[str],
 ) -> str:
+    requested = str(value or "auto").lower().strip()
     if len(target_columns) > 1:
-        requested = str(value or "auto").lower().strip()
         if requested == "classification":
             raise ValueError("Multi-output classification is not supported.")
         for column in target_columns:
             if column not in frame.columns:
                 raise ValueError(f"Target column '{column}' is not in the dataset.")
-            if not is_numeric_regression_target(frame[column]):
-                raise ValueError(
-                    f"Target column '{column}' must be numeric for multi-output regression."
-                )
-        if requested in {"auto", "regression"}:
-            return "regression"
-        raise ValueError("problem_type must be regression for multi-output targets.")
+            series = frame[column]
+            if requested == "regression":
+                if pd.api.types.is_bool_dtype(series):
+                    raise ValueError(
+                        f"Target column '{column}' cannot be boolean for regression."
+                    )
+                if not is_numeric_regression_target(series):
+                    raise ValueError(
+                        f"Target column '{column}' must be numeric for multi-output regression."
+                    )
+            elif requested == "auto":
+                if detect_problem_type(series) != "regression":
+                    raise ValueError("Multi-output classification is not supported.")
+            else:
+                raise ValueError("problem_type must be regression for multi-output targets.")
+        return "regression"
     return normalize_problem_type(value, frame[target_columns[0]])
 
 
