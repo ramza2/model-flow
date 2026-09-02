@@ -42,6 +42,8 @@ describe("RunDetail", () => {
     });
     renderPage();
     expect(await screen.findByRole("heading", { name: "multi-output-ridge" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /back to experiments/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /compare this run/i })).not.toBeInTheDocument();
     expect(screen.getByText("Logged metrics")).toBeInTheDocument();
     expect(screen.getByText("val_rmse")).toBeInTheDocument();
     expect(screen.getByText("s3://bucket/artifacts/run-abc")).toBeInTheDocument();

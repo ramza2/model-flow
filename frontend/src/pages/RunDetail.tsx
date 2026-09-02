@@ -34,12 +34,6 @@ export default function RunDetail() {
         <>
           <div className="row-actions toolbar-actions">
             <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>← Back to experiments</Link>
-            <Link
-              className="btn secondary"
-              to={`/projects/${projectId}/experiments/compare?run_ids=${run.run_id}`}
-            >
-              Compare this run
-            </Link>
           </div>
           <div className="two-column">
             <section className="panel">
