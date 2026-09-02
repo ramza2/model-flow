@@ -664,6 +664,41 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .result-panel { min-height: 430px; }
 .result-placeholder { display: grid; place-items: center; min-height: 300px; color: var(--muted); text-align: center; }
 .prediction-value { padding: 1rem; margin-bottom: 1rem; border-radius: 8px; background: rgba(61,184,160,.1); color: var(--accent); font-size: 2rem; font-weight: 800; text-align: center; }
+.prediction-preview {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-family: var(--mono, ui-monospace, monospace);
+  line-height: 1.45;
+}
+.predict-result-json {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 40;
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+}
+.key-values.compact { margin-bottom: 1rem; }
 
 .bar-chart { display: flex; align-items: end; gap: 7px; height: 210px; padding-top: 1rem; }
 .bar-column { flex: 1; display: flex; flex-direction: column; justify-content: end; align-items: center; height: 100%; min-width: 8px; }

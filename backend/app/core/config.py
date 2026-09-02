@@ -56,7 +56,10 @@ class Settings(BaseSettings):
     store_inference_payloads: bool = False
     allow_train_on_quality_fail: bool = False
     max_upload_bytes: int = 100 * 1024 * 1024
-    git_sha: str = "unknown"
+    git_sha: str = Field(
+        default="unknown",
+        validation_alias=AliasChoices("MODELFLOW_GIT_SHA", "GIT_SHA"),
+    )
 
     # Retention days (0 = keep forever)
     retention_training_logs_days: int = 90

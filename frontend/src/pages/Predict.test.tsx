@@ -189,7 +189,9 @@ describe("Predict prediction sample payload", () => {
     await screen.findByTestId("predict-payload");
     fireEvent.click(screen.getByTestId("predict-submit"));
     const preview = await screen.findByTestId("predict-preview");
-    expect(preview).toHaveTextContent('{"demand_kw":12.5,"supply_temp":68.2}');
+    expect(preview).toHaveTextContent('"demand_kw": 12.5');
+    expect(preview).toHaveTextContent('"supply_temp": 68.2');
+    expect(preview.textContent).toContain("\n");
     expect(screen.getByTestId("predict-result")).toHaveTextContent("demand_kw");
   });
 });

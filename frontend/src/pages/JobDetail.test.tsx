@@ -203,4 +203,53 @@ describe("JobDetail retrain", () => {
     expect(targetRow).toHaveTextContent("Target columns");
     expect(targetRow).toHaveTextContent("target_a, target_b");
   });
+
+  it("opens register dialog with default model name and submits custom name", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/jobs/42") && (!init || init.method === undefined)) return succeededJob;
+      if (path.endsWith("/models/register") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        return {
+          id: 5,
+          project_id: 7,
+          name: body.name,
+          version: "1",
+          lifecycle: "CANDIDATE",
+          mlflow_run_id: "run-1",
+          model_uri: "runs:/run-1/model",
+          metrics: {},
+          metadata: {},
+          gates_passed: false,
+          gate_results: {},
+          approval_comment: null,
+          training_job_id: 42,
+          created_at: "2026-01-01T00:00:00Z",
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    fireEvent.click(await screen.findByTestId("register-model"));
+    const dialog = await screen.findByTestId("register-model-dialog");
+    expect(dialog).toBeInTheDocument();
+    const nameInput = screen.getByTestId("register-model-name") as HTMLInputElement;
+    expect(nameInput.value).toBe("baseline");
+    fireEvent.change(nameInput, { target: { value: "ridge-multi-output" } });
+    fireEvent.click(screen.getByTestId("register-model-submit"));
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/models/register",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            training_job_id: 42,
+            name: "ridge-multi-output",
+          }),
+        }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("register-model-dialog")).not.toBeInTheDocument();
+    });
+  });
 });

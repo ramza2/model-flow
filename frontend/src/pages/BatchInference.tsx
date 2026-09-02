@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom";
 import {
   api,
+  downloadApiFile,
   type BatchJob,
   type Dataset,
   type DatasetVersion,
@@ -175,9 +176,13 @@ export default function BatchInference() {
   }
 
   async function download(job: BatchJob) {
+    setError("");
     try {
-      const result = await api<{ download_url: string }>(`/projects/${projectId}/batch-jobs/${job.id}/download`);
-      window.open(result.download_url, "_blank", "noopener,noreferrer");
+      await downloadApiFile(
+        `/projects/${projectId}/batch-jobs/${job.id}/download?stream=true`,
+        {},
+        `batch-${job.id}.${job.result_format}`,
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Result download could not be prepared.");
     }

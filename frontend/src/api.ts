@@ -55,6 +55,49 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const match = /filename\*=UTF-8''([^;]+)|filename="([^"]+)"|filename=([^;]+)/i.exec(header);
+  const raw = match?.[1] || match?.[2] || match?.[3];
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw.trim());
+  } catch {
+    return raw.trim();
+  }
+}
+
+export async function downloadApiFile(
+  path: string,
+  init: RequestInit = {},
+  fallbackFilename = "download",
+): Promise<void> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const response = await fetch(`${API_BASE}${normalized}`, { ...init, headers });
+  if (response.status === 401 && normalized !== "/auth/login") {
+    localStorage.removeItem(TOKEN_KEY);
+    window.dispatchEvent(new Event("modelflow:unauthorized"));
+  }
+  if (!response.ok) await parseError(response);
+
+  const blob = await response.blob();
+  const filename = filenameFromContentDisposition(response.headers.get("Content-Disposition"))
+    ?? fallbackFilename;
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function jsonBody(value: unknown): Pick<RequestInit, "body"> {
   return { body: JSON.stringify(value) };
 }

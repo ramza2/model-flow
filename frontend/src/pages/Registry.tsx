@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api, type ModelVersion, type Run } from "../api";
 import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice, formatDate } from "../components";
+import { formatPrimaryMetric } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Registry() {
@@ -79,7 +80,7 @@ export default function Registry() {
       ) : (
         <div className="panel table-wrap">
           <table><thead><tr><th>Model</th><th>Version</th><th>Lifecycle</th><th>Gates</th><th>Primary metric</th><th>Registered</th></tr></thead>
-            <tbody>{models.map((model) => <tr key={model.id}><td><Link to={`/projects/${projectId}/models/${model.id}`}><strong>{model.name}</strong></Link><small className="table-subtitle mono">{model.mlflow_run_id?.slice(0, 12)}</small></td><td>v{model.version}</td><td><StatusBadge status={model.lifecycle} /></td><td><StatusBadge status={model.gates_passed ? "passed" : "pending"} /></td><td>{Object.entries(model.metrics).slice(0, 1).map(([key, value]) => `${key}: ${Number(value).toFixed(3)}`) || "—"}</td><td>{formatDate(model.created_at)}</td></tr>)}</tbody>
+            <tbody>{models.map((model) => <tr key={model.id}><td><Link to={`/projects/${projectId}/models/${model.id}`}><strong>{model.name}</strong></Link><small className="table-subtitle mono">{model.mlflow_run_id?.slice(0, 12)}</small></td><td>v{model.version}</td><td><StatusBadge status={model.lifecycle} /></td><td><StatusBadge status={model.gates_passed ? "passed" : "pending"} /></td><td>{formatPrimaryMetric(model.metrics, { problemType: typeof model.metadata?.problem_type === "string" ? model.metadata.problem_type : undefined, targetColumns: Array.isArray(model.metadata?.target_columns) ? model.metadata.target_columns.map(String) : [] })}</td><td>{formatDate(model.created_at)}</td></tr>)}</tbody>
           </table>
         </div>
       )}

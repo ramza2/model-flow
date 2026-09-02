@@ -10,6 +10,7 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { formatMetricLabel } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 
 const RERUN_LIFECYCLES = ["CANDIDATE", "VALIDATING", "REJECTED"];
@@ -117,7 +118,19 @@ export default function ModelVersion() {
           )}
           {(mv.lifecycle === "PENDING_APPROVAL" || RERUN_LIFECYCLES.includes(mv.lifecycle)) && <label className="panel comment-field">Review comment<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add context for the reviewer" /></label>}
           <div className="grid stats-grid">
-            {Object.entries(mv.metrics).slice(0, 4).map(([name, value]) => <div className="stat" key={name}><div className="label">{name.replaceAll("_", " ")}</div><div className="value metric-value">{Number(value).toFixed(3)}</div></div>)}
+            {Object.entries(mv.metrics).slice(0, 4).map(([name, value]) => (
+              <div className="stat" key={name}>
+                <div className="label">
+                  {formatMetricLabel(
+                    name,
+                    Array.isArray(mv.metadata?.target_columns)
+                      ? mv.metadata.target_columns.map(String)
+                      : [],
+                  )}
+                </div>
+                <div className="value metric-value">{Number(value).toFixed(3)}</div>
+              </div>
+            ))}
           </div>
           <div className="two-column">
             <section className="panel"><span className="eyebrow">Governance</span><h2>Approval evidence</h2><dl className="key-values"><div><dt>Lifecycle</dt><dd><StatusBadge status={mv.lifecycle} /></dd></div><div><dt>Gates</dt><dd><StatusBadge status={mv.gates_passed ? "passed" : "pending"} /></dd></div><div><dt>Comment</dt><dd>{mv.approval_comment || "—"}</dd></div><div><dt>Registered</dt><dd>{formatDate(mv.created_at)}</dd></div></dl></section>

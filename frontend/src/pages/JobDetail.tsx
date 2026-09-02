@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Job, type ModelVersion } from "../api";
 import { effectiveTargetColumns, isMultiOutputJob } from "../jobHelpers";
+import { formatMetricLabel } from "../metricHelpers";
 import { useAuth } from "../AuthContext";
 import {
   ErrorNotice,
@@ -14,6 +15,7 @@ import {
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
 import JobRetrainDialog from "./JobRetrainDialog";
+import RegisterModelDialog from "./RegisterModelDialog";
 
 export default function JobDetail() {
   const { projectId, jobId } = useParams();
@@ -25,6 +27,7 @@ export default function JobDetail() {
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState("");
   const [showRetrain, setShowRetrain] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
   const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canRegister = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
@@ -42,7 +45,7 @@ export default function JobDetail() {
     };
   }, [jobId, projectId]);
 
-  async function register() {
+  async function register(modelName: string) {
     if (!job) return;
     setBusy("register");
     setSuccess("");
@@ -51,10 +54,11 @@ export default function JobDetail() {
         method: "POST",
         body: JSON.stringify({
           training_job_id: job.id,
-          name: "classifier",
+          name: modelName,
         }),
       });
       setSuccess(`Registered ${model.name} v${model.version}.`);
+      setShowRegister(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Model could not be registered.");
     } finally {
@@ -127,15 +131,30 @@ export default function JobDetail() {
                 Clone configuration
               </Link>
             )}
-            {job.mlflow_run_id && <Link className="btn secondary" to={`/projects/${projectId}/experiments?run=${job.mlflow_run_id}`}>Open experiment</Link>}
+            {job.mlflow_run_id && (
+              <Link className="btn secondary" to={`/projects/${projectId}/experiments/runs/${job.mlflow_run_id}`}>
+                Open experiment
+              </Link>
+            )}
             {canRegister && job.status === "succeeded" && job.model_uri && (
-              <button className="btn" type="button" disabled={busy === "register"} onClick={register} data-testid="register-model">
+              <button
+                className="btn"
+                type="button"
+                disabled={busy === "register"}
+                onClick={() => setShowRegister(true)}
+                data-testid="register-model"
+              >
                 {busy === "register" ? "Registering…" : "Register model"}
               </button>
             )}
           </div>
           <div className="grid stats-grid">
-            {Object.entries(job.metrics).slice(0, 4).map(([name, value]) => <div className="stat" key={name}><div className="label">{name.replaceAll("_", " ")}</div><div className="value metric-value">{Number(value).toFixed(3)}</div></div>)}
+            {Object.entries(job.metrics).slice(0, 4).map(([name, value]) => (
+              <div className="stat" key={name}>
+                <div className="label">{formatMetricLabel(name, effectiveTargetColumns(job))}</div>
+                <div className="value metric-value">{Number(value).toFixed(3)}</div>
+              </div>
+            ))}
             {Object.keys(job.metrics).length === 0 && <div className="stat"><div className="label">Metrics</div><div className="value metric-value">—</div><small>Available after training</small></div>}
           </div>
           <div className="two-column">
@@ -196,6 +215,14 @@ export default function JobDetail() {
             <div className="panel-title"><div><span className="eyebrow">Execution</span><h2>Logs</h2></div>{active && <span className="live-indicator"><span /> Live</span>}</div>
             <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
           </section>
+          {showRegister && (
+            <RegisterModelDialog
+              job={job}
+              busy={busy === "register"}
+              onClose={() => setShowRegister(false)}
+              onSubmit={register}
+            />
+          )}
           {showRetrain && (
             <JobRetrainDialog
               projectId={projectId!}

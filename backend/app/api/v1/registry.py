@@ -201,6 +201,15 @@ def evaluate_model_gates(
     return model_version_out(row)
 
 
+def _resolve_approval_comment(
+    existing: str | None,
+    new_comment: str | None,
+) -> str | None:
+    if new_comment is not None and str(new_comment).strip():
+        return str(new_comment).strip()
+    return existing
+
+
 @router.post("/projects/{project_id}/models/{model_version_id}/request-approval")
 def request_approval(
     project_id: int,
@@ -251,7 +260,7 @@ def approve_model(
             "Review gate_results and rerun validation before approval.",
         )
     row.lifecycle = ModelLifecycle.APPROVED
-    row.approval_comment = body.comment
+    row.approval_comment = _resolve_approval_comment(row.approval_comment, body.comment)
     row.approved_by = auth.user.id
     row.approved_at = datetime.now(timezone.utc)
     audit_event(db, auth, "model.approve", "model_version", row.id)
@@ -273,7 +282,7 @@ def reject_model(
     if row.lifecycle != ModelLifecycle.PENDING_APPROVAL:
         raise friendly(409, "Only a model pending approval can be rejected.")
     row.lifecycle = ModelLifecycle.REJECTED
-    row.approval_comment = body.comment
+    row.approval_comment = _resolve_approval_comment(row.approval_comment, body.comment)
     row.approved_by = auth.user.id
     row.approved_at = datetime.now(timezone.utc)
     audit_event(db, auth, "model.reject", "model_version", row.id)
