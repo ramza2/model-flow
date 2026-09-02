@@ -8,7 +8,7 @@ import { buildPredictionSamplePayload } from "../trainingConfig";
 
 function formatPredictionPreview(prediction: unknown): string {
   if (prediction !== null && typeof prediction === "object") {
-    return JSON.stringify(prediction);
+    return JSON.stringify(prediction, null, 2);
   }
   return String(prediction);
 }
@@ -119,10 +119,10 @@ export default function Predict() {
             <div className="panel-title"><div><span className="eyebrow">Response</span><h2>Prediction result</h2></div></div>
             {result ? (
               <>
-                <div className="prediction-value" data-testid="predict-preview">
+                <div className="prediction-value prediction-preview" data-testid="predict-preview">
                   {formatPredictionPreview(result.predictions[0])}
                 </div>
-                <pre className="json-view" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre>
+                <pre className="json-view predict-result-json" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre>
               </>
             ) : (
               <div className="result-placeholder">Run a prediction to inspect the response.</div>

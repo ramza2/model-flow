@@ -1,15 +1,17 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BatchInference from "./BatchInference";
 
 const apiMock = vi.fn();
+const downloadApiFileMock = vi.fn();
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
   return {
     ...actual,
     api: (...args: unknown[]) => apiMock(...args),
+    downloadApiFile: (...args: unknown[]) => downloadApiFileMock(...args),
   };
 });
 
@@ -92,6 +94,7 @@ function renderPage() {
 describe("BatchInference polling", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    downloadApiFileMock.mockReset();
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
@@ -270,5 +273,48 @@ describe("BatchInference polling", () => {
     view.unmount();
     await vi.advanceTimersByTimeAsync(5200);
     expect(batchCalls).toBe(callsAfterMount);
+  });
+
+  it("downloads succeeded batch jobs through authenticated stream endpoint", async () => {
+    const succeeded = {
+      id: 7,
+      project_id: 7,
+      dataset_version_id: 11,
+      endpoint_id: 3,
+      model_version_id: null,
+      status: "succeeded",
+      result_object_key: "results.csv",
+      result_format: "csv",
+      error_message: null,
+      failure_details: [],
+      row_count: 150,
+      created_by: 1,
+      created_at: "2026-08-28T00:00:00Z",
+      finished_at: "2026-08-28T00:00:05Z",
+    };
+
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/batch-jobs") return [succeeded];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/1/versions") return versions;
+      if (path === "/projects/7/endpoints") return endpoints;
+      if (path === "/projects/7/models") return [];
+      return [];
+    });
+    downloadApiFileMock.mockResolvedValue(undefined);
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Download" }));
+    await waitFor(() => {
+      expect(downloadApiFileMock).toHaveBeenCalledWith(
+        "/projects/7/batch-jobs/7/download?stream=true",
+        {},
+        "batch-7.csv",
+      );
+    });
+    expect(apiMock).not.toHaveBeenCalledWith(
+      "/projects/7/batch-jobs/7/download",
+      expect.anything(),
+    );
   });
 });

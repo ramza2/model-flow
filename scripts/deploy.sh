@@ -196,6 +196,8 @@ start_services() {
   if [[ "$FORCE_RECREATE" == true ]]; then
     up_args+=(--force-recreate)
   fi
+  export MODELFLOW_GIT_SHA="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  info "Deploying with MODELFLOW_GIT_SHA=${MODELFLOW_GIT_SHA}"
   compose up "${up_args[@]}"
 }
 

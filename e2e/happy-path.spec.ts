@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import path from "path";
+import { registerTrainedModel } from "./helpers/registerModel";
 
 const iris = path.resolve(__dirname, "../samples/iris.csv");
 
@@ -49,12 +50,11 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   // Wait until training succeeds and register button appears
   await expect(page.getByTestId("register-model")).toBeVisible({ timeout: 180_000 });
   await page.screenshot({ path: "artifacts/screenshots/04-job.png", fullPage: true });
-  await page.getByTestId("register-model").click();
-  await expect(page.getByText(/Registered/i)).toBeVisible({ timeout: 60_000 });
+  await registerTrainedModel(page, "e2e-rf");
 
   await page.getByRole("link", { name: "Model Registry" }).click();
-  await expect(page.getByRole("link", { name: "classifier" })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("link", { name: "classifier" }).click();
+  await expect(page.getByRole("link", { name: "e2e-rf" })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("link", { name: "e2e-rf" }).click();
   await page.getByRole("button", { name: "Request approval" }).click();
   await expect(page.getByRole("button", { name: /Approve/ })).toBeVisible();
   await page.getByTestId("approve-model").click();

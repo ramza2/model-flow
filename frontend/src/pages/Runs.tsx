@@ -57,7 +57,12 @@ export default function Runs() {
               {runs.map((run) => (
                 <tr key={run.run_id} className={selected.includes(run.run_id) ? "selected-row" : ""}>
                   <td><input aria-label={`Select run ${run.run_id}`} type="checkbox" checked={selected.includes(run.run_id)} onChange={() => toggle(run.run_id)} /></td>
-                  <td><strong>{run.tags["mlflow.runName"] || run.run_id.slice(0, 12)}</strong><small className="table-subtitle mono">{run.run_id}</small></td>
+                  <td>
+                    <Link to={`/projects/${projectId}/experiments/runs/${run.run_id}`}>
+                      <strong>{run.tags["mlflow.runName"] || run.run_id.slice(0, 12)}</strong>
+                    </Link>
+                    <small className="table-subtitle mono">{run.run_id}</small>
+                  </td>
                   <td><StatusBadge status={run.status} /></td>
                   <td>{formatDate(run.start_time)}</td>
                   <td className="mono">{Object.entries(run.metrics).slice(0, 2).map(([key, value]) => `${key} ${Number(value).toFixed(3)}`).join(" · ") || "—"}</td>

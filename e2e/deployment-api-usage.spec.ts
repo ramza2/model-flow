@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import path from "path";
+import { registerTrainedModel } from "./helpers/registerModel";
 
 const iris = path.resolve(__dirname, "../samples/iris.csv");
 
@@ -39,12 +40,11 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await page.getByRole("link", { name: "Train on this dataset" }).click();
   await page.getByTestId("job-name").fill("api-usage-rf");
   await page.getByTestId("job-submit").click();
-  await expect(page.getByTestId("register-model")).toBeVisible({ timeout: 180_000 });
-  await page.getByTestId("register-model").click();
-  await expect(page.getByText(/Registered/i)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId("job-logs")).toBeVisible();
+  await registerTrainedModel(page, "api-usage-rf");
 
   await page.getByRole("link", { name: "Model Registry" }).click();
-  await page.getByRole("link", { name: "classifier" }).click();
+  await page.getByRole("link", { name: "api-usage-rf" }).click();
   await page.getByRole("button", { name: "Request approval" }).click();
   await page.getByTestId("approve-model").click();
   await expect(page.getByText("Model approved.")).toBeVisible();

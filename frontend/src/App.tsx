@@ -14,6 +14,7 @@ import JobCreate from "./pages/JobCreate";
 import Jobs from "./pages/Jobs";
 import JobDetail from "./pages/JobDetail";
 import Runs from "./pages/Runs";
+import RunDetail from "./pages/RunDetail";
 import RunCompare from "./pages/RunCompare";
 import Registry from "./pages/Registry";
 import ModelVersion from "./pages/ModelVersion";
@@ -44,6 +45,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/datasets" element={<Datasets />} />
     <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
     <Route path="/projects/:projectId/experiments" element={<Runs />} />
+    <Route path="/projects/:projectId/experiments/runs/:runId" element={<RunDetail />} />
     <Route path="/projects/:projectId/experiments/compare" element={<RunCompare />} />
     <Route path="/projects/:projectId/jobs" element={<Jobs />} />
     <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
