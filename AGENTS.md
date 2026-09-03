@@ -35,3 +35,55 @@ container so the host does not need Python or OpenSSL. Sign in with those
 credentials and change the bootstrap password immediately. Compose rejects empty
 required credentials. CI generates ephemeral values and must not depend on
 production secrets or paid external services.
+
+### Phase 1.5 frontend UX
+
+For every Phase 1.5 frontend task, read these documents before changing user-visible behavior:
+
+- `docs/phase-1.5-ux-architecture.md`
+- `docs/phase-1.5-frontend-design-spec.md`
+- `docs/ENHANCEMENT_ROADMAP.md`
+
+Use this source-of-truth split:
+
+**Functional source of truth**
+
+- backend API contracts and persisted data,
+- auth/RBAC/project scoping,
+- training, registry, deployment, scheduling, and pipeline runtime semantics,
+- existing supported frontend behavior and regression tests.
+
+**UX / presentation source of truth**
+
+- Phase 1.5 information architecture,
+- navigation and page hierarchy,
+- shared component/layout rules,
+- Pipeline Builder / Pipeline Run presentation,
+- status/action/validation presentation,
+- responsive/accessibility behavior.
+
+Phase 1.5 implementation discipline:
+
+- modify the existing `frontend/src` incrementally; do not replace it wholesale,
+- preserve routes and deep links unless a route change is explicitly approved,
+- preserve existing API/auth/RBAC/runtime behavior,
+- do not invent backend fields or later-phase features to satisfy a visual concept,
+- avoid N+1 API requests added only for cosmetic labels,
+- preserve multi-output target names and semantics,
+- preserve Pipeline condition-edge `true` / `false` / `always` semantics,
+- historical Pipeline Run graph views must use the exact immutable PipelineVersion used by the run, not the latest graph,
+- a minimal read-only PipelineVersion lookup may be added only if needed to render that persisted historical state correctly,
+- keep Advanced JSON as progressive disclosure rather than the default configuration path,
+- run relevant unit/Playwright tests and then `./scripts/verify.sh` before merge,
+- browser review with realistic data is required for major UX slices,
+- work on a feature branch and create a Draft PR,
+- do not mark Ready, merge, tag, or release unless explicitly requested.
+
+Phase 1.5 is split into reviewable slices:
+
+1. `1.5-A` — Shell & shared design system
+2. `1.5-B` — Pipeline UX
+3. `1.5-C` — ML lifecycle UX
+4. `1.5-D` — Operations & overview UX
+
+Phase 1.5 normalizes the current dark engineering UI; the broad Figma-driven final visual redesign remains Phase 9.
