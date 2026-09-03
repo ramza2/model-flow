@@ -80,6 +80,9 @@ Phase 1.5 does **not** require a Figma handoff. The current production React fro
 - grouped project navigation
 - consistent page and entity-detail patterns
 - English product terminology normalization; broad localization is out of scope
+- beginner-friendly guided workflows and useful empty-state guidance
+- contextual help, tooltip, and glossary patterns for technical concepts where useful
+- beginner/advanced interaction patterns that guide without blocking expert users
 - shared status/action/validation/error UX
 - shared frontend component/token normalization
 - three-zone Pipeline Builder: Node Library / Canvas / Inspector
@@ -107,7 +110,9 @@ A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed
 2. Phase 1.5 documents are the source of truth for IA, navigation, layout, component hierarchy, and presentation.
 3. Do not invent future-phase functionality merely to complete a visual concept.
 4. Manual training remains supported; pipelines become the preferred repeatable workflow UX.
-5. Phase 1.5 normalizes the current dark engineering UI but does not replace Phase 9 final visual polish.
+5. Guided UX should help less experienced users complete lifecycle tasks without blocking advanced users from efficient direct work.
+6. Proper technical terms remain technically accurate; task-oriented wording should clarify them rather than oversimplify them.
+7. Phase 1.5 normalizes the current dark engineering UI but does not replace Phase 9 final visual polish.
 
 ---
 
