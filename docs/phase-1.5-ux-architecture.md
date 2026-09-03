@@ -1,37 +1,41 @@
 # ModelFlow Phase 1.5 UX Architecture
 
-Status: **Approved implementation baseline**  
+Status: **Proposed implementation baseline**  
 Audience: Product, frontend, QA, Cursor Agents Window  
 Scope: **Phase 1.5 — UX Architecture & Frontend UX Refactoring**
 
 ## 1. Purpose
 
-Phase 1.5 establishes the UX architecture that the existing ModelFlow frontend must converge toward before later roadmap phases add more data preparation, connector, closed-loop, time-series, or copilot capabilities.
+Phase 1.5 establishes the UX architecture that the existing ModelFlow frontend must converge toward before later roadmap phases add broader data preparation, connector, closed-loop, time-series, copilot, or enterprise capabilities.
 
-This phase is **not** a greenfield rewrite and is **not** a Figma-first deliverable. The existing production React frontend remains the functional source of truth. This document is the UX architecture source of truth for restructuring and refining that frontend.
+This phase is **not** a greenfield rewrite and is **not** dependent on a Figma handoff. The existing React frontend is modified directly and incrementally. Figma may still be used later for focused visual exploration, but it is not a required implementation step for Phase 1.5.
 
-### Source-of-truth order
+### Source-of-truth model
 
-1. Existing backend API contracts, auth, RBAC, project scoping, persistence, training, registry, deployment, scheduling, and pipeline runtime behavior.
-2. Existing production frontend behavior in `frontend/src` where it represents supported product functionality.
-3. This document for information architecture, navigation, page roles, lifecycle mental models, and cross-screen UX behavior.
-4. `docs/phase-1.5-frontend-design-spec.md` for visual/layout/component implementation rules.
+Do not interpret the source-of-truth rules as one global precedence list. Behavior and presentation have different authorities.
 
-When this UX specification conflicts with an existing API or supported behavior, preserve the working behavior and adapt the UX around it unless a separate backend change is explicitly approved.
+**Functional source of truth**
+
+1. Backend API contracts, persistence, auth, RBAC, project scoping, training/runtime behavior, registry lifecycle, deployments, scheduling, and pipeline execution semantics.
+2. Existing supported frontend behavior and regression tests where they reflect current product functionality.
+
+**UX / presentation source of truth**
+
+1. This document for information architecture, navigation, page roles, lifecycle mental models, and cross-screen UX behavior.
+2. `docs/phase-1.5-frontend-design-spec.md` for layout, component, visual, responsive, accessibility, and implementation rules.
+
+Therefore:
+
+- existing supported functionality wins for **behavior**;
+- the Phase 1.5 documents win for **IA, layout, navigation, component hierarchy, and presentation**;
+- cosmetic convenience must never silently change API/RBAC/runtime semantics;
+- a small read-only backend addition is allowed only when the target UX cannot correctly represent existing persisted behavior without it, and such an addition must be explicitly reviewed.
 
 ## 2. Current product baseline
 
-The current frontend already exposes project-scoped routes for Data Sources, Datasets, Experiments, Training Jobs, Pipelines, Schedules, Model Registry, Deployments, Monitoring, Alerts, and Audit Logs, plus workspace-level Projects and Administration.
+The current frontend exposes project-scoped routes for Data Sources, Datasets, Experiments, Training Jobs, Pipelines, Schedules, Model Registry, Deployments, Monitoring, Alerts, and Audit Logs, plus workspace-level Projects and Administration.
 
-The current application shell already provides:
-
-- a persistent top bar,
-- project selection,
-- grouped workspace/project/governance navigation,
-- breadcrumbs,
-- alert count,
-- user menu,
-- project-role-aware actions.
+The current application shell already provides a persistent top bar, project selection, workspace/project/governance navigation, breadcrumbs, alert count, user menu, and project-role-aware actions.
 
 The current Pipeline Builder already supports a visual React Flow graph, node configuration, validation, save/publish/run behavior, condition branches, run history, and rerun-from-failed execution semantics. Phase 1.5 reorganizes and clarifies this UX rather than replacing the underlying behavior.
 
@@ -47,9 +51,9 @@ The user should understand where data came from, which version is being used, wh
 
 ### 3.2 ML lifecycle
 
-`Dataset → Training → Experiment → Model → Approval → Production → Deployment`
+`Dataset → Training → Experiment → Model → Validation → Approval → Production → Deployment`
 
-The user should be able to move from training input to experiment result, registered model, governance decision, and live serving without losing lineage.
+The user should be able to move from training input to experiment result, registered model, validation/governance decision, and live serving without losing lineage.
 
 ### 3.3 Automation lifecycle
 
@@ -77,15 +81,19 @@ Normal users configure resources through structured forms. Raw JSON, technical I
 
 ### 4.5 Traceable by default
 
-Important entities should link to their upstream and downstream lineage wherever the backend already exposes enough information.
+Important entities should link to upstream and downstream lineage wherever existing relationships are available.
 
 ### 4.6 Operational clarity
 
-The product must represent not only success paths, but also pending, running, failed, degraded, rejected, reused, retried, and unresolved states.
+The product must represent not only success paths, but also pending, queued, dispatched, running, validating, failed, cancelled, degraded, rejected, skipped, reused, retried, archived, and unresolved states where applicable.
 
 ### 4.7 Preserve behavior
 
-Phase 1.5 is a UX refactor. Do not silently change API contracts, route semantics, RBAC, lifecycle transitions, training behavior, model output semantics, or scheduler/runtime behavior.
+Phase 1.5 is a UX refactor. Do not silently change API contracts, route semantics, RBAC, lifecycle transitions, training behavior, model output semantics, scheduler behavior, or pipeline runtime semantics.
+
+### 4.8 English UI baseline
+
+Phase 1.5 keeps the current English product terminology as the implementation baseline. Terminology should become more consistent and task-oriented, but broad localization is not part of this phase.
 
 ## 5. Target information architecture
 
@@ -124,14 +132,6 @@ SYSTEM
 └─ Administration
 ```
 
-### 5.1 Rationale
-
-- **Data Sources / Datasets** are one preparation domain.
-- **Pipelines / Training Jobs / Experiments** are one build domain.
-- **Model Registry / Deployments** are the governed model-to-serving domain.
-- **Schedules / Monitoring / Alerts** form the operational automation domain.
-- **Audit Logs / Administration** remain governance/system responsibilities.
-
 Do not flatten all project features into one long undifferentiated list.
 
 ## 6. Application-shell behavior
@@ -149,8 +149,6 @@ The top bar remains persistent and contains:
 
 Project switching must not attempt to map an entity ID from one project to another. The safe target is the newly selected project overview.
 
-Conceptually:
-
 `Current project resource → switch project → new project Overview`
 
 ### 6.3 Sidebar
@@ -159,23 +157,23 @@ The sidebar uses the grouped IA in section 5. The active group remains visually 
 
 ### 6.4 Breadcrumbs
 
-Breadcrumbs should prefer human-readable names over numeric IDs.
+Breadcrumbs should prefer human-readable names over numeric IDs when the application already has the necessary entity data.
 
 Preferred:
 
 `Phase1 Smoke Test / Training Jobs / Multi Output Smoke Training`
 
-Not preferred:
+Fallback when a human-readable name is not already available without wasteful extra requests:
 
 `Phase1 Smoke Test / Training Jobs / #3`
 
-Technical IDs remain available as secondary metadata where useful.
+Do not create N+1 lookups only to cosmetically replace IDs.
 
 ## 7. Page taxonomy and screen roles
 
 | Screen | Primary UX role | Typical primary action |
 | --- | --- | --- |
-| Workspace Home | Current workspace/project activity | Continue work / Create project |
+| Workspace Home | Current workspace/project activity | Create project / continue work |
 | Projects | Project catalog and selection | Create project |
 | Project Overview | Project lifecycle control center | Continue next lifecycle action |
 | Data Sources | External data connectivity/import | Add or connect source |
@@ -189,7 +187,7 @@ Technical IDs remain available as secondary metadata where useful.
 | Experiments | Compare training executions | Compare selected |
 | Experiment Run Detail | Inspect exact run metadata | Inspect lineage/configuration |
 | Model Registry | Govern registered versions | Register model |
-| Model Version Detail | Governance/lifecycle decision | Approve/Promote when allowed |
+| Model Version Detail | Governance/lifecycle decision | Validate/Approve/Promote when allowed |
 | Deployments | Serving management | New deployment |
 | Prediction Test | Online inference verification | Run prediction |
 | Batch Inference | Offline scoring | Run batch / Download result |
@@ -239,13 +237,11 @@ Activity / history
 Technical details / logs
 ```
 
-The purpose is to make the application learnable across entity types.
-
 ## 10. Project Overview role
 
 Project Overview becomes the project lifecycle control center, not merely a statistics page.
 
-It should let a user answer quickly:
+It should help users answer quickly:
 
 - Is data healthy?
 - Is training active or failing?
@@ -256,13 +252,27 @@ It should let a user answer quickly:
 
 Recommended sections:
 
-- compact project health strip,
+- compact project signal strip,
 - Data summary,
 - Build summary,
 - Models summary,
 - Serving summary,
-- recent activity,
+- recent activity where the current APIs can provide it efficiently,
 - members/access for authorized users.
+
+### Health-signal rule
+
+Do not invent hidden health formulas or imply guarantees not supported by current metrics.
+
+Prefer directly observable labels such as:
+
+- `No failed quality checks`,
+- `1 active training job`,
+- `1 production model`,
+- `1 / 1 deployments ready`,
+- `2 open alerts`.
+
+A synthesized label such as `Healthy` is allowed only when its rule is explicitly defined in the frontend and derived from existing data.
 
 ## 11. RBAC UX
 
@@ -274,11 +284,9 @@ Conceptual roles remain:
 - `PROJECT_ADMIN`
 - System Administrator
 
-### UX rule
+Do not hide readable lifecycle context unnecessarily. Prefer showing readable resources and withholding/disabling unauthorized mutation actions according to existing authorization behavior.
 
-Do not hide readable lifecycle context unnecessarily. Prefer showing readable pages and withholding/disabling unauthorized mutation actions according to existing authorization behavior.
-
-### Primary responsibility model
+Primary responsibility model:
 
 - Viewer: read-only lifecycle visibility.
 - Data Scientist: datasets, training, experiments.
@@ -290,29 +298,31 @@ Never weaken backend authorization to match the UI.
 
 ## 12. Status semantics
 
-Use one shared semantic grammar.
+Use one shared semantic grammar while preserving all actual backend states.
 
 ### Neutral
 
-`Draft`, `Stopped`, `Archived`, `Unknown`
+`Draft`, `Stopped`, `Archived`, `Unknown`, `Inactive`
 
 ### In progress
 
-`Pending`, `Queued`, `Running`, `Validating`, `Pending Approval`
+`Pending`, `Queued`, `Dispatched`, `Running`, `Validating`, `Pending Approval`, `Cancel Requested`
 
 ### Success
 
-`Succeeded`, `Passed`, `Approved`, `Production`, `Published`, `Ready`
+`Succeeded`, `Passed`, `Approved`, `Production`, `Published`, `Ready`, `Active`
 
 ### Warning
 
-`Partial`, `Degraded`, `Attention`
+`Warning`, `Partial`, `Degraded`, `Attention`, `Skipped`
 
-### Failure
+### Failure / terminal negative
 
-`Failed`, `Rejected`, `Blocked`, `Error`
+`Failed`, `Fail`, `Rejected`, `Blocked`, `Error`, `Cancelled`, `Critical`
 
-Pipeline execution may additionally communicate `Waiting`, `Skipped`, and `Reused` where those states are meaningful.
+Pipeline execution may additionally communicate `Waiting` and `Reused` where those states are meaningful.
+
+Do not rename backend values in transport or persistence merely to match display labels.
 
 ## 13. Lineage model
 
@@ -354,12 +364,16 @@ Dataset
 → Training Job
 → Experiment Run
 → Register Model
+→ Candidate
+→ Validating when applicable
 → Pending Approval
-→ Approved
-→ Production
+→ Approved or Rejected
+→ Production when approved and promoted
 → Create Deployment
 → Test Prediction
 ```
+
+`Archived` is an inactive/terminal lifecycle state that can apply after active governance use.
 
 Phase 1.5 should reduce context switching by cross-linking related detail pages.
 
@@ -382,8 +396,6 @@ Node Library | Canvas | Inspector
 The Canvas must visually dominate the screen.
 
 ### 16.2 Supported current node types
-
-Use the currently supported node types:
 
 ```text
 DATA
@@ -443,9 +455,20 @@ Node selected:
 
 ### 16.5 Condition branches
 
-Condition branch semantics must be visible on the graph itself. Prefer distinct `TRUE` / `FALSE` outputs or clearly labeled edges.
+Condition branch semantics must be visible on the graph itself.
 
-Do not require the user to understand a separate global branch selector before connecting an edge.
+Primary visual paths are `TRUE` and `FALSE`. Existing `always` edge semantics must remain supported for backward compatibility and non-conditional/unconditional flow behavior.
+
+Preferred graph representation:
+
+```text
+Condition
+├─ TRUE
+├─ FALSE
+└─ ALWAYS (when used)
+```
+
+Do not remove or reinterpret existing `true` / `false` / `always` persisted edge semantics during a visual refactor.
 
 ### 16.6 Save / Validate / Publish / Run
 
@@ -455,10 +478,12 @@ These states and actions must be distinct:
 
 - **Save version**: persists an explicit pipeline version.
 - **Validate**: validates graph and node configuration.
-- **Publish**: makes a valid version operationally executable.
-- **Run**: starts execution.
+- **Publish**: marks the latest valid version as published.
+- **Run**: starts execution using the current supported API semantics.
 
 Preserve the existing behavior that dirty/unsaved changes block publish/run.
+
+Do not claim that backend publication technically prevents all execution of unpublished versions unless the backend is separately changed to enforce that rule. Phase 1.5 changes visual hierarchy, not the runtime contract.
 
 ### 16.7 Unsaved changes
 
@@ -470,12 +495,14 @@ Pipeline graph versions are not implicitly auto-saved.
 
 Validation is a guided correction workflow, not just an error banner.
 
-A validation issue should identify the affected step and, where practical, selecting the issue should:
+A validation issue should identify the affected step and, where technically practical, selecting the issue should:
 
 1. center/highlight the node,
 2. select it,
 3. open the Inspector,
 4. bring attention to the relevant field.
+
+If the backend currently returns only error strings, node/field association may be best-effort in Phase 1.5. Do not fabricate structured backend validation metadata.
 
 ### 16.9 Golden Path pipeline
 
@@ -506,21 +533,39 @@ Endpoint Deployment
 Notification
 ```
 
+An existing `ALWAYS` edge remains valid when a workflow uses it even though the Golden Path focuses on TRUE/FALSE branching.
+
 ## 17. Pipeline Run architecture
 
 Pipeline Run should reuse the graph language of the Builder in read-only execution mode.
 
 The main visualization should not degrade into an unrelated card list.
 
-Selecting an execution node should expose:
+Selecting an execution node should expose, where available:
 
 - status,
 - start/finish or elapsed time,
 - attempt,
-- branch decision where relevant,
+- branch decision,
 - reason/error,
-- input/resource context where available,
+- input/resource context,
 - logs.
+
+### Historical graph correctness requirement
+
+A Pipeline Run must render the **exact pipeline version used by that run**, not the latest pipeline graph.
+
+Current run data includes `pipeline_version_id`, while the current frontend normally obtains only the latest graph from the pipeline detail endpoint. Before implementing a historical graph-based Run view, verify whether the exact run graph can already be fetched without ambiguity.
+
+If not, Phase 1.5-B may add a minimal read-only endpoint such as:
+
+```text
+GET /projects/{project_id}/pipelines/{pipeline_id}/versions/{version}
+```
+
+or an equivalent lookup by `pipeline_version_id`.
+
+This exception is allowed because it exposes already persisted immutable data and is required to avoid displaying the wrong historical graph. It must not change execution semantics.
 
 ### Failure recovery
 
@@ -536,11 +581,13 @@ Schedules should feel attached to executable resources, not like a standalone ra
 
 Preferred contextual flow:
 
-`Published Pipeline → Schedule → Create Schedule`
+`Pipeline → Schedule → Create Schedule`
 
 The central Schedules page remains the management catalog for pipeline runs, batch inference, and data import schedules already supported by the product.
 
 Basic fields should be primary; cron expression and parameters JSON are advanced controls.
+
+Do not imply the pipeline must be published if the current scheduler/runtime contract permits a different valid target. Preserve existing target filtering and validation unless separately changed.
 
 ## 19. Monitoring UX
 
@@ -552,7 +599,7 @@ Monitoring is an operational triage page organized around:
 
 The user should first understand whether attention is required, then drill into supporting metrics and affected resources.
 
-Do not add decorative charts without an operational decision purpose.
+Do not add decorative charts without an operational decision purpose, and do not invent unsupported SLO or drift workflow behavior.
 
 ## 20. Alerts UX
 
@@ -560,13 +607,14 @@ Alerts are actionable exceptions, not passive logs.
 
 Each alert should communicate:
 
+- severity,
 - what happened,
-- why it matters,
-- which resource is affected,
+- why it matters when available from existing message content,
+- which resource is affected when `link_path` or equivalent data exists,
 - when it happened,
 - what the user can do next.
 
-Where a resource link is available, provide it.
+Do not invent structured resource metadata that the current Alert API does not provide.
 
 ## 21. Responsive architecture
 
@@ -595,15 +643,16 @@ The frontend refactor should be incremental.
 - grouped IA,
 - top bar/sidebar/breadcrumb cleanup,
 - shared page anatomy,
-- shared components and tokens,
+- shared components and token normalization,
 - common status/action patterns.
 
 ### Phase 1.5-B — Pipeline UX
 
 - Node Library / Canvas / Inspector,
-- condition branch UX,
+- condition branch UX while preserving `true` / `false` / `always`,
 - validation panel,
 - unsaved flow,
+- exact-version graph support for historical Pipeline Run views,
 - read-only Pipeline Run graph,
 - rerun-from-failed presentation.
 
@@ -643,57 +692,71 @@ Do not introduce functionality reserved for later roadmap phases, including:
 
 The UX architecture should leave room for these features later without displaying unsupported controls now.
 
-## 24. Cursor implementation rules
+## 24. Phase 1.5 vs Phase 9 visual boundary
+
+Phase 1.5 may normalize existing colors, typography, spacing, component dimensions, focus states, and reusable patterns so the refactored frontend is coherent and implementable.
+
+Phase 1.5 is **not** the final brand/visual redesign. Phase 9 remains the stage for a broader Figma-driven final visual polish, including substantial aesthetic rework, final typography/color decisions, advanced chart styling, and product-wide visual refinement after the IA and major workflows stabilize.
+
+## 25. Cursor implementation rules
 
 Before changing UI code, inspect the relevant current routes/components/API calls and tests.
 
 For every Phase 1.5 implementation task:
 
-- preserve backend API contracts unless explicitly approved otherwise,
+- preserve backend API/runtime contracts unless a separately reviewed compatibility read endpoint is explicitly required,
 - preserve routing semantics and deep-linkability,
 - preserve authentication and authorization,
 - preserve project context and project scoping,
 - preserve existing supported functionality,
 - prefer shared reusable components over page-specific duplication,
+- avoid N+1 API calls added only for cosmetic labels,
 - keep current tests passing and add/update tests for changed UX behavior,
 - do not replace the production frontend wholesale,
 - do not invent unsupported backend behavior merely to satisfy a visual concept.
 
-## 25. Architecture Definition of Done
+## 26. Architecture Definition of Done
 
 Phase 1.5 UX architecture is satisfied when the implemented frontend demonstrates:
 
 - grouped IA and clear current location,
 - consistent page anatomy,
 - consistent entity-detail patterns,
-- human-readable names ahead of technical IDs,
-- shared status and action semantics,
+- human-readable names ahead of technical IDs where efficiently available,
+- shared status and action semantics covering actual backend states,
 - project-scoped lifecycle navigation,
 - multi-output target naming consistency,
 - three-zone Pipeline Builder,
-- clear condition branching,
-- explicit save/validate/publish/run semantics,
+- clear condition branching while preserving `always` semantics,
+- explicit save/validate/publish/run UX without changing runtime contracts,
 - guided pipeline validation recovery,
-- graph-based Pipeline Run execution view,
+- graph-based Pipeline Run execution view using the exact historical pipeline version,
 - visible rerun/reuse semantics,
 - contextual scheduling,
 - operational Monitoring and actionable Alerts,
 - desktop-first responsive behavior,
 - no regressions to existing auth/RBAC/API behavior.
 
-## 26. Primary implementation references
+## 27. Primary implementation references
 
 Cursor should inspect at least these current frontend areas before Phase 1.5 work:
 
 - `frontend/src/App.tsx`
 - `frontend/src/AppShell.tsx`
 - `frontend/src/ProjectContext.tsx`
+- `frontend/src/components.tsx`
 - `frontend/src/styles.css`
+- `frontend/src/pages/Dashboard.tsx`
 - `frontend/src/pages/ProjectOverview.tsx`
+- `frontend/src/pages/DataSources.tsx`
+- `frontend/src/pages/Datasets.tsx`
 - `frontend/src/pages/DatasetDetail.tsx`
+- `frontend/src/pages/Jobs.tsx`
+- `frontend/src/pages/JobCreate.tsx`
 - `frontend/src/pages/JobDetail.tsx`
 - `frontend/src/pages/Runs.tsx`
 - `frontend/src/pages/RunDetail.tsx`
+- `frontend/src/pages/RunCompare.tsx`
 - `frontend/src/pages/Pipelines.tsx`
 - `frontend/src/pipelineForms.tsx`
 - `frontend/src/pipelineHelpers.ts`
@@ -701,9 +764,12 @@ Cursor should inspect at least these current frontend areas before Phase 1.5 wor
 - `frontend/src/pages/ModelVersion.tsx`
 - `frontend/src/pages/Endpoints.tsx`
 - `frontend/src/pages/Predict.tsx`
+- `frontend/src/pages/DeploymentApiUsage.tsx`
 - `frontend/src/pages/BatchInference.tsx`
 - `frontend/src/pages/Schedules.tsx`
 - `frontend/src/pages/Monitoring.tsx`
 - `frontend/src/pages/Alerts.tsx`
+- `frontend/src/pages/AuditLogs.tsx`
+- `frontend/src/pages/Administration.tsx`
 
-Also inspect relevant frontend unit tests and Playwright tests before modifying their corresponding screens.
+Also inspect the corresponding frontend unit tests and Playwright tests before modifying user-visible behavior.
