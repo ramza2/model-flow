@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type MouseEvent,
@@ -380,6 +381,10 @@ export function PipelineBuilder() {
   const [validationVisible, setValidationVisible] = useState(false);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [upstreamColumns, setUpstreamColumns] = useState<string[]>([]);
+  const flowInstanceRef = useRef<{
+    setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+    getZoom: () => number;
+  } | null>(null);
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
@@ -531,6 +536,18 @@ export function PipelineBuilder() {
     setSelectedId(node.id);
     setJsonText(JSON.stringify(node.data.config || {}, null, 2));
     setJsonError("");
+  }
+
+  function focusValidationNode(nodeId: string) {
+    const node = nodes.find((row) => row.id === nodeId);
+    if (!node) return;
+    selectNode(node);
+    const width = typeof node.width === "number" ? node.width : 200;
+    const height = typeof node.height === "number" ? node.height : 80;
+    flowInstanceRef.current?.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+      zoom: Math.max(flowInstanceRef.current.getZoom(), 0.85),
+      duration: 280,
+    });
   }
 
   function updateSelectedData(partial: Partial<StepData>, nextConfig?: Record<string, unknown>) {
@@ -910,6 +927,9 @@ export function PipelineBuilder() {
                 setEdges((rows) => addEdge(edge, rows));
               }}
               onNodeClick={(_, node) => selectNode(node as StepNode)}
+              onInit={(instance) => {
+                flowInstanceRef.current = instance;
+              }}
               fitView
             >
               <Background />
@@ -1039,9 +1059,13 @@ export function PipelineBuilder() {
                     className="pipeline-validation-issue"
                     onClick={() => {
                       if (!issue.nodeId) return;
-                      const node = nodes.find((row) => row.id === issue.nodeId);
-                      if (node) selectNode(node);
+                      focusValidationNode(issue.nodeId);
                     }}
+                    data-testid={
+                      issue.nodeId
+                        ? `pipeline-validation-issue-${issue.nodeId}`
+                        : "pipeline-validation-issue-graph"
+                    }
                   >
                     <strong>
                       {issue.nodeId

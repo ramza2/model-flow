@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeConfigForm } from "../pipelineForms";
@@ -38,26 +38,33 @@ vi.mock("@xyflow/react", () => ({
   ReactFlow: ({
     nodes,
     onNodeClick,
+    onInit,
     children,
   }: {
     nodes: Array<{ id: string; data: { label: string } }>;
     onNodeClick?: (_: unknown, node: { id: string; data: { label: string } }) => void;
+    onInit?: (instance: { setCenter: () => void; getZoom: () => number }) => void;
     children?: ReactNode;
-  }) => (
-    <div data-testid="react-flow">
-      {nodes.map((node) => (
-        <button
-          key={node.id}
-          type="button"
-          data-testid={`canvas-node-${node.id}`}
-          onClick={() => onNodeClick?.({}, node)}
-        >
-          {node.data.label}
-        </button>
-      ))}
-      {children}
-    </div>
-  ),
+  }) => {
+    useEffect(() => {
+      onInit?.({ setCenter: () => undefined, getZoom: () => 1 });
+    }, [onInit]);
+    return (
+      <div data-testid="react-flow">
+        {nodes.map((node) => (
+          <button
+            key={node.id}
+            type="button"
+            data-testid={`canvas-node-${node.id}`}
+            onClick={() => onNodeClick?.({}, node)}
+          >
+            {node.data.label}
+          </button>
+        ))}
+        {children}
+      </div>
+    );
+  },
   Background: () => null,
   Controls: () => null,
   MiniMap: () => null,
@@ -401,6 +408,52 @@ describe("PipelineBuilder", () => {
         ([path, init]) => path === "/projects/7/pipelines/9/publish" && init?.method === "POST",
       ),
     ).toBe(false);
+  });
+
+  it("selects the failing node from a validation issue", async () => {
+    const graphPipeline = {
+      ...pipeline,
+      version: {
+        id: 1,
+        version: 1,
+        graph: {
+          nodes: [
+            {
+              id: "training-1",
+              position: { x: 40, y: 40 },
+              data: {
+                label: "Train model",
+                node_type: "training",
+                config: defaultConfigFor("training"),
+              },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return graphPipeline;
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return {
+          valid: false,
+          errors: ["Node 'training-1' requires a non-empty target_column."],
+        };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-training-1");
+    fireEvent.click(screen.getByTestId("pipeline-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-validation-issue-training-1")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("pipeline-validation-issue-training-1"));
+    expect(await screen.findByTestId("pipeline-node-id")).toHaveTextContent("training-1");
+    expect(screen.getByTestId("pipeline-step-name")).toHaveValue("Train model");
   });
 });
 
