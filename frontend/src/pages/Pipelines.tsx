@@ -225,6 +225,13 @@ const PipelineStepNode = memo(PipelineStepNodeComponent);
 
 const nodeTypes = { [STEP_NODE_TYPE]: PipelineStepNode };
 
+let pipelineNodeSeq = 0;
+
+function nextPipelineNodeId(nodeType: string): string {
+  pipelineNodeSeq += 1;
+  return `${nodeType}-${pipelineNodeSeq}`;
+}
+
 export function Pipelines() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -570,7 +577,7 @@ export function PipelineBuilder() {
   }
 
   function addNodeOfType(nodeType: PipelineNodeType) {
-    const id = `${nodeType}-${Date.now()}`;
+    const id = nextPipelineNodeId(nodeType);
     const node: StepNode = {
       id,
       type: STEP_NODE_TYPE,
