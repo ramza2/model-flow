@@ -2,12 +2,14 @@
 
 ## Current phase
 
-**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** is the current planning/implementation phase.
+**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** is the current implementation phase.
 
-Phase 1.5 implementation baseline documents are being finalized in PR #32:
+Phase 1.5 implementation baseline documents are on `main`:
 
 - [`phase-1.5-ux-architecture.md`](./phase-1.5-ux-architecture.md)
 - [`phase-1.5-frontend-design-spec.md`](./phase-1.5-frontend-design-spec.md)
+
+Phase **1.5-A — Shell & shared design system** is in progress on branch `cursor/phase1.5a-shell-design-system`.
 
 The implementation strategy is direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
 
