@@ -25,7 +25,7 @@ test("login protects routes and restores the authenticated shell", async ({ page
   await page.getByTestId("login-submit").click();
   await expect(page.getByRole("heading", { name: "Administration" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Projects/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Audit Logs/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Global Audit Logs/ })).toBeVisible();
   await expect(page.getByRole("link", { name: /Administration/ })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/00-authenticated-shell.png", fullPage: true });
 

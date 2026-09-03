@@ -1,21 +1,46 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api, type Alert } from "./api";
 import { useAuth } from "./AuthContext";
 import { hasProjectAdminRole, useProject } from "./ProjectContext";
 
-const projectNav = [
-  ["Data Sources", "data-sources", "⌁"],
-  ["Datasets", "datasets", "▤"],
-  ["Experiments", "experiments", "⌇"],
-  ["Training Jobs", "jobs", "▶"],
-  ["Pipelines", "pipelines", "⌘"],
-  ["Schedules", "schedules", "⏱"],
-  ["Model Registry", "models", "◆"],
-  ["Deployments", "deployments", "↗"],
-  ["Monitoring", "monitoring", "◉"],
-  ["Alerts", "alerts", "⚑"],
-] as const;
+type NavItem = { label: string; to: string; icon: string; end?: boolean };
+type ProjectNavItem = { label: string; path: string; icon: string; end?: boolean };
+
+const DRAWER_MEDIA_QUERY = "(max-width: 1023px)";
+
+const projectGroups: { label: string; items: ProjectNavItem[] }[] = [
+  {
+    label: "Data",
+    items: [
+      { label: "Data Sources", path: "data-sources", icon: "⌁" },
+      { label: "Datasets", path: "datasets", icon: "▤" },
+    ],
+  },
+  {
+    label: "Build",
+    items: [
+      { label: "Pipelines", path: "pipelines", icon: "⌘" },
+      { label: "Training Jobs", path: "jobs", icon: "▶" },
+      { label: "Experiments", path: "experiments", icon: "⌇" },
+    ],
+  },
+  {
+    label: "Models & Serving",
+    items: [
+      { label: "Model Registry", path: "models", icon: "◆" },
+      { label: "Deployments", path: "deployments", icon: "↗" },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { label: "Schedules", path: "schedules", icon: "⏱" },
+      { label: "Monitoring", path: "monitoring", icon: "◉" },
+      { label: "Alerts", path: "alerts", icon: "⚑" },
+    ],
+  },
+];
 
 const crumbLabels: Record<string, string> = {
   projects: "Projects",
@@ -36,6 +61,9 @@ const crumbLabels: Record<string, string> = {
   admin: "Administration",
   password: "Change Password",
   new: "Create",
+  compare: "Compare",
+  runs: "Run",
+  api: "API Usage",
 };
 
 function Breadcrumbs() {
@@ -45,6 +73,9 @@ function Breadcrumbs() {
   const crumbs = segments.map((segment, index) => {
     const path = `/${segments.slice(0, index + 1).join("/")}`;
     let label = crumbLabels[segment];
+    if (segment === "audit" && !segments.includes("projects")) {
+      label = "Global Audit Logs";
+    }
     if (!label && segments[index - 1] === "projects") {
       label = projects.find((project) => String(project.id) === segment)?.name || "Project";
     }
@@ -58,7 +89,7 @@ function Breadcrumbs() {
         <span key={crumb.path}>
           <span aria-hidden="true">/</span>
           {index === crumbs.length - 1 ? (
-            <span aria-current="page">{crumb.label}</span>
+            <span aria-current="page" className="breadcrumb-current">{crumb.label}</span>
           ) : (
             <Link to={crumb.path}>{crumb.label}</Link>
           )}
@@ -66,6 +97,36 @@ function Breadcrumbs() {
       ))}
     </nav>
   );
+}
+
+function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+  return (
+    <NavLink to={item.to} end={item.end} onClick={onNavigate}>
+      <span className="nav-icon" aria-hidden="true">{item.icon}</span>
+      <span className="nav-text">{item.label}</span>
+    </NavLink>
+  );
+}
+
+function useDrawerViewport() {
+  const [isDrawerViewport, setIsDrawerViewport] = useState(() => (
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(DRAWER_MEDIA_QUERY).matches
+      : false
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia(DRAWER_MEDIA_QUERY);
+    const sync = () => setIsDrawerViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  return isDrawerViewport;
 }
 
 export default function AppShell({ children }: { children: ReactNode }) {
@@ -77,9 +138,25 @@ export default function AppShell({ children }: { children: ReactNode }) {
     loading: projectsLoading,
   } = useProject();
   const navigate = useNavigate();
+  const location = useLocation();
   const [unread, setUnread] = useState(0);
+  const [navOpen, setNavOpen] = useState(false);
+  const isDrawerViewport = useDrawerViewport();
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const projectBase = selectedProject ? `/projects/${selectedProject.id}` : "";
-  const canAudit = user?.is_system_admin || hasProjectAdminRole(selectedProject);
+  const canProjectAudit = Boolean(selectedProject) && (user?.is_system_admin || hasProjectAdminRole(selectedProject));
+  const drawerClosed = isDrawerViewport && !navOpen;
+
+  useEffect(() => {
+    setNavOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isDrawerViewport) {
+      setNavOpen(false);
+    }
+  }, [isDrawerViewport]);
 
   useEffect(() => {
     if (!selectedProject) {
@@ -91,15 +168,72 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .catch(() => setUnread(0));
   }, [selectedProject]);
 
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    const sidebar = sidebarRef.current;
+    const focusTarget =
+      sidebar?.querySelector<HTMLElement>("a[href], button:not([disabled])")
+      ?? sidebar;
+    focusTarget?.focus();
+  }, [navOpen, isDrawerViewport]);
+
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      setNavOpen(false);
+      queueMicrotask(() => navToggleRef.current?.focus());
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navOpen, isDrawerViewport]);
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) {
+      return;
+    }
+    if (drawerClosed) {
+      sidebar.setAttribute("inert", "");
+    } else {
+      sidebar.removeAttribute("inert");
+    }
+  }, [drawerClosed]);
+
   async function signOut() {
     await logout();
     navigate("/login", { replace: true });
   }
 
+  function closeNav(options?: { restoreFocus?: boolean }) {
+    setNavOpen(false);
+    if (options?.restoreFocus) {
+      queueMicrotask(() => navToggleRef.current?.focus());
+    }
+  }
+
   return (
-    <div className="app-frame">
+    <div className={`app-frame${navOpen ? " nav-open" : ""}`}>
       <header className="topbar">
-        <Link to="/" className="brand">
+        <button
+          ref={navToggleRef}
+          type="button"
+          className="nav-toggle"
+          aria-label={navOpen ? "Close navigation" : "Open navigation"}
+          aria-expanded={navOpen}
+          aria-controls="app-sidebar"
+          onClick={() => setNavOpen((open) => !open)}
+        >
+          <span aria-hidden="true">{navOpen ? "✕" : "☰"}</span>
+        </button>
+        <Link to="/" className="brand" onClick={() => closeNav()}>
           Model<span>Flow</span>
         </Link>
         <div className="project-picker">
@@ -146,33 +280,74 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <aside className="sidebar">
+      {navOpen && isDrawerViewport && (
+        <button
+          type="button"
+          className="nav-backdrop"
+          aria-label="Dismiss navigation overlay"
+          onClick={() => closeNav({ restoreFocus: true })}
+        />
+      )}
+
+      <aside
+        ref={sidebarRef}
+        className="sidebar"
+        id="app-sidebar"
+        tabIndex={-1}
+        aria-hidden={drawerClosed || undefined}
+      >
         <nav className="nav" aria-label="Main navigation">
           <div className="nav-group">
             <span className="nav-label">Workspace</span>
-            <NavLink to="/" end><span aria-hidden="true">⌂</span>Home</NavLink>
-            <NavLink to="/projects"><span aria-hidden="true">▦</span>Projects</NavLink>
+            <NavItemLink item={{ label: "Home", to: "/", icon: "⌂", end: true }} onNavigate={() => closeNav()} />
+            <NavItemLink item={{ label: "Projects", to: "/projects", icon: "▦", end: true }} onNavigate={() => closeNav()} />
           </div>
+
           <div className="nav-group">
             <span className="nav-label">Project</span>
             {!selectedProject && <p className="nav-hint">Select or create a project to continue.</p>}
-            {selectedProject && projectNav.map(([label, path, icon]) => (
-              <NavLink key={path} to={`${projectBase}/${path}`}>
-                <span aria-hidden="true">{icon}</span>{label}
-              </NavLink>
-            ))}
+            {selectedProject && (
+              <NavItemLink
+                item={{ label: "Overview", to: projectBase, icon: "◎", end: true }}
+                onNavigate={() => closeNav()}
+              />
+            )}
           </div>
-          {(canAudit || user?.is_system_admin) && (
+
+          {selectedProject && projectGroups.map((group) => (
+            <div className="nav-group" key={group.label}>
+              <span className="nav-label">{group.label}</span>
+              {group.items.map((item) => (
+                <NavItemLink
+                  key={item.path}
+                  item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end }}
+                  onNavigate={() => closeNav()}
+                />
+              ))}
+            </div>
+          ))}
+
+          {canProjectAudit && (
             <div className="nav-group">
               <span className="nav-label">Governance</span>
-              {canAudit && (
-                <NavLink to={user?.is_system_admin ? "/audit" : `${projectBase}/audit`}>
-                  <span aria-hidden="true">≡</span>Audit Logs
-                </NavLink>
-              )}
-              {user?.is_system_admin && (
-                <NavLink to="/admin"><span aria-hidden="true">⚙</span>Administration</NavLink>
-              )}
+              <NavItemLink
+                item={{ label: "Audit Logs", to: `${projectBase}/audit`, icon: "≡" }}
+                onNavigate={() => closeNav()}
+              />
+            </div>
+          )}
+
+          {user?.is_system_admin && (
+            <div className="nav-group">
+              <span className="nav-label">System</span>
+              <NavItemLink
+                item={{ label: "Global Audit Logs", to: "/audit", icon: "☷" }}
+                onNavigate={() => closeNav()}
+              />
+              <NavItemLink
+                item={{ label: "Administration", to: "/admin", icon: "⚙" }}
+                onNavigate={() => closeNav()}
+              />
             </div>
           )}
         </nav>

@@ -33,7 +33,10 @@ export default function AuditLogs() {
   }
 
   return <div>
-    <PageHeader title="Audit Logs" description={projectId ? "Review security and lifecycle events for this project." : "Review system-wide security and administration events."} />
+    <PageHeader
+      title={projectId ? "Audit Logs" : "Global Audit Logs"}
+      description={projectId ? "Review security and lifecycle events for this project." : "Review system-wide security and administration events."}
+    />
     <ErrorNotice message={error} />
     <form className="filter-bar filter-form" onSubmit={filter}>
       <label>Action<input value={action} onChange={(event) => setAction(event.target.value)} placeholder="e.g. model.approve" /></label>

@@ -54,7 +54,13 @@ describe("authentication and navigation", () => {
 
     expect(await screen.findByRole("link", { name: /Administration/ })).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: "Production" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Audit Logs/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Audit Logs$/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Global Audit Logs/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Pipelines/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Overview/ })).toBeInTheDocument();
+    expect(screen.getByText("Build")).toBeInTheDocument();
+    expect(screen.getByText("Models & Serving")).toBeInTheDocument();
+    expect(screen.getByText("Operations")).toBeInTheDocument();
+    expect(screen.getByText("System")).toBeInTheDocument();
   });
 });
