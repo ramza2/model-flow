@@ -335,6 +335,15 @@ describe("PipelineBuilder", () => {
     stubBuilderApi();
   });
 
+  it("adds a node from the library and marks dirty", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    expect(await screen.findByTestId("pipeline-step-name")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(/Dataset Load/i);
+  });
+
   it("renames a step label", async () => {
     renderBuilder();
     await screen.findByTestId("pipeline-add-node");
@@ -401,7 +410,7 @@ describe("PipelineRunDetail", () => {
   });
 
   it("shows label and attempt when present", async () => {
-    apiMock.mockResolvedValue({
+    const runPayload = {
       id: 42,
       pipeline_id: 9,
       pipeline_version_id: 1,
@@ -424,6 +433,33 @@ describe("PipelineRunDetail", () => {
       created_at: "2026-08-10T10:00:00Z",
       started_at: null,
       finished_at: null,
+    };
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipeline-runs/42") return runPayload;
+      if (path === "/projects/7/pipeline-versions/1") {
+        return {
+          id: 1,
+          pipeline_id: 9,
+          project_id: 7,
+          version: 1,
+          graph: {
+            nodes: [
+              {
+                id: "training-1",
+                position: { x: 0, y: 0 },
+                data: {
+                  label: "Train model",
+                  node_type: "training",
+                  config: {},
+                },
+              },
+            ],
+            edges: [],
+          },
+          created_at: "2026-08-10T10:00:00Z",
+        };
+      }
+      throw new Error(`Unhandled ${path}`);
     });
     renderRunDetail();
     const card = await screen.findByTestId("pipeline-run-step-training-1");
@@ -433,23 +469,38 @@ describe("PipelineRunDetail", () => {
   });
 
   it("renders legacy node_states without label or attempt", async () => {
-    apiMock.mockResolvedValue({
-      id: 42,
-      pipeline_id: 9,
-      pipeline_version_id: 1,
-      status: "succeeded",
-      parameters: {},
-      node_states: {
-        "dataset_load-9": { status: "succeeded" },
-      },
-      node_artifacts: {},
-      fail_policy: "stop",
-      scheduled_for: null,
-      logs: "ok",
-      error_message: null,
-      created_at: "2026-08-10T10:00:00Z",
-      started_at: null,
-      finished_at: null,
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipeline-runs/42") {
+        return {
+          id: 42,
+          pipeline_id: 9,
+          pipeline_version_id: 1,
+          status: "succeeded",
+          parameters: {},
+          node_states: {
+            "dataset_load-9": { status: "succeeded" },
+          },
+          node_artifacts: {},
+          fail_policy: "stop",
+          scheduled_for: null,
+          logs: "ok",
+          error_message: null,
+          created_at: "2026-08-10T10:00:00Z",
+          started_at: null,
+          finished_at: null,
+        };
+      }
+      if (path === "/projects/7/pipeline-versions/1") {
+        return {
+          id: 1,
+          pipeline_id: 9,
+          project_id: 7,
+          version: 1,
+          graph: { nodes: [], edges: [] },
+          created_at: "2026-08-10T10:00:00Z",
+        };
+      }
+      throw new Error(`Unhandled ${path}`);
     });
     renderRunDetail();
     const card = await screen.findByTestId("pipeline-run-step-dataset_load-9");

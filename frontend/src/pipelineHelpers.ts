@@ -17,8 +17,75 @@ export const PIPELINE_NODE_TYPES = [
 
 export type PipelineNodeType = (typeof PIPELINE_NODE_TYPES)[number];
 
+export const PIPELINE_NODE_LIBRARY: {
+  category: string;
+  items: { type: PipelineNodeType; description: string; icon: string }[];
+}[] = [
+  {
+    category: "Data",
+    items: [
+      { type: "dataset_load", description: "Load a dataset version into the graph.", icon: "▤" },
+      { type: "quality_check", description: "Run dataset quality rules.", icon: "✓" },
+      { type: "split", description: "Train / validation / test split.", icon: "⧉" },
+      { type: "preprocessing", description: "Advanced preprocessing step.", icon: "⚙" },
+    ],
+  },
+  {
+    category: "Train",
+    items: [
+      { type: "training", description: "Train a model estimator.", icon: "▶" },
+      { type: "evaluation", description: "Evaluate metrics and gates.", icon: "◉" },
+    ],
+  },
+  {
+    category: "Logic",
+    items: [
+      { type: "condition", description: "Branch on TRUE / FALSE / ALWAYS.", icon: "◇" },
+    ],
+  },
+  {
+    category: "Model Lifecycle",
+    items: [
+      { type: "model_registration", description: "Register a trained model.", icon: "◆" },
+      { type: "approval_request", description: "Request model approval.", icon: "✎" },
+    ],
+  },
+  {
+    category: "Serving",
+    items: [
+      { type: "endpoint_deployment", description: "Deploy an online endpoint.", icon: "↗" },
+      { type: "batch_prediction", description: "Run batch inference.", icon: "⇩" },
+    ],
+  },
+  {
+    category: "Operations",
+    items: [
+      { type: "notification", description: "Send an alert or notification.", icon: "⚑" },
+    ],
+  },
+];
+
+export type ConditionBranch = "true" | "false" | "always";
+
 export function labelForType(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export function edgeBranch(edge: {
+  sourceHandle?: string | null;
+  branch?: string;
+  label?: unknown;
+  data?: { branch?: string };
+}): ConditionBranch {
+  const fromHandle = edge.sourceHandle;
+  if (fromHandle === "true" || fromHandle === "false" || fromHandle === "always") {
+    return fromHandle;
+  }
+  const raw = edge.data?.branch || edge.branch || edge.label;
+  if (raw === "true" || raw === "false" || raw === "always") {
+    return raw;
+  }
+  return "always";
 }
 
 export function defaultConfigFor(type: PipelineNodeType): Record<string, unknown> {
@@ -71,10 +138,20 @@ export function configSummary(
       );
       lines.push(`seed ${config.random_seed ?? 42}`);
       break;
-    case "training":
-      if (config.target_column) lines.push(`target: ${String(config.target_column)}`);
+    case "training": {
+      const targets = Array.isArray(config.target_columns)
+        ? (config.target_columns as unknown[]).map(String).filter(Boolean)
+        : config.target_column
+          ? [String(config.target_column)]
+          : [];
+      if (targets.length > 1) lines.push(`${targets.length} targets`);
+      else if (targets.length === 1) lines.push(`target: ${targets[0]}`);
       if (config.algorithm) lines.push(String(config.algorithm).replaceAll("_", " "));
+      if (config.problem_type && config.problem_type !== "auto") {
+        lines.push(String(config.problem_type));
+      }
       break;
+    }
     case "evaluation":
       lines.push(`${String(config.metric ?? "metric")} ≥ ${config.minimum ?? config.min ?? "?"}`);
       break;
@@ -122,13 +199,17 @@ export function nodeConfigWarnings(
       if (!config.dataset_id) warnings.push("Dataset required");
       if (!config.dataset_version_id) warnings.push("Dataset version required");
       break;
-    case "training":
-      if (!config.target_column) warnings.push("Target column required");
+    case "training": {
+      const hasTargets =
+        (typeof config.target_column === "string" && config.target_column.trim() !== "")
+        || (Array.isArray(config.target_columns) && config.target_columns.length > 0);
+      if (!hasTargets) warnings.push("Target column required");
       if (!config.algorithm) warnings.push("Algorithm required");
       if (!Array.isArray(config.feature_columns) || config.feature_columns.length === 0) {
         warnings.push("Select at least one feature");
       }
       break;
+    }
     case "split": {
       const train = Number(config.train_ratio);
       const val = Number(config.val_ratio);
@@ -168,6 +249,18 @@ export function nodeConfigWarnings(
       break;
   }
   return warnings;
+}
+
+export function parseValidationIssue(error: string, nodeIds: string[]): {
+  message: string;
+  nodeId: string | null;
+} {
+  for (const id of nodeIds) {
+    if (error.includes(`'${id}'`) || error.includes(`"${id}"`) || error.includes(id)) {
+      return { message: error, nodeId: id };
+    }
+  }
+  return { message: error, nodeId: null };
 }
 
 export function validateSplitRatios(

@@ -41,9 +41,8 @@ test("pipeline builder form UX saves dataset load step", async ({ page }) => {
   await page.getByTestId("pipeline-name").fill(`builder-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
 
-  await expect(page.getByTestId("pipeline-add-node")).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId("pipeline-node-type").selectOption("dataset_load");
-  await page.getByTestId("pipeline-add-node").click();
+  await expect(page.getByTestId("pipeline-library-dataset_load")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("pipeline-library-dataset_load").click();
 
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
   await expect(page.getByTestId("node-config-dataset")).toBeVisible();
