@@ -2,71 +2,116 @@
 
 Post–v1.0.0-rc.1 planning. This document tracks **future** work; the RC1 MVP scope is frozen in [`BACKLOG.md`](./BACKLOG.md) and [`RELEASE_NOTES_v1.0.0-rc.1.md`](./RELEASE_NOTES_v1.0.0-rc.1.md).
 
-**Dependency principle:** scheduling and data-prep foundations precede full E2E pipeline UX; connectors and closed-loop MLOps build on stable pipelines; enterprise scale and visual redesign come after core product depth.
+**Dependency principle:** scheduling and retraining foundations precede broader pipeline/data-prep expansion; enterprise scale and final visual redesign come after core product depth.
 
 ---
 
 ## Phase 0 — RC1 Baseline
 
 - Release and documentation baseline: **complete** (`v1.0.0-rc.1`, verify gate, acceptance criteria)
-- Tagged release / CI baseline: **complete** (annotated tag, GitHub pre-release, Actions gate at `92c59db`)
+- Tagged release / CI baseline: **complete**
 - Repository governance / branch protection: **pending**
-
-**Status:** release baseline complete at `92c59db`; branch protection not yet configured.
 
 ---
 
 ## Phase 1 — Scheduling / Automation
 
-**Status:** complete (DB-backed worker scheduler)
+**Status:** complete
 
 Implemented scope:
 
-- Cron and timezone-aware scheduling (`croniter` + `zoneinfo`, 5-field cron)
+- Cron and timezone-aware scheduling
 - Dataset import, batch prediction, and pipeline run schedules
-- `AutomationSchedule` + `AutomationScheduleRun` history with idempotent occurrence keys
-- Concurrency policies (`skip` / `queue`) and `max_concurrent_runs`
-- Retry policy (`max_retries`, `retry_delay_seconds`) on child job failure
-- Missed-run coalesce (at most one due occurrence after downtime)
+- `AutomationSchedule` + `AutomationScheduleRun` history
+- Concurrency policies and retry policy
+- Missed-run coalescing
 - Run now, enable/disable, project-scoped REST API, Schedules UI
 - Docs: [`SCHEDULING.md`](./SCHEDULING.md)
 
-**Depends on:** RC1 job worker and pipeline engine.
+---
+
+## Phase 1.1 — Retraining Foundation
+
+**Status:** complete
+
+Implemented scope:
+
+- canonical full-retrain flow from a succeeded source Training Job
+- explicit `retrain_source_job_id` lineage separate from retry/clone lineage
+- inherited training configuration with a fresh estimator and fresh MLflow run
+- target dataset-version selection and compatibility validation
+- retrain UX and lineage presentation
+
+Retraining here means a new full fit, not incremental/continued training.
 
 ---
 
-## Phase 1.5 — Figma UX Architecture
+## Phase 1.2 — Multi-output Regression
 
-**Goal:** UX structure design for upcoming feature work — **not** final visual polish (that is Phase 9).
+**Status:** complete
+
+Implemented scope:
+
+- multiple numeric targets in one regression model
+- backward-compatible single-target behavior
+- target-aware training, metrics, MLflow metadata, registry metadata, deployment, online prediction, and batch prediction
+- aggregate and per-target metrics
+- named multi-output prediction responses
+- production smoke follow-up fixes for registry UX, prediction overflow, experiment run detail, batch download, approval comment preservation, and deploy Git SHA propagation
+
+---
+
+## Phase 1.5 — UX Architecture & Frontend UX Refactoring
+
+**Status:** current planning / implementation phase
+
+**Goal:** establish a coherent product-wide UX architecture and incrementally refactor the existing React frontend before broader data-prep and pipeline expansion.
+
+Phase 1.5 does **not** require a Figma handoff. The current production React frontend is modified directly using the approved UX documents as the presentation source of truth. Figma may be used later for focused exploration, and Phase 9 remains the final broad visual redesign stage.
+
+### Implementation references
+
+- [`phase-1.5-ux-architecture.md`](./phase-1.5-ux-architecture.md)
+- [`phase-1.5-frontend-design-spec.md`](./phase-1.5-frontend-design-spec.md)
 
 ### Scope
 
-- Information architecture (IA)
-- Korean-first menu and terminology system
-  - Non-proprietary menu and workflow labels use beginner-friendly Korean centered on task meaning
-  - English technical terms may appear as secondary labels where helpful
-- Beginner-friendly guided workflows
-- Empty-state guidance
-- Contextual help / tooltip / glossary
-- Beginner / Advanced user interaction patterns
-- Pipeline builder UX flows
-- Node / Inspector interaction patterns
-- Common validation / error / run-state UX
-- Design system draft (components, states, validation feedback)
+- lifecycle-first information architecture
+- grouped project navigation
+- consistent page and entity-detail patterns
+- English product terminology normalization; broad localization is out of scope
+- shared status/action/validation/error UX
+- shared frontend component/token normalization
+- three-zone Pipeline Builder: Node Library / Canvas / Inspector
+- graph-readable `TRUE` / `FALSE` condition branches while preserving existing `always` edge semantics
+- guided pipeline validation recovery
+- graph-based Pipeline Run view using the exact immutable pipeline version used by the run
+- rerun-from-failed / reused-step presentation
+- consistent Dataset / Training / Experiment / Model / Deployment lifecycle UX
+- Monitoring, Alerts, Scheduling, Workspace Home, and Project Overview refinement
+- desktop-first responsive and accessibility baseline
+- browser-based visual review and regression testing
+
+### Implementation slices
+
+1. **Phase 1.5-A — Shell & shared design system**
+2. **Phase 1.5-B — Pipeline UX**
+3. **Phase 1.5-C — ML lifecycle UX**
+4. **Phase 1.5-D — Operations & overview UX**
+
+A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed to render the correct historical graph for a Pipeline Run. This is a compatibility/readability endpoint only, not a runtime-semantic change.
 
 ### Principles
 
-1. Terminology is designed around **what the user is trying to accomplish**, not literal English→Korean translation.
-2. Proper technical names (e.g. Random Forest, MLflow, SHAP, Cron) are **not** forced into awkward Korean equivalents.
-3. Beginners should easily follow the flow: data preparation → training → model management → deploy/predict → monitoring.
-4. Guided UX must **not** block advanced users from working freely.
-5. Final typography, color, and visual polish belong in **Phase 9**.
-
-**Depends on:** Phase 1 requirements sketch; informs Phase 3 and Phase 9.
+1. Existing backend/API/auth/RBAC/runtime behavior remains the functional source of truth.
+2. Phase 1.5 documents are the source of truth for IA, navigation, layout, component hierarchy, and presentation.
+3. Do not invent future-phase functionality merely to complete a visual concept.
+4. Manual training remains supported; pipelines become the preferred repeatable workflow UX.
+5. Phase 1.5 normalizes the current dark engineering UI but does not replace Phase 9 final visual polish.
 
 ---
 
-## Phase 2 — Multi Dataset / Visual Data Preparation
+## Phase 2 — Multi-dataset & Visual Data Preparation
 
 - Multiple input datasets per workflow
 - Join / Union
@@ -75,24 +120,25 @@ Implemented scope:
 - Group By (SUM / AVG / MIN / MAX / COUNT)
 - Pivot / Unpivot
 
-**Depends on:** pipeline node model and dataset versioning from RC1.
+**Depends on:** stable Phase 1.5 pipeline interaction patterns and existing dataset versioning.
 
 ---
 
-## Phase 3 — E2E Pipeline UX
+## Phase 3 — End-to-End Pipeline UX
 
-Single **Pipeline Canvas** for the full lifecycle:
+Expand the stabilized Pipeline Canvas across the full lifecycle and the new Phase 2 data-preparation capabilities:
 
-Source → Transform → Quality → Train → Registry → Deploy → Predict → Monitor
+`Source → Transform → Quality → Train → Registry → Deploy → Predict → Monitor`
 
-- Shared Node / Inspector / validation / run-state UX across steps
-- Consistent error and progress surfacing
+- shared Node / Inspector / validation / run-state UX across expanded steps
+- consistent error and progress surfacing
+- end-to-end lifecycle navigation and lineage
 
-**Depends on:** Phase 1.5 IA, Phase 2 transform nodes.
+**Depends on:** Phase 1.5 UX architecture and Phase 2 transform capabilities.
 
 ---
 
-## Phase 4 — Data Source / Connector Expansion
+## Phase 4 — Connectors
 
 - REST API data source
 - SQL connector abstraction layer
@@ -100,7 +146,7 @@ Source → Transform → Quality → Train → Registry → Deploy → Predict �
 - Microsoft SQL Server
 - Oracle
 
-**Depends on:** existing encrypted credential and import patterns from RC1.
+**Depends on:** existing encrypted credential and import patterns plus stable data-source UX.
 
 ---
 
@@ -109,55 +155,69 @@ Source → Transform → Quality → Train → Registry → Deploy → Predict �
 - Prediction vs ground-truth comparison
 - Model quality monitoring over time
 - Performance degradation alerts
-- Automatic **retraining pipeline** trigger
+- Automatic **full retraining pipeline** trigger
 - New model version lands as **CANDIDATE**
-- **No** automatic PRODUCTION promotion — user approval required
+- **No automatic PRODUCTION promotion** — user approval required
 
-**Depends on:** Phase 1 scheduling, Phase 3 E2E pipeline, monitoring from RC1.
+**Depends on:** scheduling, stable pipeline UX/runtime, and monitoring foundations.
 
 ---
 
-## Phase 6 — Time-series Data Processing
+## Phase 5.1 — Incremental / Continued Training
 
-- Wide-to-Long transforms
-- Lag features
-- Rolling windows
-- Time-aware train/validation splits
-- Forecasting model support — **out of initial scope**; follow-on after transforms stabilize
+- supported-algorithm-only continued learning
+- `partial_fit`, warm-start, or equivalent capability where technically valid
+- explicit distinction from full retraining
+- lineage and compatibility rules for continued training
 
-**Depends on:** Phase 2 data prep nodes.
+**Depends on:** stable full-retraining semantics and closed-loop workflow foundations.
+
+---
+
+## Phase 6 — Time-series / Multi-step
+
+- time-aware data processing
+- Wide-to-Long transforms where useful
+- lag features
+- rolling windows
+- time-aware train/validation splits
+- time-series forecasting model support
+- multi-step outputs and combinations with multi-output targets where supported
+
+**Depends on:** Phase 2 data-prep capabilities.
 
 ---
 
 ## Phase 7 — LLM Pipeline Copilot
 
-- Natural language → pipeline draft
-- Pipeline schema validation against ModelFlow definitions
-- Visual preview before apply
-- User confirmation gate
-- Natural-language modification via graph patch (not free-form execution)
-- LLM generates **ModelFlow Pipeline Definition** only; does not run arbitrary code
+- natural language → pipeline draft
+- pipeline schema validation against ModelFlow definitions
+- visual preview before apply
+- user confirmation gate
+- natural-language modification via graph patch, not free-form execution
+- LLM generates ModelFlow Pipeline Definition only; it does not run arbitrary code
 
-**Depends on:** Phase 3 canvas UX and stable pipeline schema.
+**Depends on:** stable pipeline schema and UX.
 
 ---
 
-## Phase 8 — Enterprise / Scale-out
+## Phase 8 — Enterprise / Scale
 
-- Inference service separation from API/worker
+- inference service separation from API/worker
 - OIDC / SSO
-- External secret management integration
+- external secret management integration
 - Kubernetes deployment and HA patterns
-- Worker scale-out and GPU runner profiles
+- worker scale-out and GPU runner profiles
 
 **Depends on:** production hardening feedback from earlier phases.
 
 ---
 
-## Phase 9 — Final UI/UX Visual Redesign
+## Phase 9 — Final Visual Redesign
 
-- Figma-driven full visual redesign
-- Typography, color, spacing, components, charts
-- Responsive layout and accessibility polish
+- Figma-driven product-wide final visual redesign
+- final typography, color, spacing, iconography, components, and charts
+- accessibility and responsive polish beyond the Phase 1.5 structural baseline
+- visual consistency pass after major product workflows have stabilized
 
-**Depends on:** Phase 1.5 design system and stabilized IA from Phases 1–3.
+**Depends on:** stabilized IA and workflows from Phases 1.5–3 and later product depth.
