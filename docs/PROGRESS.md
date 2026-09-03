@@ -9,7 +9,9 @@ Phase 1.5 implementation baseline documents are on `main`:
 - [`phase-1.5-ux-architecture.md`](./phase-1.5-ux-architecture.md)
 - [`phase-1.5-frontend-design-spec.md`](./phase-1.5-frontend-design-spec.md)
 
-Phase **1.5-A — Shell & shared design system** is in progress on branch `cursor/phase1.5a-shell-design-system`.
+Phase **1.5-A — Shell & shared design system** is complete on `main`.
+
+Phase **1.5-B — Pipeline UX** is in progress on branch `cursor/phase1.5b-pipeline-ux`.
 
 The implementation strategy is direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
 
@@ -138,8 +140,9 @@ These are follow-up production confirmation items, not blockers for drafting Pha
 
 No architecture blocker is currently known.
 
-The graph-based historical Pipeline Run UX may require a minimal read-only PipelineVersion lookup endpoint because the Run stores `pipeline_version_id` while the current Pipeline detail route returns the latest graph. This should be handled as a small Phase 1.5-B compatibility/read endpoint if confirmed during implementation.
+Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase 1.5-B as a minimal read-only endpoint:
+`GET /projects/{project_id}/pipeline-versions/{pipeline_version_id}`.
 
 ## Next step
 
-Complete review/merge of the Phase 1.5-A Draft PR (`cursor/phase1.5a-shell-design-system`), then begin **Phase 1.5-B — Pipeline UX** in a new feature branch.
+Complete review/merge of the Phase 1.5-B Draft PR (`cursor/phase1.5b-pipeline-ux`), then begin **Phase 1.5-C — ML lifecycle UX** in a new feature branch.
