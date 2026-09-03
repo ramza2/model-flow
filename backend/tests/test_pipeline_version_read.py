@@ -2,10 +2,88 @@
 
 from __future__ import annotations
 
-import json
+import secrets
 
-from app.db.models import Pipeline, PipelineVersion
-from app.db.session import TestingSessionLocal
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.core.security import hash_password
+from app.db.models import Base, User
+from app.db.session import get_db
+from app.main import _rate_windows, app
+from app.services import mlflow_service, registry_service, storage
+
+engine = create_engine(
+    "sqlite+pysqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+TestingSessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+PASSWORD = secrets.token_urlsafe(24)
+
+
+@pytest.fixture(autouse=True)
+def setup_pipeline_version_read_tests(monkeypatch):
+    Base.metadata.create_all(engine)
+    _rate_windows.clear()
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr(storage, "ensure_buckets", lambda: None)
+    monkeypatch.setattr(
+        storage,
+        "upload_bytes",
+        lambda bucket, key, data, content_type="application/octet-stream": None,
+    )
+    monkeypatch.setattr(
+        storage,
+        "download_bytes",
+        lambda bucket, key: b"",
+    )
+    monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-1")
+    monkeypatch.setattr(
+        registry_service,
+        "_mlflow_logged_feature_schema",
+        lambda run_id: [],
+    )
+    with TestingSessionLocal() as db:
+        db.add(
+            User(
+                email="admin@example.com",
+                full_name="Admin",
+                password_hash=hash_password(PASSWORD),
+                is_active=True,
+                is_system_admin=True,
+            )
+        )
+        db.commit()
+    yield
+    app.dependency_overrides.clear()
+    Base.metadata.drop_all(engine)
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.fixture
+def auth_headers(client):
+    login = client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@example.com", "password": PASSWORD},
+    )
+    assert login.status_code == 200
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 def test_get_pipeline_version_returns_exact_stored_graph(client, auth_headers):
