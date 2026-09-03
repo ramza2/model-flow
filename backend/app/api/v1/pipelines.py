@@ -170,6 +170,22 @@ def get_pipeline(
     return result
 
 
+@router.get("/projects/{project_id}/pipeline-versions/{pipeline_version_id}")
+def get_pipeline_version(
+    project_id: int,
+    pipeline_version_id: int,
+    _=Depends(require_project_perm(Permission.PIPELINE_READ)),
+    db: Session = Depends(get_db),
+):
+    """Read-only lookup of an immutable PipelineVersion graph (historical runs)."""
+    version = db.get(PipelineVersion, pipeline_version_id)
+    if not version or version.project_id != project_id:
+        raise friendly(404, "Pipeline version not found.")
+    # Ensure the parent pipeline still belongs to this project.
+    get_owned(db, Pipeline, version.pipeline_id, project_id, "Pipeline")
+    return pipeline_version_out(version)
+
+
 @router.patch("/projects/{project_id}/pipelines/{pipeline_id}")
 def update_pipeline(
     project_id: int,
