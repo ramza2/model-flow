@@ -1,6 +1,6 @@
 # ModelFlow Phase 1.5 UX Architecture
 
-Status: **Proposed implementation baseline**  
+Status: **Implementation baseline**  
 Audience: Product, frontend, QA, Cursor Agents Window  
 Scope: **Phase 1.5 — UX Architecture & Frontend UX Refactoring**
 
@@ -12,7 +12,7 @@ This phase is **not** a greenfield rewrite and is **not** dependent on a Figma h
 
 ### Source-of-truth model
 
-Do not interpret the source-of-truth rules as one global precedence list. Behavior and presentation have different authorities.
+Behavior and presentation have different authorities.
 
 **Functional source of truth**
 
@@ -29,11 +29,11 @@ Therefore:
 - existing supported functionality wins for **behavior**;
 - the Phase 1.5 documents win for **IA, layout, navigation, component hierarchy, and presentation**;
 - cosmetic convenience must never silently change API/RBAC/runtime semantics;
-- a small read-only backend addition is allowed only when the target UX cannot correctly represent existing persisted behavior without it, and such an addition must be explicitly reviewed.
+- a small read-only backend addition is allowed only when the target UX cannot correctly represent already persisted behavior without it, and such an addition must be explicitly reviewed.
 
 ## 2. Current product baseline
 
-The current frontend exposes project-scoped routes for Data Sources, Datasets, Experiments, Training Jobs, Pipelines, Schedules, Model Registry, Deployments, Monitoring, Alerts, and Audit Logs, plus workspace-level Projects and Administration.
+The current frontend exposes project-scoped routes for Data Sources, Datasets, Experiments, Training Jobs, Pipelines, Schedules, Model Registry, Deployments, Monitoring, Alerts, and Audit Logs, plus workspace-level Projects, system-admin global Audit Logs, and Administration.
 
 The current application shell already provides a persistent top bar, project selection, workspace/project/governance navigation, breadcrumbs, alert count, user menu, and project-role-aware actions.
 
@@ -79,19 +79,25 @@ Manual training remains supported. Pipelines become the preferred UX for repeata
 
 Normal users configure resources through structured forms. Raw JSON, technical IDs, and low-level metadata are secondary or advanced information.
 
-### 4.5 Traceable by default
+### 4.5 Guided but expert-capable
+
+Use task-oriented copy, useful empty states, contextual help/tooltips, and progressive disclosure to guide less experienced users. These aids must not block advanced users from efficient direct work.
+
+Proper technical terms such as MLflow, Random Forest, Cron, SHAP, RMSE, and API should remain technically accurate. Explain them when needed rather than replacing them with misleading simplified terms.
+
+### 4.6 Traceable by default
 
 Important entities should link to upstream and downstream lineage wherever existing relationships are available.
 
-### 4.6 Operational clarity
+### 4.7 Operational clarity
 
 The product must represent not only success paths, but also pending, queued, dispatched, running, validating, failed, cancelled, degraded, rejected, skipped, reused, retried, archived, and unresolved states where applicable.
 
-### 4.7 Preserve behavior
+### 4.8 Preserve behavior
 
 Phase 1.5 is a UX refactor. Do not silently change API contracts, route semantics, RBAC, lifecycle transitions, training behavior, model output semantics, scheduler behavior, or pipeline runtime semantics.
 
-### 4.8 English UI baseline
+### 4.9 English UI baseline
 
 Phase 1.5 keeps the current English product terminology as the implementation baseline. Terminology should become more consistent and task-oriented, but broad localization is not part of this phase.
 
@@ -126,13 +132,20 @@ PROJECT
 │  └─ Alerts
 │
 └─ GOVERNANCE
-   └─ Audit Logs
+   └─ Audit Logs            (selected-project scope)
 
-SYSTEM
+SYSTEM                          (system administrator only)
+├─ Global Audit Logs
 └─ Administration
 ```
 
 Do not flatten all project features into one long undifferentiated list.
+
+### Audit scope rule
+
+ModelFlow currently supports both project-scoped Audit Logs and a system-admin global Audit Logs route. Phase 1.5 must preserve both scopes and make the scope obvious in navigation, page title, filter context, or all three.
+
+Do not silently redirect a project Audit Logs action to global audit merely because the current user is a system administrator.
 
 ## 6. Application-shell behavior
 
@@ -194,7 +207,8 @@ Do not create N+1 lookups only to cosmetically replace IDs.
 | Schedules | Automation timing and execution policy | New schedule |
 | Monitoring | Operational triage | Investigate signal |
 | Alerts | Actionable exception inbox | Open resource / Resolve |
-| Audit Logs | Compliance trace | Filter/investigate |
+| Audit Logs | Selected-project compliance trace | Filter/investigate |
+| Global Audit Logs | Cross-project/system compliance trace | Filter/investigate |
 | Administration | Platform administration | Manage platform settings/users |
 
 ## 8. Common page anatomy
@@ -227,13 +241,9 @@ Entity name                         Status
 Context / description               Actions
 
 Summary / key metrics
-
 Configuration / metadata
-
 Lineage
-
 Activity / history
-
 Technical details / logs
 ```
 
@@ -291,8 +301,8 @@ Primary responsibility model:
 - Viewer: read-only lifecycle visibility.
 - Data Scientist: datasets, training, experiments.
 - ML Engineer: pipelines, registry, deployments, schedules.
-- Project Admin: all project operations, members, governance.
-- System Admin: platform administration and global audit.
+- Project Admin: all project operations, members, project governance/audit.
+- System Admin: platform administration, global audit, and authorized project operations.
 
 Never weaken backend authorization to match the UI.
 
@@ -457,7 +467,7 @@ Node selected:
 
 Condition branch semantics must be visible on the graph itself.
 
-Primary visual paths are `TRUE` and `FALSE`. Existing `always` edge semantics must remain supported for backward compatibility and non-conditional/unconditional flow behavior.
+Primary visual paths are `TRUE` and `FALSE`. Existing `always` edge semantics must remain supported for backward compatibility and unconditional flow behavior.
 
 Preferred graph representation:
 
@@ -479,7 +489,7 @@ These states and actions must be distinct:
 - **Save version**: persists an explicit pipeline version.
 - **Validate**: validates graph and node configuration.
 - **Publish**: marks the latest valid version as published.
-- **Run**: starts execution using the current supported API semantics.
+- **Run**: starts execution using current supported API semantics.
 
 Preserve the existing behavior that dirty/unsaved changes block publish/run.
 
@@ -573,7 +583,9 @@ For failed runs:
 
 `Failed node → inspect error/log → Rerun from failed`
 
-When successful upstream steps are reused, show `Reused` clearly so the operator knows those steps were not rerun.
+When successful upstream steps are reused, show `Reused` clearly where the current run state permits reliable identification, so the operator knows those steps were not rerun.
+
+Do not fabricate per-node `Reused` state if the runtime response cannot distinguish it; a run-level explanation is acceptable until richer state is explicitly added.
 
 ## 18. Scheduling UX
 
@@ -640,11 +652,12 @@ The frontend refactor should be incremental.
 
 ### Phase 1.5-A — Shell & shared design system
 
-- grouped IA,
+- grouped IA including explicit project/global audit scope,
 - top bar/sidebar/breadcrumb cleanup,
 - shared page anatomy,
 - shared components and token normalization,
-- common status/action patterns.
+- common status/action patterns,
+- guided empty/help patterns that do not obstruct expert workflows.
 
 ### Phase 1.5-B — Pipeline UX
 
@@ -708,6 +721,7 @@ For every Phase 1.5 implementation task:
 - preserve routing semantics and deep-linkability,
 - preserve authentication and authorization,
 - preserve project context and project scoping,
+- preserve both project-scoped and global system-admin Audit Log behavior,
 - preserve existing supported functionality,
 - prefer shared reusable components over page-specific duplication,
 - avoid N+1 API calls added only for cosmetic labels,
@@ -720,8 +734,10 @@ For every Phase 1.5 implementation task:
 Phase 1.5 UX architecture is satisfied when the implemented frontend demonstrates:
 
 - grouped IA and clear current location,
+- explicit distinction between project and global Audit Log scope,
 - consistent page anatomy,
 - consistent entity-detail patterns,
+- guided/helpful UX without blocking advanced users,
 - human-readable names ahead of technical IDs where efficiently available,
 - shared status and action semantics covering actual backend states,
 - project-scoped lifecycle navigation,
@@ -731,7 +747,7 @@ Phase 1.5 UX architecture is satisfied when the implemented frontend demonstrate
 - explicit save/validate/publish/run UX without changing runtime contracts,
 - guided pipeline validation recovery,
 - graph-based Pipeline Run execution view using the exact historical pipeline version,
-- visible rerun/reuse semantics,
+- visible rerun/reuse semantics only where supported by run state,
 - contextual scheduling,
 - operational Monitoring and actionable Alerts,
 - desktop-first responsive behavior,
@@ -771,5 +787,6 @@ Cursor should inspect at least these current frontend areas before Phase 1.5 wor
 - `frontend/src/pages/Alerts.tsx`
 - `frontend/src/pages/AuditLogs.tsx`
 - `frontend/src/pages/Administration.tsx`
+- `frontend/src/api.ts`
 
 Also inspect the corresponding frontend unit tests and Playwright tests before modifying user-visible behavior.
