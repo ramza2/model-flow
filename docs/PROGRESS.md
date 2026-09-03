@@ -142,4 +142,4 @@ The graph-based historical Pipeline Run UX may require a minimal read-only Pipel
 
 ## Next step
 
-Complete review/merge of PR #32, then begin **Phase 1.5-A — Shell & shared design system** in a new feature branch.
+Complete review/merge of the Phase 1.5-A Draft PR (`cursor/phase1.5a-shell-design-system`), then begin **Phase 1.5-B — Pipeline UX** in a new feature branch.
