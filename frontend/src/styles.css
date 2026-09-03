@@ -905,6 +905,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 @media (max-width: 1279px) {
+  /* Shell-only compact layout — do not alter page/builder breakpoints here */
   .app-frame {
     grid-template-columns: 210px minmax(0, 1fr);
   }
@@ -916,10 +917,15 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   }
   .user-copy { display: none; }
   .content { padding-inline: 1.25rem; }
+}
+
+@media (max-width: 1050px) {
+  /* Preserve main page/builder compact semantics */
   .builder-layout { grid-template-columns: 260px minmax(0, 1fr); }
 }
 
 @media (max-width: 1023px) {
+  /* Shell-only drawer behavior */
   .app-frame {
     display: block;
   }
@@ -952,15 +958,23 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     width: min(280px, 86vw);
     height: 100vh;
     transform: translateX(-105%);
-    transition: transform .2s ease;
+    transition: transform .2s ease, visibility .2s ease;
+    visibility: hidden;
+    pointer-events: none;
     background: rgba(15, 20, 25, 0.98);
     border-right: 1px solid var(--border);
     box-shadow: 18px 0 40px rgba(0, 0, 0, 0.35);
   }
   .app-frame.nav-open > .sidebar {
     transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
   }
   .content { padding: 1rem; }
+}
+
+@media (max-width: 760px) {
+  /* Preserve main page-specific stacking breakpoints */
   .page-header, .section-heading { flex-direction: column; align-items: stretch; }
   .page-header-actions, .page-header > .row-actions { justify-content: flex-start; }
   .two-column, .predict-layout, .builder-layout, .form-grid, .api-usage-grid { grid-template-columns: 1fr; }
@@ -968,9 +982,6 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   .pipeline-canvas { min-height: 480px; }
   .compact-form { grid-template-columns: 1fr; }
   .danger-zone { align-items: flex-start; flex-direction: column; }
-}
-
-@media (max-width: 760px) {
   .quality-rule-head { flex-direction: column; }
 }
 
@@ -994,9 +1005,6 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .quality-check-item summary::-webkit-details-marker { display: none; }
 .quality-check-details { display: flex; flex-direction: column; gap: .55rem; margin-top: .65rem; }
 .legacy-quality-rules h3, .quality-check-history h3 { margin: .4rem 0 0; font-size: .95rem; }
-@media (max-width: 760px) {
-  .quality-rule-head { flex-direction: column; }
-}
 
 .quality-action-error { margin: .65rem 0 .35rem; }
 .quality-check-detail-heading {

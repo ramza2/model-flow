@@ -119,3 +119,69 @@ describe("AppShell Phase 1.5-A navigation", () => {
     expect(await screen.findByRole("link", { name: /Overview/ })).toHaveAttribute("href", "/projects/11");
   });
 });
+
+describe("AppShell drawer accessibility", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  function mockDrawerViewport(matches: boolean) {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("1023") ? matches : false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+  }
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("keeps closed drawer navigation out of the keyboard tab order", async () => {
+    mockDrawerViewport(true);
+    mockFetch({ systemAdmin: true });
+    renderShell("/projects/9/datasets");
+
+    const toggle = await screen.findByRole("button", { name: /Open navigation/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const sidebar = document.getElementById("app-sidebar");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar?.hasAttribute("inert")).toBe(true);
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+  });
+
+  it("moves focus into the drawer when opened and restores it on Escape", async () => {
+    mockDrawerViewport(true);
+    mockFetch({ systemAdmin: true });
+    renderShell("/projects/9/datasets");
+
+    const toggle = await screen.findByRole("button", { name: /Open navigation/i });
+    toggle.focus();
+    fireEvent.click(toggle);
+
+    const nav = await screen.findByRole("navigation", { name: "Main navigation" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(document.getElementById("app-sidebar")?.hasAttribute("inert")).toBe(false);
+    expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(await screen.findByRole("button", { name: /Open navigation/i })).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+  });
+
+  it("closes the drawer from the backdrop and restores toggle focus", async () => {
+    mockDrawerViewport(true);
+    mockFetch({ systemAdmin: true });
+    renderShell("/projects/9/datasets");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open navigation/i }));
+    expect(await screen.findByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss navigation overlay" }));
+    expect(await screen.findByRole("button", { name: /Open navigation/i })).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+  });
+});

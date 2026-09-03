@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api, type Alert } from "./api";
 import { useAuth } from "./AuthContext";
@@ -6,6 +6,8 @@ import { hasProjectAdminRole, useProject } from "./ProjectContext";
 
 type NavItem = { label: string; to: string; icon: string; end?: boolean };
 type ProjectNavItem = { label: string; path: string; icon: string; end?: boolean };
+
+const DRAWER_MEDIA_QUERY = "(max-width: 1023px)";
 
 const projectGroups: { label: string; items: ProjectNavItem[] }[] = [
   {
@@ -106,6 +108,27 @@ function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => v
   );
 }
 
+function useDrawerViewport() {
+  const [isDrawerViewport, setIsDrawerViewport] = useState(() => (
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia(DRAWER_MEDIA_QUERY).matches
+      : false
+  ));
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia(DRAWER_MEDIA_QUERY);
+    const sync = () => setIsDrawerViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  return isDrawerViewport;
+}
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const {
@@ -118,12 +141,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [unread, setUnread] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
+  const isDrawerViewport = useDrawerViewport();
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const navToggleRef = useRef<HTMLButtonElement | null>(null);
   const projectBase = selectedProject ? `/projects/${selectedProject.id}` : "";
   const canProjectAudit = Boolean(selectedProject) && (user?.is_system_admin || hasProjectAdminRole(selectedProject));
+  const drawerClosed = isDrawerViewport && !navOpen;
 
   useEffect(() => {
     setNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!isDrawerViewport) {
+      setNavOpen(false);
+    }
+  }, [isDrawerViewport]);
 
   useEffect(() => {
     if (!selectedProject) {
@@ -135,19 +168,62 @@ export default function AppShell({ children }: { children: ReactNode }) {
       .catch(() => setUnread(0));
   }, [selectedProject]);
 
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    const sidebar = sidebarRef.current;
+    const focusTarget =
+      sidebar?.querySelector<HTMLElement>("a[href], button:not([disabled])")
+      ?? sidebar;
+    focusTarget?.focus();
+  }, [navOpen, isDrawerViewport]);
+
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      setNavOpen(false);
+      queueMicrotask(() => navToggleRef.current?.focus());
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navOpen, isDrawerViewport]);
+
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) {
+      return;
+    }
+    if (drawerClosed) {
+      sidebar.setAttribute("inert", "");
+    } else {
+      sidebar.removeAttribute("inert");
+    }
+  }, [drawerClosed]);
+
   async function signOut() {
     await logout();
     navigate("/login", { replace: true });
   }
 
-  function closeNav() {
+  function closeNav(options?: { restoreFocus?: boolean }) {
     setNavOpen(false);
+    if (options?.restoreFocus) {
+      queueMicrotask(() => navToggleRef.current?.focus());
+    }
   }
 
   return (
     <div className={`app-frame${navOpen ? " nav-open" : ""}`}>
       <header className="topbar">
         <button
+          ref={navToggleRef}
           type="button"
           className="nav-toggle"
           aria-label={navOpen ? "Close navigation" : "Open navigation"}
@@ -157,7 +233,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         >
           <span aria-hidden="true">{navOpen ? "✕" : "☰"}</span>
         </button>
-        <Link to="/" className="brand" onClick={closeNav}>
+        <Link to="/" className="brand" onClick={() => closeNav()}>
           Model<span>Flow</span>
         </Link>
         <div className="project-picker">
@@ -204,14 +280,27 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {navOpen && <button type="button" className="nav-backdrop" aria-label="Close navigation" onClick={closeNav} />}
+      {navOpen && isDrawerViewport && (
+        <button
+          type="button"
+          className="nav-backdrop"
+          aria-label="Dismiss navigation overlay"
+          onClick={() => closeNav({ restoreFocus: true })}
+        />
+      )}
 
-      <aside className="sidebar" id="app-sidebar">
+      <aside
+        ref={sidebarRef}
+        className="sidebar"
+        id="app-sidebar"
+        tabIndex={-1}
+        aria-hidden={drawerClosed || undefined}
+      >
         <nav className="nav" aria-label="Main navigation">
           <div className="nav-group">
             <span className="nav-label">Workspace</span>
-            <NavItemLink item={{ label: "Home", to: "/", icon: "⌂", end: true }} onNavigate={closeNav} />
-            <NavItemLink item={{ label: "Projects", to: "/projects", icon: "▦", end: true }} onNavigate={closeNav} />
+            <NavItemLink item={{ label: "Home", to: "/", icon: "⌂", end: true }} onNavigate={() => closeNav()} />
+            <NavItemLink item={{ label: "Projects", to: "/projects", icon: "▦", end: true }} onNavigate={() => closeNav()} />
           </div>
 
           <div className="nav-group">
@@ -220,7 +309,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             {selectedProject && (
               <NavItemLink
                 item={{ label: "Overview", to: projectBase, icon: "◎", end: true }}
-                onNavigate={closeNav}
+                onNavigate={() => closeNav()}
               />
             )}
           </div>
@@ -232,7 +321,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 <NavItemLink
                   key={item.path}
                   item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end }}
-                  onNavigate={closeNav}
+                  onNavigate={() => closeNav()}
                 />
               ))}
             </div>
@@ -243,7 +332,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <span className="nav-label">Governance</span>
               <NavItemLink
                 item={{ label: "Audit Logs", to: `${projectBase}/audit`, icon: "≡" }}
-                onNavigate={closeNav}
+                onNavigate={() => closeNav()}
               />
             </div>
           )}
@@ -253,11 +342,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <span className="nav-label">System</span>
               <NavItemLink
                 item={{ label: "Global Audit Logs", to: "/audit", icon: "☷" }}
-                onNavigate={closeNav}
+                onNavigate={() => closeNav()}
               />
               <NavItemLink
                 item={{ label: "Administration", to: "/admin", icon: "⚙" }}
-                onNavigate={closeNav}
+                onNavigate={() => closeNav()}
               />
             </div>
           )}
