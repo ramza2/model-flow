@@ -29,10 +29,11 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await page.getByRole("button", { name: /New pipeline/i }).click();
   await page.getByTestId("pipeline-name").fill(`sched-pipe-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
-  await expect(page.getByTestId("pipeline-add-node")).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId("pipeline-node-type").selectOption("notification");
-  await page.getByTestId("pipeline-add-node").click();
+  await expect(page.getByTestId("pipeline-library-notification")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("pipeline-library-notification").click();
+  await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
   await page.getByTestId("pipeline-save").click();
+  await expect(page.getByTestId("pipeline-dirty-badge")).toHaveCount(0, { timeout: 30_000 });
   await expect(page.getByText(/Pipeline version saved/i)).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("pipeline-publish").click();
   await expect(page.getByText(/Pipeline published/i)).toBeVisible({ timeout: 30_000 });
