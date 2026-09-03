@@ -1,6 +1,6 @@
 # ModelFlow Phase 1.5 Frontend Design Specification
 
-Status: **Proposed implementation baseline**  
+Status: **Implementation baseline**  
 Audience: Frontend engineers, Cursor Agents Window, QA  
 Companion document: `docs/phase-1.5-ux-architecture.md`
 
@@ -8,7 +8,7 @@ Companion document: `docs/phase-1.5-ux-architecture.md`
 
 This document turns the Phase 1.5 UX architecture into concrete frontend implementation rules.
 
-The existing React application remains the functional baseline. This specification defines the target shell, visual system normalization, reusable components, page composition, Pipeline Builder layout, execution-state presentation, responsive behavior, and implementation quality bar.
+The existing React application remains the functional baseline. This specification defines the target shell, visual-system normalization, reusable components, page composition, Pipeline Builder layout, execution-state presentation, responsive behavior, and implementation quality bar.
 
 This is **not** permission to replace `frontend/src` wholesale. Implement Phase 1.5 incrementally inside the existing application while preserving supported behavior.
 
@@ -17,11 +17,11 @@ This is **not** permission to replace `frontend/src` wholesale. Implement Phase 
 - Backend/API/auth/RBAC/persistence/runtime behavior and supported frontend workflows are the **functional source of truth**.
 - `phase-1.5-ux-architecture.md` and this document are the **UX/presentation source of truth**.
 - Existing layouts may therefore be restructured even when functionality is preserved.
-- Do not invent backend fields or semantics to make a mock layout easier to implement.
+- Do not invent backend fields or semantics to make a target layout easier to implement.
 
 ## 2. Visual baseline and Phase 9 boundary
 
-The current ModelFlow frontend already uses a dark engineering-oriented identity. Phase 1.5 should systematize that identity rather than introduce a new brand aesthetic.
+Phase 1.5 should systematize the existing dark engineering-oriented identity rather than introduce a new brand aesthetic.
 
 Recommended normalized values:
 
@@ -71,9 +71,9 @@ Avoid:
 - excessive whitespace,
 - one-off page-specific visual languages.
 
-Current Unicode icons may be replaced incrementally with a consistent accessible icon set, but icon replacement must not become a blocking prerequisite for the structural UX work.
+Current Unicode icons may be replaced incrementally with a consistent accessible icon set, but icon replacement must not block structural UX work.
 
-## 4. Layout tokens
+## 4. Layout and typography tokens
 
 Use a 4px base spacing grid.
 
@@ -101,7 +101,7 @@ pill      999px
 
 Use shadows sparingly, mainly for menus, drawers, and modals.
 
-## 5. Typography
+Typography:
 
 | Token | Size / line-height | Weight | Use |
 | --- | --- | --- | --- |
@@ -118,7 +118,7 @@ Use shadows sparingly, mainly for menus, drawers, and modals.
 
 Do not create page-specific typography scales.
 
-## 6. Standard desktop shell
+## 5. Standard desktop shell
 
 ### Reference viewport
 
@@ -174,14 +174,18 @@ Monitoring
 Alerts
 
 GOVERNANCE
-Audit Logs
+Audit Logs                  # selected-project scope
+
+SYSTEM                       # system admin only
+Global Audit Logs
+Administration
 ```
 
-System administrators additionally see Administration.
+Do not collapse project-scoped Audit Logs and system-global Audit Logs into one ambiguous link. Preserve both existing route scopes.
 
 Active navigation uses background + stronger text/icon + a structural indicator and must not rely on color alone.
 
-## 7. Content area and Page Header
+## 6. Content area, Breadcrumbs, and Page Header
 
 Normal pages:
 
@@ -202,9 +206,7 @@ Short description
 
 Normal pages should have one visually dominant primary action.
 
-## 8. Breadcrumbs
-
-Prefer human-readable names where they are already available without wasteful API traffic.
+Breadcrumbs prefer human-readable names where already available without wasteful requests.
 
 Preferred:
 
@@ -216,7 +218,11 @@ Acceptable fallback:
 
 Do not add N+1 entity lookups only to cosmetically replace IDs.
 
-## 9. Buttons
+Global Audit Logs should clearly identify system/global scope in both title and breadcrumb.
+
+## 7. Buttons, forms, and progressive disclosure
+
+### Buttons
 
 Primary:
 
@@ -241,13 +247,15 @@ Danger:
 
 All button families support default, hover, focus-visible, disabled, and loading states where relevant.
 
-## 10. Forms and multi-select
+### Forms
 
 Recommended control height: ~40px.
 
 Labels appear above controls. Field-specific errors appear directly below the affected control.
 
 Use progressive disclosure for advanced technical configuration. Raw JSON is not the default UI for normal configuration.
+
+### Multi-select
 
 Targets and similar fields use a reusable multi-select.
 
@@ -258,7 +266,24 @@ Targets
 
 Always show actual target names, never target indexes.
 
-## 11. Cards, tables, and technical blocks
+## 8. Guided UX without blocking experts
+
+Use:
+
+- task-oriented descriptions,
+- useful empty states,
+- concise contextual help/tooltips,
+- glossary/help links for unfamiliar technical concepts where useful,
+- structured forms before raw JSON,
+- sensible defaults where already supported.
+
+Do not force advanced users through unnecessary wizards or confirmation steps for routine non-destructive work.
+
+Keep established technical terms accurate. Explain RMSE, MLflow, Cron, SHAP, API, and similar concepts when necessary instead of replacing them with misleading simplified labels.
+
+Phase 1.5 product-language baseline remains English; broad localization is out of scope.
+
+## 9. Cards, tables, and technical blocks
 
 ### Cards
 
@@ -287,13 +312,13 @@ Use `IBM Plex Mono`, `#0A0E12`, border, and ~8px radius.
 
 JSON, logs, model URIs, long names, URLs, and SHAs must never escape their container. Use internal scrolling and/or safe wrapping.
 
-## 12. Status Badge and actual state coverage
+## 10. Status Badge and actual state coverage
 
 Every status uses icon + text + semantic treatment.
 
 Recommended badge height: ~24px.
 
-The shared component must safely handle actual product states including, but not limited to:
+The shared component must safely handle actual product states including:
 
 ```text
 neutral:
@@ -312,13 +337,15 @@ Warning, Partial, Degraded, Attention, Skipped
 negative:
 Failed, Fail, Rejected, Blocked, Error, Cancelled, Critical
 
-pipeline-specific:
+pipeline-specific presentation:
 Waiting, Reused
 ```
 
 Display formatting may humanize underscores/case, but transport/persistence values remain unchanged.
 
-## 13. Notices, empty, loading, and confirmations
+`Critical` is primarily an alert-severity presentation, not a new generic persisted lifecycle state.
+
+## 11. Notices, empty, loading, and confirmations
 
 Notices should explain what happened and what to do next when possible.
 
@@ -341,7 +368,7 @@ Loading should be localized to the affected content region where possible.
 
 Confirmations are primarily for destructive actions, availability-impacting actions, or unsaved data loss.
 
-## 14. Modal and Drawer
+## 12. Modal and Drawer
 
 Default modal width: ~560px.
 
@@ -356,7 +383,7 @@ Good drawer uses include Schedule Create and compact-width Inspector fallback.
 
 The desktop Pipeline Inspector is normally a persistent panel, not an overlay.
 
-## 15. Common entity-detail pattern
+## 13. Common entity-detail pattern
 
 Use the same visual hierarchy for Dataset, Job, Run, Model Version, Deployment, and related detail pages:
 
@@ -373,7 +400,7 @@ Activity / history
 Technical details / logs
 ```
 
-## 16. Role-gated actions
+## 14. Role-gated actions and audit scope
 
 Do not weaken backend authorization.
 
@@ -384,10 +411,17 @@ Role baseline:
 - Viewer: read only.
 - Data Scientist: datasets/training/experiments.
 - ML Engineer: pipelines/registry/deployments/schedules.
-- Project Admin: project-wide management/governance.
-- System Admin: platform administration/global audit.
+- Project Admin: project-wide management and project audit.
+- System Admin: platform administration, global audit, and authorized project operations.
 
-## 17. Screen targets
+Preserve both:
+
+- `/projects/:projectId/audit` — project-scoped Audit Logs,
+- `/audit` — system-admin global Audit Logs.
+
+Do not make system administrators lose project audit context merely because they can access global audit.
+
+## 15. Screen targets
 
 The following 20 states define Phase 1.5 implementation review targets. They are running-product states, not required Figma deliverables.
 
@@ -429,7 +463,7 @@ Members/access remain secondary and only visible to authorized users.
 Header actions:
 
 - `Train on dataset` primary where permitted,
-- `Use in pipeline` secondary where permitted.
+- `Use in pipeline` secondary only when it maps to supported navigation/behavior.
 
 Organize current data around:
 
@@ -440,7 +474,7 @@ Organize current data around:
 - Splits where useful,
 - Lineage where existing relationships allow it.
 
-Do not hide existing quality-rule/check/split functionality merely to match a simpler mock layout.
+Do not hide existing quality-rule/check/split functionality merely to match a simpler layout.
 
 ### 04 — Training Job Detail
 
@@ -520,7 +554,9 @@ Reuse the exact run-version graph in read-only execution mode. Show finished/run
 
 ### 12 — Pipeline Run / Failed
 
-Show failed node, reused upstream nodes after rerun when applicable, error/log details, and `Rerun from failed`.
+Show failed node, error/log details, and `Rerun from failed`.
+
+After rerun, label reused upstream nodes individually only when the run state can reliably identify them. Otherwise show a clear run-level explanation that successful upstream work was reused.
 
 ### 13 — Model Registry
 
@@ -667,7 +703,9 @@ Validate at least:
 
 Complex mobile pipeline editing is out of scope.
 
-## 18. Pipeline Builder core layout
+Project/global Audit scope must remain understandable at compact widths.
+
+## 16. Pipeline Builder core layout
 
 The current mixed sidebar model must converge toward:
 
@@ -684,7 +722,7 @@ The current mixed sidebar model must converge toward:
 
 The Canvas owns the remaining width and must remain visually dominant.
 
-## 19. Node Library
+## 17. Node Library
 
 Provide search and grouped compact node types:
 
@@ -721,7 +759,7 @@ Interaction intent:
 
 Do not depend exclusively on drag-and-drop.
 
-## 20. Pipeline Node and states
+## 18. Pipeline Node and states
 
 Recommended node width: `190–220px`, minimum height around `96px`.
 
@@ -748,11 +786,11 @@ Visual states should support:
 - succeeded,
 - waiting/pending,
 - skipped,
-- reused.
+- reused presentation when reliably known.
 
 Avoid excessive animation.
 
-## 21. Pipeline Inspector
+## 19. Pipeline Inspector
 
 No node selected:
 
@@ -787,7 +825,7 @@ Remove step
 
 Use upstream dataset information where available instead of making the user re-enter schema context.
 
-## 22. Condition UX and backward compatibility
+## 20. Condition UX and backward compatibility
 
 Condition branching should be visually explicit on the graph.
 
@@ -801,7 +839,7 @@ TRUE/FALSE are the primary decision branches. `ALWAYS` remains supported because
 
 Do not delete, reinterpret, or silently migrate existing `always` edges as part of a visual refactor.
 
-## 23. Save / Validate / Publish / Run
+## 21. Save / Validate / Publish / Run
 
 These are different actions and should not look interchangeable.
 
@@ -832,11 +870,11 @@ Schedule
 Primary: Run pipeline
 ```
 
-Important: the UI may strongly guide users toward publishing before operational use, but Phase 1.5 must **not falsely claim** that the backend forbids every run of an unpublished valid version if the current API does not enforce that rule.
+The UI may strongly guide users toward publishing before operational use, but Phase 1.5 must **not falsely claim** that the backend forbids every run of an unpublished valid version if the current API does not enforce that rule.
 
 Preserve dirty-state blocking for Publish/Run as it exists today.
 
-## 24. Unsaved navigation guard
+## 22. Unsaved navigation guard
 
 When leaving with dirty Pipeline changes:
 
@@ -850,7 +888,7 @@ Discard changes        Keep editing
 
 Do not imply graph auto-save.
 
-## 25. Validation Panel
+## 23. Validation Panel
 
 Represent validation as structured issues even when the backend response starts as a string list.
 
@@ -877,7 +915,7 @@ Selecting an issue should, where technically practical:
 
 Do not invent structured backend error fields that do not exist.
 
-## 26. Golden Path
+## 24. Golden Path
 
 Use this representative graph:
 
@@ -910,7 +948,7 @@ Existing workflows may also contain `ALWAYS` edges.
 
 Avoid excessive edge crossing.
 
-## 27. Pipeline Run exact-version visual model
+## 25. Pipeline Run exact-version visual model
 
 Pipeline Run reuses the Builder graph language in read-only mode.
 
@@ -929,9 +967,9 @@ Selecting a run node may show existing state data:
 - output/input context where already available,
 - Logs.
 
-After `Rerun from failed`, reused successful upstream nodes should be clearly labeled `Reused`, and restarted nodes should expose their attempt number.
+After `Rerun from failed`, reused successful upstream work must be understandable. Prefer per-node `Reused` labels only when the current state can identify them reliably; otherwise use a run-level explanation and existing attempt/state data.
 
-## 28. Model Registry and Model Version
+## 26. Model Registry and Model Version
 
 Registry lifecycle is the central concept. Preserve all supported states:
 
@@ -943,7 +981,7 @@ Model Version should use a lifecycle stepper/diagram that supports both the prod
 
 Approval comments/evidence remain visible according to existing backend data.
 
-## 29. Deployments and Prediction Test
+## 27. Deployments and Prediction Test
 
 Deployment cards prioritize status, model/version, request count, success rate, and latency already exposed by the Endpoint API.
 
@@ -951,13 +989,13 @@ Operational stop/start actions are lower hierarchy than Test prediction/API usag
 
 Prediction Test uses readable formatted request/response JSON. Multi-output predictions always display actual target names.
 
-## 30. Monitoring and Alerts
+## 28. Monitoring and Alerts
 
 Monitoring groups existing metrics into Service, Data, and Model Health. Charts must support operational interpretation, not decoration.
 
 Alerts remain an actionable inbox. Surface existing message/link/read/resolved data cleanly; do not fabricate richer structured alert metadata.
 
-## 31. Schedule UX
+## 29. Schedule UX
 
 Prefer contextual drawer composition where practical.
 
@@ -967,7 +1005,7 @@ Raw Cron and pipeline parameter JSON are advanced controls.
 
 A Pipeline-to-Schedule shortcut may preselect a pipeline, but must use the same underlying Schedule API and validation rules.
 
-## 32. Responsive rules
+## 30. Responsive rules
 
 ### >= 1280px
 
@@ -990,7 +1028,7 @@ A Pipeline-to-Schedule shortcut may preselect a pipeline, but must use the same 
 
 If a usable builder cannot be maintained, show an explicit larger-screen recommendation.
 
-## 33. Accessibility
+## 31. Accessibility
 
 Target at least:
 
@@ -1005,7 +1043,7 @@ Target at least:
 
 Do not regress existing accessibility behavior.
 
-## 34. Animation
+## 32. Animation
 
 Use animation only to communicate state or spatial change.
 
@@ -1018,16 +1056,18 @@ Acceptable:
 
 Avoid decorative continuous motion.
 
-## 35. Implementation strategy
+## 33. Implementation strategy
 
 Implement in reviewable slices.
 
 ### 1.5-A — Shell & shared components
 
-- AppShell / Sidebar IA,
+- AppShell / grouped Sidebar IA,
+- explicit project/global Audit scope,
 - Breadcrumb behavior,
 - shared tokens/component styles,
-- Page Header/status/action consistency.
+- Page Header/status/action consistency,
+- guided empty/help patterns.
 
 ### 1.5-B — Pipeline
 
@@ -1057,7 +1097,7 @@ Implement in reviewable slices.
 
 Do not implement all Phase 1.5 changes as one frontend rewrite.
 
-## 36. Cursor change discipline
+## 34. Cursor change discipline
 
 For every implementation slice:
 
@@ -1066,15 +1106,16 @@ For every implementation slice:
 3. Identify shared components/styles before adding a new one-off pattern.
 4. Preserve backend/API/auth/RBAC/project-scoping/runtime behavior.
 5. Preserve deep links and routes unless a route change is explicitly approved.
-6. Do not invent backend fields or fake persisted behavior.
-7. Avoid N+1 requests added only for cosmetic presentation.
-8. Add/update unit tests for changed component behavior.
-9. Add/update Playwright coverage for important user flows.
-10. Run targeted tests before the full verification gate.
-11. Keep changes on a feature branch and create a Draft PR.
-12. Do not mark Ready, merge, tag, or release unless explicitly requested.
+6. Preserve both project-scoped and global Audit Log routes/scopes.
+7. Do not invent backend fields or fake persisted behavior.
+8. Avoid N+1 requests added only for cosmetic presentation.
+9. Add/update unit tests for changed component behavior.
+10. Add/update Playwright coverage for important user flows.
+11. Run targeted tests before the full verification gate.
+12. Keep changes on a feature branch and create a Draft PR.
+13. Do not mark Ready, merge, tag, or release unless explicitly requested.
 
-## 37. Visual review procedure
+## 35. Visual review procedure
 
 Because Phase 1.5 is implemented directly in the running frontend rather than handed off from Figma, browser review is part of the design process.
 
@@ -1083,11 +1124,11 @@ For each major slice:
 1. Run the updated application.
 2. Review the real screen with realistic data.
 3. Verify long names, long JSON, multi-output targets, empty states, error states, and role-gated actions.
-4. Verify narrow-width behavior where applicable.
+4. Verify audit scope and narrow-width behavior where applicable.
 5. Capture screenshots for external review when useful.
 6. Fix layout issues before merge.
 
-## 38. Minimum state coverage
+## 36. Minimum state coverage
 
 When modifying a reusable view, verify applicable states:
 
@@ -1108,12 +1149,12 @@ For Pipeline also verify:
 - published,
 - running,
 - failed,
-- rerun/reused,
+- rerun/reuse explanation,
 - existing `always` edges.
 
-For Model lifecycle also verify relevant Candidate/Validating/Pending Approval/Approved/Production/Rejected/Archived states.
+For Model lifecycle also verify Candidate/Validating/Pending Approval/Approved/Production/Rejected/Archived states as applicable.
 
-## 39. Do not do
+## 37. Do not do
 
 Do not:
 
@@ -1121,29 +1162,33 @@ Do not:
 - add Figma-generated runtime dependencies,
 - redesign APIs for cosmetic convenience,
 - loosen authorization,
+- collapse project and global Audit scope into an ambiguous route,
 - create future-phase controls that do not work,
 - add a Copilot/chat panel in Phase 1.5,
 - change multi-output semantics,
 - remove existing `always` edge semantics,
 - show the latest Pipeline graph for an older historical run,
+- fabricate per-node reuse state the runtime does not expose,
 - expose internal MinIO or infrastructure URLs to browsers,
 - reintroduce raw target-index labels,
 - allow JSON/logs to overflow containers,
 - put destructive actions at the same emphasis level as normal primary actions,
 - silently create new health formulas or unsupported operational states.
 
-## 40. Frontend Design Definition of Done
+## 38. Frontend Design Definition of Done
 
 Phase 1.5 frontend design implementation is complete when:
 
 - grouped application IA is implemented consistently,
+- project and global Audit Logs have clear distinct scope,
 - shell/navigation/page hierarchy is coherent,
 - shared visual tokens and components replace duplicated one-offs where practical,
+- guided/help patterns assist less experienced users without blocking experts,
 - common entity-detail layouts are recognizable,
 - Pipeline Builder uses Node Library / Canvas / Inspector,
 - condition branches are graph-readable and `always` compatibility is preserved,
 - pipeline dirty/validation states are clear,
-- Pipeline Run uses the exact historical graph version and exposes failed/reused attempts clearly,
+- Pipeline Run uses the exact historical graph version and communicates rerun/reuse accurately,
 - Model Registry/Version represent the full supported lifecycle,
 - Prediction Test safely renders multi-output results,
 - Monitoring is operationally organized without invented metrics,
@@ -1154,7 +1199,7 @@ Phase 1.5 frontend design implementation is complete when:
 - accessibility basics are preserved,
 - existing functional behavior and regression tests do not regress.
 
-## 41. Primary current code references
+## 39. Primary current code references
 
 Before implementing the corresponding area, inspect:
 
