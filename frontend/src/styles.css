@@ -732,6 +732,9 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   min-height: 640px;
   margin-bottom: 1rem;
 }
+.builder-layout-3zone.is-readonly {
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
 .builder-sidebar { display: flex; flex-direction: column; gap: .7rem; margin: 0; width: 100%; max-width: 320px; }
 .builder-sidebar h2 { margin: 0; }
 .pipeline-builder-header {
@@ -1053,6 +1056,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   /* Preserve main page/builder compact semantics */
   .builder-layout { grid-template-columns: 260px minmax(0, 1fr); }
   .builder-layout-3zone { grid-template-columns: 200px minmax(0, 1fr) 300px; }
+  .builder-layout-3zone.is-readonly { grid-template-columns: minmax(0, 1fr) 300px; }
   .pipeline-run-layout { grid-template-columns: minmax(0, 1fr) 300px; }
 }
 

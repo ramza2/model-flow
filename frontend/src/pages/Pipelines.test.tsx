@@ -401,6 +401,9 @@ describe("PipelineBuilder", () => {
   it("adds a node from the library and marks dirty", async () => {
     renderBuilder();
     await screen.findByTestId("pipeline-library-dataset_load");
+    expect(screen.getByTestId("pipeline-builder-layout")).toHaveAttribute("data-readonly", "false");
+    expect(screen.getByTestId("pipeline-builder-layout")).not.toHaveClass("is-readonly");
+    expect(screen.queryByTestId("pipeline-add-node")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
     expect(await screen.findByTestId("pipeline-step-name")).toBeInTheDocument();
@@ -490,11 +493,19 @@ describe("PipelineBuilder", () => {
       throw new Error(`Unhandled ${path}`);
     });
     renderBuilder();
+    const layout = await screen.findByTestId("pipeline-builder-layout");
+    expect(layout).toHaveClass("is-readonly");
+    expect(layout).toHaveAttribute("data-readonly", "true");
+    expect(screen.getByTestId("pipeline-inspector-hint")).toHaveTextContent(
+      /inspect its configuration/i,
+    );
+    expect(screen.getByTestId("pipeline-inspector-hint")).not.toHaveTextContent(/node library/i);
     const flow = await screen.findByTestId("react-flow");
     expect(flow).toHaveAttribute("data-draggable", "false");
     expect(flow).toHaveAttribute("data-connectable", "false");
     expect(flow).toHaveAttribute("data-delete-enabled", "false");
     expect(screen.queryByTestId("pipeline-library-dataset_load")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-add-node")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("canvas-node-dataset_load-1"));
     expect(await screen.findByTestId("pipeline-step-name")).toBeDisabled();
     expect(screen.getByText(/Read-only configuration/i)).toBeInTheDocument();
@@ -504,10 +515,22 @@ describe("PipelineBuilder", () => {
     expect(screen.getByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
   });
 
+  it("shows a non-action empty state for read-only users", async () => {
+    canWriteRef.value = false;
+    stubBuilderApi();
+    renderBuilder();
+    expect(await screen.findByText(/This pipeline version contains no steps/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Add Dataset Load/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-builder-layout")).toHaveClass("is-readonly");
+    expect(screen.getByTestId("pipeline-inspector-hint")).toHaveTextContent(
+      /inspect its configuration/i,
+    );
+  });
+
   it("renames a step label", async () => {
     renderBuilder();
-    await screen.findByTestId("pipeline-add-node");
-    fireEvent.click(screen.getByTestId("pipeline-add-node"));
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     const nameInput = await screen.findByTestId("pipeline-step-name");
     fireEvent.change(nameInput, { target: { value: "Load iris" } });
     expect(nameInput).toHaveValue("Load iris");
@@ -516,9 +539,9 @@ describe("PipelineBuilder", () => {
 
   it("marks dirty after add and clears after save", async () => {
     renderBuilder();
-    await screen.findByTestId("pipeline-add-node");
+    await screen.findByTestId("pipeline-library-dataset_load");
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("pipeline-add-node"));
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     expect(screen.getByTestId("pipeline-dirty-badge")).toHaveTextContent("Unsaved changes");
     fireEvent.click(screen.getByTestId("pipeline-save"));
     await waitFor(() => {
@@ -533,8 +556,8 @@ describe("PipelineBuilder", () => {
 
   it("disables publish and run while unsaved", async () => {
     renderBuilder();
-    await screen.findByTestId("pipeline-add-node");
-    fireEvent.click(screen.getByTestId("pipeline-add-node"));
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     expect(screen.getByTestId("pipeline-publish")).toBeDisabled();
     expect(screen.getByTestId("pipeline-run")).toBeDisabled();
     expect(screen.getByTestId("pipeline-dirty-hint")).toBeInTheDocument();

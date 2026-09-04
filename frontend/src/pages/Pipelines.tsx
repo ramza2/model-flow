@@ -893,7 +893,11 @@ export function PipelineBuilder() {
         </p>
       )}
 
-      <div className="builder-layout-3zone">
+      <div
+        className={`builder-layout-3zone${!canWrite ? " is-readonly" : ""}`}
+        data-testid="pipeline-builder-layout"
+        data-readonly={canWrite ? "false" : "true"}
+      >
         {canWrite && (
           <aside className="pipeline-node-library panel">
             <span className="eyebrow">Node library</span>
@@ -935,32 +939,31 @@ export function PipelineBuilder() {
                 </div>
               ))
             )}
-            {/* Backward-compatible add control used by unit/e2e tests */}
-            <button
-              className="btn btn-wide secondary"
-              data-testid="pipeline-add-node"
-              onClick={() => addNodeOfType("dataset_load")}
-            >
-              ＋ Add Dataset Load
-            </button>
           </aside>
         )}
 
         <div className="pipeline-canvas" aria-label="Pipeline graph" data-testid="pipeline-canvas">
           {nodes.length === 0 ? (
             <div className="pipeline-empty-canvas">
-              <h2>Start with a dataset</h2>
-              <p className="muted">
-                Add a Dataset Load step, then connect quality checks, training, and deployment.
-              </p>
-              {canWrite && (
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => addNodeOfType("dataset_load")}
-                >
-                  Add Dataset Load
-                </button>
+              {canWrite ? (
+                <>
+                  <h2>Start with a dataset</h2>
+                  <p className="muted">
+                    Add a Dataset Load step, then connect quality checks, training, and deployment.
+                  </p>
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => addNodeOfType("dataset_load")}
+                  >
+                    Add Dataset Load
+                  </button>
+                </>
+              ) : (
+                <>
+                  <h2>This pipeline version contains no steps.</h2>
+                  <p className="muted">There is nothing to inspect on this empty graph.</p>
+                </>
               )}
             </div>
           ) : (
@@ -1011,8 +1014,10 @@ export function PipelineBuilder() {
                   <dd>{nodes.length}</dd>
                 </div>
               </dl>
-              <p className="form-hint">
-                Select a step on the canvas to configure it, or add one from the node library.
+              <p className="form-hint" data-testid="pipeline-inspector-hint">
+                {canWrite
+                  ? "Select a step on the canvas to configure it, or add one from the node library."
+                  : "Select a step on the canvas to inspect its configuration."}
               </p>
             </>
           ) : (
