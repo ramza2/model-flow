@@ -703,17 +703,23 @@ run_npm_audit_with_retry() {
   local errfile="$3"
   local label="$4"
   # Install once, then retry only the audit call. Bulk advisory API may 503 or
-  # hang; each audit attempt has a hard command timeout.
+  # hang; each audit attempt has a hard command timeout (TERM then KILL).
   local attempts=5
   local delay=10
   local attempt=1
   local rc=2
   local audit_timeout_sec=120
+  local audit_kill_after_sec=5
   local ci_rc=0
+  local audit_workdir=""
+
+  # Isolated tree avoids host node_modules / platform noise; only package manifests.
+  audit_workdir="$(mktemp -d "$ROOT/artifacts/verify/npm-audit-${label}.XXXXXX")"
+  cp "$workdir/package.json" "$workdir/package-lock.json" "$audit_workdir/"
 
   info "${label}: npm ci (once) for audit"
   set +e
-  docker run --rm -v "$workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+  docker run --rm -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
     sh -c 'npm ci --silent' \
     >/dev/null \
     2>"${errfile}.npm-ci"
@@ -721,14 +727,15 @@ run_npm_audit_with_retry() {
   set +e
   if (( ci_rc != 0 )); then
     info "${label}: npm ci failed (exit=${ci_rc}); see ${errfile}.npm-ci"
+    rm -rf "$audit_workdir"
     return 2
   fi
 
   while (( attempt <= attempts )); do
     # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
     set +e
-    docker run --rm -v "$workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
-      sh -c "timeout ${audit_timeout_sec} npm audit --json" \
+    docker run --rm -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+      sh -c "timeout -k ${audit_kill_after_sec} ${audit_timeout_sec} npm audit --json" \
       > "$outfile" \
       2> "$errfile"
     rc=$?
@@ -737,6 +744,7 @@ run_npm_audit_with_retry() {
       if (( attempt > 1 )); then
         info "${label}: npm audit succeeded after ${attempt} attempts"
       fi
+      rm -rf "$audit_workdir"
       return "$rc"
     fi
     if (( attempt == attempts )); then
@@ -748,6 +756,7 @@ run_npm_audit_with_retry() {
     delay=$(( delay * 2 ))
     attempt=$(( attempt + 1 ))
   done
+  rm -rf "$audit_workdir"
   return 2
 }
 
