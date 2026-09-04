@@ -702,17 +702,33 @@ run_npm_audit_with_retry() {
   local outfile="$2"
   local errfile="$3"
   local label="$4"
-  # Bulk advisory API occasionally returns 503; keep retries cheap now that we
-  # no longer install a separate npm toolchain per attempt.
+  # Install once, then retry only the audit call. Bulk advisory API may 503 or
+  # hang; each audit attempt has a hard command timeout.
   local attempts=5
   local delay=10
   local attempt=1
   local rc=2
+  local audit_timeout_sec=120
+  local ci_rc=0
+
+  info "${label}: npm ci (once) for audit"
+  set +e
+  docker run --rm -v "$workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+    sh -c 'npm ci --silent' \
+    >/dev/null \
+    2>"${errfile}.npm-ci"
+  ci_rc=$?
+  set +e
+  if (( ci_rc != 0 )); then
+    info "${label}: npm ci failed (exit=${ci_rc}); see ${errfile}.npm-ci"
+    return 2
+  fi
+
   while (( attempt <= attempts )); do
     # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
     set +e
     docker run --rm -v "$workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
-      sh -c 'npm ci --silent >/dev/null && npm audit --json' \
+      sh -c "timeout ${audit_timeout_sec} npm audit --json" \
       > "$outfile" \
       2> "$errfile"
     rc=$?
@@ -723,10 +739,11 @@ run_npm_audit_with_retry() {
       fi
       return "$rc"
     fi
-    info "${label}: npm audit produced invalid/unavailable report (attempt ${attempt}/${attempts}); retrying in ${delay}s"
     if (( attempt == attempts )); then
+      info "${label}: npm audit produced invalid/unavailable report (attempt ${attempt}/${attempts})"
       break
     fi
+    info "${label}: npm audit produced invalid/unavailable report (attempt ${attempt}/${attempts}); retrying in ${delay}s"
     sleep "$delay"
     delay=$(( delay * 2 ))
     attempt=$(( attempt + 1 ))
