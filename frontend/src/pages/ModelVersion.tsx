@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiRequestError, type ModelVersion as ModelVersionType } from "../api";
 import { useAuth } from "../AuthContext";
@@ -10,7 +10,15 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
-import { formatMetricLabel } from "../metricHelpers";
+import {
+  DetailSection,
+  EntityLineage,
+  GateSummary,
+  LifecycleStepper,
+  MetricSummary,
+  TargetChips,
+} from "../lifecycleComponents";
+import { parseTargetColumns, problemTypeLabel } from "../lifecycleHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 
 const RERUN_LIFECYCLES = ["CANDIDATE", "VALIDATING", "REJECTED"];
@@ -84,15 +92,90 @@ export default function ModelVersion() {
   const canApprove = userCanProject(user, selectedProject, "PROJECT_ADMIN");
   const canRequestApproval = Boolean(mv && RERUN_LIFECYCLES.includes(mv.lifecycle) && mv.gates_passed);
   const showApprovalBlocked = Boolean(mv && RERUN_LIFECYCLES.includes(mv.lifecycle) && !mv.gates_passed);
+  const canRerun = Boolean(mv && canWrite && RERUN_LIFECYCLES.includes(mv.lifecycle));
+  const canPromote = Boolean(mv && canApprove && mv.lifecycle === "APPROVED");
+  const canDeployLink = Boolean(mv && ["APPROVED", "PRODUCTION"].includes(mv.lifecycle));
+  const canReject = Boolean(mv && canApprove && mv.lifecycle === "PENDING_APPROVAL");
+  const canApproveNow = Boolean(mv && canApprove && mv.lifecycle === "PENDING_APPROVAL");
+
+  const targets = useMemo(() => parseTargetColumns(mv?.metadata), [mv?.metadata]);
+  const problemType = typeof mv?.metadata?.problem_type === "string" ? mv.metadata.problem_type : undefined;
+
+  let primaryKind: "request" | "approve" | "promote" | "deploy" | "rerun" | null = null;
+  let headerPrimary: ReactNode = null;
+  if (mv) {
+    if (canWrite && canRequestApproval) {
+      primaryKind = "request";
+      headerPrimary = (
+        <button className="btn" disabled={Boolean(busy)} onClick={() => void action("request-approval")} data-testid="request-approval">
+          Request approval
+        </button>
+      );
+    } else if (canApproveNow) {
+      primaryKind = "approve";
+      headerPrimary = (
+        <button className="btn" disabled={Boolean(busy)} onClick={() => void action("approve")} data-testid="approve-model">
+          ✓ Approve
+        </button>
+      );
+    } else if (canPromote) {
+      primaryKind = "promote";
+      headerPrimary = (
+        <button className="btn" disabled={Boolean(busy)} onClick={() => void action("promote-production")} data-testid="promote-production">
+          Promote to production
+        </button>
+      );
+    } else if (canDeployLink) {
+      primaryKind = "deploy";
+      headerPrimary = (
+        <Link
+          className="btn"
+          to={`/projects/${projectId}/deployments`}
+          state={{ modelVersionId: mv.id }}
+          data-testid="create-deployment"
+        >
+          Create deployment
+        </Link>
+      );
+    } else if (canRerun) {
+      primaryKind = "rerun";
+      headerPrimary = (
+        <button
+          className="btn"
+          disabled={busy === "evaluate-gates"}
+          onClick={() => void rerunValidation()}
+          data-testid="rerun-validation"
+        >
+          {busy === "evaluate-gates" ? "Validating…" : "Rerun validation"}
+        </button>
+      );
+    }
+  }
 
   return (
     <div>
-      <PageHeader title={mv ? `${mv.name} · v${mv.version}` : "Model version"} description="Governance evidence, metrics, lineage, and deployment readiness." actions={<StatusBadge status={mv?.lifecycle} />} />
-      <ErrorNotice message={error} /><SuccessNotice message={success} />
-      {!mv ? <Loading label="Loading model version" /> : (
+      <PageHeader
+        title={mv ? `${mv.name} · v${mv.version}` : "Model version"}
+        description={
+          mv
+            ? `${problemTypeLabel(problemType)}${targets.length ? ` · ${targets.length} target${targets.length === 1 ? "" : "s"}` : ""}`
+            : "Governance evidence, metrics, lineage, and deployment readiness."
+        }
+        actions={
+          <>
+            <StatusBadge status={mv?.lifecycle} />
+            {headerPrimary}
+          </>
+        }
+      />
+      <ErrorNotice message={error} />
+      <SuccessNotice message={success} />
+      {!mv ? (
+        <Loading label="Loading model version" />
+      ) : (
         <>
           <div className="row-actions toolbar-actions">
-            {canWrite && RERUN_LIFECYCLES.includes(mv.lifecycle) && (
+            {canRerun && primaryKind !== "rerun" && (
               <button
                 className="btn secondary"
                 disabled={busy === "evaluate-gates"}
@@ -102,41 +185,136 @@ export default function ModelVersion() {
                 {busy === "evaluate-gates" ? "Validating…" : "Rerun validation"}
               </button>
             )}
-            {canWrite && canRequestApproval && (
-              <button className="btn" disabled={Boolean(busy)} onClick={() => action("request-approval")} data-testid="request-approval">
-                Request approval
+            {canReject && (
+              <button className="btn danger" disabled={Boolean(busy)} onClick={() => void action("reject")} data-testid="reject-model">
+                Reject
               </button>
             )}
-            {canApprove && mv.lifecycle === "PENDING_APPROVAL" && <><button className="btn" disabled={Boolean(busy)} onClick={() => action("approve")} data-testid="approve-model">✓ Approve</button><button className="btn danger" disabled={Boolean(busy)} onClick={() => action("reject")}>Reject</button></>}
-            {canApprove && mv.lifecycle === "APPROVED" && <button className="btn" disabled={Boolean(busy)} onClick={() => action("promote-production")}>Promote to production</button>}
-            {["APPROVED", "PRODUCTION"].includes(mv.lifecycle) && <Link className="btn secondary" to={`/projects/${projectId}/deployments`} state={{ modelVersionId: mv.id }}>Create deployment</Link>}
+            {canDeployLink && primaryKind !== "deploy" && (
+              <Link
+                className="btn secondary"
+                to={`/projects/${projectId}/deployments`}
+                state={{ modelVersionId: mv.id }}
+                data-testid="create-deployment"
+              >
+                Create deployment
+              </Link>
+            )}
           </div>
-          {showApprovalBlocked && (
+
+          {showApprovalBlocked && canWrite && (
             <p className="form-hint" data-testid="approval-blocked-hint">
-              Approval cannot be requested until all validation gates pass.
+              Approval blocked. Validation gates must pass before approval can be requested.
             </p>
           )}
-          {(mv.lifecycle === "PENDING_APPROVAL" || RERUN_LIFECYCLES.includes(mv.lifecycle)) && <label className="panel comment-field">Review comment<textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add context for the reviewer" /></label>}
-          <div className="grid stats-grid">
-            {Object.entries(mv.metrics).slice(0, 4).map(([name, value]) => (
-              <div className="stat" key={name}>
-                <div className="label">
-                  {formatMetricLabel(
-                    name,
-                    Array.isArray(mv.metadata?.target_columns)
-                      ? mv.metadata.target_columns.map(String)
-                      : [],
-                  )}
-                </div>
-                <div className="value metric-value">{Number(value).toFixed(3)}</div>
+
+          <DetailSection eyebrow="Lifecycle" title="Progress">
+            <LifecycleStepper lifecycle={mv.lifecycle} />
+            {targets.length > 0 && (
+              <div className="lifecycle-targets">
+                <span className="eyebrow">Targets</span>
+                <TargetChips targets={targets} testId="model-target-chips" />
               </div>
-            ))}
-          </div>
+            )}
+          </DetailSection>
+
+          {(mv.lifecycle === "PENDING_APPROVAL" || RERUN_LIFECYCLES.includes(mv.lifecycle)) && (
+            <label className="panel comment-field">
+              Review comment
+              <textarea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                placeholder="Add context for the reviewer"
+                data-testid="approval-comment-input"
+              />
+              <small className="form-hint">
+                Stored approval evidence is shown below. Leaving this blank keeps the existing comment on approve/reject.
+              </small>
+            </label>
+          )}
+
+          <DetailSection eyebrow="Quality" title="Metrics">
+            <MetricSummary
+              metrics={mv.metrics}
+              problemType={problemType}
+              targetColumns={targets}
+            />
+          </DetailSection>
+
           <div className="two-column">
-            <section className="panel"><span className="eyebrow">Governance</span><h2>Approval evidence</h2><dl className="key-values"><div><dt>Lifecycle</dt><dd><StatusBadge status={mv.lifecycle} /></dd></div><div><dt>Gates</dt><dd><StatusBadge status={mv.gates_passed ? "passed" : "pending"} /></dd></div><div><dt>Comment</dt><dd>{mv.approval_comment || "—"}</dd></div><div><dt>Registered</dt><dd>{formatDate(mv.created_at)}</dd></div></dl></section>
-            <section className="panel"><span className="eyebrow">Lineage</span><h2>Source</h2><dl className="key-values"><div><dt>Training job</dt><dd>{mv.training_job_id ? <Link to={`/projects/${projectId}/jobs/${mv.training_job_id}`}>Job #{mv.training_job_id}</Link> : "—"}</dd></div><div><dt>Experiment run</dt><dd className="mono">{mv.mlflow_run_id || "—"}</dd></div><div><dt>Model URI</dt><dd className="mono break-word">{mv.model_uri}</dd></div></dl></section>
+            <DetailSection eyebrow="Governance" title="Approval evidence" testId="approval-evidence">
+              <dl className="key-values">
+                <div>
+                  <dt>Lifecycle</dt>
+                  <dd>
+                    <StatusBadge status={mv.lifecycle} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Gates</dt>
+                  <dd>
+                    <StatusBadge status={mv.gates_passed ? "passed" : "pending"} />
+                  </dd>
+                </div>
+                <div>
+                  <dt>Comment</dt>
+                  <dd data-testid="approval-comment-value">{mv.approval_comment || "—"}</dd>
+                </div>
+                {mv.approved_at ? (
+                  <div>
+                    <dt>Approved at</dt>
+                    <dd>{formatDate(mv.approved_at)}</dd>
+                  </div>
+                ) : null}
+                <div>
+                  <dt>Registered</dt>
+                  <dd>{formatDate(mv.created_at)}</dd>
+                </div>
+              </dl>
+            </DetailSection>
+
+            <EntityLineage
+              items={[
+                {
+                  label: "Dataset version",
+                  value: mv.dataset_version_id ? `Version #${mv.dataset_version_id}` : "—",
+                },
+                {
+                  label: "Training job",
+                  value: mv.training_job_id ? `Job #${mv.training_job_id}` : "—",
+                  to: mv.training_job_id
+                    ? `/projects/${projectId}/jobs/${mv.training_job_id}`
+                    : undefined,
+                },
+                {
+                  label: "Experiment run",
+                  value: mv.mlflow_run_id || "—",
+                  to: mv.mlflow_run_id
+                    ? `/projects/${projectId}/experiments/runs/${mv.mlflow_run_id}`
+                    : undefined,
+                  mono: true,
+                },
+                {
+                  label: "Model URI",
+                  value: mv.model_uri || "—",
+                  mono: true,
+                },
+                ...(mv.pipeline_run_id
+                  ? [
+                      {
+                        label: "Pipeline run",
+                        value: `Run #${mv.pipeline_run_id}`,
+                        to: `/projects/${projectId}/pipeline-runs/${mv.pipeline_run_id}`,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
-          <section className="panel"><span className="eyebrow">Gate results</span><h2>Validation details</h2><pre className="json-view" data-testid="gate-results">{JSON.stringify(mv.gate_results, null, 2)}</pre></section>
+
+          <DetailSection eyebrow="Validation" title="Gates">
+            <GateSummary gatesPassed={mv.gates_passed} gateResults={mv.gate_results || {}} />
+          </DetailSection>
         </>
       )}
     </div>

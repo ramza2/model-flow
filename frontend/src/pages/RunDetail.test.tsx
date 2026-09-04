@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RunDetail from "./RunDetail";
@@ -18,6 +18,7 @@ function renderPage() {
     <MemoryRouter initialEntries={["/projects/7/experiments/runs/run-abc"]}>
       <Routes>
         <Route path="/projects/:projectId/experiments/runs/:runId" element={<RunDetail />} />
+        <Route path="/projects/:projectId/jobs/:jobId" element={<div>Job</div>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -46,7 +47,28 @@ describe("RunDetail", () => {
     expect(screen.queryByRole("link", { name: /compare this run/i })).not.toBeInTheDocument();
     expect(screen.getByText("Logged metrics")).toBeInTheDocument();
     expect(screen.getByText("val_rmse")).toBeInTheDocument();
-    expect(screen.getByText("s3://bucket/artifacts/run-abc")).toBeInTheDocument();
-    expect(screen.getByText(/"algorithm": "ridge"/)).toBeInTheDocument();
+    expect(screen.getAllByText("s3://bucket/artifacts/run-abc").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("run-params-json")).toHaveTextContent('"algorithm": "ridge"');
+    expect(screen.getByTestId("run-targets")).toHaveTextContent("power_usage");
+    expect(screen.getByTestId("run-targets")).toHaveTextContent("cooling_load");
+  });
+
+  it("links to training job only when tag is present", async () => {
+    apiMock.mockResolvedValue({
+      run_id: "run-abc",
+      experiment_id: "1",
+      status: "FINISHED",
+      start_time: null,
+      end_time: null,
+      params: {},
+      metrics: {},
+      artifact_uri: null,
+      tags: {
+        "mlflow.runName": "linked-run",
+        "modelflow.training_job_id": "99",
+      },
+    });
+    renderPage();
+    expect(await screen.findByTestId("open-training-job")).toHaveAttribute("href", "/projects/7/jobs/99");
   });
 });

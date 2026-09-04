@@ -193,5 +193,9 @@ describe("Predict prediction sample payload", () => {
     expect(preview).toHaveTextContent('"supply_temp": 68.2');
     expect(preview.textContent).toContain("\n");
     expect(screen.getByTestId("predict-result")).toHaveTextContent("demand_kw");
+    const summary = screen.getByTestId("predict-summary");
+    expect(summary).toHaveTextContent("demand_kw:");
+    expect(summary).toHaveTextContent("supply_temp:");
+    expect(summary.textContent).not.toMatch(/prediction\[/);
   });
 });
