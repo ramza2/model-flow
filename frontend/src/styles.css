@@ -756,6 +756,16 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   max-height: 720px;
 }
 .pipeline-library-category { display: grid; gap: .35rem; }
+.pipeline-library-search { display: grid; gap: .25rem; margin: 0 0 .35rem; }
+.pipeline-library-search input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: .45rem .55rem;
+  font: inherit;
+}
 .pipeline-library-category strong {
   color: var(--muted);
   font-size: .68rem;

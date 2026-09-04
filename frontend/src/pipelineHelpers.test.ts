@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   configSummary,
   edgeBranch,
+  filterNodeLibrary,
+  nextPipelineNodeId,
   parseValidationIssue,
   PIPELINE_NODE_LIBRARY,
   PIPELINE_NODE_TYPES,
@@ -47,5 +49,35 @@ describe("pipelineHelpers Phase 1.5-B", () => {
       message: "Graph has a cycle",
       nodeId: null,
     });
+  });
+
+  it("allocates unique node ids against an existing graph after reload", () => {
+    expect(nextPipelineNodeId("dataset_load", ["dataset_load-1"])).toBe("dataset_load-2");
+    expect(nextPipelineNodeId("dataset_load", ["dataset_load-1", "dataset_load-2"])).toBe(
+      "dataset_load-3",
+    );
+    expect(nextPipelineNodeId("training", ["dataset_load-1", "training-9"])).toBe("training-10");
+    const first = nextPipelineNodeId("split", []);
+    const second = nextPipelineNodeId("split", [first]);
+    expect(first).toBe("split-1");
+    expect(second).toBe("split-2");
+    expect(new Set([first, second, "dataset_load-1"]).size).toBe(3);
+  });
+
+  it("filters the node library by label, type, description, and category", () => {
+    const byLabel = filterNodeLibrary(PIPELINE_NODE_LIBRARY, "dataset load");
+    expect(byLabel).toHaveLength(1);
+    expect(byLabel[0].items.map((item) => item.type)).toEqual(["dataset_load"]);
+
+    const byType = filterNodeLibrary(PIPELINE_NODE_LIBRARY, "endpoint_deployment");
+    expect(byType.flatMap((group) => group.items.map((item) => item.type))).toEqual([
+      "endpoint_deployment",
+    ]);
+
+    const byCategory = filterNodeLibrary(PIPELINE_NODE_LIBRARY, "serving");
+    expect(byCategory.map((group) => group.category)).toEqual(["Serving"]);
+    expect(byCategory[0].items).toHaveLength(2);
+
+    expect(filterNodeLibrary(PIPELINE_NODE_LIBRARY, "zzzz-no-match")).toEqual([]);
   });
 });

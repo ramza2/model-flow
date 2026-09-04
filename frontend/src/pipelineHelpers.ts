@@ -71,6 +71,53 @@ export function labelForType(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/** Allocate a readable node id that never collides with existing graph ids (reload-safe). */
+export function nextPipelineNodeId(nodeType: string, existingIds: Iterable<string>): string {
+  const used = new Set(existingIds);
+  const prefix = `${nodeType}-`;
+  let max = 0;
+  for (const id of used) {
+    if (!id.startsWith(prefix)) continue;
+    const rest = id.slice(prefix.length);
+    if (/^\d+$/.test(rest)) {
+      const value = Number(rest);
+      if (value > max) max = value;
+    }
+  }
+  let next = max + 1;
+  let candidate = `${prefix}${next}`;
+  while (used.has(candidate)) {
+    next += 1;
+    candidate = `${prefix}${next}`;
+  }
+  return candidate;
+}
+
+/** Client-side Node Library filter across category, type, label, and description. */
+export function filterNodeLibrary(
+  library: typeof PIPELINE_NODE_LIBRARY,
+  query: string,
+): typeof PIPELINE_NODE_LIBRARY {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return library;
+  return library
+    .map((group) => ({
+      category: group.category,
+      items: group.items.filter((item) => {
+        const haystack = [
+          group.category,
+          item.type,
+          item.description,
+          labelForType(item.type),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(needle);
+      }),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function edgeBranch(edge: {
   sourceHandle?: string | null;
   branch?: string;

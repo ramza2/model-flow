@@ -8,6 +8,7 @@ import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
 
 const apiMock = vi.fn();
 const navigateMock = vi.fn();
+const canWriteRef = { value: true };
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
@@ -23,7 +24,7 @@ vi.mock("../AuthContext", () => ({
 
 vi.mock("../ProjectContext", () => ({
   useProject: () => ({ selectedProject: { id: 7, role: "PROJECT_ADMIN" } }),
-  userCanProject: () => true,
+  userCanProject: () => canWriteRef.value,
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -39,18 +40,33 @@ vi.mock("@xyflow/react", () => ({
     nodes,
     onNodeClick,
     onInit,
+    onNodesChange,
+    onConnect,
+    nodesDraggable,
+    nodesConnectable,
+    deleteKeyCode,
     children,
   }: {
     nodes: Array<{ id: string; data: { label: string } }>;
     onNodeClick?: (_: unknown, node: { id: string; data: { label: string } }) => void;
     onInit?: (instance: { setCenter: () => void; getZoom: () => number }) => void;
+    onNodesChange?: (changes: Array<{ type: string; id?: string }>) => void;
+    onConnect?: (connection: { source: string; target: string }) => void;
+    nodesDraggable?: boolean;
+    nodesConnectable?: boolean;
+    deleteKeyCode?: string[] | null;
     children?: ReactNode;
   }) => {
     useEffect(() => {
       onInit?.({ setCenter: () => undefined, getZoom: () => 1 });
     }, [onInit]);
     return (
-      <div data-testid="react-flow">
+      <div
+        data-testid="react-flow"
+        data-draggable={String(Boolean(nodesDraggable))}
+        data-connectable={String(Boolean(nodesConnectable))}
+        data-delete-enabled={deleteKeyCode == null ? "false" : "true"}
+      >
         {nodes.map((node) => (
           <button
             key={node.id}
@@ -61,6 +77,26 @@ vi.mock("@xyflow/react", () => ({
             {node.data.label}
           </button>
         ))}
+        {nodes[0] && (
+          <>
+            <button
+              type="button"
+              data-testid="react-flow-force-remove"
+              onClick={() => onNodesChange?.([{ type: "remove", id: nodes[0].id }])}
+            >
+              force-remove
+            </button>
+            <button
+              type="button"
+              data-testid="react-flow-force-connect"
+              onClick={() =>
+                onConnect?.({ source: nodes[0].id, target: nodes[0].id })
+              }
+            >
+              force-connect
+            </button>
+          </>
+        )}
         {children}
       </div>
     );
@@ -74,8 +110,27 @@ vi.mock("@xyflow/react", () => ({
     ...edges,
     { id: `e-${edges.length}`, ...edge },
   ],
-  applyEdgeChanges: (_changes: unknown, edges: unknown[]) => edges,
-  applyNodeChanges: (_changes: unknown, nodes: unknown[]) => nodes,
+  applyEdgeChanges: (changes: Array<{ type: string; id?: string }>, edges: Array<{ id: string }>) => {
+    let next = [...edges];
+    for (const change of changes) {
+      if (change.type === "remove" && change.id) {
+        next = next.filter((edge) => edge.id !== change.id);
+      }
+    }
+    return next;
+  },
+  applyNodeChanges: (
+    changes: Array<{ type: string; id?: string }>,
+    nodes: Array<{ id: string }>,
+  ) => {
+    let next = [...nodes];
+    for (const change of changes) {
+      if (change.type === "remove" && change.id) {
+        next = next.filter((node) => node.id !== change.id);
+      }
+    }
+    return next;
+  },
 }));
 
 const pipeline = {
@@ -339,6 +394,7 @@ describe("PipelineBuilder", () => {
   beforeEach(() => {
     apiMock.mockReset();
     navigateMock.mockReset();
+    canWriteRef.value = true;
     stubBuilderApi();
   });
 
@@ -349,6 +405,103 @@ describe("PipelineBuilder", () => {
     expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
     expect(await screen.findByTestId("pipeline-step-name")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(/Dataset Load/i);
+  });
+
+  it("keeps new node ids unique against an existing saved graph", async () => {
+    const existing = {
+      ...pipeline,
+      version: {
+        id: 1,
+        version: 1,
+        graph: {
+          nodes: [
+            {
+              id: "dataset_load-1",
+              position: { x: 0, y: 0 },
+              data: {
+                label: "Saved load",
+                node_type: "dataset_load",
+                config: defaultConfigFor("dataset_load"),
+              },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return existing;
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-dataset_load-1");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    const newId = (await screen.findByTestId("pipeline-node-id")).textContent || "";
+    expect(newId).toContain("dataset_load-2");
+    expect(newId).not.toContain("dataset_load-1");
+    expect(screen.getByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    expect(screen.getByTestId("canvas-node-dataset_load-2")).toBeInTheDocument();
+  });
+
+  it("filters the node library with client-side search", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-search");
+    fireEvent.change(screen.getByTestId("pipeline-library-search"), {
+      target: { value: "notification" },
+    });
+    expect(screen.getByTestId("pipeline-library-notification")).toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-library-dataset_load")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("pipeline-library-search"), {
+      target: { value: "zzzz-missing" },
+    });
+    expect(screen.getByTestId("pipeline-library-empty")).toHaveTextContent(/No matching nodes/i);
+  });
+
+  it("blocks graph mutation for read-only users", async () => {
+    canWriteRef.value = false;
+    const existing = {
+      ...pipeline,
+      version: {
+        id: 1,
+        version: 1,
+        graph: {
+          nodes: [
+            {
+              id: "dataset_load-1",
+              position: { x: 0, y: 0 },
+              data: {
+                label: "Saved load",
+                node_type: "dataset_load",
+                config: defaultConfigFor("dataset_load"),
+              },
+            },
+          ],
+          edges: [],
+        },
+      },
+    };
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipelines/9") return existing;
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      throw new Error(`Unhandled ${path}`);
+    });
+    renderBuilder();
+    const flow = await screen.findByTestId("react-flow");
+    expect(flow).toHaveAttribute("data-draggable", "false");
+    expect(flow).toHaveAttribute("data-connectable", "false");
+    expect(flow).toHaveAttribute("data-delete-enabled", "false");
+    expect(screen.queryByTestId("pipeline-library-dataset_load")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("canvas-node-dataset_load-1"));
+    expect(await screen.findByTestId("pipeline-step-name")).toBeDisabled();
+    expect(screen.getByText(/Read-only configuration/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("react-flow-force-remove"));
+    fireEvent.click(screen.getByTestId("react-flow-force-connect"));
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
   });
 
   it("renames a step label", async () => {
@@ -460,6 +613,7 @@ describe("PipelineBuilder", () => {
 describe("PipelineRunDetail", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    canWriteRef.value = true;
   });
 
   it("shows label and attempt when present", async () => {
@@ -518,7 +672,10 @@ describe("PipelineRunDetail", () => {
     const card = await screen.findByTestId("pipeline-run-step-training-1");
     expect(within(card).getByRole("heading", { name: "Train model" })).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-run-attempt-training-1")).toHaveTextContent("Attempt 2");
-    expect(screen.getByTestId("pipeline-rerun-note")).toHaveTextContent(/Rerun from failed/i);
+    expect(screen.getByTestId("pipeline-rerun-note")).toHaveTextContent(
+      /Restarted steps show Attempt 2 or higher/i,
+    );
+    expect(screen.getByTestId("pipeline-rerun-note")).not.toHaveTextContent(/reused/i);
   });
 
   it("renders legacy node_states without label or attempt", async () => {

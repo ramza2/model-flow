@@ -52,7 +52,9 @@ import {
   configSummary,
   defaultConfigFor,
   edgeBranch,
+  filterNodeLibrary,
   labelForType,
+  nextPipelineNodeId,
   nodeConfigWarnings,
   parseValidationIssue,
   type ConditionBranch,
@@ -226,13 +228,6 @@ const PipelineStepNode = memo(PipelineStepNodeComponent);
 
 const nodeTypes = { [STEP_NODE_TYPE]: PipelineStepNode };
 
-let pipelineNodeSeq = 0;
-
-function nextPipelineNodeId(nodeType: string): string {
-  pipelineNodeSeq += 1;
-  return `${nodeType}-${pipelineNodeSeq}`;
-}
-
 export function Pipelines() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -381,6 +376,7 @@ export function PipelineBuilder() {
   const [validationVisible, setValidationVisible] = useState(false);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [upstreamColumns, setUpstreamColumns] = useState<string[]>([]);
+  const [libraryQuery, setLibraryQuery] = useState("");
   const flowInstanceRef = useRef<{
     setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
     getZoom: () => number;
@@ -532,6 +528,11 @@ export function PipelineBuilder() {
     [nodes, validationErrors],
   );
 
+  const libraryGroups = useMemo(
+    () => filterNodeLibrary(PIPELINE_NODE_LIBRARY, libraryQuery),
+    [libraryQuery],
+  );
+
   function selectNode(node: StepNode) {
     setSelectedId(node.id);
     setJsonText(JSON.stringify(node.data.config || {}, null, 2));
@@ -551,7 +552,7 @@ export function PipelineBuilder() {
   }
 
   function updateSelectedData(partial: Partial<StepData>, nextConfig?: Record<string, unknown>) {
-    if (!selectedId) return;
+    if (!canWrite || !selectedId) return;
     setDirty(true);
     setNodes((rows) =>
       rows.map((node) => {
@@ -568,10 +569,12 @@ export function PipelineBuilder() {
   }
 
   function onConfigChange(next: Record<string, unknown>) {
+    if (!canWrite) return;
     updateSelectedData({}, next);
   }
 
   function onJsonChange(text: string) {
+    if (!canWrite) return;
     setJsonText(text);
     try {
       const parsed = JSON.parse(text) as unknown;
@@ -594,7 +597,11 @@ export function PipelineBuilder() {
   }
 
   function addNodeOfType(nodeType: PipelineNodeType) {
-    const id = nextPipelineNodeId(nodeType);
+    if (!canWrite) return;
+    const id = nextPipelineNodeId(
+      nodeType,
+      nodes.map((node) => node.id),
+    );
     const node: StepNode = {
       id,
       type: STEP_NODE_TYPE,
@@ -618,7 +625,7 @@ export function PipelineBuilder() {
   }
 
   function removeSelected() {
-    if (!selectedId) return;
+    if (!canWrite || !selectedId) return;
     setNodes((rows) => rows.filter((node) => node.id !== selectedId));
     setEdges((rows) =>
       rows.filter((edge) => edge.source !== selectedId && edge.target !== selectedId),
@@ -627,23 +634,64 @@ export function PipelineBuilder() {
     setDirty(true);
   }
 
-  const onNodesChange = useCallback((changes: NodeChange<StepNode>[]) => {
-    const marksDirty = changes.some(
-      (change) =>
-        change.type === "remove" ||
-        change.type === "add" ||
-        (change.type === "position" && change.dragging === false),
-    );
-    if (marksDirty) setDirty(true);
-    setNodes((rows) => applyNodeChanges(changes, rows));
-  }, []);
+  const onNodesChange = useCallback(
+    (changes: NodeChange<StepNode>[]) => {
+      if (!canWrite) {
+        const safe = changes.filter(
+          (change) => change.type === "select" || change.type === "dimensions",
+        );
+        if (safe.length) setNodes((rows) => applyNodeChanges(safe, rows));
+        return;
+      }
+      const marksDirty = changes.some(
+        (change) =>
+          change.type === "remove" ||
+          change.type === "add" ||
+          (change.type === "position" && change.dragging === false),
+      );
+      if (marksDirty) setDirty(true);
+      setNodes((rows) => applyNodeChanges(changes, rows));
+    },
+    [canWrite],
+  );
 
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    if (changes.some((change) => change.type === "remove" || change.type === "add")) {
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      if (!canWrite) {
+        const safe = changes.filter((change) => change.type === "select");
+        if (safe.length) setEdges((rows) => applyEdgeChanges(safe, rows));
+        return;
+      }
+      if (changes.some((change) => change.type === "remove" || change.type === "add")) {
+        setDirty(true);
+      }
+      setEdges((rows) => applyEdgeChanges(changes, rows));
+    },
+    [canWrite],
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!canWrite) return;
+      const source = nodes.find((node) => node.id === connection.source);
+      const isCondition = source?.data.node_type === "condition";
+      const handle = connection.sourceHandle;
+      const branch: ConditionBranch =
+        handle === "true" || handle === "false" || handle === "always" ? handle : "always";
+      const edge = isCondition
+        ? {
+            ...connection,
+            sourceHandle: branch,
+            label: branch.toUpperCase(),
+            className: `pipeline-edge-${branch}`,
+            data: { branch },
+          }
+        : connection;
       setDirty(true);
-    }
-    setEdges((rows) => applyEdgeChanges(changes, rows));
-  }, []);
+      setEdges((rows) => addEdge(edge, rows));
+    },
+    [canWrite, nodes],
+  );
 
   const graph = (): PipelineGraph => ({
     nodes: nodes.map((node) => ({
@@ -850,27 +898,43 @@ export function PipelineBuilder() {
           <aside className="pipeline-node-library panel">
             <span className="eyebrow">Node library</span>
             <p className="form-hint">Click a step type to add it to the canvas.</p>
-            {PIPELINE_NODE_LIBRARY.map((group) => (
-              <div className="pipeline-library-category" key={group.category}>
-                <strong>{group.category}</strong>
-                <ul>
-                  {group.items.map((item) => (
-                    <li key={item.type}>
-                      <button
-                        type="button"
-                        className="pipeline-library-item"
-                        data-testid={`pipeline-library-${item.type}`}
-                        onClick={() => addNodeOfType(item.type)}
-                        title={item.description}
-                      >
-                        <span aria-hidden="true">{item.icon}</span>
-                        <span>{labelForType(item.type)}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+            <label className="pipeline-library-search">
+              <span className="sr-only">Search node library</span>
+              <input
+                type="search"
+                placeholder="Search nodes…"
+                value={libraryQuery}
+                data-testid="pipeline-library-search"
+                onChange={(event) => setLibraryQuery(event.target.value)}
+              />
+            </label>
+            {libraryGroups.length === 0 ? (
+              <p className="muted" data-testid="pipeline-library-empty">
+                No matching nodes.
+              </p>
+            ) : (
+              libraryGroups.map((group) => (
+                <div className="pipeline-library-category" key={group.category}>
+                  <strong>{group.category}</strong>
+                  <ul>
+                    {group.items.map((item) => (
+                      <li key={item.type}>
+                        <button
+                          type="button"
+                          className="pipeline-library-item"
+                          data-testid={`pipeline-library-${item.type}`}
+                          onClick={() => addNodeOfType(item.type)}
+                          title={item.description}
+                        >
+                          <span aria-hidden="true">{item.icon}</span>
+                          <span>{labelForType(item.type)}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))
+            )}
             {/* Backward-compatible add control used by unit/e2e tests */}
             <button
               className="btn btn-wide secondary"
@@ -904,28 +968,14 @@ export function PipelineBuilder() {
               nodes={displayNodes}
               edges={displayEdges}
               nodeTypes={nodeTypes}
+              nodesDraggable={canWrite}
+              nodesConnectable={canWrite}
+              edgesReconnectable={canWrite}
+              elementsSelectable
+              deleteKeyCode={canWrite ? ["Backspace", "Delete"] : null}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
-              onConnect={(connection: Connection) => {
-                const source = nodes.find((node) => node.id === connection.source);
-                const isCondition = source?.data.node_type === "condition";
-                const handle = connection.sourceHandle;
-                const branch: ConditionBranch =
-                  handle === "true" || handle === "false" || handle === "always"
-                    ? handle
-                    : "always";
-                const edge = isCondition
-                  ? {
-                      ...connection,
-                      sourceHandle: branch,
-                      label: branch.toUpperCase(),
-                      className: `pipeline-edge-${branch}`,
-                      data: { branch },
-                    }
-                  : connection;
-                setDirty(true);
-                setEdges((rows) => addEdge(edge, rows));
-              }}
+              onConnect={onConnect}
               onNodeClick={(_, node) => selectNode(node as StepNode)}
               onInit={(instance) => {
                 flowInstanceRef.current = instance;
@@ -1278,7 +1328,7 @@ export function PipelineRunDetail() {
         <>
           {usedRerun && (
             <p className="muted pipeline-rerun-note" data-testid="pipeline-rerun-note">
-              Rerun from failed was used. Successful upstream steps were reused.
+              Rerun from failed was used. Restarted steps show Attempt 2 or higher.
             </p>
           )}
           {run.status === "failed" && run.error_message && (
