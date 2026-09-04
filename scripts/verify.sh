@@ -692,6 +692,12 @@ pass "backup/restore round-trip"
 npm_audit_report_valid() {
   local report="$1"
   [[ -s "$report" ]] || return 1
+  # Prefer host Python so validation does not compete with docker under load.
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); sys.exit(0 if isinstance(data.get("vulnerabilities"), dict) else 1)' \
+      "$report" >/dev/null 2>&1
+    return $?
+  fi
   docker run --rm -v "$report:/report.json:ro" "$PYTHON_IMAGE" \
     python -c 'import json,sys; data=json.load(open("/report.json")); sys.exit(0 if isinstance(data.get("vulnerabilities"), dict) else 1)' \
     >/dev/null 2>&1
@@ -703,12 +709,13 @@ run_npm_audit_with_retry() {
   local errfile="$3"
   local label="$4"
   # Install once, then retry only the audit call. Bulk advisory API may 503 or
-  # hang; each audit attempt is bounded by a host-side docker timeout.
+  # hang; each audit attempt is bounded by npm fetch timeouts + host docker timeout.
   local attempts=5
   local delay=10
   local attempt=1
   local rc=2
-  local audit_timeout_sec=120
+  # Host hard cap; npm fetch-* below should usually finish or fail sooner.
+  local audit_timeout_sec=180
   local audit_kill_grace_sec=10
   local ci_rc=0
   local audit_workdir=""
@@ -747,18 +754,29 @@ run_npm_audit_with_retry() {
     # docker rm -f reaps the container if the client is killed first.
     cname="mf-npm-audit-${label}-${attempt}-$$"
     set +e
-    timeout -k "${audit_kill_grace_sec}" "${audit_timeout_sec}" \
-      docker run --name "$cname" --rm \
-        -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
-        sh -c 'npm audit --json' \
-        > "$outfile" \
-        2> "$errfile"
+    # Brace group hides bash "Killed" noise when timeout SIGKILLs the client.
+    {
+      timeout -k "${audit_kill_grace_sec}" "${audit_timeout_sec}" \
+        docker run --name "$cname" --rm \
+          -e npm_config_fetch_timeout=90000 \
+          -e npm_config_fetch_retries=1 \
+          -e npm_config_fetch_retry_mintimeout=20000 \
+          -e npm_config_fetch_retry_maxtimeout=90000 \
+          -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+          sh -c 'npm audit --json' \
+          > "$outfile" \
+          2> "$errfile"
+    } 2>/dev/null
     rc=$?
     docker rm -f "$cname" >/dev/null 2>&1 || true
     set +e
     if npm_audit_report_valid "$outfile"; then
       if (( attempt > 1 )); then
         info "${label}: npm audit succeeded after ${attempt} attempts"
+      fi
+      # Valid report is authoritative; normalize timeout/OOM exits to 0/1 for the gate.
+      if (( rc != 0 && rc != 1 )); then
+        rc=1
       fi
       cleanup_audit_workdir "$audit_workdir"
       return "$rc"
