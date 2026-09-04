@@ -47,11 +47,15 @@ export function lifecycleStepperStates(
   lifecycle: string,
 ): { id: string; label: string; state: LifecycleStepState }[] {
   if (lifecycle === "ARCHIVED") {
-    return PRIMARY_LIFECYCLE_PATH.map((id) => ({
+    const inactivePrimary = PRIMARY_LIFECYCLE_PATH.map((id) => ({
       id,
       label: lifecycleLabel(id),
       state: "inactive" as const,
-    })).concat([{ id: "ARCHIVED", label: "Archived", state: "current" }]);
+    }));
+    return [
+      ...inactivePrimary,
+      { id: "ARCHIVED", label: "Archived", state: "current" as const },
+    ];
   }
 
   if (lifecycle === "REJECTED") {

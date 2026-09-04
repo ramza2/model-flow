@@ -21,7 +21,7 @@ describe("lifecycleHelpers", () => {
       "PENDING_APPROVAL",
       "REJECTED",
     ]);
-    expect(steps.at(-1)?.state).toBe("rejected");
+    expect(steps[steps.length - 1]?.state).toBe("rejected");
     expect(steps.some((step) => step.id === "PRODUCTION")).toBe(false);
   });
 
@@ -33,7 +33,7 @@ describe("lifecycleHelpers", () => {
 
   it("treats archived as an inactive terminal step", () => {
     const steps = lifecycleStepperStates("ARCHIVED");
-    expect(steps.at(-1)).toEqual({
+    expect(steps[steps.length - 1]).toEqual({
       id: "ARCHIVED",
       label: "Archived",
       state: "current",

@@ -46,8 +46,6 @@ const baseModel = {
   },
   training_job_id: 42,
   mlflow_run_id: "run-abc",
-  dataset_version_id: 11,
-  pipeline_run_id: null,
   model_uri: "models:/multi_output_smoke_training/1",
   created_at: "2026-08-01T00:00:00Z",
 };

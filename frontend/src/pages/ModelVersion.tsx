@@ -260,6 +260,12 @@ export default function ModelVersion() {
                   <dt>Comment</dt>
                   <dd data-testid="approval-comment-value">{mv.approval_comment || "—"}</dd>
                 </div>
+                {mv.approved_at ? (
+                  <div>
+                    <dt>Approved at</dt>
+                    <dd>{formatDate(mv.approved_at)}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>Registered</dt>
                   <dd>{formatDate(mv.created_at)}</dd>
