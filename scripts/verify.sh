@@ -713,6 +713,15 @@ run_npm_audit_with_retry() {
   local ci_rc=0
   local audit_workdir=""
 
+  cleanup_audit_workdir() {
+    local dir="$1"
+    [[ -n "$dir" && -d "$dir" ]] || return 0
+    # node_modules is root-owned from the container; delete via the same image.
+    docker run --rm -v "$dir:/app" "$NODE_AUDIT_IMAGE" \
+      sh -c 'rm -rf /app/node_modules' >/dev/null 2>&1 || true
+    rm -rf "$dir" >/dev/null 2>&1 || true
+  }
+
   # Isolated tree avoids host node_modules / platform noise; only package manifests.
   audit_workdir="$(mktemp -d "$ROOT/artifacts/verify/npm-audit-${label}.XXXXXX")"
   cp "$workdir/package.json" "$workdir/package-lock.json" "$audit_workdir/"
@@ -727,7 +736,7 @@ run_npm_audit_with_retry() {
   set +e
   if (( ci_rc != 0 )); then
     info "${label}: npm ci failed (exit=${ci_rc}); see ${errfile}.npm-ci"
-    rm -rf "$audit_workdir"
+    cleanup_audit_workdir "$audit_workdir"
     return 2
   fi
 
@@ -744,7 +753,7 @@ run_npm_audit_with_retry() {
       if (( attempt > 1 )); then
         info "${label}: npm audit succeeded after ${attempt} attempts"
       fi
-      rm -rf "$audit_workdir"
+      cleanup_audit_workdir "$audit_workdir"
       return "$rc"
     fi
     if (( attempt == attempts )); then
@@ -756,7 +765,7 @@ run_npm_audit_with_retry() {
     delay=$(( delay * 2 ))
     attempt=$(( attempt + 1 ))
   done
-  rm -rf "$audit_workdir"
+  cleanup_audit_workdir "$audit_workdir"
   return 2
 }
 
