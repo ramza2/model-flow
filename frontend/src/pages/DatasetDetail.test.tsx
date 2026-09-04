@@ -157,6 +157,9 @@ describe("DatasetDetail quality management", () => {
   it("filters dataset rules, shows badges, and expands check details", async () => {
     renderPage();
     await screen.findByTestId("quality-rule-12");
+    const train = screen.getByTestId("train-on-dataset");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3");
+    expect(train).toHaveTextContent(/Train on dataset/i);
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Unique site ID")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Active")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-13")).getByText("Inactive")).toBeInTheDocument();
@@ -340,6 +343,7 @@ describe("DatasetDetail quality management", () => {
     expect(screen.queryByTestId("quality-run-all")).not.toBeInTheDocument();
     expect(screen.queryByTestId("quality-edit-12")).not.toBeInTheDocument();
     expect(screen.queryByTestId("quality-delete-12")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("train-on-dataset")).not.toBeInTheDocument();
   });
 });
 

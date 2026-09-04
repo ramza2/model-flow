@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Job } from "../api";
-import { formatJobTargets } from "../jobHelpers";
 import { useAuth } from "../AuthContext";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
+import { effectiveTargetColumns } from "../jobHelpers";
+import { TargetChips } from "../lifecycleComponents";
+import { formatPrimaryMetric } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 
 export default function Jobs() {
@@ -60,15 +62,39 @@ export default function Jobs() {
       ) : (
         <div className="panel table-wrap">
           <table>
-            <thead><tr><th>Job</th><th>Status</th><th>Algorithm</th><th>Target</th><th>Metrics</th><th>Created</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Status</th>
+                <th>Problem</th>
+                <th>Algorithm</th>
+                <th>Targets</th>
+                <th>Primary metric</th>
+                <th>Created</th>
+              </tr>
+            </thead>
             <tbody>
               {items.map((job) => (
                 <tr key={job.id}>
-                  <td><Link to={`/projects/${projectId}/jobs/${job.id}`}><strong>{job.name}</strong></Link><small className="table-subtitle">{job.description || `Job #${job.id}`}</small></td>
+                  <td>
+                    <Link to={`/projects/${projectId}/jobs/${job.id}`}>
+                      <strong>{job.name}</strong>
+                    </Link>
+                    <small className="table-subtitle">
+                      Dataset #{job.dataset_id}
+                      {job.description ? ` · ${job.description}` : ""}
+                    </small>
+                  </td>
                   <td><StatusBadge status={job.status} /></td>
+                  <td>{job.problem_type}</td>
                   <td>{job.algorithm.replaceAll("_", " ")}</td>
-                  <td className="mono">{formatJobTargets(job)}</td>
-                  <td>{Object.keys(job.metrics).length ? Object.entries(job.metrics).slice(0, 1).map(([key, value]) => `${key}: ${Number(value).toFixed(3)}`) : "—"}</td>
+                  <td><TargetChips targets={effectiveTargetColumns(job)} /></td>
+                  <td>
+                    {formatPrimaryMetric(job.metrics, {
+                      problemType: job.problem_type,
+                      targetColumns: effectiveTargetColumns(job),
+                    })}
+                  </td>
                   <td>{formatDate(job.created_at)}</td>
                 </tr>
               ))}

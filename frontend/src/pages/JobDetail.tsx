@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Job, type ModelVersion } from "../api";
 import { effectiveTargetColumns, isMultiOutputJob } from "../jobHelpers";
-import { formatMetricLabel } from "../metricHelpers";
 import { useAuth } from "../AuthContext";
 import {
   ErrorNotice,
@@ -13,6 +12,7 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
+import { DetailSection, EntityLineage, MetricSummary, TargetChips } from "../lifecycleComponents";
 import { userCanProject, useProject } from "../ProjectContext";
 import JobRetrainDialog from "./JobRetrainDialog";
 import RegisterModelDialog from "./RegisterModelDialog";
@@ -89,38 +89,56 @@ export default function JobDetail() {
   }
 
   const active = job && ["pending", "queued", "running", "cancel_requested"].includes(job.status);
+  const targets = job ? effectiveTargetColumns(job) : [];
 
   return (
     <div>
       <PageHeader
         title={job?.name ?? "Training job"}
         description="Live status, metrics, configuration, and execution logs."
-        actions={job && <StatusBadge status={job.status} />}
-      />
-      <ErrorNotice message={error || job?.error_message || ""} />
-      <SuccessNotice message={success} />
-      {!job ? <Loading label="Loading training job" /> : (
-        <>
-          <div className="row-actions toolbar-actions">
-            {canTrain && active && <button className="btn danger" disabled={busy === "cancel"} onClick={() => action("cancel")}>Stop job</button>}
-            {canTrain && job.status === "succeeded" && (
+        actions={
+          <>
+            {job && <StatusBadge status={job.status} />}
+            {canTrain && job && ["failed", "cancelled"].includes(job.status) && (
+              <button className="btn" disabled={busy === "retry"} onClick={() => void action("retry")} data-testid="job-retry">
+                Retry
+              </button>
+            )}
+            {canRegister && job?.status === "succeeded" && job.model_uri && (
               <button
-                type="button"
                 className="btn"
-                data-testid="job-retrain"
-                onClick={() => setShowRetrain(true)}
+                type="button"
+                disabled={busy === "register"}
+                onClick={() => setShowRegister(true)}
+                data-testid="register-model"
               >
+                {busy === "register" ? "Registering…" : "Register model"}
+              </button>
+            )}
+            {canTrain && job?.status === "succeeded" && !(canRegister && job.model_uri) && (
+              <button type="button" className="btn" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
                 Retrain
               </button>
             )}
+          </>
+        }
+      />
+      <ErrorNotice message={error || job?.error_message || ""} />
+      <SuccessNotice message={success} />
+      {!job ? (
+        <Loading label="Loading training job" />
+      ) : (
+        <>
+          <div className="row-actions toolbar-actions">
+            {canTrain && active && (
+              <button className="btn danger" disabled={busy === "cancel"} onClick={() => void action("cancel")}>
+                Stop job
+              </button>
+            )}
             {canTrain && ["failed", "cancelled"].includes(job.status) && (
-              <div className="retry-group">
-                <button className="btn" disabled={busy === "retry"} onClick={() => action("retry")} data-testid="job-retry">Retry</button>
-                <p className="form-hint" data-testid="retry-hint">
-                  Retry reruns this job with the same configuration.
-                  Use Clone configuration to modify settings.
-                </p>
-              </div>
+              <p className="form-hint" data-testid="retry-hint">
+                Retry reruns this job with the same configuration. Use Clone configuration to modify settings.
+              </p>
             )}
             {canTrain && (
               <Link
@@ -136,30 +154,21 @@ export default function JobDetail() {
                 Open experiment
               </Link>
             )}
-            {canRegister && job.status === "succeeded" && job.model_uri && (
-              <button
-                className="btn"
-                type="button"
-                disabled={busy === "register"}
-                onClick={() => setShowRegister(true)}
-                data-testid="register-model"
-              >
-                {busy === "register" ? "Registering…" : "Register model"}
+            {canTrain && job.status === "succeeded" && canRegister && job.model_uri && (
+              <button type="button" className="btn secondary" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
+                Retrain
               </button>
             )}
           </div>
-          <div className="grid stats-grid">
-            {Object.entries(job.metrics).slice(0, 4).map(([name, value]) => (
-              <div className="stat" key={name}>
-                <div className="label">{formatMetricLabel(name, effectiveTargetColumns(job))}</div>
-                <div className="value metric-value">{Number(value).toFixed(3)}</div>
-              </div>
-            ))}
-            {Object.keys(job.metrics).length === 0 && <div className="stat"><div className="label">Metrics</div><div className="value metric-value">—</div><small>Available after training</small></div>}
-          </div>
+
+          <MetricSummary
+            metrics={job.metrics}
+            problemType={job.problem_type}
+            targetColumns={targets}
+          />
+
           <div className="two-column">
-            <section className="panel">
-              <span className="eyebrow">Configuration</span><h2>Training setup</h2>
+            <DetailSection eyebrow="Configuration" title="Training setup">
               {job.is_retrain && job.retrain_source_job_id && (
                 <p data-testid="job-retrain-lineage">
                   Retrained from{" "}
@@ -172,10 +181,20 @@ export default function JobDetail() {
                 <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
                 <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
                 <div data-testid="job-target-columns">
-                  <dt>{isMultiOutputJob(job) ? "Target columns" : "Target column"}</dt>
-                  <dd className="mono">{effectiveTargetColumns(job).join(", ")}</dd>
+                  <dt>{isMultiOutputJob(job) ? "Targets" : "Target"}</dt>
+                  <dd><TargetChips targets={targets} /></dd>
                 </div>
-                <div><dt>Dataset</dt><dd><Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link></dd></div>
+                <div>
+                  <dt>Features</dt>
+                  <dd>{job.feature_columns?.length ? `${job.feature_columns.length} columns` : "—"}</dd>
+                </div>
+                <div>
+                  <dt>Dataset</dt>
+                  <dd>
+                    <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link>
+                    {job.dataset_version_id ? ` · v${job.dataset_version_id}` : ""}
+                  </dd>
+                </div>
                 <div data-testid="job-data-split">
                   <dt>Data split</dt>
                   <dd>
@@ -202,19 +221,51 @@ export default function JobDetail() {
                     )}
                   </dd>
                 </div>
-                <div><dt>Created</dt><dd>{formatDate(job.created_at)}</dd></div>
+                <div><dt>Started</dt><dd>{formatDate(job.started_at)}</dd></div>
                 <div><dt>Finished</dt><dd data-testid="job-finished-at">{formatDate(job.finished_at)}</dd></div>
               </dl>
-            </section>
-            <section className="panel">
-              <span className="eyebrow">Parameters</span><h2>Hyperparameters</h2>
-              <pre className="json-view">{JSON.stringify(job.hyperparameters, null, 2)}</pre>
-            </section>
+            </DetailSection>
+
+            <EntityLineage
+              items={[
+                {
+                  label: "Dataset",
+                  value: `Dataset #${job.dataset_id}`,
+                  to: `/projects/${projectId}/datasets/${job.dataset_id}`,
+                },
+                {
+                  label: "Experiment run",
+                  value: job.mlflow_run_id || "—",
+                  to: job.mlflow_run_id
+                    ? `/projects/${projectId}/experiments/runs/${job.mlflow_run_id}`
+                    : undefined,
+                  mono: true,
+                },
+                ...(job.is_retrain && job.retrain_source_job_id
+                  ? [
+                      {
+                        label: "Retrain source",
+                        value: `Job #${job.retrain_source_job_id}`,
+                        to: `/projects/${projectId}/jobs/${job.retrain_source_job_id}`,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
-          <section className="panel">
-            <div className="panel-title"><div><span className="eyebrow">Execution</span><h2>Logs</h2></div>{active && <span className="live-indicator"><span /> Live</span>}</div>
+
+          <DetailSection eyebrow="Parameters" title="Hyperparameters">
+            <pre className="json-view">{JSON.stringify(job.hyperparameters, null, 2)}</pre>
+          </DetailSection>
+
+          <DetailSection
+            eyebrow="Execution"
+            title="Logs"
+            actions={active ? <span className="live-indicator"><span /> Live</span> : undefined}
+          >
             <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
-          </section>
+          </DetailSection>
+
           {showRegister && (
             <RegisterModelDialog
               job={job}
