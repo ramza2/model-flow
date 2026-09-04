@@ -13,6 +13,8 @@ source "$ROOT/scripts/lib.sh"
 mkdir -p artifacts/screenshots artifacts/verify
 
 NODE_IMAGE="node:22.17-alpine"
+# npm 11+ for audit only (bulk advisory API). Keep NODE_IMAGE on 22.17 for lint/test.
+NODE_AUDIT_IMAGE="node:24.8-alpine"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
 PYTHON_IMAGE="python:3.11-slim"
 REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
@@ -685,10 +687,8 @@ pass "backup/restore round-trip"
 
 # npm registry occasionally returns 503 / non-audit JSON. Retry so transient
 # registry outages do not fail an otherwise green verification gate.
-# Also install npm 11+ so audit uses the bulk advisory endpoint; the legacy
-# /security/audits/quick endpoint was retired and returns 4xx.
-NPM_AUDIT_NPM_VERSION="11.19.1"
-
+# Use NODE_AUDIT_IMAGE (npm 11+) so audit hits the bulk advisory endpoint; the
+# legacy /security/audits/quick endpoint was retired and returns 4xx.
 npm_audit_report_valid() {
   local report="$1"
   [[ -s "$report" ]] || return 1
@@ -702,15 +702,15 @@ run_npm_audit_with_retry() {
   local outfile="$2"
   local errfile="$3"
   local label="$4"
-  local attempts=5
-  local delay=8
+  local attempts=3
+  local delay=5
   local attempt=1
   local rc=2
   while (( attempt <= attempts )); do
     # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
     set +e
-    docker run --rm -v "$workdir:/app" -w /app "$NODE_IMAGE" \
-      sh -c "npm install -g npm@${NPM_AUDIT_NPM_VERSION} --silent >/dev/null && npm ci --silent >/dev/null && npm audit --json" \
+    docker run --rm -v "$workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+      sh -c 'npm ci --silent >/dev/null && npm audit --json' \
       > "$outfile" \
       2> "$errfile"
     rc=$?

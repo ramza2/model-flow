@@ -20,7 +20,7 @@ Local `./scripts/verify.sh` and GitHub Actions run the same dependency checks:
 
 `scripts/check-security-audits.py` **fails the gate** when High or Critical findings are present unless each finding is listed in `security/allowlist.json` with package, vulnerability id, reason, and ISO expiry. Scanner/schema failures also fail the gate (fail closed). This is **not** an informational-only scan.
 
-The verify gate runs `npm audit` with **npm 11.19.1** (installed inside the Node container for the audit step only) so reports use the registry **bulk advisory** endpoint. The legacy `/security/audits/quick` endpoint was retired and returns 4xx; npm 10 in `node:22.17-alpine` still falls back to it when bulk responses fail. Audit calls also retry with backoff when the registry returns a transient error or a JSON body without `vulnerabilities{}`.
+The verify gate runs `npm audit` in **`node:24.8-alpine`** (npm 11.x, audit step only) so reports use the registry **bulk advisory** endpoint. Frontend lint/typecheck/test still use `node:22.17-alpine`. The legacy `/security/audits/quick` endpoint was retired and returns 4xx; npm 10 falls back to it when bulk responses fail. Audit calls also retry briefly when the registry returns a transient error or a JSON body without `vulnerabilities{}`. GitHub Actions CI timeout for the full gate is **90 minutes**.
 
 ## Operational notes
 
