@@ -187,6 +187,7 @@ Historical; see D-016.
 - **Context:** Advisory-only dependency scans allowed release verification to pass with serious known vulnerabilities.
 - **Choice:** `pip-audit` and `npm audit` produce JSON artifacts for Python, frontend, and E2E dependencies; `scripts/check-security-audits.py` blocks unallowlisted High/Critical findings and treats scanner/schema failures as gate failures. Exceptions require package, vulnerability ID, reason, and ISO expiry in `security/allowlist.json`; expired entries never suppress.
 - **Consequences:** Dependency updates or a time-bounded, reviewed exception are required to restore the gate. Because `pip-audit` currently omits severity, its findings are treated as High to fail closed.
+- **Follow-up (2026-09):** Verify runs `npm audit` under **npm 11.19.1** inside the Node container (audit step only) so reports use the registry bulk advisory API after retirement of `/security/audits/quick`. Invalid/unavailable audit JSON is retried with backoff before fail-closed.
 
 ## D-034: PostgreSQL data-source connection mode metadata and explicit secret clears
 

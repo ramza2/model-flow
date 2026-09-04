@@ -683,6 +683,55 @@ ROUNDTRIP_ENDPOINT_ID="$EID" MODELFLOW_ENV_FILE="$VERIFY_ENV_FILE" \
   | tee artifacts/verify/backup-roundtrip.log
 pass "backup/restore round-trip"
 
+# npm registry occasionally returns 503 / non-audit JSON. Retry so transient
+# registry outages do not fail an otherwise green verification gate.
+# Also install npm 11+ so audit uses the bulk advisory endpoint; the legacy
+# /security/audits/quick endpoint was retired and returns 4xx.
+NPM_AUDIT_NPM_VERSION="11.19.1"
+
+npm_audit_report_valid() {
+  local report="$1"
+  [[ -s "$report" ]] || return 1
+  docker run --rm -v "$report:/report.json:ro" "$PYTHON_IMAGE" \
+    python -c 'import json,sys; data=json.load(open("/report.json")); sys.exit(0 if isinstance(data.get("vulnerabilities"), dict) else 1)' \
+    >/dev/null 2>&1
+}
+
+run_npm_audit_with_retry() {
+  local workdir="$1"
+  local outfile="$2"
+  local errfile="$3"
+  local label="$4"
+  local attempts=5
+  local delay=8
+  local attempt=1
+  local rc=2
+  while (( attempt <= attempts )); do
+    # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
+    set +e
+    docker run --rm -v "$workdir:/app" -w /app "$NODE_IMAGE" \
+      sh -c "npm install -g npm@${NPM_AUDIT_NPM_VERSION} --silent >/dev/null && npm ci --silent >/dev/null && npm audit --json" \
+      > "$outfile" \
+      2> "$errfile"
+    rc=$?
+    set +e
+    if npm_audit_report_valid "$outfile"; then
+      if (( attempt > 1 )); then
+        info "${label}: npm audit succeeded after ${attempt} attempts"
+      fi
+      return "$rc"
+    fi
+    info "${label}: npm audit produced invalid/unavailable report (attempt ${attempt}/${attempts}); retrying in ${delay}s"
+    if (( attempt == attempts )); then
+      break
+    fi
+    sleep "$delay"
+    delay=$(( delay * 2 ))
+    attempt=$(( attempt + 1 ))
+  done
+  return 2
+}
+
 info "8e) Dependency security gate (High/Critical)"
 set +e
 modelflow_compose exec -T backend sh -c \
@@ -690,15 +739,17 @@ modelflow_compose exec -T backend sh -c \
   > artifacts/verify/pip-audit.json \
   2> artifacts/verify/pip-audit.stderr.txt
 PIP_AUDIT_RC=$?
-docker run --rm -v "$ROOT/frontend:/app" -w /app "$NODE_IMAGE" \
-  sh -c 'npm ci --silent >/dev/null && npm audit --json' \
-  > artifacts/verify/npm-audit.json \
-  2> artifacts/verify/npm-audit.stderr.txt
+set -e
+set +e
+run_npm_audit_with_retry "$ROOT/frontend" \
+  artifacts/verify/npm-audit.json \
+  artifacts/verify/npm-audit.stderr.txt \
+  "frontend"
 NPM_AUDIT_RC=$?
-docker run --rm -v "$ROOT:/app" -w /app "$NODE_IMAGE" \
-  sh -c 'npm ci --silent >/dev/null && npm audit --json' \
-  > artifacts/verify/npm-audit-e2e.json \
-  2> artifacts/verify/npm-audit-e2e.stderr.txt
+run_npm_audit_with_retry "$ROOT" \
+  artifacts/verify/npm-audit-e2e.json \
+  artifacts/verify/npm-audit-e2e.stderr.txt \
+  "e2e"
 E2E_NPM_AUDIT_RC=$?
 set -e
 {
@@ -710,10 +761,16 @@ if [[ "$PIP_AUDIT_RC" -ne 0 && "$PIP_AUDIT_RC" -ne 1 ]]; then
   fail "pip-audit failed to run (exit=$PIP_AUDIT_RC)"
 fi
 if [[ "$NPM_AUDIT_RC" -ne 0 && "$NPM_AUDIT_RC" -ne 1 ]]; then
-  fail "npm audit failed to run (exit=$NPM_AUDIT_RC)"
+  fail "npm audit failed to run after retries (exit=$NPM_AUDIT_RC); see artifacts/verify/npm-audit.stderr.txt"
 fi
 if [[ "$E2E_NPM_AUDIT_RC" -ne 0 && "$E2E_NPM_AUDIT_RC" -ne 1 ]]; then
-  fail "E2E npm audit failed to run (exit=$E2E_NPM_AUDIT_RC)"
+  fail "E2E npm audit failed to run after retries (exit=$E2E_NPM_AUDIT_RC); see artifacts/verify/npm-audit-e2e.stderr.txt"
+fi
+if ! npm_audit_report_valid artifacts/verify/npm-audit.json; then
+  fail "frontend npm audit report is still invalid after retries"
+fi
+if ! npm_audit_report_valid artifacts/verify/npm-audit-e2e.json; then
+  fail "E2E npm audit report is still invalid after retries"
 fi
 set +e
 docker run --rm \
