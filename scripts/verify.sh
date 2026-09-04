@@ -709,14 +709,15 @@ run_npm_audit_with_retry() {
   local errfile="$3"
   local label="$4"
   # Install once, then retry only the audit call. Bulk advisory API may 503 or
-  # hang; each audit attempt is bounded by npm fetch timeouts + host docker timeout.
+  # hang; each attempt is bounded by a host-side docker timeout (hard cap).
   local attempts=5
   local delay=10
   local attempt=1
   local rc=2
-  # Host hard cap; npm fetch-* below should usually finish or fail sooner.
-  local audit_timeout_sec=180
-  local audit_kill_grace_sec=10
+  # GHA runners often need >90s for advisories/bulk; keep a hard cap so hangs
+  # cannot stall the full gate indefinitely.
+  local audit_timeout_sec=360
+  local audit_kill_grace_sec=15
   local ci_rc=0
   local audit_workdir=""
   local cname=""
@@ -752,16 +753,14 @@ run_npm_audit_with_retry() {
     # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
     # Host timeout + named container so a hung registry call cannot stall CI;
     # docker rm -f reaps the container if the client is killed first.
+    # Do not lower npm fetch-timeout below defaults: GHA bulk advisory latency
+    # regularly exceeds 90s and would otherwise fail closed as "network timeout".
     cname="mf-npm-audit-${label}-${attempt}-$$"
     set +e
     # Brace group hides bash "Killed" noise when timeout SIGKILLs the client.
     {
       timeout -k "${audit_kill_grace_sec}" "${audit_timeout_sec}" \
         docker run --name "$cname" --rm \
-          -e npm_config_fetch_timeout=90000 \
-          -e npm_config_fetch_retries=1 \
-          -e npm_config_fetch_retry_mintimeout=20000 \
-          -e npm_config_fetch_retry_maxtimeout=90000 \
           -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
           sh -c 'npm audit --json' \
           > "$outfile" \
