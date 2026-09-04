@@ -316,6 +316,16 @@ export type PipelineGraph = {
   }>;
 };
 
+export type PipelineVersion = {
+  id: number;
+  pipeline_id: number;
+  project_id: number;
+  version: number;
+  graph: PipelineGraph;
+  created_by?: number;
+  created_at: string;
+};
+
 export type Pipeline = {
   id: number;
   project_id: number;
