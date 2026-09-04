@@ -702,8 +702,10 @@ run_npm_audit_with_retry() {
   local outfile="$2"
   local errfile="$3"
   local label="$4"
-  local attempts=3
-  local delay=5
+  # Bulk advisory API occasionally returns 503; keep retries cheap now that we
+  # no longer install a separate npm toolchain per attempt.
+  local attempts=5
+  local delay=10
   local attempt=1
   local rc=2
   while (( attempt <= attempts )); do
