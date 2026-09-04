@@ -42,7 +42,7 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await expect(page.getByText(/Column statistics/i)).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/03-dataset.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-rf");
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-logs")).toBeVisible();

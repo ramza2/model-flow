@@ -35,7 +35,7 @@ test("experiment run detail navigation from training job", async ({ page }) => {
   await expect(page.getByText("multi_output_regression.csv")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "multi_output_regression.csv" }).click();
 
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-run-detail");
   await page.getByTestId("target-power_usage").check();
   await page.getByTestId("job-submit").click();

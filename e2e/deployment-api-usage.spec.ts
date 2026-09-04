@@ -37,7 +37,7 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "iris.csv" }).click();
   await expect(page.getByText(/Column statistics/i)).toBeVisible();
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("api-usage-rf");
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-logs")).toBeVisible();
