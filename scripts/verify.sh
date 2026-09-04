@@ -703,15 +703,16 @@ run_npm_audit_with_retry() {
   local errfile="$3"
   local label="$4"
   # Install once, then retry only the audit call. Bulk advisory API may 503 or
-  # hang; each audit attempt has a hard command timeout (TERM then KILL).
+  # hang; each audit attempt is bounded by a host-side docker timeout.
   local attempts=5
   local delay=10
   local attempt=1
   local rc=2
   local audit_timeout_sec=120
-  local audit_kill_after_sec=5
+  local audit_kill_grace_sec=10
   local ci_rc=0
   local audit_workdir=""
+  local cname=""
 
   cleanup_audit_workdir() {
     local dir="$1"
@@ -742,12 +743,18 @@ run_npm_audit_with_retry() {
 
   while (( attempt <= attempts )); do
     # Keep non-zero npm audit exits (vulns found => 1) from aborting retries.
+    # Host timeout + named container so a hung registry call cannot stall CI;
+    # docker rm -f reaps the container if the client is killed first.
+    cname="mf-npm-audit-${label}-${attempt}-$$"
     set +e
-    docker run --rm -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
-      sh -c "timeout -k ${audit_kill_after_sec} ${audit_timeout_sec} npm audit --json" \
-      > "$outfile" \
-      2> "$errfile"
+    timeout -k "${audit_kill_grace_sec}" "${audit_timeout_sec}" \
+      docker run --name "$cname" --rm \
+        -v "$audit_workdir:/app" -w /app "$NODE_AUDIT_IMAGE" \
+        sh -c 'npm audit --json' \
+        > "$outfile" \
+        2> "$errfile"
     rc=$?
+    docker rm -f "$cname" >/dev/null 2>&1 || true
     set +e
     if npm_audit_report_valid "$outfile"; then
       if (( attempt > 1 )); then
