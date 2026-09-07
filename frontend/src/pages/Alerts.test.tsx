@@ -73,9 +73,21 @@ describe("Alerts page", () => {
     renderPage();
     expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
     expect(screen.getByText(driftCritical.title)).toBeInTheDocument();
-    expect(screen.getAllByText("View related item →")).toHaveLength(2);
-    const monitoringLink = screen.getAllByRole("link", { name: "View related item →" })[0];
+    expect(screen.getAllByText("View related resource →")).toHaveLength(2);
+    const monitoringLink = screen.getAllByRole("link", { name: "View related resource →" })[0];
     expect(monitoringLink.getAttribute("href")).toBe("/projects/1/monitoring");
+  });
+
+  it("hides Resolve for read-only users while keeping alert content", async () => {
+    canResolve = false;
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/1/alerts?is_resolved=false") return [driftWarning];
+      throw new Error(`unexpected api ${path}`);
+    });
+    renderPage();
+    expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Resolve alert/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark read" })).toBeInTheDocument();
   });
 
   it("adds resolve tooltip and accessible description", async () => {

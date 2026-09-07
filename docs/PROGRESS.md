@@ -13,7 +13,9 @@ Phase **1.5-A — Shell & shared design system** is complete on `main`.
 
 Phase **1.5-B — Pipeline UX** is complete on `main` (merged via PR #34).
 
-Phase **1.5-C — ML lifecycle UX** is in progress on branch `cursor/phase1.5c-ml-lifecycle-ux`.
+Phase **1.5-C — ML lifecycle UX** is complete on `main` (merged via PR #35; production browser smoke PASS).
+
+Phase **1.5-D — Operations & overview UX** is in progress on branch `cursor/phase1.5d-operations-overview-ux`.
 
 The implementation strategy is direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
 
@@ -113,20 +115,25 @@ These are follow-up production confirmation items, not blockers for drafting Pha
 
 ### 1.5-C — ML lifecycle UX
 
+Complete on `main` (merged via PR #35).
+
 - Dataset / Job / Experiment / Model / Deployment detail consistency
 - lineage links
 - full model lifecycle presentation
 - multi-output target/metric presentation
 - Prediction Test refinement
+- production browser smoke PASS (including endpoint p95 latency flush fix)
 
 ### 1.5-D — Operations & overview UX
 
-- Workspace Home
-- Project Overview
-- Schedules
-- Monitoring
-- Alerts
-- responsive refinements
+In progress on `cursor/phase1.5d-operations-overview-ux` (Draft PR; not merged).
+
+- Workspace Home attention / next-action hierarchy
+- Project Overview lifecycle control center
+- Schedules catalog + Create/Edit Drawer + contextual pipeline scheduling
+- Monitoring Service/Data/Model triage
+- Alerts actionable inbox polish
+- responsive refinements for the above screens
 
 ## Phase 1.5 implementation rules
 
@@ -147,8 +154,8 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 1.5-C — ML lifecycle UX** on `cursor/phase1.5c-ml-lifecycle-ux`, then begin **Phase 1.5-D — Operations & overview UX**.
+Complete **Phase 1.5-D — Operations & overview UX** on `cursor/phase1.5d-operations-overview-ux`, then review/merge.
 
-Known UX debt retained from Phase 1.5-B (not in Phase 1.5-C scope):
+Known UX debt retained from Phase 1.5-B (still out of Phase 1.5-D scope):
 
 - Pipeline `beforeunload` / ← Pipelines confirm without full SPA router navigation blocker for sidebar/project switch.
