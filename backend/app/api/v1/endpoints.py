@@ -175,6 +175,9 @@ def _record_prediction(
         ) from exc
     endpoint.request_count = (endpoint.request_count or 0) + 1
     endpoint.latency_sum_ms = (endpoint.latency_sum_ms or 0) + latency_ms
+    # SessionLocal uses autoflush=False; flush so the current InferenceStat is
+    # included in the p95 SELECT (otherwise the first request stays at 0.0 ms).
+    db.flush()
     latencies = list(
         db.scalars(
             select(InferenceStat.latency_ms)
