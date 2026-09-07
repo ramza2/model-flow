@@ -80,9 +80,9 @@ test("drift run generates operational alert and resolves through UI", async ({ p
     : "Data drift requires attention";
   await expect(page.getByText(alertTitle)).toBeVisible();
   await expect(page.getByText(/Drift run #/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "View related item →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "View related resource →" })).toBeVisible();
 
-  await page.getByRole("link", { name: "View related item →" }).click();
+  await page.getByRole("link", { name: "View related resource →" }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/monitoring`));
 
   await page.goto(`/projects/${projectId}/alerts`);
