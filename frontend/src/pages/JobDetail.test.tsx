@@ -97,6 +97,9 @@ describe("JobDetail retrain", () => {
     renderPage("42");
     expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
     expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Dataset #3/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Version #30/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/· v30/)).not.toBeInTheDocument();
   });
 
   it("hides Retrain on non-succeeded jobs", async () => {

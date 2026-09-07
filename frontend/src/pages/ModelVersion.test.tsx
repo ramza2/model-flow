@@ -131,4 +131,48 @@ describe("ModelVersion lifecycle UX", () => {
     const link = await screen.findByTestId("create-deployment");
     expect(link).toHaveAttribute("href", "/projects/7/deployments");
   });
+
+  it("hides create deployment for read-only users on production models", async () => {
+    canWriteRef.value = false;
+    canApproveRef.value = false;
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      lifecycle: "PRODUCTION",
+      gates_passed: true,
+      approved_by: 3,
+      approved_at: "2026-08-02T00:00:00Z",
+    });
+    renderPage();
+    await screen.findByTestId("lifecycle-stepper");
+    expect(screen.queryByTestId("create-deployment")).not.toBeInTheDocument();
+    expect(screen.getByTestId("approval-comment-value")).toHaveTextContent("Looks solid");
+    expect(screen.getByTestId("approval-reviewed-by")).toHaveTextContent("User #3");
+  });
+
+  it("hides editable review comment for read-only users pending approval", async () => {
+    canWriteRef.value = false;
+    canApproveRef.value = false;
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      lifecycle: "PENDING_APPROVAL",
+      gates_passed: true,
+      approval_comment: "Needs review",
+    });
+    renderPage();
+    await screen.findByTestId("lifecycle-stepper");
+    expect(screen.queryByTestId("approval-comment-input")).not.toBeInTheDocument();
+    expect(screen.getByTestId("approval-comment-value")).toHaveTextContent("Needs review");
+  });
+
+  it("shows editable review comment when approve/reject is available", async () => {
+    canWriteRef.value = false;
+    canApproveRef.value = true;
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      lifecycle: "PENDING_APPROVAL",
+      gates_passed: true,
+    });
+    renderPage();
+    expect(await screen.findByTestId("approval-comment-input")).toBeInTheDocument();
+  });
 });

@@ -6,6 +6,7 @@ import { TargetChips } from "../lifecycleComponents";
 import {
   parseTargetsFromParams,
   runDisplayName,
+  targetColumnsAreIdentical,
 } from "../lifecycleHelpers";
 import { formatMetricLabel } from "../metricHelpers";
 
@@ -57,7 +58,9 @@ export default function RunCompare() {
 
   const targetColumns = useMemo(() => {
     if (!data?.runs.length) return [];
-    return parseTargetsFromParams(data.runs[0].params);
+    const perRun = data.runs.map((run) => parseTargetsFromParams(run.params));
+    if (!targetColumnsAreIdentical(perRun)) return [];
+    return perRun[0] ?? [];
   }, [data]);
 
   const primaryKeys = useMemo(() => {

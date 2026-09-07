@@ -4,7 +4,9 @@ import {
   lifecycleLabel,
   lifecycleStepperStates,
   parseTargetsFromParams,
+  resolveTrainingJobIdFromRun,
   suggestModelNameFromRun,
+  targetColumnsAreIdentical,
 } from "./lifecycleHelpers";
 
 describe("lifecycleHelpers", () => {
@@ -62,5 +64,41 @@ describe("lifecycleHelpers", () => {
       "power_usage",
     ]);
     expect(parseTargetsFromParams({ target_column: "target" })).toEqual(["target"]);
+  });
+
+  it("resolves training job id from params.job_id with numeric tag fallback", () => {
+    expect(
+      resolveTrainingJobIdFromRun({
+        params: { job_id: "99" },
+        tags: { "modelflow.training_job_id": "1" },
+      }),
+    ).toBe("99");
+    expect(
+      resolveTrainingJobIdFromRun({
+        params: {},
+        tags: { "modelflow.training_job_id": "42" },
+      }),
+    ).toBe("42");
+    expect(
+      resolveTrainingJobIdFromRun({
+        params: { job_id: "abc" },
+        tags: {},
+      }),
+    ).toBeNull();
+  });
+
+  it("detects identical ordered target lists across runs", () => {
+    expect(
+      targetColumnsAreIdentical([
+        ["cooling_load", "power_usage"],
+        ["cooling_load", "power_usage"],
+      ]),
+    ).toBe(true);
+    expect(
+      targetColumnsAreIdentical([
+        ["cooling_load", "power_usage"],
+        ["temperature", "humidity"],
+      ]),
+    ).toBe(false);
   });
 });

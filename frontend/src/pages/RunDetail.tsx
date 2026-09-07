@@ -16,10 +16,11 @@ import {
   TechnicalBlock,
 } from "../lifecycleComponents";
 import {
-  formatMetricKeyLabel,
   parseTargetsFromParams,
+  resolveTrainingJobIdFromRun,
   runDisplayName,
 } from "../lifecycleHelpers";
+import { formatMetricLabel } from "../metricHelpers";
 
 export default function RunDetail() {
   const { projectId, runId } = useParams();
@@ -42,7 +43,7 @@ export default function RunDetail() {
   const problemType = String(run?.params.problem_type ?? run?.tags["modelflow.problem_type"] ?? "");
   const algorithm = String(run?.params.algorithm ?? run?.tags["modelflow.algorithm"] ?? "—");
   const targets = run ? parseTargetsFromParams(run.params) : [];
-  const jobId = run?.tags["modelflow.training_job_id"] || run?.tags.training_job_id || "";
+  const jobId = run ? resolveTrainingJobIdFromRun(run) : null;
 
   return (
     <div>
@@ -115,7 +116,7 @@ export default function RunDetail() {
                       to: `/projects/${projectId}/jobs/${jobId}`,
                     },
                   ]
-                : [{ label: "Training job", value: "Not linked in run tags" }]),
+                : [{ label: "Training job", value: "Not linked from run params" }]),
               {
                 label: "MLflow run id",
                 value: run.run_id,
@@ -146,7 +147,7 @@ export default function RunDetail() {
                     {Object.entries(run.metrics).map(([key, value]) => (
                       <tr key={key}>
                         <td className="mono">{key}</td>
-                        <td>{formatMetricKeyLabel(key)}</td>
+                        <td>{formatMetricLabel(key, targets)}</td>
                         <td>{Number(value).toFixed(6)}</td>
                       </tr>
                     ))}

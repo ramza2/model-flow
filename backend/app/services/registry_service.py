@@ -218,6 +218,40 @@ def backfill_model_lineage(
     return resolved
 
 
+def apply_registration_target_metadata(
+    metadata: dict[str, Any],
+    *,
+    training_job: TrainingJob | None = None,
+    mlflow_params: dict[str, Any] | None = None,
+) -> list[str]:
+    """Preserve target_columns / output_schema / multi_output on model metadata.
+
+    Prefers TrainingJob targets, then overrides from MLflow run params when present
+    (same semantics as register_from_run). Mutates ``metadata`` in place.
+    """
+
+    params = mlflow_params or {}
+    target_columns: list[str] = []
+    if training_job is not None:
+        target_columns = effective_target_columns_from_job(training_job)
+    if params.get("target_columns"):
+        try:
+            parsed = json.loads(str(params["target_columns"]))
+        except (TypeError, ValueError):
+            parsed = [
+                part.strip()
+                for part in str(params["target_columns"]).split(",")
+                if part.strip()
+            ]
+        if isinstance(parsed, list) and parsed:
+            target_columns = [str(column) for column in parsed]
+    if target_columns:
+        metadata["target_columns"] = target_columns
+        metadata["output_schema"] = output_schema_for_targets(target_columns)
+        metadata["multi_output"] = is_multi_output(target_columns)
+    return target_columns
+
+
 def register_from_run(
     db: Session,
     *,
@@ -286,24 +320,11 @@ def register_from_run(
         "feature_schema": feature_schema,
         "run_tags": run.get("tags") or {},
     }
-    target_columns: list[str] = []
-    if training_job is not None:
-        target_columns = effective_target_columns_from_job(training_job)
-    if params.get("target_columns"):
-        try:
-            parsed = json.loads(str(params["target_columns"]))
-        except (TypeError, ValueError):
-            parsed = [
-                part.strip()
-                for part in str(params["target_columns"]).split(",")
-                if part.strip()
-            ]
-        if isinstance(parsed, list) and parsed:
-            target_columns = [str(column) for column in parsed]
-    if target_columns:
-        metadata["target_columns"] = target_columns
-        metadata["output_schema"] = output_schema_for_targets(target_columns)
-        metadata["multi_output"] = is_multi_output(target_columns)
+    apply_registration_target_metadata(
+        metadata,
+        training_job=training_job,
+        mlflow_params=params,
+    )
     if params.get("problem_type"):
         metadata["problem_type"] = params["problem_type"]
     row = ModelVersion(

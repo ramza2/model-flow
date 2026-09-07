@@ -94,9 +94,18 @@ export default function ModelVersion() {
   const showApprovalBlocked = Boolean(mv && RERUN_LIFECYCLES.includes(mv.lifecycle) && !mv.gates_passed);
   const canRerun = Boolean(mv && canWrite && RERUN_LIFECYCLES.includes(mv.lifecycle));
   const canPromote = Boolean(mv && canApprove && mv.lifecycle === "APPROVED");
-  const canDeployLink = Boolean(mv && ["APPROVED", "PRODUCTION"].includes(mv.lifecycle));
+  const canDeployLink = Boolean(
+    mv && canWrite && ["APPROVED", "PRODUCTION"].includes(mv.lifecycle),
+  );
   const canReject = Boolean(mv && canApprove && mv.lifecycle === "PENDING_APPROVAL");
   const canApproveNow = Boolean(mv && canApprove && mv.lifecycle === "PENDING_APPROVAL");
+  const showReviewCommentInput = Boolean(
+    mv && (
+      (canWrite && RERUN_LIFECYCLES.includes(mv.lifecycle) && mv.gates_passed)
+      || canApproveNow
+      || canReject
+    ),
+  );
 
   const targets = useMemo(() => parseTargetColumns(mv?.metadata), [mv?.metadata]);
   const problemType = typeof mv?.metadata?.problem_type === "string" ? mv.metadata.problem_type : undefined;
@@ -218,7 +227,7 @@ export default function ModelVersion() {
             )}
           </DetailSection>
 
-          {(mv.lifecycle === "PENDING_APPROVAL" || RERUN_LIFECYCLES.includes(mv.lifecycle)) && (
+          {showReviewCommentInput && (
             <label className="panel comment-field">
               Review comment
               <textarea
@@ -260,6 +269,12 @@ export default function ModelVersion() {
                   <dt>Comment</dt>
                   <dd data-testid="approval-comment-value">{mv.approval_comment || "—"}</dd>
                 </div>
+                {mv.approved_by != null ? (
+                  <div>
+                    <dt>Reviewed by</dt>
+                    <dd data-testid="approval-reviewed-by">User #{mv.approved_by}</dd>
+                  </div>
+                ) : null}
                 {mv.approved_at ? (
                   <div>
                     <dt>Approved at</dt>

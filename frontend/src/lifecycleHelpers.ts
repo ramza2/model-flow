@@ -121,6 +121,39 @@ export function parseTargetsFromParams(params: Record<string, string> | null | u
   return parseTargetValue(params.target_columns || params.target_column || "");
 }
 
+/** True when every run shares the same ordered target list. */
+export function targetColumnsAreIdentical(targetLists: string[][]): boolean {
+  if (targetLists.length === 0) return false;
+  const first = targetLists[0] ?? [];
+  if (first.length === 0) return false;
+  return targetLists.every(
+    (targets) =>
+      targets.length === first.length && targets.every((name, index) => name === first[index]),
+  );
+}
+
+/**
+ * Resolve the training job id linked to an MLflow run.
+ * Production training writes params.job_id; legacy tag keys remain as fallback only.
+ * Non-numeric values are rejected so we never invent a Job link.
+ */
+export function resolveTrainingJobIdFromRun(run: {
+  params?: Record<string, string> | null;
+  tags?: Record<string, string> | null;
+}): string | null {
+  const candidates = [
+    run.params?.job_id,
+    run.tags?.["modelflow.training_job_id"],
+    run.tags?.training_job_id,
+  ];
+  for (const value of candidates) {
+    if (value == null) continue;
+    const trimmed = String(value).trim();
+    if (/^\d+$/.test(trimmed)) return trimmed;
+  }
+  return null;
+}
+
 export function formatMetricKeyLabel(key: string): string {
   return key.replaceAll("_", " ");
 }

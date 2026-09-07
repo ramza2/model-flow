@@ -53,7 +53,25 @@ describe("RunDetail", () => {
     expect(screen.getByTestId("run-targets")).toHaveTextContent("cooling_load");
   });
 
-  it("links to training job only when tag is present", async () => {
+  it("links to training job from params.job_id (production shape)", async () => {
+    apiMock.mockResolvedValue({
+      run_id: "run-abc",
+      experiment_id: "1",
+      status: "FINISHED",
+      start_time: null,
+      end_time: null,
+      params: { job_id: "99", algorithm: "ridge" },
+      metrics: {},
+      artifact_uri: null,
+      tags: {
+        "mlflow.runName": "linked-run",
+      },
+    });
+    renderPage();
+    expect(await screen.findByTestId("open-training-job")).toHaveAttribute("href", "/projects/7/jobs/99");
+  });
+
+  it("falls back to numeric training_job_id tag when params.job_id is absent", async () => {
     apiMock.mockResolvedValue({
       run_id: "run-abc",
       experiment_id: "1",
@@ -64,11 +82,49 @@ describe("RunDetail", () => {
       metrics: {},
       artifact_uri: null,
       tags: {
-        "mlflow.runName": "linked-run",
-        "modelflow.training_job_id": "99",
+        "mlflow.runName": "legacy-tag-run",
+        "modelflow.training_job_id": "77",
       },
     });
     renderPage();
-    expect(await screen.findByTestId("open-training-job")).toHaveAttribute("href", "/projects/7/jobs/99");
+    expect(await screen.findByTestId("open-training-job")).toHaveAttribute("href", "/projects/7/jobs/77");
+  });
+
+  it("does not invent a training job link from non-numeric values", async () => {
+    apiMock.mockResolvedValue({
+      run_id: "run-abc",
+      experiment_id: "1",
+      status: "FINISHED",
+      start_time: null,
+      end_time: null,
+      params: { job_id: "run-abc" },
+      metrics: {},
+      artifact_uri: null,
+      tags: { "mlflow.runName": "no-link" },
+    });
+    renderPage();
+    await screen.findByRole("heading", { name: "no-link" });
+    expect(screen.queryByTestId("open-training-job")).not.toBeInTheDocument();
+  });
+
+  it("humanizes per-target metric labels with actual target names", async () => {
+    apiMock.mockResolvedValue({
+      run_id: "run-abc",
+      experiment_id: "1",
+      status: "FINISHED",
+      start_time: null,
+      end_time: null,
+      params: { target_columns: '["cooling_load","power_usage"]' },
+      metrics: { val_target_0_rmse: 1.1 },
+      artifact_uri: null,
+      tags: { "mlflow.runName": "metric-labels" },
+    });
+    renderPage();
+    await screen.findByText("val_target_0_rmse");
+    const labels = screen.getAllByText(/val cooling load rmse/i);
+    expect(labels.length).toBeGreaterThan(0);
+    for (const node of labels) {
+      expect(node.textContent || "").not.toMatch(/target 0/i);
+    }
   });
 });

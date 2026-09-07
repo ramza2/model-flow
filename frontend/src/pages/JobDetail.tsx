@@ -192,7 +192,7 @@ export default function JobDetail() {
                   <dt>Dataset</dt>
                   <dd>
                     <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link>
-                    {job.dataset_version_id ? ` · v${job.dataset_version_id}` : ""}
+                    {job.dataset_version_id ? ` · Version #${job.dataset_version_id}` : ""}
                   </dd>
                 </div>
                 <div data-testid="job-data-split">
