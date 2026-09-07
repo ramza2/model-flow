@@ -1,9 +1,8 @@
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
-  type Dataset,
-  type Endpoint,
+  type Alert,
   type Job,
   type Membership,
   type Project,
@@ -11,6 +10,7 @@ import {
 } from "../api";
 import { useAuth } from "../AuthContext";
 import {
+  EmptyState,
   ErrorNotice,
   Loading,
   PageHeader,
@@ -19,7 +19,32 @@ import {
   confirmAction,
   formatDate,
 } from "../components";
+import { DetailSection } from "../lifecycleComponents";
+import {
+  countActiveJobs,
+  countFailedJobs,
+  factualSignalLines,
+  type OverviewSignals,
+} from "../operationsHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+
+type DataMetrics = {
+  dataset_count: number;
+  dataset_version_count: number;
+  quality_check_count: number;
+  failed_quality_check_count: number;
+  latest_quality_status: string | null;
+};
+
+type ModelMetrics = {
+  model_version_count: number;
+  lifecycle_counts: Record<string, number>;
+  endpoint_count: number;
+  ready_endpoint_count: number;
+  total_requests: number;
+  total_errors: number;
+  latest_drift_status: string | null;
+};
 
 export default function ProjectOverview() {
   const { projectId } = useParams();
@@ -27,9 +52,10 @@ export default function ProjectOverview() {
   const { user } = useAuth();
   const { selectProject, refreshProjects } = useProject();
   const [project, setProject] = useState<Project | null>(null);
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
+  const [dataMetrics, setDataMetrics] = useState<DataMetrics | null>(null);
+  const [modelMetrics, setModelMetrics] = useState<ModelMetrics | null>(null);
+  const [openAlerts, setOpenAlerts] = useState<Alert[]>([]);
   const [members, setMembers] = useState<Membership[]>([]);
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<ProjectRole>("VIEWER");
@@ -46,18 +72,20 @@ export default function ProjectOverview() {
     try {
       const projectRow = await api<Project>(`/projects/${projectId}`);
       const canManage = userCanProject(user, projectRow, "PROJECT_ADMIN");
-      const [datasetRows, jobRows, endpointRows, memberRows] = await Promise.all([
-        api<Dataset[]>(`/projects/${projectId}/datasets`),
+      const [jobRows, dataRows, modelRows, alertRows, memberRows] = await Promise.all([
         api<Job[]>(`/projects/${projectId}/jobs`),
-        api<Endpoint[]>(`/projects/${projectId}/endpoints`),
+        api<DataMetrics>(`/projects/${projectId}/monitoring/data`),
+        api<ModelMetrics>(`/projects/${projectId}/monitoring/models`),
+        api<Alert[]>(`/projects/${projectId}/alerts?is_resolved=false`),
         canManage ? api<Membership[]>(`/projects/${projectId}/members`) : Promise.resolve([]),
       ]);
       setProject(projectRow);
       setName(projectRow.name);
       setDescription(projectRow.description);
-      setDatasets(datasetRows);
       setJobs(jobRows);
-      setEndpoints(endpointRows);
+      setDataMetrics(dataRows);
+      setModelMetrics(modelRows);
+      setOpenAlerts(alertRows);
       setMembers(memberRows);
       selectProject(projectRow.id);
     } catch (reason) {
@@ -75,6 +103,27 @@ export default function ProjectOverview() {
   const canWriteData = userCanProject(user, project, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canTrain = userCanProject(user, project, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canBuildPipeline = userCanProject(user, project, "ML_ENGINEER", "PROJECT_ADMIN");
+
+  const signals: OverviewSignals | null = useMemo(() => {
+    if (!dataMetrics || !modelMetrics) return null;
+    return {
+      datasetCount: dataMetrics.dataset_count,
+      failedQualityChecks: dataMetrics.failed_quality_check_count,
+      latestQualityStatus: dataMetrics.latest_quality_status,
+      jobCount: jobs.length,
+      activeJobs: countActiveJobs(jobs),
+      failedJobs: countFailedJobs(jobs),
+      modelVersionCount: modelMetrics.model_version_count,
+      productionModels: modelMetrics.lifecycle_counts.PRODUCTION ?? 0,
+      lifecycleCounts: modelMetrics.lifecycle_counts,
+      endpointCount: modelMetrics.endpoint_count,
+      readyEndpoints: modelMetrics.ready_endpoint_count,
+      openAlerts: openAlerts.length,
+    };
+  }, [dataMetrics, modelMetrics, jobs, openAlerts]);
+
+  const signalLines = signals ? factualSignalLines(signals) : [];
+  const recentJobs = jobs.slice(0, 5);
 
   async function saveProject(event: FormEvent) {
     event.preventDefault();
@@ -136,10 +185,10 @@ export default function ProjectOverview() {
   }
 
   return (
-    <div>
+    <div className="ops-page">
       <PageHeader
         title={project?.name ?? "Project overview"}
-        description={project?.description || "Project activity, access, and next actions."}
+        description={project?.description || "Project lifecycle control center for data, build, models, serving, and alerts."}
         actions={canManage ? <button className="btn secondary" onClick={() => setEditing(!editing)}>Edit project</button> : undefined}
       />
       <ErrorNotice message={error} />
@@ -147,7 +196,7 @@ export default function ProjectOverview() {
       {loading ? <Loading label="Loading project" /> : (
         <>
           {editing && (
-            <form className="panel form" onSubmit={saveProject}>
+            <form className="panel form" onSubmit={saveProject} data-testid="project-edit-form">
               <label>Name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
               <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               <div className="row-actions">
@@ -156,25 +205,148 @@ export default function ProjectOverview() {
               </div>
             </form>
           )}
-          <div className="grid stats-grid">
-            <div className="stat"><div className="label">Datasets</div><div className="value">{datasets.length}</div></div>
-            <div className="stat"><div className="label">Training jobs</div><div className="value">{jobs.length}</div></div>
-            <div className="stat"><div className="label">Active jobs</div><div className="value">{jobs.filter((job) => ["pending", "queued", "running"].includes(job.status)).length}</div></div>
-            <div className="stat"><div className="label">Deployments</div><div className="value">{endpoints.length}</div></div>
+
+          {signals && (
+            <section className="panel ops-attention-panel" data-testid="overview-signals">
+              <span className="eyebrow">Lifecycle signals</span>
+              <ul className="ops-signal-list">
+                {signalLines.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <div className="ops-lifecycle-grid">
+            <DetailSection eyebrow="Data" title="Datasets & quality" testId="overview-data">
+              {!dataMetrics ? <Loading label="Loading data signals" /> : (
+                <dl className="key-values">
+                  <div><dt>Datasets</dt><dd>{dataMetrics.dataset_count}</dd></div>
+                  <div><dt>Versions</dt><dd>{dataMetrics.dataset_version_count}</dd></div>
+                  <div><dt>Failed quality checks</dt><dd>{dataMetrics.failed_quality_check_count}</dd></div>
+                  <div>
+                    <dt>Latest quality</dt>
+                    <dd>{dataMetrics.latest_quality_status
+                      ? <StatusBadge status={dataMetrics.latest_quality_status} />
+                      : "—"}</dd>
+                  </div>
+                </dl>
+              )}
+              <div className="row-actions">
+                <Link to={`/projects/${projectId}/datasets`}>Open datasets</Link>
+              </div>
+            </DetailSection>
+
+            <DetailSection eyebrow="Build" title="Training activity" testId="overview-build">
+              <dl className="key-values">
+                <div><dt>Training jobs</dt><dd>{signals?.jobCount ?? 0}</dd></div>
+                <div><dt>Active jobs</dt><dd>{signals?.activeJobs ?? 0}</dd></div>
+                <div><dt>Failed jobs</dt><dd>{signals?.failedJobs ?? 0}</dd></div>
+              </dl>
+              {recentJobs.length === 0 ? (
+                <EmptyState title="No training jobs yet" description="Start training from a dataset when data is ready." />
+              ) : (
+                <div className="activity-list compact">
+                  {recentJobs.map((job) => (
+                    <Link key={job.id} to={`/projects/${projectId}/jobs/${job.id}`}>
+                      <div>
+                        <strong>{job.name}</strong>
+                        <small>{job.algorithm}</small>
+                      </div>
+                      <StatusBadge status={job.status} />
+                    </Link>
+                  ))}
+                </div>
+              )}
+              <div className="row-actions">
+                <Link to={`/projects/${projectId}/jobs`}>Open training jobs</Link>
+              </div>
+            </DetailSection>
+
+            <DetailSection eyebrow="Models" title="Registry lifecycle" testId="overview-models">
+              {!modelMetrics ? <Loading label="Loading model signals" /> : (
+                <>
+                  <dl className="key-values">
+                    <div><dt>Model versions</dt><dd>{modelMetrics.model_version_count}</dd></div>
+                    <div><dt>Production</dt><dd>{modelMetrics.lifecycle_counts.PRODUCTION ?? 0}</dd></div>
+                  </dl>
+                  <div className="tag-list">
+                    {Object.entries(modelMetrics.lifecycle_counts).map(([name, count]) => (
+                      <span key={name}>{name.replaceAll("_", " ")} · {count}</span>
+                    ))}
+                  </div>
+                </>
+              )}
+              <div className="row-actions">
+                <Link to={`/projects/${projectId}/registry`}>Open registry</Link>
+              </div>
+            </DetailSection>
+
+            <DetailSection eyebrow="Serving" title="Deployments" testId="overview-serving">
+              {!modelMetrics ? <Loading label="Loading serving signals" /> : (
+                <dl className="key-values">
+                  <div><dt>Deployments</dt><dd>{modelMetrics.endpoint_count}</dd></div>
+                  <div><dt>Ready</dt><dd>{modelMetrics.ready_endpoint_count} / {modelMetrics.endpoint_count}</dd></div>
+                  <div><dt>Total requests</dt><dd>{modelMetrics.total_requests.toLocaleString()}</dd></div>
+                  <div><dt>Total errors</dt><dd>{modelMetrics.total_errors.toLocaleString()}</dd></div>
+                </dl>
+              )}
+              <div className="row-actions">
+                <Link to={`/projects/${projectId}/deployments`}>Open deployments</Link>
+              </div>
+            </DetailSection>
           </div>
-          <section className="panel">
-            <div className="panel-title"><div><span className="eyebrow">Quick start</span><h2>Project workflow</h2></div></div>
+
+          <DetailSection
+            eyebrow="Alerts"
+            title="Open alerts"
+            testId="overview-alerts"
+            actions={<Link to={`/projects/${projectId}/alerts`}>View all alerts</Link>}
+          >
+            {openAlerts.length === 0 ? (
+              <p className="muted" data-testid="overview-alerts-empty">0 open alerts</p>
+            ) : (
+              <div className="activity-list">
+                {openAlerts.slice(0, 3).map((alert) => (
+                  <div key={alert.id} className="ops-alert-row">
+                    <div>
+                      <div className="row-actions">
+                        <StatusBadge status={alert.severity} />
+                        {!alert.is_read && <span className="unread-label">Unread</span>}
+                      </div>
+                      <strong>{alert.title}</strong>
+                      <small>{formatDate(alert.created_at)}</small>
+                    </div>
+                    {alert.link_path ? <Link to={alert.link_path}>Open</Link> : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </DetailSection>
+
+          <section className="panel" data-testid="overview-next-actions">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Next actions</span>
+                <h2>Continue the lifecycle</h2>
+              </div>
+            </div>
             <div className="row-actions">
               {canWriteData && <Link className="btn" to={`/projects/${projectId}/datasets`}>Upload dataset</Link>}
               {canTrain && <Link className="btn secondary" to={`/projects/${projectId}/jobs/new`}>Start training</Link>}
               <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>View experiments</Link>
               {canBuildPipeline && <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>Build pipeline</Link>}
+              <Link className="btn secondary" to={`/projects/${projectId}/monitoring`}>Open monitoring</Link>
             </div>
           </section>
+
           {canManage && (
-            <section className="panel">
+            <section className="panel ops-secondary-panel" data-testid="overview-members">
               <div className="panel-title">
-                <div><span className="eyebrow">Access</span><h2>Project members</h2></div>
+                <div>
+                  <span className="eyebrow">Access</span>
+                  <h2>Project members</h2>
+                </div>
                 <StatusBadge status={project?.role} />
               </div>
               <form className="inline-form" onSubmit={addMember}>
@@ -204,8 +376,9 @@ export default function ProjectOverview() {
               </div>
             </section>
           )}
+
           {canManage && (
-            <section className="panel danger-zone">
+            <section className="panel danger-zone ops-secondary-panel" data-testid="overview-danger">
               <div><h2>Delete project</h2><p>Remove this project from active use. Retained data follows system policy.</p></div>
               <button className="btn danger" onClick={deleteProject}>Delete project</button>
             </section>

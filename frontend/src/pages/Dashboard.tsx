@@ -1,27 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Alert, type Dataset, type Endpoint, type Job } from "../api";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge } from "../components";
+import {
+  buildHomeNextActions,
+  countActiveJobs,
+  countFailedJobs,
+  type HomeStats,
+} from "../operationsHelpers";
 import { useProject } from "../ProjectContext";
-
-type ProjectStats = {
-  datasets: number;
-  jobs: number;
-  running: number;
-  failed: number;
-  endpoints: number;
-  unreadAlerts: number;
-};
 
 export default function Dashboard() {
   const { projects, selectedProject, loading: projectLoading } = useProject();
-  const [stats, setStats] = useState<ProjectStats | null>(null);
+  const [stats, setStats] = useState<HomeStats | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (!selectedProject) {
       setStats(null);
+      setJobs([]);
       return;
     }
     setStats(null);
@@ -37,8 +35,8 @@ export default function Dashboard() {
         setStats({
           datasets: datasets.length,
           jobs: trainingJobs.length,
-          running: trainingJobs.filter((job) => ["pending", "queued", "running"].includes(job.status)).length,
-          failed: trainingJobs.filter((job) => job.status === "failed").length,
+          running: countActiveJobs(trainingJobs),
+          failed: countFailedJobs(trainingJobs),
           endpoints: endpoints.length,
           unreadAlerts: alerts.length,
         });
@@ -46,12 +44,17 @@ export default function Dashboard() {
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Dashboard could not be loaded."));
   }, [selectedProject]);
 
+  const nextActions = useMemo(
+    () => (selectedProject && stats ? buildHomeNextActions(selectedProject.id, stats) : []),
+    [selectedProject, stats],
+  );
+
   return (
-    <div>
+    <div className="ops-page">
       <PageHeader
         title="Workspace home"
-        description="Move from trusted data to monitored predictions in one place."
-        actions={<Link className="btn" to="/projects/new">＋ Create project</Link>}
+        description="See what needs attention in the selected project and choose the next supported action."
+        actions={<Link className="btn" to="/projects/new">Create project</Link>}
       />
       <ErrorNotice message={error} />
       {projectLoading ? (
@@ -64,53 +67,134 @@ export default function Dashboard() {
         />
       ) : (
         <>
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Current project</span>
-              <h2>{selectedProject.name}</h2>
+          <section className="panel ops-context-panel" data-testid="home-current-project">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">Current project</span>
+                <h2>{selectedProject.name}</h2>
+                <p className="muted">
+                  {selectedProject.description || "Selected project context for workspace activity."}
+                </p>
+              </div>
+              <Link className="btn secondary" to={`/projects/${selectedProject.id}`}>
+                View overview
+              </Link>
             </div>
-            <Link to={`/projects/${selectedProject.id}`}>View project overview →</Link>
-          </div>
-          {!stats ? <Loading label="Calculating project activity" /> : (
-            <div className="grid stats-grid">
-              <div className="stat"><div className="label">Projects</div><div className="value">{projects.length}</div></div>
-              <div className="stat"><div className="label">Datasets</div><div className="value">{stats.datasets}</div></div>
-              <div className="stat"><div className="label">Training jobs</div><div className="value">{stats.jobs}</div><small>{stats.running} active</small></div>
-              <div className="stat"><div className="label">Failed jobs</div><div className="value">{stats.failed}</div></div>
-              <div className="stat"><div className="label">Deployments</div><div className="value">{stats.endpoints}</div></div>
-              <div className="stat"><div className="label">Unread alerts</div><div className="value">{stats.unreadAlerts}</div></div>
-            </div>
+          </section>
+
+          {!stats ? (
+            <Loading label="Calculating project activity" />
+          ) : (
+            <>
+              {(stats.failed > 0 || stats.unreadAlerts > 0) && (
+                <section className="panel ops-attention-panel" data-testid="home-attention">
+                  <span className="eyebrow">Needs attention</span>
+                  <ul className="ops-signal-list">
+                    {stats.failed > 0 && (
+                      <li>
+                        <Link to={`/projects/${selectedProject.id}/jobs`}>
+                          {stats.failed} failed training job{stats.failed === 1 ? "" : "s"}
+                        </Link>
+                      </li>
+                    )}
+                    {stats.unreadAlerts > 0 && (
+                      <li>
+                        <Link to={`/projects/${selectedProject.id}/alerts`}>
+                          {stats.unreadAlerts} unread open alert{stats.unreadAlerts === 1 ? "" : "s"}
+                        </Link>
+                      </li>
+                    )}
+                  </ul>
+                </section>
+              )}
+
+              <div className="grid stats-grid" data-testid="home-stats">
+                <div className="stat">
+                  <div className="label">Workspace projects</div>
+                  <div className="value">{projects.length}</div>
+                </div>
+                <div className="stat">
+                  <div className="label">Datasets</div>
+                  <div className="value">{stats.datasets}</div>
+                </div>
+                <div className="stat">
+                  <div className="label">Training jobs</div>
+                  <div className="value">{stats.jobs}</div>
+                  <small>{stats.running} active</small>
+                </div>
+                <div className={`stat${stats.failed > 0 ? " is-attention" : ""}`}>
+                  <div className="label">Failed jobs</div>
+                  <div className="value">{stats.failed}</div>
+                </div>
+                <div className="stat">
+                  <div className="label">Deployments</div>
+                  <div className="value">{stats.endpoints}</div>
+                </div>
+                <div className={`stat${stats.unreadAlerts > 0 ? " is-attention" : ""}`}>
+                  <div className="label">Unread alerts</div>
+                  <div className="value">{stats.unreadAlerts}</div>
+                  {stats.unreadAlerts > 0 && (
+                    <small>
+                      <Link to={`/projects/${selectedProject.id}/alerts`}>Open alerts</Link>
+                    </small>
+                  )}
+                </div>
+              </div>
+            </>
           )}
+
           <div className="two-column">
             <section className="panel">
               <div className="panel-title">
-                <div><span className="eyebrow">Activity</span><h2>Recent training jobs</h2></div>
+                <div>
+                  <span className="eyebrow">Recent activity</span>
+                  <h2>Training jobs</h2>
+                </div>
                 <Link to={`/projects/${selectedProject.id}/jobs`}>View all</Link>
               </div>
               {jobs.length === 0 ? (
                 <EmptyState
                   title="No training jobs"
                   description="Upload a dataset, then configure your first training run."
-                  action={<Link className="btn secondary" to={`/projects/${selectedProject.id}/datasets`}>Add data</Link>}
+                  action={
+                    <Link className="btn secondary" to={`/projects/${selectedProject.id}/datasets`}>
+                      Add data
+                    </Link>
+                  }
                 />
               ) : (
                 <div className="activity-list">
                   {jobs.map((job) => (
                     <Link key={job.id} to={`/projects/${selectedProject.id}/jobs/${job.id}`}>
-                      <div><strong>{job.name}</strong><small>{job.algorithm}</small></div>
+                      <div>
+                        <strong>{job.name}</strong>
+                        <small>{job.algorithm}</small>
+                      </div>
                       <StatusBadge status={job.status} />
                     </Link>
                   ))}
                 </div>
               )}
             </section>
-            <section className="panel">
+            <section className="panel" data-testid="home-next-actions">
               <span className="eyebrow">Next actions</span>
-              <h2>Keep your workflow moving</h2>
+              <h2>Continue from here</h2>
               <div className="action-list">
-                <Link to={`/projects/${selectedProject.id}/datasets`}><span>1</span><div><strong>Add a dataset</strong><small>Upload CSV, JSON, or Parquet.</small></div>→</Link>
-                <Link to={`/projects/${selectedProject.id}/jobs/new`}><span>2</span><div><strong>Train a model</strong><small>Choose data, target, and algorithm.</small></div>→</Link>
-                <Link to={`/projects/${selectedProject.id}/monitoring`}><span>3</span><div><strong>Review operations</strong><small>Check service, data, and model health.</small></div>→</Link>
+                {nextActions.map((action, index) => (
+                  <Link
+                    key={action.id}
+                    to={action.to}
+                    className={action.attention ? "is-attention" : undefined}
+                    data-testid={`home-next-action-${action.id}`}
+                  >
+                    <span>{index + 1}</span>
+                    <div>
+                      <strong>{action.title}</strong>
+                      <small>{action.description}</small>
+                    </div>
+                    →
+                  </Link>
+                ))}
               </div>
             </section>
           </div>
