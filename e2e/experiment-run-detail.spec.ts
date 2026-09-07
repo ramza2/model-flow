@@ -35,7 +35,7 @@ test("experiment run detail navigation from training job", async ({ page }) => {
   await expect(page.getByText("multi_output_regression.csv")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "multi_output_regression.csv" }).click();
 
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-run-detail");
   await page.getByTestId("target-power_usage").check();
   await page.getByTestId("job-submit").click();
@@ -45,4 +45,8 @@ test("experiment run detail navigation from training job", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /e2e-run-detail|run/i })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Logged metrics")).toBeVisible();
   await expect(page.getByText("Run parameters")).toBeVisible();
+  await expect(page.getByTestId("open-training-job")).toBeVisible();
+  await page.getByTestId("open-training-job").click();
+  await expect(page.getByRole("heading", { name: /e2e-run-detail/i })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: "Open experiment" })).toBeVisible();
 });

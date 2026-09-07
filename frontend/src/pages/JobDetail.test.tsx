@@ -97,6 +97,9 @@ describe("JobDetail retrain", () => {
     renderPage("42");
     expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
     expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Dataset #3/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Version #30/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/· v30/)).not.toBeInTheDocument();
   });
 
   it("hides Retrain on non-succeeded jobs", async () => {
@@ -200,8 +203,10 @@ describe("JobDetail retrain", () => {
     });
     renderPage("42");
     const targetRow = await screen.findByTestId("job-target-columns");
-    expect(targetRow).toHaveTextContent("Target columns");
-    expect(targetRow).toHaveTextContent("target_a, target_b");
+    expect(targetRow).toHaveTextContent("Targets");
+    expect(targetRow).toHaveTextContent("target_a");
+    expect(targetRow).toHaveTextContent("target_b");
+    expect(targetRow.textContent).not.toMatch(/target 0|target\[0\]/i);
   });
 
   it("opens register dialog with default model name and submits custom name", async () => {

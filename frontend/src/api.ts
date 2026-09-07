@@ -380,6 +380,10 @@ export type ModelVersion = {
   gate_results: Record<string, unknown>;
   approval_comment: string | null;
   training_job_id: number | null;
+  dataset_version_id?: number | null;
+  pipeline_run_id?: number | null;
+  approved_by?: number | null;
+  approved_at?: string | null;
   created_at: string;
 };
 

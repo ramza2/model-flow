@@ -518,7 +518,7 @@ export default function DatasetDetail() {
       <PageHeader
         title={ds?.name ?? "Dataset"}
         description={ds ? `${ds.row_count.toLocaleString()} rows · ${ds.column_count} columns · ${versions.length} version${versions.length === 1 ? "" : "s"}` : "Dataset profile and history."}
-        actions={canWrite ? <Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}`}>▶ Train on this dataset</Link> : undefined}
+        actions={canWrite ? <Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}`} data-testid="train-on-dataset">▶ Train on dataset</Link> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
@@ -538,6 +538,13 @@ export default function DatasetDetail() {
             <div className="stat" data-testid="quality-check-count"><div className="label">Quality checks</div><div className="value">{checks.length}</div></div>
             <div className="stat"><div className="label">Saved splits</div><div className="value">{splits.length}</div></div>
           </div>
+          <section className="panel" data-testid="dataset-lifecycle-entry">
+            <div className="panel-title"><div><span className="eyebrow">Lifecycle</span><h2>Start training from this dataset</h2></div></div>
+            <p className="form-hint">
+              Datasets feed Training Jobs → Experiment Runs → Model Versions → Deployments.
+              Use Train on dataset to open Job Create with this dataset preselected.
+            </p>
+          </section>
           <section className="panel">
             <div className="panel-title"><div><span className="eyebrow">Profile</span><h2>Column statistics</h2></div></div>
             <div className="table-wrap">

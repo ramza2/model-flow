@@ -11,7 +11,9 @@ Phase 1.5 implementation baseline documents are on `main`:
 
 Phase **1.5-A — Shell & shared design system** is complete on `main`.
 
-Phase **1.5-B — Pipeline UX** is in progress on branch `cursor/phase1.5b-pipeline-ux`.
+Phase **1.5-B — Pipeline UX** is complete on `main` (merged via PR #34).
+
+Phase **1.5-C — ML lifecycle UX** is in progress on branch `cursor/phase1.5c-ml-lifecycle-ux`.
 
 The implementation strategy is direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
 
@@ -145,4 +147,8 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete review/merge of the Phase 1.5-B Draft PR (`cursor/phase1.5b-pipeline-ux`), then begin **Phase 1.5-C — ML lifecycle UX** in a new feature branch.
+Complete **Phase 1.5-C — ML lifecycle UX** on `cursor/phase1.5c-ml-lifecycle-ux`, then begin **Phase 1.5-D — Operations & overview UX**.
+
+Known UX debt retained from Phase 1.5-B (not in Phase 1.5-C scope):
+
+- Pipeline `beforeunload` / ← Pipelines confirm without full SPA router navigation blocker for sidebar/project switch.

@@ -147,6 +147,11 @@ def register_model(
         metadata["feature_schema"] = feature_schema
     if run_params.get("problem_type"):
         metadata.setdefault("problem_type", run_params["problem_type"])
+    registry_service.apply_registration_target_metadata(
+        metadata,
+        training_job=job,
+        mlflow_params=run_params,
+    )
     row = ModelVersion(
         project_id=project_id,
         name=body.name,

@@ -3,12 +3,22 @@ import { Link, useParams } from "react-router-dom";
 import { api, type Endpoint } from "../api";
 import { useAuth } from "../AuthContext";
 import { ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice } from "../components";
+import { formatNamedPrediction } from "../lifecycleHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 import { buildPredictionSamplePayload } from "../trainingConfig";
 
 function formatPredictionPreview(prediction: unknown): string {
-  if (prediction !== null && typeof prediction === "object") {
-    return JSON.stringify(prediction, null, 2);
+  if (prediction !== null && typeof prediction === "object" && !Array.isArray(prediction)) {
+    // Prefer named target keys for multi-output; keep JSON for nested readability in tests/overflow.
+    const named = formatNamedPrediction(prediction);
+    try {
+      return JSON.stringify(prediction, null, 2);
+    } catch {
+      return named;
+    }
+  }
+  if (Array.isArray(prediction)) {
+    return prediction.map((item, index) => `Item ${index + 1}\n${formatPredictionPreview(item)}`).join("\n\n");
   }
   return String(prediction);
 }
@@ -119,6 +129,12 @@ export default function Predict() {
             <div className="panel-title"><div><span className="eyebrow">Response</span><h2>Prediction result</h2></div></div>
             {result ? (
               <>
+                <div className="prediction-summary" data-testid="predict-summary">
+                  <span className="eyebrow">Summary</span>
+                  <pre className="prediction-value prediction-preview named-prediction">
+                    {formatNamedPrediction(result.predictions[0])}
+                  </pre>
+                </div>
                 <div className="prediction-value prediction-preview" data-testid="predict-preview">
                   {formatPredictionPreview(result.predictions[0])}
                 </div>

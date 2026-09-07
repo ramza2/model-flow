@@ -45,7 +45,7 @@ test("saved dataset split drives training job", async ({ page }) => {
     timeout: 30_000,
   });
 
-  await page.getByRole("link", { name: "Train on this dataset" }).click();
+  await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-saved-split");
   await expect(page.getByTestId("job-data-split")).toBeVisible();
   await expect(page.getByTestId("job-data-split")).toContainText("e2e-split");
