@@ -149,7 +149,7 @@ describe("Schedules page", () => {
     renderPage();
     expect(await screen.findByTestId("schedule-create-open")).toHaveClass("btn");
     expect(screen.getAllByRole("button", { name: "Run now" })[0]).toHaveClass("btn");
-    expect(screen.getAllByRole("button", { name: "Disable" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "Disable" })[0]).toHaveClass("btn", "link");
     expect(screen.getAllByRole("button", { name: "Edit" })[0]).toHaveClass("btn", "secondary");
     expect(screen.getAllByRole("button", { name: "Delete" })[0]).toHaveClass(
       "btn",
@@ -174,7 +174,7 @@ describe("Schedules page", () => {
     });
     renderPage();
     expect(await screen.findByText("paused-import")).toBeInTheDocument();
-    expect(screen.getByText("No")).toBeInTheDocument();
+    expect(screen.getByText(/disabled/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith(
@@ -199,11 +199,37 @@ describe("Schedules page", () => {
     });
     renderPage();
     fireEvent.click(await screen.findByTestId("schedule-create-open"));
+    expect(await screen.findByTestId("schedule-drawer")).toBeInTheDocument();
     const enabledCheckbox = screen.getByRole("checkbox");
     expect(enabledCheckbox.closest("label")).toHaveClass("checkbox-row");
     expect(enabledCheckbox).toBeInTheDocument();
     expect(screen.getByTestId("schedule-submit")).toHaveClass("btn");
     expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("btn", "secondary");
+    fireEvent.click(screen.getByTestId("schedule-advanced-toggle"));
+    expect(screen.getByTestId("schedule-advanced")).toBeInTheDocument();
+  });
+
+  it("prefills pipeline create drawer from query params", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [];
+      if (path.endsWith("/pipelines")) {
+        return [{ id: 42, name: "Ops pipeline", status: "published", latest_version: 1 }];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/schedules?create=1&target_type=pipeline_run&pipeline_id=42"]}>
+        <Routes>
+          <Route path="/projects/:projectId/schedules" element={<Schedules />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("schedule-drawer")).toBeInTheDocument();
+    expect(screen.getByTestId("schedule-pipeline-select")).toHaveValue("42");
   });
 
   it("polls run history while active runs exist and stops at terminal status", async () => {

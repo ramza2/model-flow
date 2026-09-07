@@ -326,6 +326,7 @@ export function Pipelines() {
                 <th>Version</th>
                 <th>Type</th>
                 <th>Created</th>
+                <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -345,6 +346,17 @@ export function Pipelines() {
                   <td>v{pipeline.latest_version}</td>
                   <td>{pipeline.is_template ? "Template" : "Project pipeline"}</td>
                   <td>{formatDate(pipeline.created_at)}</td>
+                  <td className="align-right">
+                    {canWrite && (
+                      <Link
+                        className="btn link"
+                        data-testid={`pipeline-schedule-${pipeline.id}`}
+                        to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
+                      >
+                        Schedule
+                      </Link>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -872,6 +884,26 @@ export function PipelineBuilder() {
               >
                 Publish
               </button>
+              <Link
+                className="btn secondary"
+                data-testid="pipeline-schedule-entry"
+                to={
+                  dirty
+                    ? `#`
+                    : `/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`
+                }
+                title={
+                  dirty
+                    ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
+                    : "Create a schedule for this pipeline"
+                }
+                aria-disabled={dirty ? "true" : undefined}
+                onClick={(event) => {
+                  if (dirty) event.preventDefault();
+                }}
+              >
+                Schedule
+              </Link>
               <button
                 className="btn"
                 disabled={publishRunDisabled}
