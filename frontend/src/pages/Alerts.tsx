@@ -72,7 +72,7 @@ export default function Alerts() {
     <div className="ops-page">
       <PageHeader
         title="Alerts"
-        description="Actionable exception inbox for data, model, and service events."
+        description="Review project alerts for data, model, and service events."
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />

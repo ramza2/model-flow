@@ -2,24 +2,67 @@ import { describe, expect, it } from "vitest";
 import {
   buildHomeNextActions,
   buildMonitoringAttention,
+  countAttentionAlerts,
   cronPresetLabel,
   factualSignalLines,
   targetTypeLabel,
 } from "./operationsHelpers";
 
 describe("operationsHelpers", () => {
-  it("builds attention-first home next actions", () => {
+  it("builds attention-first home next actions for warning/error alerts", () => {
     const actions = buildHomeNextActions(7, {
       datasets: 2,
       jobs: 3,
       running: 1,
       failed: 2,
       endpoints: 1,
-      unreadAlerts: 1,
+      unreadAlerts: 5,
+      attentionAlerts: 1,
     });
     expect(actions[0]?.id).toBe("failed-jobs");
     expect(actions[1]?.id).toBe("alerts");
     expect(actions.every((action) => action.to.startsWith("/projects/7"))).toBe(true);
+  });
+
+  it("does not add alert attention actions for info-only unread alerts", () => {
+    const actions = buildHomeNextActions(7, {
+      datasets: 2,
+      jobs: 3,
+      running: 0,
+      failed: 0,
+      endpoints: 1,
+      unreadAlerts: 17,
+      attentionAlerts: 0,
+    });
+    expect(actions.some((action) => action.id === "alerts")).toBe(false);
+    expect(actions[0]?.id).toBe("overview");
+  });
+
+  it("keeps failed-job attention when only info alerts are unread", () => {
+    const actions = buildHomeNextActions(7, {
+      datasets: 2,
+      jobs: 3,
+      running: 0,
+      failed: 1,
+      endpoints: 1,
+      unreadAlerts: 17,
+      attentionAlerts: 0,
+    });
+    expect(actions[0]?.id).toBe("failed-jobs");
+    expect(actions.some((action) => action.id === "alerts")).toBe(false);
+  });
+
+  it("counts attention alerts from warning/error/critical only", () => {
+    expect(
+      countAttentionAlerts([
+        { severity: "info" },
+        { severity: "info" },
+        { severity: "warning" },
+        { severity: "error" },
+        { severity: "critical" },
+      ]),
+    ).toBe(3);
+    expect(countAttentionAlerts([{ severity: "info" }, { severity: "info" }])).toBe(0);
   });
 
   it("uses factual overview signal wording", () => {

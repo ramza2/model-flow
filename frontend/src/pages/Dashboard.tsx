@@ -5,6 +5,7 @@ import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge } from "../co
 import {
   buildHomeNextActions,
   countActiveJobs,
+  countAttentionAlerts,
   countFailedJobs,
   type HomeStats,
 } from "../operationsHelpers";
@@ -39,6 +40,7 @@ export default function Dashboard() {
           failed: countFailedJobs(trainingJobs),
           endpoints: endpoints.length,
           unreadAlerts: alerts.length,
+          attentionAlerts: countAttentionAlerts(alerts),
         });
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Dashboard could not be loaded."));
@@ -86,7 +88,7 @@ export default function Dashboard() {
             <Loading label="Calculating project activity" />
           ) : (
             <>
-              {(stats.failed > 0 || stats.unreadAlerts > 0) && (
+              {(stats.failed > 0 || stats.attentionAlerts > 0) && (
                 <section className="panel ops-attention-panel" data-testid="home-attention">
                   <span className="eyebrow">Needs attention</span>
                   <ul className="ops-signal-list">
@@ -97,10 +99,10 @@ export default function Dashboard() {
                         </Link>
                       </li>
                     )}
-                    {stats.unreadAlerts > 0 && (
+                    {stats.attentionAlerts > 0 && (
                       <li>
                         <Link to={`/projects/${selectedProject.id}/alerts`}>
-                          {stats.unreadAlerts} unread open alert{stats.unreadAlerts === 1 ? "" : "s"}
+                          {stats.attentionAlerts} alert{stats.attentionAlerts === 1 ? "" : "s"} needing attention
                         </Link>
                       </li>
                     )}
@@ -130,7 +132,7 @@ export default function Dashboard() {
                   <div className="label">Deployments</div>
                   <div className="value">{stats.endpoints}</div>
                 </div>
-                <div className={`stat${stats.unreadAlerts > 0 ? " is-attention" : ""}`}>
+                <div className={`stat${stats.attentionAlerts > 0 ? " is-attention" : ""}`}>
                   <div className="label">Unread alerts</div>
                   <div className="value">{stats.unreadAlerts}</div>
                   {stats.unreadAlerts > 0 && (

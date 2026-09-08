@@ -1,4 +1,4 @@
-import type { Job } from "./api";
+import type { Alert, Job } from "./api";
 
 export type HomeStats = {
   datasets: number;
@@ -7,6 +7,8 @@ export type HomeStats = {
   failed: number;
   endpoints: number;
   unreadAlerts: number;
+  /** Unread+unresolved alerts that require attention (warning/error/critical). */
+  attentionAlerts: number;
 };
 
 export type NextAction = {
@@ -18,6 +20,7 @@ export type NextAction = {
 };
 
 const ACTIVE_JOB_STATUSES = new Set(["pending", "queued", "running", "dispatched"]);
+const ATTENTION_ALERT_SEVERITIES = new Set(["warning", "error", "critical"]);
 
 export function countActiveJobs(jobs: Job[]): number {
   return jobs.filter((job) => ACTIVE_JOB_STATUSES.has(job.status)).length;
@@ -25,6 +28,10 @@ export function countActiveJobs(jobs: Job[]): number {
 
 export function countFailedJobs(jobs: Job[]): number {
   return jobs.filter((job) => job.status === "failed").length;
+}
+
+export function countAttentionAlerts(alerts: Array<Pick<Alert, "severity">>): number {
+  return alerts.filter((alert) => ATTENTION_ALERT_SEVERITIES.has(alert.severity)).length;
 }
 
 export function cronPresetLabel(expression: string): string {
@@ -56,11 +63,11 @@ export function buildHomeNextActions(
       attention: true,
     });
   }
-  if (stats.unreadAlerts > 0) {
+  if (stats.attentionAlerts > 0) {
     actions.push({
       id: "alerts",
-      title: "Review unread alerts",
-      description: `${stats.unreadAlerts} open unread alert${stats.unreadAlerts === 1 ? "" : "s"}.`,
+      title: "Review alerts needing attention",
+      description: `${stats.attentionAlerts} warning/error/critical alert${stats.attentionAlerts === 1 ? "" : "s"} need review.`,
       to: `/projects/${projectId}/alerts`,
       attention: true,
     });
