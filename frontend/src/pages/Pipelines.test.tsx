@@ -783,7 +783,8 @@ describe("Pipeline contextual scheduling gates", () => {
     stubBuilderApi();
     renderBuilder();
     const draftSchedule = await screen.findByTestId("pipeline-schedule-entry");
-    expect(draftSchedule).toHaveAttribute("aria-disabled", "true");
+    expect(draftSchedule.tagName).toBe("BUTTON");
+    expect(draftSchedule).toBeDisabled();
     expect(draftSchedule).toHaveAttribute("title", "Publish this pipeline before scheduling.");
   });
 
@@ -804,17 +805,20 @@ describe("Pipeline contextual scheduling gates", () => {
     });
     renderBuilder();
     const publishedClean = await screen.findByTestId("pipeline-schedule-entry");
-    await waitFor(() => expect(publishedClean).not.toHaveAttribute("aria-disabled"));
+    await waitFor(() => expect(publishedClean.tagName).toBe("A"));
     expect(publishedClean).toHaveAttribute(
       "href",
       "/projects/7/schedules?create=1&target_type=pipeline_run&pipeline_id=9",
     );
+    expect(publishedClean).not.toHaveAttribute("aria-disabled");
 
     await screen.findByTestId("pipeline-library-dataset_load");
     fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     await waitFor(() => expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument());
-    expect(screen.getByTestId("pipeline-schedule-entry")).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByTestId("pipeline-schedule-entry")).toHaveAttribute(
+    const dirtySchedule = screen.getByTestId("pipeline-schedule-entry");
+    expect(dirtySchedule.tagName).toBe("BUTTON");
+    expect(dirtySchedule).toBeDisabled();
+    expect(dirtySchedule).toHaveAttribute(
       "title",
       expect.stringContaining("Save your changes before scheduling"),
     );

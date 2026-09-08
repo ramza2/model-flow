@@ -844,6 +844,12 @@ export function PipelineBuilder() {
 
   const actionsDisabled = Boolean(busy);
   const publishRunDisabled = actionsDisabled || dirty;
+  const canSchedule = !dirty && pipeline.status === "published";
+  const scheduleReason = dirty
+    ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
+    : pipeline.status !== "published"
+      ? "Publish this pipeline before scheduling."
+      : "Create a schedule for this pipeline";
 
   return (
     <div className="pipeline-page">
@@ -896,28 +902,27 @@ export function PipelineBuilder() {
               >
                 Publish
               </button>
-              <Link
-                className="btn secondary"
-                data-testid="pipeline-schedule-entry"
-                to={
-                  dirty || pipeline.status !== "published"
-                    ? `#`
-                    : `/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`
-                }
-                title={
-                  dirty
-                    ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
-                    : pipeline.status !== "published"
-                      ? "Publish this pipeline before scheduling."
-                      : "Create a schedule for this pipeline"
-                }
-                aria-disabled={dirty || pipeline.status !== "published" ? "true" : undefined}
-                onClick={(event) => {
-                  if (dirty || pipeline.status !== "published") event.preventDefault();
-                }}
-              >
-                Schedule
-              </Link>
+              {canSchedule ? (
+                <Link
+                  className="btn secondary"
+                  data-testid="pipeline-schedule-entry"
+                  to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
+                  title={scheduleReason}
+                >
+                  Schedule
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="pipeline-schedule-entry"
+                  disabled
+                  title={scheduleReason}
+                  aria-label={`Schedule unavailable. ${scheduleReason}`}
+                >
+                  Schedule
+                </button>
+              )}
               <button
                 className="btn"
                 disabled={publishRunDisabled}
