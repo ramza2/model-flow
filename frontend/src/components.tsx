@@ -104,6 +104,8 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
       "approved",
       "production",
       "published",
+      "enabled",
+      "resolved",
     ]),
   },
   negative: {
@@ -157,6 +159,7 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
       "archived",
       "unknown",
       "inactive",
+      "disabled",
     ]),
   },
 };

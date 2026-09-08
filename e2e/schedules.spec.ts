@@ -41,9 +41,10 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await page.getByRole("link", { name: "Schedules", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
   await page.getByTestId("schedule-create-open").click();
+  await expect(page.getByTestId("schedule-drawer")).toBeVisible();
   await page.getByLabel("Name").fill(`nightly-${Date.now()}`);
-  await page.getByLabel("Type").selectOption("pipeline_run");
-  await page.getByLabel("Published pipeline").selectOption({ index: 1 });
+  await page.getByLabel("Target type").selectOption("pipeline_run");
+  await page.getByTestId("schedule-pipeline-select").selectOption({ index: 1 });
   await page.getByTestId("schedule-submit").click();
   await expect(page.getByText(/Schedule created/i)).toBeVisible({ timeout: 30_000 });
 

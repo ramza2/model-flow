@@ -326,6 +326,7 @@ export function Pipelines() {
                 <th>Version</th>
                 <th>Type</th>
                 <th>Created</th>
+                <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -345,6 +346,29 @@ export function Pipelines() {
                   <td>v{pipeline.latest_version}</td>
                   <td>{pipeline.is_template ? "Template" : "Project pipeline"}</td>
                   <td>{formatDate(pipeline.created_at)}</td>
+                  <td className="align-right">
+                    {canWrite && pipeline.status === "published" && (
+                      <Link
+                        className="btn link"
+                        data-testid={`pipeline-schedule-${pipeline.id}`}
+                        to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
+                      >
+                        Schedule
+                      </Link>
+                    )}
+                    {canWrite && pipeline.status !== "published" && (
+                      <button
+                        type="button"
+                        className="btn link"
+                        data-testid={`pipeline-schedule-${pipeline.id}`}
+                        disabled
+                        title="Publish this pipeline before scheduling."
+                        aria-label="Schedule unavailable. Publish this pipeline before scheduling."
+                      >
+                        Schedule
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -820,6 +844,12 @@ export function PipelineBuilder() {
 
   const actionsDisabled = Boolean(busy);
   const publishRunDisabled = actionsDisabled || dirty;
+  const canSchedule = !dirty && pipeline.status === "published";
+  const scheduleReason = dirty
+    ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
+    : pipeline.status !== "published"
+      ? "Publish this pipeline before scheduling."
+      : "Create a schedule for this pipeline";
 
   return (
     <div className="pipeline-page">
@@ -872,6 +902,27 @@ export function PipelineBuilder() {
               >
                 Publish
               </button>
+              {canSchedule ? (
+                <Link
+                  className="btn secondary"
+                  data-testid="pipeline-schedule-entry"
+                  to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
+                  title={scheduleReason}
+                >
+                  Schedule
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="pipeline-schedule-entry"
+                  disabled
+                  title={scheduleReason}
+                  aria-label={`Schedule unavailable. ${scheduleReason}`}
+                >
+                  Schedule
+                </button>
+              )}
               <button
                 className="btn"
                 disabled={publishRunDisabled}
