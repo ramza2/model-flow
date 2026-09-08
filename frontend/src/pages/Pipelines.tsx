@@ -347,7 +347,7 @@ export function Pipelines() {
                   <td>{pipeline.is_template ? "Template" : "Project pipeline"}</td>
                   <td>{formatDate(pipeline.created_at)}</td>
                   <td className="align-right">
-                    {canWrite && (
+                    {canWrite && pipeline.status === "published" && (
                       <Link
                         className="btn link"
                         data-testid={`pipeline-schedule-${pipeline.id}`}
@@ -355,6 +355,18 @@ export function Pipelines() {
                       >
                         Schedule
                       </Link>
+                    )}
+                    {canWrite && pipeline.status !== "published" && (
+                      <button
+                        type="button"
+                        className="btn link"
+                        data-testid={`pipeline-schedule-${pipeline.id}`}
+                        disabled
+                        title="Publish this pipeline before scheduling."
+                        aria-label="Schedule unavailable. Publish this pipeline before scheduling."
+                      >
+                        Schedule
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -888,18 +900,20 @@ export function PipelineBuilder() {
                 className="btn secondary"
                 data-testid="pipeline-schedule-entry"
                 to={
-                  dirty
+                  dirty || pipeline.status !== "published"
                     ? `#`
                     : `/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`
                 }
                 title={
                   dirty
                     ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
-                    : "Create a schedule for this pipeline"
+                    : pipeline.status !== "published"
+                      ? "Publish this pipeline before scheduling."
+                      : "Create a schedule for this pipeline"
                 }
-                aria-disabled={dirty ? "true" : undefined}
+                aria-disabled={dirty || pipeline.status !== "published" ? "true" : undefined}
                 onClick={(event) => {
-                  if (dirty) event.preventDefault();
+                  if (dirty || pipeline.status !== "published") event.preventDefault();
                 }}
               >
                 Schedule

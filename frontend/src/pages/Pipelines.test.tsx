@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeConfigForm } from "../pipelineForms";
 import { defaultConfigFor } from "../pipelineHelpers";
-import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
+import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./Pipelines";
 
 const apiMock = vi.fn();
 const navigateMock = vi.fn();
@@ -740,5 +740,83 @@ describe("PipelineRunDetail", () => {
     expect(within(card).getByRole("heading", { name: "dataset_load-9" })).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-run-attempt-dataset_load-9")).toHaveTextContent("Attempt 1");
     expect(screen.queryByTestId("pipeline-rerun-note")).not.toBeInTheDocument();
+  });
+});
+
+describe("Pipeline contextual scheduling gates", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    canWriteRef.value = true;
+  });
+
+  it("exposes Schedule link only for published pipelines in the catalog", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipelines") {
+        return [
+          { ...pipeline, id: 1, name: "Draft pipe", status: "draft" },
+          { ...pipeline, id: 2, name: "Live pipe", status: "published" },
+        ];
+      }
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/pipelines"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("Live pipe")).toBeInTheDocument();
+    const published = screen.getByTestId("pipeline-schedule-2");
+    expect(published.tagName).toBe("A");
+    expect(published).toHaveAttribute(
+      "href",
+      "/projects/7/schedules?create=1&target_type=pipeline_run&pipeline_id=2",
+    );
+    const draft = screen.getByTestId("pipeline-schedule-1");
+    expect(draft.tagName).toBe("BUTTON");
+    expect(draft).toBeDisabled();
+    expect(draft).toHaveAttribute("title", "Publish this pipeline before scheduling.");
+  });
+
+  it("blocks builder Schedule when draft or dirty, allows when published and clean", async () => {
+    stubBuilderApi();
+    renderBuilder();
+    const draftSchedule = await screen.findByTestId("pipeline-schedule-entry");
+    expect(draftSchedule).toHaveAttribute("aria-disabled", "true");
+    expect(draftSchedule).toHaveAttribute("title", "Publish this pipeline before scheduling.");
+  });
+
+  it("allows builder Schedule for clean published pipelines and blocks when dirty", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return { ...pipeline, status: "published" };
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") return versions;
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return { valid: true, errors: [] };
+      }
+      throw new Error(`Unhandled ${path} ${method}`);
+    });
+    renderBuilder();
+    const publishedClean = await screen.findByTestId("pipeline-schedule-entry");
+    await waitFor(() => expect(publishedClean).not.toHaveAttribute("aria-disabled"));
+    expect(publishedClean).toHaveAttribute(
+      "href",
+      "/projects/7/schedules?create=1&target_type=pipeline_run&pipeline_id=9",
+    );
+
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    await waitFor(() => expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument());
+    expect(screen.getByTestId("pipeline-schedule-entry")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("pipeline-schedule-entry")).toHaveAttribute(
+      "title",
+      expect.stringContaining("Save your changes before scheduling"),
+    );
   });
 });

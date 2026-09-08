@@ -15,9 +15,25 @@ type DrawerProps = {
   footer?: ReactNode;
 };
 
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type='hidden'])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
+
+function listFocusable(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (node) => !node.hasAttribute("disabled") && node.getAttribute("aria-hidden") !== "true",
+  );
+}
+
 /**
  * Right-side overlay drawer for create/edit flows (e.g. Schedules).
- * Preserves focus restore and Escape-to-close without a heavy dialog library.
+ * Open/close focus lifecycle depends only on `open` so parent rerenders
+ * (new onClose identity) do not bounce focus back to the initial field.
  */
 export function Drawer({
   open,
@@ -31,47 +47,76 @@ export function Drawer({
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
+
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     const frame = window.requestAnimationFrame(() => {
       const panel = panelRef.current;
       if (!panel) return;
       const preferred = panel.querySelector<HTMLElement>("[data-drawer-initial-focus]");
-      const fallback = panel.querySelector<HTMLElement>(
-        'button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      (preferred ?? fallback)?.focus();
+      const focusable = listFocusable(panel);
+      (preferred ?? focusable[0])?.focus();
     });
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = listFocusable(panel);
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement as HTMLElement | null;
+      if (event.shiftKey) {
+        if (!active || active === first || !panel.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+        return;
+      }
+      if (!active || active === last || !panel.contains(active)) {
+        event.preventDefault();
+        first.focus();
       }
     }
+
     document.addEventListener("keydown", onKeyDown);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+
     return () => {
       window.cancelAnimationFrame(frame);
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
       previousFocusRef.current?.focus?.();
+      previousFocusRef.current = null;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div className="drawer-root" data-testid={testId ?? "drawer"}>
-      <button
-        type="button"
+      <div
         className="drawer-backdrop"
-        aria-label="Close drawer"
         data-testid="drawer-backdrop"
-        onClick={onClose}
+        aria-hidden="true"
+        onClick={() => onCloseRef.current()}
       />
       <div
         ref={panelRef}
@@ -88,7 +133,7 @@ export function Drawer({
             className="btn secondary drawer-close"
             aria-label="Close"
             data-testid="drawer-close"
-            onClick={onClose}
+            onClick={() => onCloseRef.current()}
           >
             Close
           </button>

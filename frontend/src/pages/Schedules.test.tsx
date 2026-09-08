@@ -232,6 +232,56 @@ describe("Schedules page", () => {
     expect(screen.getByTestId("schedule-pipeline-select")).toHaveValue("42");
   });
 
+  it("does not preselect unpublished pipeline ids from deep links", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [];
+      if (path.endsWith("/pipelines")) {
+        return [{ id: 42, name: "Draft ops", status: "draft", latest_version: 1 }];
+      }
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/schedules?create=1&target_type=pipeline_run&pipeline_id=42"]}>
+        <Routes>
+          <Route path="/projects/:projectId/schedules" element={<Schedules />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("schedule-drawer")).toBeInTheDocument();
+    expect(screen.getByTestId("schedule-pipeline-select")).toHaveValue("");
+    expect(
+      screen.getByText("This pipeline must be published before it can be scheduled."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Draft ops" })).not.toBeInTheDocument();
+  });
+
+  it("keeps schedule drawer field focus while editing form values", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/schedules")) return [enabledSchedule];
+      if (path.endsWith("/data-sources")) return [];
+      if (path.endsWith("/datasets")) return [];
+      if (path.endsWith("/endpoints")) return [];
+      if (path.endsWith("/models")) return [];
+      if (path.endsWith("/pipelines")) return [];
+      return [];
+    });
+    renderPage();
+    const trigger = await screen.findByTestId("schedule-create-open");
+    trigger.focus();
+    fireEvent.click(trigger);
+    const name = await screen.findByLabelText("Name");
+    await waitFor(() => expect(name).toHaveFocus());
+    const timezone = screen.getByLabelText("Timezone");
+    timezone.focus();
+    fireEvent.change(timezone, { target: { value: "UTC" } });
+    expect(timezone).toHaveFocus();
+    expect(name).not.toHaveFocus();
+  });
+
   it("polls run history while active runs exist and stops at terminal status", async () => {
     const pendingRun = {
       id: 501,

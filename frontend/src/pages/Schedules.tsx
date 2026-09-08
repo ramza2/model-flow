@@ -139,6 +139,7 @@ export default function Schedules() {
   const [editing, setEditing] = useState<AutomationSchedule | null>(null);
   const [historySchedule, setHistorySchedule] = useState<AutomationSchedule | null>(null);
   const [form, setForm] = useState(defaultForm);
+  const [contextualNotice, setContextualNotice] = useState("");
   const contextualAppliedRef = useRef(false);
   const pollTimeoutRef = useRef<number | null>(null);
   const pollInFlightGenerationRef = useRef<number | null>(null);
@@ -329,10 +330,11 @@ export default function Schedules() {
     setHistorySchedule(null);
   }
 
-  function closeForm() {
+  const closeForm = useCallback(() => {
     setShowForm(false);
     setShowAdvanced(false);
     setEditing(null);
+    setContextualNotice("");
     if (searchParams.has("create") || searchParams.has("pipeline_id") || searchParams.has("target_type")) {
       const next = new URLSearchParams(searchParams);
       next.delete("create");
@@ -340,19 +342,21 @@ export default function Schedules() {
       next.delete("target_type");
       setSearchParams(next, { replace: true });
     }
-  }
+  }, [searchParams, setSearchParams]);
 
-  function openCreate(prefill?: Partial<ReturnType<typeof defaultForm>>) {
+  function openCreate(prefill?: Partial<ReturnType<typeof defaultForm>>, notice = "") {
     setEditing(null);
     const next = { ...defaultForm(), ...prefill };
     setForm(next);
     setShowAdvanced(next.cron_preset === "custom" || Boolean(prefill?.parameters_json && prefill.parameters_json !== "{}"));
+    setContextualNotice(notice);
     setShowForm(true);
   }
 
   function openEdit(schedule: AutomationSchedule) {
     const config = schedule.target_config;
     setEditing(schedule);
+    setContextualNotice("");
     setForm({
       ...defaultForm(),
       name: schedule.name,
@@ -394,15 +398,22 @@ export default function Schedules() {
     const targetType = searchParams.get("target_type");
     const pipelineId = searchParams.get("pipeline_id");
     const prefill: Partial<ReturnType<typeof defaultForm>> = {};
+    let notice = "";
     if (targetType === "pipeline_run" || targetType === "batch_inference" || targetType === "data_import") {
       prefill.target_type = targetType;
     }
     if (pipelineId) {
       prefill.target_type = "pipeline_run";
-      prefill.pipeline_id = pipelineId;
+      const published = publishedPipelines.some((pipeline) => String(pipeline.id) === pipelineId);
+      if (published) {
+        prefill.pipeline_id = pipelineId;
+      } else {
+        prefill.pipeline_id = "";
+        notice = "This pipeline must be published before it can be scheduled.";
+      }
     }
-    openCreate(prefill);
-  }, [canWrite, loading, searchParams]);
+    openCreate(prefill, notice);
+  }, [canWrite, loading, publishedPipelines, searchParams]);
 
   function buildTargetConfig() {
     if (form.target_type === "data_import") {
@@ -433,6 +444,9 @@ export default function Schedules() {
       parameters = JSON.parse(form.parameters_json || "{}") as Record<string, unknown>;
     } catch {
       throw new Error("Pipeline parameters must be valid JSON.");
+    }
+    if (!publishedPipelines.some((pipeline) => String(pipeline.id) === String(form.pipeline_id))) {
+      throw new Error("This pipeline must be published before it can be scheduled.");
     }
     return {
       pipeline_id: Number(form.pipeline_id),
@@ -711,6 +725,9 @@ export default function Schedules() {
         )}
       >
         <form id="schedule-form" className="form-grid" onSubmit={(event) => void submitForm(event)}>
+          {contextualNotice ? (
+            <ErrorNotice message={contextualNotice} />
+          ) : null}
           <label>
             Name
             <input
