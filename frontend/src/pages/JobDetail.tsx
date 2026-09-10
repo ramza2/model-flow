@@ -13,6 +13,7 @@ import {
   formatDate,
 } from "../components";
 import { DetailSection, EntityLineage, MetricSummary, TargetChips } from "../lifecycleComponents";
+import { resolveDisplayProblemType } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 import JobRetrainDialog from "./JobRetrainDialog";
 import RegisterModelDialog from "./RegisterModelDialog";
@@ -179,7 +180,10 @@ export default function JobDetail() {
               )}
               <dl className="key-values">
                 <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
-                <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
+                <div data-testid="job-problem-type">
+                  <dt>Problem type</dt>
+                  <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
+                </div>
                 <div data-testid="job-target-columns">
                   <dt>{isMultiOutputJob(job) ? "Targets" : "Target"}</dt>
                   <dd><TargetChips targets={targets} /></dd>

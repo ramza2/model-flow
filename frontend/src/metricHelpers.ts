@@ -52,6 +52,31 @@ function inferProblemType(metrics: Record<string, number>, problemType?: string)
   return "regression";
 }
 
+/**
+ * Display-only problem type for Job Detail / Register Model.
+ * Does not mutate stored job.problem_type. Keeps "auto" when metrics cannot decide.
+ */
+export function resolveDisplayProblemType(
+  problemType: string | null | undefined,
+  metrics: Record<string, number> | null | undefined,
+): string {
+  const normalized = String(problemType ?? "").trim().toLowerCase();
+  if (normalized === "classification" || normalized === "regression") {
+    return normalized;
+  }
+  if (normalized !== "auto") {
+    return problemType ? String(problemType) : "auto";
+  }
+  const metricMap = metrics ?? {};
+  if (REGRESSION_PRIMARY_METRICS.some((key) => key in metricMap)) {
+    return "regression";
+  }
+  if (CLASSIFICATION_PRIMARY_METRICS.some((key) => key in metricMap)) {
+    return "classification";
+  }
+  return "auto";
+}
+
 export function selectPrimaryMetric(
   metrics: Record<string, number>,
   options: { problemType?: string; preferAggregate?: boolean } = {},

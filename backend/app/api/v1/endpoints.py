@@ -255,6 +255,7 @@ def get_endpoint(
     payload["prediction_sample"] = inference.build_prediction_sample_for_endpoint(
         db, endpoint
     )
+    payload["output_targets"] = _output_target_columns(db, endpoint)
     return payload
 
 

@@ -2,9 +2,11 @@
 
 ## Current phase
 
-**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** is the current implementation phase.
+**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** is complete on `main`.
 
-Phase 1.5 implementation baseline documents are on `main`:
+Phase 2 — Multi-dataset & Visual Data Preparation is the next implementation phase.
+
+Phase 1.5 implementation baseline documents remain on `main`:
 
 - [`phase-1.5-ux-architecture.md`](./phase-1.5-ux-architecture.md)
 - [`phase-1.5-frontend-design-spec.md`](./phase-1.5-frontend-design-spec.md)
@@ -15,14 +17,14 @@ Phase **1.5-B — Pipeline UX** is complete on `main` (merged via PR #34).
 
 Phase **1.5-C — ML lifecycle UX** is complete on `main` (merged via PR #35; production browser smoke PASS).
 
-Phase **1.5-D — Operations & overview UX** is in progress on branch `cursor/phase1.5d-operations-overview-ux`.
+Phase **1.5-D — Operations & overview UX** is complete on `main` (merged via PR #36; merge commit `13cb5f43ed0f21c00d542eadd9043d091f8c7fa2`; production browser smoke PASS).
 
-The implementation strategy is direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
+The implementation strategy was direct incremental refactoring of the existing React frontend. Figma is optional, not a required handoff step.
 
 ## Current baseline
 
 - Branch baseline: `main`
-- Current main SHA at Phase 1.5 planning start: `4b8fd392d61bc0578012b1ec1e34fea519aeb2ef`
+- Phase 1.5 completion merge (PR #36): `13cb5f43ed0f21c00d542eadd9043d091f8c7fa2`
 - Git tag: `v1.0.0-rc.1` (unchanged)
 - Production domain: `modelflow.openlink.kr`
 
@@ -72,7 +74,36 @@ PR #31 also addressed:
 
 ## Latest verification baseline
 
-At PR #31 merge:
+### Phase 1.5 completion baseline (PR #36)
+
+| Suite | Result |
+| --- | ---: |
+| Backend pytest | **252 passed** |
+| Frontend Vitest | **203 passed** |
+| Playwright E2E | **21 passed** |
+| `./scripts/verify.sh` | **PASS** |
+| GitHub Actions | **PASS** |
+
+### Integrated regression confirmation
+
+Phase 1.5 full integrated regression PASS on production/`main`, covering:
+
+**ML lifecycle**
+
+Dataset → Training Job → Experiment Run → Model Registry → Candidate → Pending Approval → Approved → Production → Deployment → Prediction → Monitoring
+
+**Automation**
+
+- Published Pipeline → Manual Run → Alert
+- Published Pipeline → Disabled Schedule → Run now (manual) → Schedule History → Pipeline Run → Notification → Alert
+
+**Additional revalidation (no longer pending)**
+
+- blank approval comment preserves the existing request comment
+- first prediction correctly contributes to p95 latency
+- info unread alerts count toward Unread, but not Needs attention
+
+### Historical PR #31 baseline (retained for lineage)
 
 | Suite | Result |
 | --- | ---: |
@@ -82,22 +113,11 @@ At PR #31 merge:
 | `./scripts/verify.sh` | **PASS** |
 | GitHub Actions | **PASS** |
 
-Production deployment after PR #31 returned backend health `status: ok`, and post-deploy Git SHA propagation was verified with:
-
-`4b8fd392d61bc0578012b1ec1e34fea519aeb2ef`
-
-### Remaining targeted Phase 1.2 production revalidation
-
-Implementation is complete, but two targeted UI/governance checks should not be silently treated as manually revalidated until explicitly confirmed:
-
-1. newly registered post-deploy regression model displays the intended aggregate regression primary metric,
-2. approval-request comment remains preserved when approval is submitted with a blank replacement comment.
-
-These are follow-up production confirmation items, not blockers for drafting Phase 1.5 architecture.
-
 ## Phase 1.5 implementation order
 
 ### 1.5-A — Shell & shared design system
+
+Complete on `main`.
 
 - grouped information architecture
 - AppShell / Sidebar / Breadcrumb cleanup
@@ -105,6 +125,8 @@ These are follow-up production confirmation items, not blockers for drafting Pha
 - existing dark engineering UI token normalization
 
 ### 1.5-B — Pipeline UX
+
+Complete on `main` (merged via PR #34).
 
 - Node Library / Canvas / Inspector
 - graph-readable condition branches while preserving `true` / `false` / `always`
@@ -126,7 +148,7 @@ Complete on `main` (merged via PR #35).
 
 ### 1.5-D — Operations & overview UX
 
-In progress on `cursor/phase1.5d-operations-overview-ux` (Draft PR; not merged).
+Complete on `main` (merged via PR #36; production browser smoke PASS).
 
 - Workspace Home attention / next-action hierarchy
 - Project Overview lifecycle control center
@@ -154,8 +176,9 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 1.5-D — Operations & overview UX** on `cursor/phase1.5d-operations-overview-ux`, then review/merge.
+**Phase 2 — Multi-dataset & Visual Data Preparation** is the next implementation phase.
 
-Known UX debt retained from Phase 1.5-B (still out of Phase 1.5-D scope):
+Known UX debt retained from Phase 1.5 (not in scope for Phase 1.5 cleanup):
 
-- Pipeline `beforeunload` / ← Pipelines confirm without full SPA router navigation blocker for sidebar/project switch.
+- full SPA / sidebar / project-switch unsaved navigation guard
+- Pipeline node drag/reposition (tracked for Phase 3 — End-to-End Pipeline UX backlog)
