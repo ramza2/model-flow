@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import type { Job } from "../api";
 import { effectiveTargetColumns } from "../jobHelpers";
+import { resolveDisplayProblemType } from "../metricHelpers";
 import { defaultModelNameFromJob } from "../registerModelHelpers";
 
 type RegisterModelDialogProps = {
@@ -42,7 +43,10 @@ export default function RegisterModelDialog({
         </div>
         <dl className="key-values compact">
           <div><dt>Training job</dt><dd>{job.name}</dd></div>
-          <div><dt>Problem type</dt><dd>{job.problem_type}</dd></div>
+          <div data-testid="register-problem-type">
+            <dt>Problem type</dt>
+            <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
+          </div>
           <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
           <div><dt>Target{effectiveTargetColumns(job).length > 1 ? "s" : ""}</dt><dd className="mono">{effectiveTargetColumns(job).join(", ")}</dd></div>
         </dl>

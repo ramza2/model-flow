@@ -591,6 +591,218 @@ def test_get_endpoint_includes_prediction_sample_from_preview(client, auth_heade
     assert "demand_level" not in body["prediction_sample"]
 
 
+def test_get_endpoint_includes_output_targets_from_training_lineage(client, auth_headers):
+    from app.db.models import (
+        Dataset,
+        DatasetVersion,
+        Endpoint,
+        ModelLifecycle,
+        ModelVersion,
+        TrainingJob,
+    )
+
+    project_id = _project(client, auth_headers, "output-targets-get")
+    with TestingSessionLocal() as db:
+        dataset = Dataset(
+            project_id=project_id,
+            name="prices",
+            object_key="prices.csv",
+            latest_version=1,
+        )
+        db.add(dataset)
+        db.flush()
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project_id,
+            version=1,
+            object_key="prices.csv",
+            original_filename="prices.csv",
+            format="csv",
+            preview_json=json.dumps([{"sqft": 1200, "price": 2.4}]),
+            dtypes_json=json.dumps({"sqft": "float64", "price": "float64"}),
+        )
+        db.add(version)
+        db.flush()
+        job = TrainingJob(
+            project_id=project_id,
+            dataset_id=dataset.id,
+            dataset_version_id=version.id,
+            name="train-price",
+            target_column="price",
+            feature_columns_json=json.dumps(["sqft"]),
+        )
+        db.add(job)
+        db.flush()
+        model = ModelVersion(
+            project_id=project_id,
+            name="price-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-price",
+            mlflow_version="1",
+            mlflow_run_id="run-price",
+            model_uri="models:/price/1",
+            training_job_id=job.id,
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json=json.dumps({"target_columns": ["price"]}),
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="price-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(["sqft"]),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    response = client.get(
+        f"/api/v1/endpoints/{endpoint_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["output_targets"] == ["price"]
+
+
+def test_get_endpoint_output_targets_preserve_multi_output_order(client, auth_headers):
+    from app.db.models import (
+        Dataset,
+        DatasetVersion,
+        Endpoint,
+        ModelLifecycle,
+        ModelVersion,
+        TrainingJob,
+    )
+
+    project_id = _project(client, auth_headers, "output-targets-multi")
+    with TestingSessionLocal() as db:
+        dataset = Dataset(
+            project_id=project_id,
+            name="multi",
+            object_key="multi.csv",
+            latest_version=1,
+        )
+        db.add(dataset)
+        db.flush()
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project_id,
+            version=1,
+            object_key="multi.csv",
+            original_filename="multi.csv",
+            format="csv",
+            preview_json=json.dumps([{"a": 1, "price": 2.4, "quantity": 3}]),
+            dtypes_json=json.dumps(
+                {"a": "float64", "price": "float64", "quantity": "float64"}
+            ),
+        )
+        db.add(version)
+        db.flush()
+        job = TrainingJob(
+            project_id=project_id,
+            dataset_id=dataset.id,
+            dataset_version_id=version.id,
+            name="train-multi",
+            target_column="price",
+            target_columns_json=json.dumps(["price", "quantity"]),
+            feature_columns_json=json.dumps(["a"]),
+        )
+        db.add(job)
+        db.flush()
+        model = ModelVersion(
+            project_id=project_id,
+            name="multi-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-multi",
+            mlflow_version="1",
+            mlflow_run_id="run-multi",
+            model_uri="models:/multi/1",
+            training_job_id=job.id,
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json=json.dumps({"target_columns": ["price", "quantity"]}),
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="multi-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(["a"]),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    response = client.get(
+        f"/api/v1/endpoints/{endpoint_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["output_targets"] == ["price", "quantity"]
+
+
+def test_get_endpoint_output_targets_empty_without_lineage(client, auth_headers):
+    from app.db.models import Endpoint, ModelLifecycle, ModelVersion
+
+    project_id = _project(client, auth_headers, "output-targets-empty")
+    with TestingSessionLocal() as db:
+        model = ModelVersion(
+            project_id=project_id,
+            name="orphan-model",
+            version="1",
+            lifecycle=ModelLifecycle.PRODUCTION,
+            mlflow_model_name=f"project-{project_id}-orphan",
+            mlflow_version="1",
+            mlflow_run_id="run-orphan",
+            model_uri="models:/orphan/1",
+            training_job_id=None,
+            gates_passed=True,
+            gate_results_json=json.dumps({"passed": True}),
+            metadata_json="{}",
+        )
+        db.add(model)
+        db.flush()
+        endpoint = Endpoint(
+            project_id=project_id,
+            name="orphan-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=json.dumps(["x"]),
+            created_by=1,
+        )
+        db.add(endpoint)
+        db.commit()
+        db.refresh(endpoint)
+        endpoint_id = endpoint.id
+
+    response = client.get(
+        f"/api/v1/endpoints/{endpoint_id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["output_targets"] == []
+
+
 def test_predict_api_accepts_json_int_for_mlflow_double(client, auth_headers, monkeypatch):
     from mlflow.types.schema import ColSpec, DataType, Schema
 

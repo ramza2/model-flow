@@ -200,3 +200,28 @@ export function formatNamedPrediction(prediction: unknown): string {
   }
   return String(prediction);
 }
+
+export function isScalarPrediction(prediction: unknown): boolean {
+  return prediction === null || typeof prediction !== "object";
+}
+
+/** Human summary for Prediction Test; labels scalars with output target metadata when available. */
+export function formatPredictionSummary(
+  prediction: unknown,
+  outputTargets: string[] = [],
+): string {
+  if (isScalarPrediction(prediction)) {
+    const label = outputTargets[0]?.trim() || "Prediction";
+    const value =
+      typeof prediction === "number" ? Number(prediction).toFixed(4) : String(prediction);
+    return `${label}: ${value}`;
+  }
+  return formatNamedPrediction(prediction);
+}
+
+export function formatOutputTargetsLabel(outputTargets: string[] | null | undefined): string {
+  const targets = (outputTargets ?? []).map((name) => name.trim()).filter(Boolean);
+  if (targets.length === 0) return "Output: Prediction";
+  if (targets.length === 1) return `Output: ${targets[0]}`;
+  return `Outputs: ${targets.join(", ")}`;
+}

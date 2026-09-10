@@ -404,6 +404,8 @@ export type Endpoint = {
   latency_p95_ms: number;
   feature_schema: Array<string | Record<string, unknown>>;
   prediction_sample?: Record<string, unknown> | null;
+  /** Resolved training/model output target names (GET detail enrichment only). */
+  output_targets?: string[];
   recent_errors: Array<Record<string, unknown>>;
   created_at: string;
 };

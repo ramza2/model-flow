@@ -257,4 +257,22 @@ describe("JobDetail retrain", () => {
       expect(screen.queryByTestId("register-model-dialog")).not.toBeInTheDocument();
     });
   });
+
+  it("shows resolved problem type for succeeded auto regression jobs", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          problem_type: "auto",
+          metrics: { val_rmse: 0.42, rmse: 0.5, val_r2: 0.81 },
+          is_retrain: false,
+          retrain_source_job_id: null,
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-problem-type")).toHaveTextContent("regression");
+  });
+
 });

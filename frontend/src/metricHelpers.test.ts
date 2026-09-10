@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatMetricLabel,
   formatPrimaryMetric,
+  resolveDisplayProblemType,
   selectPrimaryMetric,
 } from "./metricHelpers";
 
@@ -40,5 +41,26 @@ describe("metricHelpers", () => {
       key: "val_accuracy",
       value: 0.91,
     });
+  });
+
+  it("resolves explicit problem types without inspecting metrics", () => {
+    expect(resolveDisplayProblemType("regression", {})).toBe("regression");
+    expect(resolveDisplayProblemType("classification", { val_rmse: 1 })).toBe("classification");
+  });
+
+  it("resolves auto from regression metrics", () => {
+    expect(resolveDisplayProblemType("auto", { val_rmse: 0.42, rmse: 0.5 })).toBe("regression");
+  });
+
+  it("resolves auto from classification metrics", () => {
+    expect(resolveDisplayProblemType("auto", { val_accuracy: 0.91, accuracy: 0.9 })).toBe(
+      "classification",
+    );
+  });
+
+  it("keeps auto when metrics are empty or unrecognized", () => {
+    expect(resolveDisplayProblemType("auto", {})).toBe("auto");
+    expect(resolveDisplayProblemType("auto", { loss: 0.1 })).toBe("auto");
+    expect(resolveDisplayProblemType("auto", null)).toBe("auto");
   });
 });

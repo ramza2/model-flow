@@ -3,7 +3,12 @@ import { Link, useParams } from "react-router-dom";
 import { api, type Endpoint } from "../api";
 import { useAuth } from "../AuthContext";
 import { ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice } from "../components";
-import { formatNamedPrediction } from "../lifecycleHelpers";
+import {
+  formatNamedPrediction,
+  formatOutputTargetsLabel,
+  formatPredictionSummary,
+  isScalarPrediction,
+} from "../lifecycleHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 import { buildPredictionSamplePayload } from "../trainingConfig";
 
@@ -98,6 +103,9 @@ export default function Predict() {
   }
 
   const stopped = ep?.status === "stopped";
+  const outputTargets = ep?.output_targets ?? [];
+  const firstPrediction = result?.predictions[0];
+  const showPreview = firstPrediction !== undefined && !isScalarPrediction(firstPrediction);
 
   return (
     <div>
@@ -122,6 +130,9 @@ export default function Predict() {
                 </div>
               </div>
             )}
+            <p className="form-hint" data-testid="predict-output-targets">
+              {formatOutputTargetsLabel(outputTargets)}
+            </p>
             <label>Payload<textarea className="code-input predict-input" value={payload} onChange={(event) => setPayload(event.target.value)} data-testid="predict-payload" spellCheck={false} /><small>Expected fields: {ep.feature_schema.map((field) => typeof field === "string" ? field : String(field.name || field.field)).join(", ") || "schema not declared"}</small></label>
             <button className="btn" type="submit" disabled={busy || ep.status !== "ready"} data-testid="predict-submit">{busy ? "Running…" : "Run prediction"}</button>
           </form>
@@ -132,12 +143,14 @@ export default function Predict() {
                 <div className="prediction-summary" data-testid="predict-summary">
                   <span className="eyebrow">Summary</span>
                   <pre className="prediction-value prediction-preview named-prediction">
-                    {formatNamedPrediction(result.predictions[0])}
+                    {formatPredictionSummary(firstPrediction, outputTargets)}
                   </pre>
                 </div>
-                <div className="prediction-value prediction-preview" data-testid="predict-preview">
-                  {formatPredictionPreview(result.predictions[0])}
-                </div>
+                {showPreview && (
+                  <div className="prediction-value prediction-preview" data-testid="predict-preview">
+                    {formatPredictionPreview(firstPrediction)}
+                  </div>
+                )}
                 <pre className="json-view predict-result-json" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre>
               </>
             ) : (

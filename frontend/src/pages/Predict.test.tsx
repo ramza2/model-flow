@@ -198,4 +198,48 @@ describe("Predict prediction sample payload", () => {
     expect(summary).toHaveTextContent("supply_temp:");
     expect(summary.textContent).not.toMatch(/prediction\[/);
   });
+
+  it("shows labeled single-output scalar summary without duplicate preview", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/predict") && init?.method === "POST") {
+        return {
+          predictions: [2.427515273680638],
+          model_uri: "models:/price-model/1",
+        };
+      }
+      return {
+        ...baseEndpoint,
+        feature_schema: ["sqft", "bedrooms"],
+        prediction_sample: { sqft: 1200, bedrooms: 3 },
+        output_targets: ["price"],
+      };
+    });
+    renderPredict();
+    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("Output: price");
+    fireEvent.click(screen.getByTestId("predict-submit"));
+    const summary = await screen.findByTestId("predict-summary");
+    expect(summary).toHaveTextContent("price: 2.4275");
+    expect(screen.queryByTestId("predict-preview")).not.toBeInTheDocument();
+    expect(screen.getByTestId("predict-result")).toHaveTextContent("2.427515273680638");
+  });
+
+  it("uses Prediction fallback label when output targets are missing", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/predict") && init?.method === "POST") {
+        return { predictions: [1.5], model_uri: "models:/legacy/1" };
+      }
+      return {
+        ...baseEndpoint,
+        feature_schema: ["x"],
+        prediction_sample: { x: 1 },
+        output_targets: [],
+      };
+    });
+    renderPredict();
+    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("Output: Prediction");
+    fireEvent.click(screen.getByTestId("predict-submit"));
+    expect(await screen.findByTestId("predict-summary")).toHaveTextContent("Prediction: 1.5000");
+    expect(screen.queryByTestId("predict-preview")).not.toBeInTheDocument();
+  });
+
 });
