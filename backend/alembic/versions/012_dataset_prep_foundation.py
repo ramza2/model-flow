@@ -1,6 +1,6 @@
 """Add dataset preparation foundation tables.
 
-Revision ID: 012_dataset_preparation_foundation
+Revision ID: 012_dataset_prep_foundation
 Revises: 011_target_columns
 Create Date: 2026-09-11
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "012_dataset_preparation_foundation"
+revision = "012_dataset_prep_foundation"
 down_revision = "011_target_columns"
 branch_labels = None
 depends_on = None
