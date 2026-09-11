@@ -397,3 +397,46 @@ class ScheduleUpdate(BaseModel):
     max_retries: int | None = Field(default=None, ge=0, le=10)
     retry_delay_seconds: int | None = Field(default=None, ge=1, le=86400)
     refresh_pinned_version: bool = False
+
+
+class DatasetPreparationNode(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    type: Literal["source", "join", "union", "output"]
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class DatasetPreparationEdge(BaseModel):
+    id: str = Field(min_length=1, max_length=200)
+    source: str = Field(min_length=1, max_length=200)
+    target: str = Field(min_length=1, max_length=200)
+    target_port: str | None = None
+
+
+class DatasetPreparationGraph(BaseModel):
+    schema_version: Literal[1] = 1
+    nodes: list[DatasetPreparationNode] = Field(default_factory=list)
+    edges: list[DatasetPreparationEdge] = Field(default_factory=list)
+
+
+class DatasetPreparationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    output_dataset_id: int | None = None
+    graph: DatasetPreparationGraph = Field(
+        default_factory=lambda: DatasetPreparationGraph(schema_version=1, nodes=[], edges=[])
+    )
+
+
+class DatasetPreparationUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    output_dataset_id: int | None = None
+
+
+class DatasetPreparationGraphRequest(BaseModel):
+    graph: DatasetPreparationGraph
+
+
+class DatasetPreparationRunCreate(BaseModel):
+    version: int | None = None
+

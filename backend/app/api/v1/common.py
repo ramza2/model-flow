@@ -18,6 +18,10 @@ from app.db.models import (
     DataImportJob,
     DataSource,
     Dataset,
+    DatasetPreparation,
+    DatasetPreparationRun,
+    DatasetPreparationRunInput,
+    DatasetPreparationVersion,
     DatasetSplit,
     DatasetVersion,
     DriftRun,
@@ -522,6 +526,69 @@ def schedule_run_out(row: AutomationScheduleRun) -> dict[str, Any]:
         "finished_at": row.finished_at,
         "created_at": row.created_at,
     }
+
+
+def dataset_preparation_out(row: DatasetPreparation) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "name": row.name,
+        "description": row.description,
+        "output_dataset_id": row.output_dataset_id,
+        "latest_version": row.latest_version,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def dataset_preparation_version_out(row: DatasetPreparationVersion) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "preparation_id": row.preparation_id,
+        "project_id": row.project_id,
+        "version": row.version,
+        "schema_version": row.schema_version,
+        "graph": loads(row.graph_json, {"schema_version": 1, "nodes": [], "edges": []}),
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+    }
+
+
+def dataset_preparation_run_input_out(row: DatasetPreparationRunInput) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "run_id": row.run_id,
+        "project_id": row.project_id,
+        "node_id": row.node_id,
+        "dataset_id": row.dataset_id,
+        "dataset_version_id": row.dataset_version_id,
+        "version_strategy": row.version_strategy,
+        "created_at": row.created_at,
+    }
+
+
+def dataset_preparation_run_out(
+    row: DatasetPreparationRun, *, include_inputs: bool = False
+) -> dict[str, Any]:
+    result = {
+        "id": row.id,
+        "project_id": row.project_id,
+        "preparation_id": row.preparation_id,
+        "preparation_version_id": row.preparation_version_id,
+        "status": enum_value(row.status),
+        "output_dataset_version_id": row.output_dataset_version_id,
+        "logs": row.logs or "",
+        "error_message": row.error_message,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "started_at": row.started_at,
+        "finished_at": row.finished_at,
+    }
+    if include_inputs:
+        inputs = sorted(row.inputs or [], key=lambda item: item.node_id)
+        result["inputs"] = [dataset_preparation_run_input_out(item) for item in inputs]
+    return result
 
 
 def validate_graph(graph: dict[str, Any]) -> list[str]:
