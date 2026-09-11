@@ -208,7 +208,7 @@ function renderBuilder() {
   );
 }
 
-function mockApi(overrides?: {
+function stubPreparationApi(overrides?: {
   validate?: { valid: boolean; errors: string[]; warnings: string[] };
   preview?: Record<string, unknown>;
   onSave?: (body: unknown) => void;
@@ -263,7 +263,7 @@ describe("PreparationBuilder", () => {
   beforeEach(() => {
     canWriteRef.value = true;
     apiMock.mockReset();
-    mockApi();
+    stubPreparationApi();
   });
 
   it("loads saved node positions onto the canvas", async () => {
@@ -320,7 +320,7 @@ describe("PreparationBuilder", () => {
 
   it("saves a version payload with schema_version, positions, and target_port", async () => {
     let saved: { graph?: Record<string, unknown> } | null = null;
-    mockApi({
+    stubPreparationApi({
       onSave: (body) => {
         saved = body as { graph?: Record<string, unknown> };
       },
@@ -343,7 +343,7 @@ describe("PreparationBuilder", () => {
   });
 
   it("shows validation errors and success", async () => {
-    mockApi({
+    stubPreparationApi({
       validate: {
         valid: false,
         errors: ["graph must have exactly one output node"],
@@ -354,7 +354,7 @@ describe("PreparationBuilder", () => {
     fireEvent.click(await screen.findByTestId("preparation-validate"));
     expect(await screen.findByText("graph must have exactly one output node")).toBeInTheDocument();
 
-    mockApi({ validate: { valid: true, errors: [], warnings: ["soft note"] } });
+    stubPreparationApi({ validate: { valid: true, errors: [], warnings: ["soft note"] } });
     fireEvent.click(screen.getByTestId("preparation-validate"));
     expect(await screen.findByText("Graph is valid")).toBeInTheDocument();
     expect(screen.getByText("soft note")).toBeInTheDocument();
