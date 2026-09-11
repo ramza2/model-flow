@@ -176,6 +176,9 @@ export default function PreparationBuilder() {
     previewAbortRef.current = null;
     previewSeqRef.current += 1;
     setPreview(null);
+    // Graph edits abort in-flight preview; unlock actions even though the
+    // aborted request's finally must not clear a newer preview's busy state.
+    setBusy((prev) => (prev === "preview" ? "" : prev));
   }, []);
 
   const markGraphEdited = useCallback(() => {
@@ -458,15 +461,20 @@ export default function PreparationBuilder() {
           signal: controller.signal,
         },
       );
-      if (seq === previewSeqRef.current) {
-        setPreview(result);
+      if (seq !== previewSeqRef.current || previewAbortRef.current !== controller) {
+        return;
       }
+      setPreview(result);
     } catch (reason) {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted || previewAbortRef.current !== controller) return;
       setError(reason instanceof Error ? reason.message : "Preview failed.");
       setPreview(null);
     } finally {
-      if (seq === previewSeqRef.current) setBusy("");
+      // Only the active controller may clear preview busy — never a superseded request.
+      if (previewAbortRef.current === controller) {
+        previewAbortRef.current = null;
+        setBusy((prev) => (prev === "preview" ? "" : prev));
+      }
     }
   }
 
@@ -840,6 +848,27 @@ function SourceInspector({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const strategy = config.version_strategy === "fixed" ? "fixed" : "latest";
+  const datasetId =
+    typeof config.dataset_id === "number"
+      ? config.dataset_id
+      : config.dataset_id == null || config.dataset_id === ""
+        ? null
+        : Number(config.dataset_id);
+  const selectedDataset =
+    datasetId == null ? undefined : datasets.find((dataset) => dataset.id === datasetId);
+  const selectedVersion =
+    strategy === "fixed" && config.dataset_version_id != null
+      ? versions.find((version) => version.id === Number(config.dataset_version_id))
+      : undefined;
+  const knownColumns =
+    strategy === "fixed"
+      ? selectedVersion?.columns
+      : selectedDataset?.columns;
+  const knownColumnsReady =
+    strategy === "fixed"
+      ? Boolean(selectedDataset && selectedVersion)
+      : Boolean(selectedDataset);
+
   return (
     <div className="preparation-inspector-form" data-testid="preparation-source-inspector">
       <label>
@@ -850,12 +879,17 @@ function SourceInspector({
           value={config.dataset_id == null ? "" : String(config.dataset_id)}
           onChange={(event) => {
             const value = event.target.value;
-            onChange({
+            const next: Record<string, unknown> = {
               ...config,
               dataset_id: value ? Number(value) : null,
-              dataset_version_id:
-                strategy === "fixed" ? config.dataset_version_id ?? null : undefined,
-            });
+            };
+            if (strategy === "fixed") {
+              // Never keep a version id that belonged to the previous dataset.
+              next.dataset_version_id = null;
+            } else {
+              delete next.dataset_version_id;
+            }
+            onChange(next);
           }}
         >
           <option value="">Select dataset…</option>
@@ -917,6 +951,25 @@ function SourceInspector({
           </select>
         </label>
       )}
+      <div
+        className="preparation-known-columns"
+        data-testid="preparation-source-known-columns"
+      >
+        <span className="preparation-known-columns-label">Known columns</span>
+        {!knownColumnsReady ? (
+          <p className="muted preparation-known-columns-empty">
+            Select a dataset/version to inspect columns.
+          </p>
+        ) : !knownColumns || knownColumns.length === 0 ? (
+          <p className="muted preparation-known-columns-empty">No columns available.</p>
+        ) : (
+          <ul className="preparation-known-columns-list">
+            {knownColumns.map((column) => (
+              <li key={column}>{column}</li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -932,6 +985,9 @@ function JoinInspector({
 }) {
   return (
     <div className="preparation-inspector-form" data-testid="preparation-join-inspector">
+      <p className="muted preparation-inspector-hint" data-testid="preparation-join-hint">
+        Connect one edge to LEFT and one edge to RIGHT.
+      </p>
       <label>
         How
         <select
@@ -985,6 +1041,7 @@ function UnionInspector({
   canWrite: boolean;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const mode = String(config.mode || "strict");
   return (
     <div className="preparation-inspector-form" data-testid="preparation-union-inspector">
       <label>
@@ -992,13 +1049,18 @@ function UnionInspector({
         <select
           data-testid="preparation-union-mode"
           disabled={!canWrite}
-          value={String(config.mode || "strict")}
+          value={mode}
           onChange={(event) => onChange({ ...config, mode: event.target.value })}
         >
           <option value="strict">strict</option>
           <option value="align_by_name">align_by_name</option>
         </select>
       </label>
+      <p className="muted preparation-inspector-hint" data-testid="preparation-union-hint">
+        {mode === "align_by_name"
+          ? "Matches columns by name and fills missing values with null."
+          : "Requires identical column names and order."}
+      </p>
     </div>
   );
 }

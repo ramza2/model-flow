@@ -959,6 +959,38 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .preparation-inspector-meta dt { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
 .preparation-inspector-meta dd { margin: 0; }
 .preparation-inspector-form { display: grid; gap: .65rem; }
+.preparation-inspector-hint { margin: 0; font-size: .78rem; line-height: 1.35; }
+.preparation-known-columns {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+}
+.preparation-known-columns-label {
+  color: var(--muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.preparation-known-columns-empty { margin: 0; font-size: .78rem; }
+.preparation-known-columns-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem;
+  max-height: 9rem;
+  overflow: auto;
+}
+.preparation-known-columns-list li {
+  padding: .15rem .4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: .72rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
 .preparation-empty-canvas {
   display: flex;
   flex-direction: column;

@@ -139,25 +139,70 @@ const datasets = [
     stats: {},
     created_at: "2026-09-01T00:00:00Z",
   },
-];
-
-const versions = [
   {
-    id: 11,
-    dataset_id: 2,
+    id: 3,
     project_id: 7,
-    version: 1,
-    original_filename: "iris.csv",
-    format: "csv",
-    row_count: 150,
-    column_count: 5,
-    columns: ["sepal_length", "target"],
-    dtypes: {},
+    name: "orders",
+    description: "",
+    latest_version: 1,
+    row_count: 20,
+    column_count: 3,
+    columns: ["order_id", "amount", "region"],
     stats: {},
-    source_type: "upload",
-    created_at: "2026-09-01T00:00:00Z",
+    created_at: "2026-09-02T00:00:00Z",
   },
 ];
+
+const versionsByDataset: Record<number, Array<Record<string, unknown>>> = {
+  2: [
+    {
+      id: 11,
+      dataset_id: 2,
+      project_id: 7,
+      version: 1,
+      original_filename: "iris.csv",
+      format: "csv",
+      row_count: 150,
+      column_count: 5,
+      columns: ["sepal_length", "target"],
+      dtypes: {},
+      stats: {},
+      source_type: "upload",
+      created_at: "2026-09-01T00:00:00Z",
+    },
+  ],
+  3: [
+    {
+      id: 21,
+      dataset_id: 3,
+      project_id: 7,
+      version: 1,
+      original_filename: "orders.csv",
+      format: "csv",
+      row_count: 20,
+      column_count: 3,
+      columns: ["order_id", "amount", "region"],
+      dtypes: {},
+      stats: {},
+      source_type: "upload",
+      created_at: "2026-09-02T00:00:00Z",
+    },
+  ],
+};
+
+const versions = versionsByDataset[2];
+
+const defaultPreview = {
+  node_id: "source-1",
+  columns: ["sepal_length", "target"],
+  dtypes: { sepal_length: "float64", target: "int64" },
+  rows: [{ sepal_length: 5.1, target: 0 }],
+  row_count: 1,
+  sampled: true,
+  warnings: [
+    "Preview uses stored DatasetVersion sample rows and may not represent the full dataset.",
+  ],
+};
 
 const preparation = {
   id: 9,
@@ -211,6 +256,7 @@ function renderBuilder() {
 function stubPreparationApi(overrides?: {
   validate?: { valid: boolean; errors: string[]; warnings: string[] };
   preview?: Record<string, unknown>;
+  previewDeferred?: Promise<Record<string, unknown>>;
   onSave?: (body: unknown) => void;
 }) {
   apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
@@ -221,26 +267,39 @@ function stubPreparationApi(overrides?: {
     if (path === "/projects/7/datasets" && method === "GET") {
       return datasets;
     }
-    if (path === "/projects/7/datasets/2/versions" && method === "GET") {
-      return versions;
+    const versionMatch = /^\/projects\/7\/datasets\/(\d+)\/versions$/.exec(path);
+    if (versionMatch && method === "GET") {
+      return versionsByDataset[Number(versionMatch[1])] || [];
     }
     if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
       return overrides?.validate || { valid: true, errors: [], warnings: [] };
     }
     if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
-      return (
-        overrides?.preview || {
-          node_id: "source-1",
-          columns: ["sepal_length", "target"],
-          dtypes: { sepal_length: "float64", target: "int64" },
-          rows: [{ sepal_length: 5.1, target: 0 }],
-          row_count: 1,
-          sampled: true,
-          warnings: [
-            "Preview uses stored DatasetVersion sample rows and may not represent the full dataset.",
-          ],
+      const payload = overrides?.preview || defaultPreview;
+      const deferred = overrides?.previewDeferred;
+      if (!deferred) return payload;
+      return await new Promise((resolve, reject) => {
+        const onAbort = () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        };
+        if (init?.signal?.aborted) {
+          onAbort();
+          return;
         }
-      );
+        init?.signal?.addEventListener("abort", onAbort, { once: true });
+        deferred
+          .then((value) => {
+            if (init?.signal?.aborted) {
+              onAbort();
+              return;
+            }
+            resolve(value);
+          })
+          .catch(reject)
+          .finally(() => {
+            init?.signal?.removeEventListener("abort", onAbort);
+          });
+      });
     }
     if (path === "/projects/7/dataset-preparations/9/versions" && method === "POST") {
       const body = JSON.parse(String(init?.body));
@@ -375,6 +434,122 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("unlocks actions when an in-flight preview is aborted by graph edit", async () => {
+    let resolvePreview!: (value: Record<string, unknown>) => void;
+    const previewDeferred = new Promise<Record<string, unknown>>((resolve) => {
+      resolvePreview = resolve;
+    });
+    stubPreparationApi({ previewDeferred });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-preview")).toBeDisabled();
+      expect(screen.getByTestId("preparation-validate")).toBeDisabled();
+      expect(screen.getByTestId("preparation-save-version")).toBeDisabled();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-source"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-preview")).not.toBeDisabled();
+      expect(screen.getByTestId("preparation-validate")).not.toBeDisabled();
+      expect(screen.getByTestId("preparation-save-version")).not.toBeDisabled();
+    });
+    expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
+
+    resolvePreview({
+      ...defaultPreview,
+      rows: [{ sepal_length: 9.9, target: 99 }],
+      columns: ["stale_column"],
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("stale_column")).not.toBeInTheDocument();
+  });
+
+  it("clears stale fixed version when switching source dataset", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-source-1"));
+    fireEvent.change(await screen.findByTestId("preparation-source-strategy"), {
+      target: { value: "fixed" },
+    });
+    const versionSelect = await screen.findByTestId("preparation-source-version");
+    fireEvent.change(versionSelect, { target: { value: "11" } });
+    expect(versionSelect).toHaveValue("11");
+    expect(await screen.findByTestId("preparation-source-known-columns")).toHaveTextContent(
+      "sepal_length",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-source-dataset"), {
+      target: { value: "3" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-source-version")).toHaveValue("");
+    });
+    expect(screen.getByTestId("preparation-source-known-columns")).toHaveTextContent(
+      /Select a dataset\/version to inspect columns/,
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const sourceConfig = saved!.graph!.nodes!.find((node) => node.id === "source-1")?.config;
+    expect(sourceConfig).toMatchObject({
+      dataset_id: 3,
+      version_strategy: "fixed",
+      dataset_version_id: null,
+    });
+    expect(sourceConfig?.dataset_version_id).not.toBe(11);
+
+    fireEvent.change(screen.getByTestId("preparation-source-version"), {
+      target: { value: "21" },
+    });
+    expect(await screen.findByTestId("preparation-source-known-columns")).toHaveTextContent(
+      "order_id",
+    );
+    saved = null;
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "source-1")?.config).toMatchObject({
+      dataset_id: 3,
+      version_strategy: "fixed",
+      dataset_version_id: 21,
+    });
+  });
+
+  it("shows known columns for latest strategy and join/union helper copy", async () => {
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-source-1"));
+    expect(await screen.findByTestId("preparation-source-known-columns")).toHaveTextContent(
+      "sepal_length",
+    );
+    expect(screen.getByTestId("preparation-source-known-columns")).toHaveTextContent("target");
+
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
+    expect(screen.getByTestId("preparation-join-hint")).toHaveTextContent(
+      "Connect one edge to LEFT and one edge to RIGHT.",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-library-union"));
+    fireEvent.click(await screen.findByTestId("canvas-node-union-1"));
+    expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
+      "Requires identical column names and order.",
+    );
+    fireEvent.change(screen.getByTestId("preparation-union-mode"), {
+      target: { value: "align_by_name" },
+    });
+    expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
+      "Matches columns by name and fills missing values with null.",
+    );
+  });
+
   it("keeps the builder read-only for viewers", async () => {
     canWriteRef.value = false;
     renderBuilder();
@@ -386,5 +561,8 @@ describe("PreparationBuilder", () => {
     fireEvent.click(screen.getByTestId("canvas-node-source-1"));
     expect(await screen.findByTestId("preparation-source-dataset")).toBeDisabled();
     expect(screen.queryByTestId("preparation-remove-node")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-source-known-columns")).toHaveTextContent(
+      "sepal_length",
+    );
   });
 });
