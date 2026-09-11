@@ -221,7 +221,19 @@ export type DatasetSplit = {
   created_at: string;
 };
 
-export type DatasetPreparationNodeType = "source" | "join" | "union" | "output";
+export type DatasetPreparationNodeType =
+  | "source"
+  | "join"
+  | "union"
+  | "select"
+  | "drop"
+  | "rename"
+  | "filter"
+  | "cast"
+  | "deduplicate"
+  | "fill_constant"
+  | "derived_column"
+  | "output";
 
 export type DatasetPreparationNodePosition = {
   x: number;
@@ -272,6 +284,46 @@ export type DatasetPreparation = {
   version?: DatasetPreparationVersion;
 };
 
+export type DatasetPreparationRunStatus =
+  | "created"
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+export type DatasetPreparationRunInput = {
+  id: number;
+  run_id: number;
+  project_id: number;
+  node_id: string;
+  dataset_id: number;
+  dataset_version_id: number;
+  version_strategy: string;
+  created_at: string;
+};
+
+export type DatasetPreparationRun = {
+  id: number;
+  project_id: number;
+  preparation_id: number;
+  preparation_version_id: number;
+  status: DatasetPreparationRunStatus | string;
+  output_dataset_id: number | null;
+  output_dataset_version_id: number | null;
+  logs: string;
+  error_message: string | null;
+  created_by?: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  inputs?: DatasetPreparationRunInput[];
+};
+
+export type DatasetPreparationOutputDatasetResult = {
+  preparation: DatasetPreparation;
+  output_dataset: Dataset;
+};
+
 export type DatasetPreparationValidationResult = {
   valid: boolean;
   errors: string[];
@@ -293,6 +345,26 @@ export type DatasetPreparationPreviewResult = {
     version_strategy: string;
   }>;
   warnings: string[];
+};
+
+export type DatasetVersionLineageUpstream = {
+  preparation: { id: number; name: string };
+  preparation_version: { id: number; version: number };
+  preparation_run: { id: number; status: string };
+  input_versions: Array<{
+    node_id: string;
+    dataset_id: number;
+    dataset_name: string | null;
+    dataset_version_id: number;
+    version: number | null;
+  }>;
+};
+
+export type DatasetVersionLineage = {
+  dataset_version: DatasetVersion;
+  upstream: DatasetVersionLineageUpstream | null;
+  training_jobs: Job[];
+  model_versions: ModelVersion[];
 };
 
 export type QualityRule = {
