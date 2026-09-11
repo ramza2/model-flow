@@ -2,9 +2,25 @@
 
 ## Current phase
 
-**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** is complete on `main`.
+**Enhancement Phase 2-B — Visual Dataset Preparation + Sample Preview** is the current implementation phase.
 
-Phase 2 — Multi-dataset & Visual Data Preparation is the next implementation phase.
+Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
+
+- Preparation persistence
+- immutable versions
+- validation
+- fixed/latest pinned RunInput foundation
+
+Phase 2-B delivers:
+
+- Visual Preparation Builder
+- Source / Join / Union / Output nodes
+- sampled server preview
+- validation / save-version UX
+
+Next: **Phase 2-C — Transformation & Materialization**.
+
+**Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
 Phase 1.5 implementation baseline documents remain on `main`:
 
@@ -24,6 +40,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 2-A foundation merge (PR #38): `4b3146a1550938ca1bc143ec88e852c422be09b4`
 - Phase 1.5 completion merge (PR #36): `13cb5f43ed0f21c00d542eadd9043d091f8c7fa2`
 - Git tag: `v1.0.0-rc.1` (unchanged)
 - Production domain: `modelflow.openlink.kr`
@@ -176,7 +193,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 2 — Multi-dataset & Visual Data Preparation** is the next implementation phase.
+After Phase 2-B: **Phase 2-C — Transformation & Materialization** (full Dataset execution, worker runs, derived DatasetVersion materialization).
 
 Known UX debt retained from Phase 1.5 (not in scope for Phase 1.5 cleanup):
 

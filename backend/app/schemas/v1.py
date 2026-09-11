@@ -399,10 +399,18 @@ class ScheduleUpdate(BaseModel):
     refresh_pinned_version: bool = False
 
 
+class DatasetPreparationNodePosition(BaseModel):
+    """Optional canvas position for Visual Builder (ignored by validation/execution)."""
+
+    x: float
+    y: float
+
+
 class DatasetPreparationNode(BaseModel):
     id: str = Field(min_length=1, max_length=200)
     type: Literal["source", "join", "union", "output"]
     config: dict[str, Any] = Field(default_factory=dict)
+    position: DatasetPreparationNodePosition | None = None
 
 
 class DatasetPreparationEdge(BaseModel):
@@ -416,6 +424,12 @@ class DatasetPreparationGraph(BaseModel):
     schema_version: Literal[1] = 1
     nodes: list[DatasetPreparationNode] = Field(default_factory=list)
     edges: list[DatasetPreparationEdge] = Field(default_factory=list)
+
+
+class DatasetPreparationPreviewRequest(BaseModel):
+    graph: DatasetPreparationGraph
+    node_id: str | None = None
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class DatasetPreparationCreate(BaseModel):
