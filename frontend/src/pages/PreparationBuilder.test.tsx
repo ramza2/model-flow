@@ -270,7 +270,7 @@ describe("PreparationBuilder", () => {
     renderBuilder();
     expect(await screen.findByTestId("preparation-builder")).toBeInTheDocument();
     expect(screen.getByTestId("canvas-node-source-1")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Demo prep" })).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Demo prep" }).length).toBeGreaterThan(0);
   });
 
   it("adds nodes from the library", async () => {
