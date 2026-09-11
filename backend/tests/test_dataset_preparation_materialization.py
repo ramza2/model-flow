@@ -118,7 +118,7 @@ def test_ensure_run_output_dataset_pinned_legacy(db):
     project = _seed_project(db)
     source = _seed_dataset(db, project.id, "source")
     output = _seed_dataset(db, project.id, "output")
-    version = _seed_version(db, source)
+    _seed_version(db, source)
     prep = DatasetPreparation(
         project_id=project.id,
         name="Prep",
