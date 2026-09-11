@@ -221,6 +221,80 @@ export type DatasetSplit = {
   created_at: string;
 };
 
+export type DatasetPreparationNodeType = "source" | "join" | "union" | "output";
+
+export type DatasetPreparationNodePosition = {
+  x: number;
+  y: number;
+};
+
+export type DatasetPreparationNode = {
+  id: string;
+  type: DatasetPreparationNodeType;
+  config: Record<string, unknown>;
+  position?: DatasetPreparationNodePosition | null;
+};
+
+export type DatasetPreparationEdge = {
+  id: string;
+  source: string;
+  target: string;
+  target_port?: string | null;
+};
+
+export type DatasetPreparationGraph = {
+  schema_version: 1;
+  nodes: DatasetPreparationNode[];
+  edges: DatasetPreparationEdge[];
+};
+
+export type DatasetPreparationVersion = {
+  id: number;
+  preparation_id: number;
+  project_id: number;
+  version: number;
+  schema_version: number;
+  graph: DatasetPreparationGraph;
+  created_by?: number;
+  created_at: string;
+};
+
+export type DatasetPreparation = {
+  id: number;
+  project_id: number;
+  name: string;
+  description: string;
+  output_dataset_id: number | null;
+  latest_version: number;
+  created_by?: number;
+  created_at: string;
+  updated_at?: string;
+  version?: DatasetPreparationVersion;
+};
+
+export type DatasetPreparationValidationResult = {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
+export type DatasetPreparationPreviewResult = {
+  node_id: string | null;
+  columns: string[];
+  dtypes: Record<string, string>;
+  rows: Array<Record<string, unknown>>;
+  row_count: number;
+  sampled: boolean;
+  source_row_cap?: number;
+  source_versions?: Array<{
+    node_id: string;
+    dataset_id: number;
+    dataset_version_id: number;
+    version_strategy: string;
+  }>;
+  warnings: string[];
+};
+
 export type QualityRule = {
   id: number;
   project_id: number;

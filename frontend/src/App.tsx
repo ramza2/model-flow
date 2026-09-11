@@ -9,6 +9,8 @@ import ProjectCreate from "./pages/ProjectCreate";
 import ProjectOverview from "./pages/ProjectOverview";
 import DataSources from "./pages/DataSources";
 import Datasets from "./pages/Datasets";
+import PreparationBuilder from "./pages/PreparationBuilder";
+import Preparations from "./pages/Preparations";
 import DatasetDetail from "./pages/DatasetDetail";
 import JobCreate from "./pages/JobCreate";
 import Jobs from "./pages/Jobs";
@@ -44,6 +46,8 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/data-sources" element={<DataSources />} />
     <Route path="/projects/:projectId/datasets" element={<Datasets />} />
     <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
+    <Route path="/projects/:projectId/preparations" element={<Preparations />} />
+    <Route path="/projects/:projectId/preparations/:preparationId" element={<PreparationBuilder />} />
     <Route path="/projects/:projectId/experiments" element={<Runs />} />
     <Route path="/projects/:projectId/experiments/runs/:runId" element={<RunDetail />} />
     <Route path="/projects/:projectId/experiments/compare" element={<RunCompare />} />
