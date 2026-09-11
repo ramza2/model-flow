@@ -1808,7 +1808,10 @@ function FilterInspector({
   const combine = config.combine === "or" ? "or" : "and";
   const conditions = parseFilterConditions(config.conditions);
 
-  function commit(nextConditions: FilterCondition[], nextCombine = combine) {
+  function commit(
+    nextConditions: FilterCondition[],
+    nextCombine: "and" | "or" = combine,
+  ) {
     onChange({
       ...config,
       ...serializeFilterConditions(nextConditions, nextCombine),
