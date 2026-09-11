@@ -663,7 +663,17 @@ def test_repeated_source_and_historical_version_run(client, auth_headers):
     assert [row["node_id"] for row in listed.json()] == ["source-a", "source-b"]
 
 
-def test_run_atomicity_on_resolve_failure(client, auth_headers):
+def _assert_no_run_rows():
+    with TestingSessionLocal() as db:
+        run_count = db.scalar(select(func.count()).select_from(DatasetPreparationRun))
+        input_count = db.scalar(
+            select(func.count()).select_from(DatasetPreparationRunInput)
+        )
+        assert run_count == 0
+        assert input_count == 0
+
+
+def test_run_create_latest_missing_when_latest_version_zero(client, auth_headers):
     from app.db.models import Dataset
 
     project_id = _create_project(client, auth_headers)
@@ -672,7 +682,37 @@ def test_run_atomicity_on_resolve_failure(client, auth_headers):
         f"/api/v1/projects/{project_id}/dataset-preparations",
         headers=auth_headers,
         json={
-            "name": "Atomic2",
+            "name": "LatestZero",
+            "graph": _source_output_graph(ds["id"], strategy="latest"),
+        },
+    )
+    assert created.status_code == 201
+    prep_id = created.json()["id"]
+
+    with TestingSessionLocal() as db:
+        dataset = db.get(Dataset, ds["id"])
+        dataset.latest_version = 0
+        db.commit()
+
+    failed = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/runs",
+        headers=auth_headers,
+        json={},
+    )
+    assert failed.status_code == 409, failed.text
+    _assert_no_run_rows()
+
+
+def test_run_create_latest_missing_when_version_row_absent(client, auth_headers):
+    from app.db.models import Dataset
+
+    project_id = _create_project(client, auth_headers)
+    ds = _upload_dataset(client, auth_headers, project_id)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations",
+        headers=auth_headers,
+        json={
+            "name": "LatestMissingRow",
             "graph": _source_output_graph(ds["id"], strategy="latest"),
         },
     )
@@ -684,29 +724,323 @@ def test_run_atomicity_on_resolve_failure(client, auth_headers):
         dataset.latest_version = 99
         db.commit()
 
-    before_runs = client.get(
-        f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/runs",
-        headers=auth_headers,
-    ).json()
     failed = client.post(
         f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/runs",
         headers=auth_headers,
         json={},
     )
-    assert failed.status_code in (400, 409), failed.text
-    after_runs = client.get(
-        f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/runs",
-        headers=auth_headers,
-    ).json()
-    assert len(after_runs) == len(before_runs)
+    assert failed.status_code == 409, failed.text
+    _assert_no_run_rows()
 
-    with TestingSessionLocal() as db:
-        run_count = db.scalar(select(func.count()).select_from(DatasetPreparationRun))
-        input_count = db.scalar(
-            select(func.count()).select_from(DatasetPreparationRunInput)
+
+def test_strict_validation_case_matrix(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    ds = _upload_dataset(client, auth_headers, project_id)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations",
+        headers=auth_headers,
+        json={"name": "StrictMatrix", "graph": _empty_graph()},
+    )
+    assert created.status_code == 201
+    prep_id = created.json()["id"]
+    dataset_id = ds["id"]
+    version_id = ds["version"]["id"]
+
+    cases = {
+        "no_source": {
+            "schema_version": 1,
+            "nodes": [{"id": "out", "type": "output", "config": {}}],
+            "edges": [],
+        },
+        "no_output": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                }
+            ],
+            "edges": [],
+        },
+        "multiple_outputs": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {"id": "out1", "type": "output", "config": {}},
+                {"id": "out2", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "src", "target": "out1"},
+                {"id": "e2", "source": "src", "target": "out2"},
+            ],
+        },
+        "disconnected_node": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+                {
+                    "id": "orphan",
+                    "type": "union",
+                    "config": {"mode": "strict"},
+                },
+            ],
+            "edges": [{"id": "e1", "source": "src", "target": "out"}],
+        },
+        "join_incoming_lt_2": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "join-1",
+                    "type": "join",
+                    "config": {
+                        "how": "left",
+                        "left_on": ["customer_id"],
+                        "right_on": ["customer_id"],
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "src",
+                    "target": "join-1",
+                    "target_port": "left",
+                },
+                {"id": "e2", "source": "join-1", "target": "out"},
+            ],
+        },
+        "join_bad_ports": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "left",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "right",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "join-1",
+                    "type": "join",
+                    "config": {
+                        "how": "left",
+                        "left_on": ["customer_id"],
+                        "right_on": ["customer_id"],
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "left",
+                    "target": "join-1",
+                    "target_port": "left",
+                },
+                {
+                    "id": "e2",
+                    "source": "right",
+                    "target": "join-1",
+                    "target_port": "left",
+                },
+                {"id": "e3", "source": "join-1", "target": "out"},
+            ],
+        },
+        "join_same_upstream": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "join-1",
+                    "type": "join",
+                    "config": {
+                        "how": "inner",
+                        "left_on": ["customer_id"],
+                        "right_on": ["customer_id"],
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {
+                    "id": "e1",
+                    "source": "src",
+                    "target": "join-1",
+                    "target_port": "left",
+                },
+                {
+                    "id": "e2",
+                    "source": "src",
+                    "target": "join-1",
+                    "target_port": "right",
+                },
+                {"id": "e3", "source": "join-1", "target": "out"},
+            ],
+        },
+        "union_incoming_lt_2": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "union-1",
+                    "type": "union",
+                    "config": {"mode": "align_by_name"},
+                },
+                {"id": "out", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "src", "target": "union-1"},
+                {"id": "e2", "source": "union-1", "target": "out"},
+            ],
+        },
+        "output_incoming_ne_1": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src-a",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {
+                    "id": "src-b",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+            ],
+            "edges": [
+                {"id": "e1", "source": "src-a", "target": "out"},
+                {"id": "e2", "source": "src-b", "target": "out"},
+            ],
+        },
+        "output_has_outgoing": {
+            "schema_version": 1,
+            "nodes": [
+                {
+                    "id": "src",
+                    "type": "source",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "version_strategy": "fixed",
+                        "dataset_version_id": version_id,
+                    },
+                },
+                {"id": "out", "type": "output", "config": {}},
+                {
+                    "id": "union-1",
+                    "type": "union",
+                    "config": {"mode": "strict"},
+                },
+            ],
+            "edges": [
+                {"id": "e1", "source": "src", "target": "out"},
+                {"id": "e2", "source": "out", "target": "union-1"},
+            ],
+        },
+    }
+
+    for name, graph in cases.items():
+        response = client.post(
+            f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/validate",
+            headers=auth_headers,
+            json={"graph": graph},
         )
-        assert run_count == 0
-        assert input_count == 0
+        assert response.status_code == 200, (name, response.text)
+        body = response.json()
+        assert body["valid"] is False, name
+        assert body["errors"], name
+
+    # non-strict save still accepts incomplete topology as warnings
+    incomplete = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset_id,
+                    "version_strategy": "fixed",
+                    "dataset_version_id": version_id,
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+            {"id": "orphan", "type": "union", "config": {"mode": "strict"}},
+        ],
+        "edges": [{"id": "e1", "source": "src", "target": "out"}],
+    }
+    saved = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep_id}/versions",
+        headers=auth_headers,
+        json={"graph": incomplete},
+    )
+    assert saved.status_code == 201, saved.text
 
 
 def test_delete_blocked_with_run_history(client, auth_headers):

@@ -371,7 +371,7 @@ def validate_preparation_graph(
                 project_id,
                 node_id,
                 config,
-                resolve_latest=resolve_latest or strict,
+                resolve_latest=resolve_latest,
             )
             errors.extend(source_errors)
             warnings.extend(source_warnings)
@@ -446,9 +446,13 @@ def resolve_source_pins(
     project_id: int,
     graph: DatasetPreparationGraph | dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Resolve each source node to a concrete DatasetVersion pin."""
+    """Resolve each source node to a concrete DatasetVersion pin.
+
+    Topology / syntax / fixed-reference failures raise 400.
+    Latest-resolution conflicts (no version / missing version row) raise 409.
+    """
     result = validate_preparation_graph(
-        db, project_id, graph, strict=True, resolve_latest=True
+        db, project_id, graph, strict=True, resolve_latest=False
     )
     if not result["valid"]:
         raise PreparationValidationError(result["errors"], status_code=400)
