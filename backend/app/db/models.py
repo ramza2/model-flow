@@ -706,3 +706,143 @@ class AutomationScheduleRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     schedule: Mapped[AutomationSchedule] = relationship(back_populates="runs")
+
+
+class DatasetPreparationRunStatus(str, enum.Enum):
+    created = "created"
+    queued = "queued"
+    running = "running"
+    succeeded = "succeeded"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class DatasetPreparation(Base):
+    """Multi-dataset preparation recipe container (Phase 2-A foundation)."""
+
+    __tablename__ = "dataset_preparations"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "name",
+            name="uq_dataset_preparation_project_name",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    output_dataset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("datasets.id"), nullable=True, index=True
+    )
+    latest_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    versions: Mapped[list[DatasetPreparationVersion]] = relationship(
+        back_populates="preparation",
+        cascade="all, delete-orphan",
+    )
+    runs: Mapped[list[DatasetPreparationRun]] = relationship(
+        back_populates="preparation",
+    )
+
+
+class DatasetPreparationVersion(Base):
+    """Immutable preparation recipe snapshot."""
+
+    __tablename__ = "dataset_preparation_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "preparation_id",
+            "version",
+            name="uq_dataset_preparation_version",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    preparation_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_preparations.id"), nullable=False, index=True
+    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    graph_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default='{"schema_version":1,"nodes":[],"edges":[]}',
+    )
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    preparation: Mapped[DatasetPreparation] = relationship(back_populates="versions")
+    runs: Mapped[list[DatasetPreparationRun]] = relationship(back_populates="preparation_version")
+
+
+class DatasetPreparationRun(Base):
+    """Pinned, reproducible preparation run snapshot (execution is Phase 2-C)."""
+
+    __tablename__ = "dataset_preparation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    preparation_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_preparations.id"), nullable=False, index=True
+    )
+    preparation_version_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_preparation_versions.id"), nullable=False, index=True
+    )
+    status: Mapped[DatasetPreparationRunStatus] = mapped_column(
+        Enum(DatasetPreparationRunStatus),
+        default=DatasetPreparationRunStatus.created,
+        nullable=False,
+    )
+    output_dataset_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=True, index=True
+    )
+    logs: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    preparation: Mapped[DatasetPreparation] = relationship(back_populates="runs")
+    preparation_version: Mapped[DatasetPreparationVersion] = relationship(back_populates="runs")
+    inputs: Mapped[list[DatasetPreparationRunInput]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+    )
+
+
+class DatasetPreparationRunInput(Base):
+    """Pinned source DatasetVersion for a preparation run source node."""
+
+    __tablename__ = "dataset_preparation_run_inputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "node_id",
+            name="uq_dataset_preparation_run_input_node",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_preparation_runs.id"), nullable=False, index=True
+    )
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    node_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("datasets.id"), nullable=False, index=True)
+    dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=False, index=True
+    )
+    version_strategy: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    run: Mapped[DatasetPreparationRun] = relationship(back_populates="inputs")
+
