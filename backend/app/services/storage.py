@@ -41,6 +41,11 @@ def download_bytes(bucket: str, key: str) -> bytes:
     return obj["Body"].read()
 
 
+def delete_object(bucket: str, key: str) -> None:
+    """Best-effort object deletion (orphan cleanup after failed DB commits)."""
+    s3_client().delete_object(Bucket=bucket, Key=key)
+
+
 def profile_csv(data: bytes) -> tuple[int, int, list[str], dict]:
     df = pd.read_csv(BytesIO(data))
     columns = [str(c) for c in df.columns]
