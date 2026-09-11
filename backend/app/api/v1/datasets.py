@@ -28,6 +28,7 @@ from app.core.security import safe_filename
 from app.db.models import Dataset, DatasetVersion, ModelVersion, TrainingJob
 from app.db.session import get_db
 from app.services import storage
+from app.services.dataset_preparation_materialization import preparation_upstream_lineage
 
 router = APIRouter(tags=["datasets"])
 _CONTENT_TYPES = {
@@ -363,6 +364,7 @@ def version_lineage(
     ).all()
     return {
         "dataset_version": dataset_version_out(row),
+        "upstream": preparation_upstream_lineage(db, row),
         "training_jobs": [job_out(job) for job in jobs],
         "model_versions": [model_version_out(model) for model in models],
     }

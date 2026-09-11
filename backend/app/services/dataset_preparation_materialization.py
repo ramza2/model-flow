@@ -278,14 +278,26 @@ def execute_claimed_preparation_run(
     if output_dataset.project_id != live.project_id:
         raise ValueError("Output dataset was not found in this project.")
 
-    _append_log(live, "Loading pinned source datasets...")
+    inputs = _run_inputs(db, live)
+    _append_log(live, f"Loading {len(inputs)} pinned source dataset version(s).")
     frames = load_pinned_source_frames(db, live)
+    for inp in inputs:
+        frame = frames.get(inp.node_id)
+        row_count = len(frame) if frame is not None else 0
+        _append_log(
+            live,
+            f"Loaded source node '{inp.node_id}' dataset version #{inp.dataset_version_id} "
+            f"({row_count} rows).",
+        )
 
-    _append_log(live, "Executing preparation graph...")
+    _append_log(live, "Executing preparation graph.")
     graph = parse_graph_json(version.graph_json)
     result_frame = execute_preparation_graph(graph, frames)
 
-    _append_log(live, "Writing output dataset version...")
+    _append_log(
+        live,
+        f"Materializing output dataset #{output_dataset.id} as Parquet.",
+    )
     out_version = create_output_version(
         db, output_dataset, live, result_frame, preparation.name
     )
@@ -294,6 +306,11 @@ def execute_claimed_preparation_run(
     live.output_dataset_version_id = out_version.id
     live.error_message = None
     live.finished_at = datetime.now(timezone.utc)
+    _append_log(
+        live,
+        f"Created dataset version v{out_version.version} (#{out_version.id}), "
+        f"{out_version.row_count} rows, {out_version.column_count} columns.",
+    )
     _append_log(live, "Preparation succeeded.")
     db.flush()
     return live
