@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -25,30 +26,51 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Link, useBeforeUnload, useNavigate, useParams } from "react-router-dom";
+import { Link, useBeforeUnload, useParams } from "react-router-dom";
 import {
   api,
   type Dataset,
   type DatasetPreparation,
   type DatasetPreparationNodeType,
+  type DatasetPreparationOutputDatasetResult,
   type DatasetPreparationPreviewResult,
+  type DatasetPreparationRun,
   type DatasetPreparationValidationResult,
+  type DatasetPreparationVersion,
   type DatasetVersion,
 } from "../api";
 import { useAuth } from "../AuthContext";
-import { ErrorNotice, Loading, SuccessNotice } from "../components";
+import { ErrorNotice, Loading, StatusBadge, SuccessNotice, formatDate } from "../components";
 import {
+  CAST_TYPES,
+  DERIVED_OPERATIONS,
+  FILTER_NULLARY_OPS,
+  FILTER_OPERATORS,
   PREPARATION_FLOW_NODE_TYPE,
-  PREPARATION_NODE_LIBRARY,
+  PREPARATION_NODE_LIBRARY_GROUPS,
   apiGraphToFlow,
   defaultConfigForPreparation,
   flowToApiGraph,
   formatKeyList,
+  formatRenameMapping,
+  isPreparationRunActive,
   labelForPreparationType,
   nextPreparationNodeId,
+  parseCasts,
+  parseDerivedOperand,
+  parseFillValues,
+  parseFilterConditions,
   parseKeyList,
+  parseRenameMapping,
   preparationConfigSummary,
+  serializeCasts,
+  serializeFillValues,
+  serializeFilterConditions,
+  sourceDatasetIdsInGraph,
   staggerPreparationPosition,
+  type DerivedOperand,
+  type FillValueRow,
+  type FilterCondition,
   type PreparationFlowEdge,
   type PreparationFlowNode,
 } from "../preparationHelpers";
@@ -143,7 +165,6 @@ function toPrepEdges(edges: PreparationFlowEdge[]): Edge[] {
 
 export default function PreparationBuilder() {
   const { projectId, preparationId } = useParams();
-  const navigate = useNavigate();
   const { user } = useAuth();
   const { selectedProject } = useProject();
   const [preparation, setPreparation] = useState<DatasetPreparation | null>(null);
@@ -151,18 +172,25 @@ export default function PreparationBuilder() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
+  const [prepVersions, setPrepVersions] = useState<DatasetPreparationVersion[]>([]);
+  const [runs, setRuns] = useState<DatasetPreparationRun[]>([]);
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState("");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [successRun, setSuccessRun] = useState<DatasetPreparationRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const [newOutputName, setNewOutputName] = useState("");
+  const [newOutputDescription, setNewOutputDescription] = useState("");
   const [validation, setValidation] = useState<DatasetPreparationValidationResult | null>(
     null,
   );
   const [preview, setPreview] = useState<DatasetPreparationPreviewResult | null>(null);
   const previewSeqRef = useRef(0);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canWrite = userCanProject(
     user,
     selectedProject,
@@ -187,13 +215,28 @@ export default function PreparationBuilder() {
     clearPreview();
   }, [clearPreview]);
 
+  const loadRuns = useCallback(async () => {
+    if (!projectId || !preparationId) return [];
+    const rows = await api<DatasetPreparationRun[]>(
+      `/projects/${projectId}/dataset-preparations/${preparationId}/runs`,
+    );
+    setRuns(rows);
+    return rows;
+  }, [preparationId, projectId]);
+
   const load = useCallback(async () => {
     try {
-      const [row, datasetRows] = await Promise.all([
+      const [row, datasetRows, versionRows, runRows] = await Promise.all([
         api<DatasetPreparation>(
           `/projects/${projectId}/dataset-preparations/${preparationId}`,
         ),
         api<Dataset[]>(`/projects/${projectId}/datasets`).catch(() => [] as Dataset[]),
+        api<DatasetPreparationVersion[]>(
+          `/projects/${projectId}/dataset-preparations/${preparationId}/versions`,
+        ).catch(() => [] as DatasetPreparationVersion[]),
+        api<DatasetPreparationRun[]>(
+          `/projects/${projectId}/dataset-preparations/${preparationId}/runs`,
+        ).catch(() => [] as DatasetPreparationRun[]),
       ]);
       const graph = row.version?.graph || { schema_version: 1 as const, nodes: [], edges: [] };
       const flow = apiGraphToFlow(graph);
@@ -201,6 +244,8 @@ export default function PreparationBuilder() {
       setNodes(toPrepNodes(flow.nodes));
       setEdges(toPrepEdges(flow.edges));
       setDatasets(datasetRows);
+      setPrepVersions(versionRows);
+      setRuns(runRows);
       setDirty(false);
       setValidation(null);
       setPreview(null);
@@ -215,6 +260,53 @@ export default function PreparationBuilder() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const successRunIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    successRunIdRef.current = successRun?.id ?? null;
+  }, [successRun?.id]);
+
+  useEffect(() => {
+    const hasActive = runs.some((run) => isPreparationRunActive(run.status));
+    if (!hasActive) {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      return;
+    }
+    if (pollRef.current) return;
+    pollRef.current = setInterval(() => {
+      void loadRuns().then(async (rows) => {
+        const trackedId = successRunIdRef.current;
+        const matched = trackedId != null ? rows.find((run) => run.id === trackedId) : undefined;
+        if (matched) {
+          setSuccessRun((prev) =>
+            prev &&
+            prev.id === matched.id &&
+            prev.status === matched.status &&
+            prev.output_dataset_version_id === matched.output_dataset_version_id
+              ? prev
+              : matched,
+          );
+        }
+        if (matched && String(matched.status).toLowerCase() === "succeeded") {
+          try {
+            const datasetRows = await api<Dataset[]>(`/projects/${projectId}/datasets`);
+            setDatasets(datasetRows);
+          } catch {
+            /* ignore refresh failures during poll */
+          }
+        }
+      });
+    }, 2000);
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [loadRuns, projectId, runs]);
 
   useBeforeUnload(
     useCallback(
@@ -231,6 +323,22 @@ export default function PreparationBuilder() {
     () => nodes.find((node) => node.id === selectedId) || null,
     [nodes, selectedId],
   );
+
+  const usedSourceDatasetIds = useMemo(() => sourceDatasetIdsInGraph(nodes), [nodes]);
+
+  const versionNumberById = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const version of prepVersions) map.set(version.id, version.version);
+    if (preparation?.version) {
+      map.set(preparation.version.id, preparation.version.version);
+    }
+    return map;
+  }, [prepVersions, preparation]);
+
+  const outputDataset = useMemo(() => {
+    if (preparation?.output_dataset_id == null) return null;
+    return datasets.find((dataset) => dataset.id === preparation.output_dataset_id) || null;
+  }, [datasets, preparation]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.data.node_type !== "source" || !projectId) {
@@ -402,19 +510,22 @@ export default function PreparationBuilder() {
     setSuccess("");
     try {
       const graph = currentGraph();
-      const version = await api(
+      const version = await api<DatasetPreparationVersion>(
         `/projects/${projectId}/dataset-preparations/${preparationId}/versions`,
         { method: "POST", body: JSON.stringify({ graph }) },
       );
       setDirty(false);
       setSuccess("Version saved.");
+      setPrepVersions((rows) => {
+        const without = rows.filter((row) => row.id !== version.id);
+        return [...without, version].sort((a, b) => b.version - a.version);
+      });
       setPreparation((prev) =>
         prev
           ? {
               ...prev,
-              latest_version:
-                (version as { version?: number }).version ?? prev.latest_version + 1,
-              version: version as DatasetPreparation["version"],
+              latest_version: version.version ?? prev.latest_version + 1,
+              version,
             }
           : prev,
       );
@@ -478,12 +589,161 @@ export default function PreparationBuilder() {
     }
   }
 
+  async function selectOutputDataset(datasetId: number | null) {
+    if (!canWrite || !preparation) return;
+    setBusy("output");
+    setError("");
+    try {
+      const updated = await api<DatasetPreparation>(
+        `/projects/${projectId}/dataset-preparations/${preparationId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ output_dataset_id: datasetId }),
+        },
+      );
+      setPreparation((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...updated,
+              version: prev.version,
+            }
+          : prev,
+      );
+      setSuccess(
+        datasetId == null
+          ? "Output dataset cleared."
+          : "Output dataset updated.",
+      );
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Output dataset could not be updated.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function createOutputDataset() {
+    if (!canWrite) return;
+    const name = newOutputName.trim();
+    if (!name) {
+      setError("Dataset name is required.");
+      return;
+    }
+    setBusy("output-create");
+    setError("");
+    try {
+      const result = await api<DatasetPreparationOutputDatasetResult>(
+        `/projects/${projectId}/dataset-preparations/${preparationId}/output-dataset`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            description: newOutputDescription.trim(),
+          }),
+        },
+      );
+      setPreparation((prev) =>
+        prev
+          ? {
+              ...prev,
+              ...result.preparation,
+              version: prev.version,
+            }
+          : prev,
+      );
+      setDatasets((rows) => {
+        const without = rows.filter((row) => row.id !== result.output_dataset.id);
+        return [...without, result.output_dataset].sort((a, b) => a.name.localeCompare(b.name));
+      });
+      setNewOutputName("");
+      setNewOutputDescription("");
+      setSuccess(`Output dataset “${result.output_dataset.name}” created.`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Output dataset could not be created.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runPreparation() {
+    if (!canWrite || !preparation) return;
+    setBusy("run");
+    setError("");
+    setSuccess("");
+    setSuccessRun(null);
+    try {
+      const created = await api<DatasetPreparationRun>(
+        `/projects/${projectId}/dataset-preparations/${preparationId}/runs`,
+        { method: "POST", body: JSON.stringify({ version: null }) },
+      );
+      const queued = await api<DatasetPreparationRun>(
+        `/projects/${projectId}/dataset-preparation-runs/${created.id}/execute`,
+        { method: "POST" },
+      );
+      setSuccessRun(queued);
+      setSuccess("Preparation run queued.");
+      await loadRuns();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Preparation run failed to start.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function executeExistingRun(runId: number) {
+    if (!canWrite) return;
+    setBusy(`execute-${runId}`);
+    setError("");
+    try {
+      const queued = await api<DatasetPreparationRun>(
+        `/projects/${projectId}/dataset-preparation-runs/${runId}/execute`,
+        { method: "POST" },
+      );
+      setSuccessRun(queued);
+      setSuccess(`Run #${runId} queued.`);
+      await loadRuns();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Run could not be executed.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function expandRun(runId: number) {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      return;
+    }
+    setExpandedRunId(runId);
+    try {
+      const detail = await api<DatasetPreparationRun>(
+        `/projects/${projectId}/dataset-preparation-runs/${runId}`,
+      );
+      setRuns((rows) => rows.map((row) => (row.id === runId ? { ...row, ...detail } : row)));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Run details could not be loaded.");
+    }
+  }
+
   function onBack(event: MouseEvent<HTMLAnchorElement>) {
     if (!dirty) return;
     if (!window.confirm("You have unsaved changes. Leave without saving?")) {
       event.preventDefault();
     }
   }
+
+  const runDisabledReason = dirty
+    ? "Save first"
+    : preparation?.output_dataset_id == null
+      ? "Configure an output dataset before running"
+      : busy
+        ? "Busy"
+        : "";
+  const runDisabled = Boolean(runDisabledReason) || !canWrite;
 
   if (loading) return <Loading label="Loading preparation" />;
   if (!preparation) {
@@ -537,15 +797,27 @@ export default function PreparationBuilder() {
             {busy === "preview" ? "Previewing…" : "Preview"}
           </button>
           {canWrite && (
-            <button
-              type="button"
-              className="btn"
-              data-testid="preparation-save-version"
-              disabled={busy !== ""}
-              onClick={() => void saveVersion()}
-            >
-              {busy === "save" ? "Saving…" : "Save version"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn"
+                data-testid="preparation-save-version"
+                disabled={busy !== ""}
+                onClick={() => void saveVersion()}
+              >
+                {busy === "save" ? "Saving…" : "Save version"}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                data-testid="preparation-run"
+                disabled={runDisabled || busy !== ""}
+                title={runDisabledReason || undefined}
+                onClick={() => void runPreparation()}
+              >
+                {busy === "run" ? "Starting…" : "Run preparation"}
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -555,6 +827,43 @@ export default function PreparationBuilder() {
         <p className="form-hint" data-testid="preparation-dirty-hint">
           Save a version to keep your graph. Changes are not auto-saved.
         </p>
+      )}
+      {successRun && String(successRun.status).toLowerCase() === "succeeded" && (
+        <div
+          className="preparation-success-cta panel"
+          data-testid="preparation-success-cta"
+          role="status"
+        >
+          <div>
+            <span className="eyebrow">Preparation succeeded</span>
+            <h2>
+              Output Dataset
+              {(() => {
+                const dataset =
+                  successRun.output_dataset_id == null
+                    ? null
+                    : datasets.find((row) => row.id === successRun.output_dataset_id);
+                if (!dataset) {
+                  return successRun.output_dataset_id != null
+                    ? ` · #${successRun.output_dataset_id}`
+                    : "";
+                }
+                const versionLabel =
+                  dataset.latest_version > 0 ? ` · v${dataset.latest_version}` : "";
+                return ` · ${dataset.name}${versionLabel}`;
+              })()}
+            </h2>
+          </div>
+          {successRun.output_dataset_id != null && (
+            <Link
+              className="btn"
+              to={`/projects/${projectId}/datasets/${successRun.output_dataset_id}`}
+              data-testid="preparation-open-output-dataset"
+            >
+              Open dataset
+            </Link>
+          )}
+        </div>
       )}
 
       <div
@@ -566,22 +875,31 @@ export default function PreparationBuilder() {
           <aside className="preparation-node-library panel">
             <span className="eyebrow">Node library</span>
             <p className="form-hint">Click a node type to add it to the canvas.</p>
-            <ul className="preparation-library-list">
-              {PREPARATION_NODE_LIBRARY.map((item) => (
-                <li key={item.type}>
-                  <button
-                    type="button"
-                    className="preparation-library-item"
-                    data-testid={`preparation-library-${item.type}`}
-                    title={item.description}
-                    onClick={() => addNodeOfType(item.type)}
-                  >
-                    <span aria-hidden="true">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {PREPARATION_NODE_LIBRARY_GROUPS.map((group) => (
+              <div
+                key={group.id}
+                className="preparation-library-group"
+                data-testid={`preparation-library-group-${group.id}`}
+              >
+                <span className="preparation-library-group-label">{group.label}</span>
+                <ul className="preparation-library-list">
+                  {group.items.map((item) => (
+                    <li key={item.type}>
+                      <button
+                        type="button"
+                        className="preparation-library-item"
+                        data-testid={`preparation-library-${item.type}`}
+                        title={item.description}
+                        onClick={() => addNodeOfType(item.type)}
+                      >
+                        <span aria-hidden="true">{item.icon}</span>
+                        <span>{item.label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </aside>
         )}
 
@@ -596,7 +914,8 @@ export default function PreparationBuilder() {
                 <>
                   <h2>Start with a source</h2>
                   <p className="muted">
-                    Add dataset sources, then join or union them into a single output.
+                    Add dataset sources, then transform, join, or union them into a single
+                    output.
                   </p>
                   <button
                     className="btn"
@@ -655,15 +974,20 @@ export default function PreparationBuilder() {
                   <dt>Nodes</dt>
                   <dd>{nodes.length}</dd>
                 </div>
-                <div>
-                  <dt>Output dataset</dt>
-                  <dd>
-                    {preparation.output_dataset_id == null
-                      ? "Not configured"
-                      : `#${preparation.output_dataset_id}`}
-                  </dd>
-                </div>
               </dl>
+              <OutputDatasetPanel
+                preparation={preparation}
+                datasets={datasets}
+                usedSourceDatasetIds={usedSourceDatasetIds}
+                canWrite={canWrite}
+                busy={busy}
+                newOutputName={newOutputName}
+                newOutputDescription={newOutputDescription}
+                onNewOutputName={setNewOutputName}
+                onNewOutputDescription={setNewOutputDescription}
+                onSelect={(datasetId) => void selectOutputDataset(datasetId)}
+                onCreate={() => void createOutputDataset()}
+              />
               <p className="form-hint">
                 {canWrite
                   ? "Select a node on the canvas to configure it, or add one from the node library."
@@ -705,6 +1029,72 @@ export default function PreparationBuilder() {
                   onChange={updateSelectedConfig}
                 />
               )}
+              {selectedNode.data.node_type === "select" && (
+                <ColumnsInspector
+                  testId="preparation-select-inspector"
+                  label="Columns to keep"
+                  columns={selectedNode.data.config.columns}
+                  canWrite={canWrite}
+                  onChange={(columns) =>
+                    updateSelectedConfig({ ...selectedNode.data.config, columns })
+                  }
+                />
+              )}
+              {selectedNode.data.node_type === "drop" && (
+                <ColumnsInspector
+                  testId="preparation-drop-inspector"
+                  label="Columns to drop"
+                  columns={selectedNode.data.config.columns}
+                  canWrite={canWrite}
+                  onChange={(columns) =>
+                    updateSelectedConfig({ ...selectedNode.data.config, columns })
+                  }
+                />
+              )}
+              {selectedNode.data.node_type === "rename" && (
+                <RenameInspector
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
+              {selectedNode.data.node_type === "filter" && (
+                <FilterInspector
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
+              {selectedNode.data.node_type === "cast" && (
+                <CastInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
+              {selectedNode.data.node_type === "deduplicate" && (
+                <DeduplicateInspector
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
+              {selectedNode.data.node_type === "fill_constant" && (
+                <FillInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
+              {selectedNode.data.node_type === "derived_column" && (
+                <DerivedInspector
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                />
+              )}
               {selectedNode.data.node_type === "output" && (
                 <p className="muted" data-testid="preparation-output-readonly">
                   Output marks the prepared result. Connect exactly one upstream node. No
@@ -725,10 +1115,140 @@ export default function PreparationBuilder() {
                   </button>
                 </>
               )}
+              <hr />
+              <OutputDatasetPanel
+                preparation={preparation}
+                datasets={datasets}
+                usedSourceDatasetIds={usedSourceDatasetIds}
+                canWrite={canWrite}
+                busy={busy}
+                newOutputName={newOutputName}
+                newOutputDescription={newOutputDescription}
+                onNewOutputName={setNewOutputName}
+                onNewOutputDescription={setNewOutputDescription}
+                onSelect={(datasetId) => void selectOutputDataset(datasetId)}
+                onCreate={() => void createOutputDataset()}
+                compact
+              />
             </>
           )}
         </aside>
       </div>
+
+      <section
+        className="preparation-run-history panel"
+        data-testid="preparation-run-history"
+      >
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">Runs</span>
+            <h2>Run history</h2>
+          </div>
+        </div>
+        {runs.length === 0 ? (
+          <p className="muted" data-testid="preparation-run-history-empty">
+            No preparation runs yet.
+          </p>
+        ) : (
+          <div className="preparation-run-table-wrap">
+            <table data-testid="preparation-run-table">
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>Recipe version</th>
+                  <th>Status</th>
+                  <th>Started</th>
+                  <th>Finished</th>
+                  <th>Output</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run) => {
+                  const status = String(run.status).toLowerCase();
+                  const recipeVersion = versionNumberById.get(run.preparation_version_id);
+                  const outputName =
+                    run.output_dataset_id == null
+                      ? "—"
+                      : datasets.find((dataset) => dataset.id === run.output_dataset_id)
+                          ?.name || `#${run.output_dataset_id}`;
+                  return (
+                    <Fragment key={run.id}>
+                      <tr data-testid={`preparation-run-row-${run.id}`}>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn link"
+                            data-testid={`preparation-run-expand-${run.id}`}
+                            onClick={() => void expandRun(run.id)}
+                          >
+                            #{run.id}
+                          </button>
+                        </td>
+                        <td>
+                          {recipeVersion != null
+                            ? `v${recipeVersion}`
+                            : `id ${run.preparation_version_id}`}
+                        </td>
+                        <td>
+                          <StatusBadge status={run.status} />
+                        </td>
+                        <td>{formatDate(run.started_at || run.created_at)}</td>
+                        <td>{formatDate(run.finished_at)}</td>
+                        <td>{outputName}</td>
+                        <td>
+                          {status === "created" && canWrite && (
+                            <button
+                              type="button"
+                              className="btn secondary"
+                              data-testid={`preparation-run-execute-${run.id}`}
+                              disabled={busy !== ""}
+                              onClick={() => void executeExistingRun(run.id)}
+                            >
+                              Execute
+                            </button>
+                          )}
+                          {status === "succeeded" && run.output_dataset_id != null && (
+                            <Link
+                              className="btn link"
+                              to={`/projects/${projectId}/datasets/${run.output_dataset_id}`}
+                              data-testid={`preparation-run-open-${run.id}`}
+                            >
+                              Open dataset
+                            </Link>
+                          )}
+                          {status === "failed" && (
+                            <button
+                              type="button"
+                              className="btn link"
+                              data-testid={`preparation-run-show-error-${run.id}`}
+                              onClick={() => void expandRun(run.id)}
+                            >
+                              Show error
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedRunId === run.id && (
+                        <tr data-testid={`preparation-run-detail-${run.id}`}>
+                          <td colSpan={7}>
+                            <RunDetailPanel run={run} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {outputDataset && (
+          <p className="form-hint" data-testid="preparation-output-dataset-hint">
+            Current output dataset: {outputDataset.name} (#{outputDataset.id})
+          </p>
+        )}
+      </section>
 
       {(validation || preview) && (
         <section className="preparation-results panel" data-testid="preparation-results">
@@ -832,6 +1352,158 @@ function formatPreviewCell(value: unknown): string {
     }
   }
   return String(value);
+}
+
+function OutputDatasetPanel({
+  preparation,
+  datasets,
+  usedSourceDatasetIds,
+  canWrite,
+  busy,
+  newOutputName,
+  newOutputDescription,
+  onNewOutputName,
+  onNewOutputDescription,
+  onSelect,
+  onCreate,
+  compact = false,
+}: {
+  preparation: DatasetPreparation;
+  datasets: Dataset[];
+  usedSourceDatasetIds: Set<number>;
+  canWrite: boolean;
+  busy: string;
+  newOutputName: string;
+  newOutputDescription: string;
+  onNewOutputName: (value: string) => void;
+  onNewOutputDescription: (value: string) => void;
+  onSelect: (datasetId: number | null) => void;
+  onCreate: () => void;
+  compact?: boolean;
+}) {
+  const configured = preparation.output_dataset_id != null;
+  return (
+    <div
+      className={`preparation-output-dataset${compact ? " is-compact" : ""}`}
+      data-testid="preparation-output-dataset"
+    >
+      <span className="eyebrow">Output dataset</span>
+      {!configured && (
+        <p className="muted" data-testid="preparation-output-empty">
+          No output dataset configured.
+        </p>
+      )}
+      {!configured && (
+        <p className="form-hint">
+          Choose an existing dataset or create a new one before running.
+        </p>
+      )}
+      <label>
+        Existing dataset
+        <select
+          data-testid="preparation-output-select"
+          disabled={!canWrite || busy.startsWith("output")}
+          value={
+            preparation.output_dataset_id == null
+              ? ""
+              : String(preparation.output_dataset_id)
+          }
+          onChange={(event) => {
+            const value = event.target.value;
+            onSelect(value ? Number(value) : null);
+          }}
+        >
+          <option value="">Select dataset…</option>
+          {datasets.map((dataset) => {
+            const usedAsSource = usedSourceDatasetIds.has(dataset.id);
+            return (
+              <option
+                key={dataset.id}
+                value={dataset.id}
+                disabled={usedAsSource}
+              >
+                {dataset.name}
+                {usedAsSource ? " (used as source)" : ""}
+              </option>
+            );
+          })}
+        </select>
+      </label>
+      {canWrite && usedSourceDatasetIds.size > 0 && (
+        <p className="form-hint" data-testid="preparation-output-source-warn">
+          Datasets used as graph sources are disabled to avoid writing over inputs.
+        </p>
+      )}
+      {canWrite && (
+        <div className="preparation-output-create" data-testid="preparation-output-create">
+          <span className="eyebrow">Create new</span>
+          <label>
+            Name
+            <input
+              data-testid="preparation-output-name"
+              value={newOutputName}
+              disabled={busy.startsWith("output")}
+              onChange={(event) => onNewOutputName(event.target.value)}
+              placeholder="prepared-iris"
+            />
+          </label>
+          <label>
+            Description
+            <input
+              data-testid="preparation-output-description"
+              value={newOutputDescription}
+              disabled={busy.startsWith("output")}
+              onChange={(event) => onNewOutputDescription(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="preparation-output-create-submit"
+            disabled={busy !== "" || !newOutputName.trim()}
+            onClick={onCreate}
+          >
+            {busy === "output-create" ? "Creating…" : "Create output dataset"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunDetailPanel({ run }: { run: DatasetPreparationRun }) {
+  return (
+    <div className="preparation-run-detail">
+      {run.error_message && (
+        <p className="error" data-testid={`preparation-run-error-${run.id}`}>
+          {run.error_message}
+        </p>
+      )}
+      {run.inputs && run.inputs.length > 0 && (
+        <div data-testid={`preparation-run-inputs-${run.id}`}>
+          <strong>Inputs</strong>
+          <ul>
+            {run.inputs.map((input) => (
+              <li key={input.id}>
+                {input.node_id}: dataset #{input.dataset_id} · version #
+                {input.dataset_version_id} ({input.version_strategy})
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {run.logs ? (
+        <pre
+          className="preparation-run-logs"
+          data-testid={`preparation-run-logs-${run.id}`}
+        >
+          {run.logs}
+        </pre>
+      ) : (
+        <p className="muted">No logs yet.</p>
+      )}
+    </div>
+  );
 }
 
 function SourceInspector({
@@ -1062,5 +1734,537 @@ function UnionInspector({
           : "Requires identical column names and order."}
       </p>
     </div>
+  );
+}
+
+function ColumnsInspector({
+  testId,
+  label,
+  columns,
+  canWrite,
+  onChange,
+}: {
+  testId: string;
+  label: string;
+  columns: unknown;
+  canWrite: boolean;
+  onChange: (columns: string[]) => void;
+}) {
+  return (
+    <div className="preparation-inspector-form" data-testid={testId}>
+      <label>
+        {label}
+        <input
+          data-testid={`${testId}-columns`}
+          disabled={!canWrite}
+          value={formatKeyList(columns)}
+          placeholder="col_a, col_b"
+          onChange={(event) => onChange(parseKeyList(event.target.value))}
+        />
+        <small>Comma-separated column names.</small>
+      </label>
+    </div>
+  );
+}
+
+function RenameInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-rename-inspector">
+      <label>
+        Renames
+        <textarea
+          data-testid="preparation-rename-mapping"
+          disabled={!canWrite}
+          rows={5}
+          value={formatRenameMapping(config.mapping)}
+          placeholder={"old_name = new_name"}
+          onChange={(event) =>
+            onChange({ ...config, mapping: parseRenameMapping(event.target.value) })
+          }
+        />
+        <small>One mapping per line: old = new</small>
+      </label>
+    </div>
+  );
+}
+
+function FilterInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const combine = config.combine === "or" ? "or" : "and";
+  const conditions = parseFilterConditions(config.conditions);
+
+  function commit(
+    nextConditions: FilterCondition[],
+    nextCombine: "and" | "or" = combine,
+  ) {
+    onChange({
+      ...config,
+      ...serializeFilterConditions(nextConditions, nextCombine),
+    });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-filter-inspector">
+      <label>
+        Combine
+        <select
+          data-testid="preparation-filter-combine"
+          disabled={!canWrite}
+          value={combine}
+          onChange={(event) =>
+            commit(conditions, event.target.value === "or" ? "or" : "and")
+          }
+        >
+          <option value="and">and</option>
+          <option value="or">or</option>
+        </select>
+      </label>
+      <div className="preparation-filter-rows">
+        {conditions.map((condition, index) => {
+          const nullary = FILTER_NULLARY_OPS.has(condition.operator);
+          return (
+            <div
+              key={index}
+              className="preparation-filter-row"
+              data-testid={`preparation-filter-row-${index}`}
+            >
+              <input
+                data-testid={`preparation-filter-column-${index}`}
+                disabled={!canWrite}
+                placeholder="column"
+                value={condition.column}
+                onChange={(event) => {
+                  const next = [...conditions];
+                  next[index] = { ...condition, column: event.target.value };
+                  commit(next);
+                }}
+              />
+              <select
+                data-testid={`preparation-filter-operator-${index}`}
+                disabled={!canWrite}
+                value={condition.operator}
+                onChange={(event) => {
+                  const next = [...conditions];
+                  next[index] = { ...condition, operator: event.target.value };
+                  commit(next);
+                }}
+              >
+                {FILTER_OPERATORS.map((operator) => (
+                  <option key={operator} value={operator}>
+                    {operator}
+                  </option>
+                ))}
+              </select>
+              {!nullary && (
+                <input
+                  data-testid={`preparation-filter-value-${index}`}
+                  disabled={!canWrite}
+                  placeholder={condition.operator === "in" ? "a, b, c" : "value"}
+                  value={
+                    Array.isArray(condition.value)
+                      ? condition.value.map(String).join(", ")
+                      : String(condition.value ?? "")
+                  }
+                  onChange={(event) => {
+                    const next = [...conditions];
+                    next[index] = { ...condition, value: event.target.value };
+                    commit(next);
+                  }}
+                />
+              )}
+              {canWrite && (
+                <button
+                  type="button"
+                  className="btn link danger-text"
+                  data-testid={`preparation-filter-remove-${index}`}
+                  onClick={() => commit(conditions.filter((_, i) => i !== index))}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-filter-add"
+          onClick={() =>
+            commit([...conditions, { column: "", operator: "eq", value: "" }])
+          }
+        >
+          Add condition
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CastInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const [rows, setRows] = useState(() => {
+    const parsed = parseCasts(config.casts);
+    return parsed.length ? parsed : [];
+  });
+
+  function commit(nextRows: Array<{ column: string; dtype: string }>) {
+    setRows(nextRows);
+    onChange({ ...config, casts: serializeCasts(nextRows) });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-cast-inspector">
+      <div className="preparation-cast-rows">
+        {rows.map((row, index) => (
+          <div
+            key={index}
+            className="preparation-cast-row"
+            data-testid={`preparation-cast-row-${index}`}
+          >
+            <input
+              data-testid={`preparation-cast-column-${index}`}
+              disabled={!canWrite}
+              placeholder="column"
+              value={row.column}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, column: event.target.value };
+                commit(next);
+              }}
+            />
+            <select
+              data-testid={`preparation-cast-dtype-${index}`}
+              disabled={!canWrite}
+              value={row.dtype}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, dtype: event.target.value };
+                commit(next);
+              }}
+            >
+              {CAST_TYPES.map((dtype) => (
+                <option key={dtype} value={dtype}>
+                  {dtype}
+                </option>
+              ))}
+            </select>
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-cast-remove-${index}`}
+                onClick={() => commit(rows.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-cast-add"
+          onClick={() => commit([...rows, { column: "", dtype: "string" }])}
+        >
+          Add cast
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DeduplicateInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-deduplicate-inspector">
+      <label>
+        Key columns
+        <input
+          data-testid="preparation-deduplicate-columns"
+          disabled={!canWrite}
+          value={formatKeyList(config.columns)}
+          placeholder="Leave empty to use all columns"
+          onChange={(event) =>
+            onChange({ ...config, columns: parseKeyList(event.target.value) })
+          }
+        />
+        <small>Comma-separated. Empty means all columns.</small>
+      </label>
+      <label>
+        Keep
+        <select
+          data-testid="preparation-deduplicate-keep"
+          disabled={!canWrite}
+          value={config.keep === "last" ? "last" : "first"}
+          onChange={(event) => onChange({ ...config, keep: event.target.value })}
+        >
+          <option value="first">first</option>
+          <option value="last">last</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function FillInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const [rows, setRows] = useState(() => parseFillValues(config.values));
+
+  function commit(nextRows: FillValueRow[]) {
+    setRows(nextRows);
+    onChange({ ...config, values: serializeFillValues(nextRows) });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-fill-inspector">
+      <div className="preparation-fill-rows">
+        {rows.map((row, index) => (
+          <div
+            key={index}
+            className="preparation-fill-row"
+            data-testid={`preparation-fill-row-${index}`}
+          >
+            <input
+              data-testid={`preparation-fill-column-${index}`}
+              disabled={!canWrite}
+              placeholder="column"
+              value={row.column}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, column: event.target.value };
+                commit(next);
+              }}
+            />
+            <select
+              data-testid={`preparation-fill-kind-${index}`}
+              disabled={!canWrite}
+              value={row.kind}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = {
+                  ...row,
+                  kind: event.target.value as FillValueRow["kind"],
+                };
+                commit(next);
+              }}
+            >
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+            </select>
+            {row.kind === "boolean" ? (
+              <select
+                data-testid={`preparation-fill-value-${index}`}
+                disabled={!canWrite}
+                value={row.value === "true" ? "true" : "false"}
+                onChange={(event) => {
+                  const next = [...rows];
+                  next[index] = { ...row, value: event.target.value };
+                  commit(next);
+                }}
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (
+              <input
+                data-testid={`preparation-fill-value-${index}`}
+                disabled={!canWrite}
+                placeholder="value"
+                value={row.value}
+                onChange={(event) => {
+                  const next = [...rows];
+                  next[index] = { ...row, value: event.target.value };
+                  commit(next);
+                }}
+              />
+            )}
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-fill-remove-${index}`}
+                onClick={() => commit(rows.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-fill-add"
+          onClick={() =>
+            commit([...rows, { column: "", kind: "string", value: "" }])
+          }
+        >
+          Add fill
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DerivedInspector({
+  config,
+  canWrite,
+  onChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+}) {
+  const left = parseDerivedOperand(config.left, { kind: "column", value: "" });
+  const right = parseDerivedOperand(config.right, { kind: "literal", value: 0 });
+
+  function updateOperand(side: "left" | "right", next: DerivedOperand) {
+    onChange({ ...config, [side]: next });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-derived-inspector">
+      <label>
+        Column name
+        <input
+          data-testid="preparation-derived-name"
+          disabled={!canWrite}
+          value={String(config.name ?? "")}
+          onChange={(event) => onChange({ ...config, name: event.target.value })}
+        />
+      </label>
+      <label>
+        Operation
+        <select
+          data-testid="preparation-derived-operation"
+          disabled={!canWrite}
+          value={String(config.operation || "add")}
+          onChange={(event) => onChange({ ...config, operation: event.target.value })}
+        >
+          {DERIVED_OPERATIONS.map((operation) => (
+            <option key={operation} value={operation}>
+              {operation}
+            </option>
+          ))}
+        </select>
+      </label>
+      <OperandFields
+        label="Left"
+        testIdPrefix="preparation-derived-left"
+        operand={left}
+        canWrite={canWrite}
+        onChange={(next) => updateOperand("left", next)}
+      />
+      <OperandFields
+        label="Right"
+        testIdPrefix="preparation-derived-right"
+        operand={right}
+        canWrite={canWrite}
+        onChange={(next) => updateOperand("right", next)}
+      />
+    </div>
+  );
+}
+
+function OperandFields({
+  label,
+  testIdPrefix,
+  operand,
+  canWrite,
+  onChange,
+}: {
+  label: string;
+  testIdPrefix: string;
+  operand: DerivedOperand;
+  canWrite: boolean;
+  onChange: (next: DerivedOperand) => void;
+}) {
+  return (
+    <fieldset className="preparation-operand-fields">
+      <legend>{label}</legend>
+      <label>
+        Kind
+        <select
+          data-testid={`${testIdPrefix}-kind`}
+          disabled={!canWrite}
+          value={operand.kind}
+          onChange={(event) =>
+            onChange({
+              kind: event.target.value === "literal" ? "literal" : "column",
+              value: event.target.value === "literal" ? 0 : "",
+            })
+          }
+        >
+          <option value="column">column</option>
+          <option value="literal">literal</option>
+        </select>
+      </label>
+      <label>
+        Value
+        <input
+          data-testid={`${testIdPrefix}-value`}
+          disabled={!canWrite}
+          value={String(operand.value ?? "")}
+          onChange={(event) => {
+            if (operand.kind === "literal") {
+              const raw = event.target.value;
+              if (raw === "true" || raw === "false") {
+                onChange({ kind: "literal", value: raw === "true" });
+                return;
+              }
+              const asNumber = Number(raw);
+              onChange({
+                kind: "literal",
+                value: raw !== "" && Number.isFinite(asNumber) ? asNumber : raw,
+              });
+              return;
+            }
+            onChange({ kind: "column", value: event.target.value });
+          }}
+        />
+      </label>
+    </fieldset>
   );
 }

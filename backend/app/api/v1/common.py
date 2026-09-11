@@ -577,6 +577,7 @@ def dataset_preparation_run_out(
         "preparation_id": row.preparation_id,
         "preparation_version_id": row.preparation_version_id,
         "status": enum_value(row.status),
+        "output_dataset_id": row.output_dataset_id,
         "output_dataset_version_id": row.output_dataset_version_id,
         "logs": row.logs or "",
         "error_message": row.error_message,

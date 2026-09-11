@@ -1,6 +1,8 @@
-"""Dataset Preparation graph validation and source pinning (Phase 2-A foundation).
+"""Dataset Preparation graph validation and source pinning (Phase 2-A/2-C).
 
-No transformation execution or materialization — validation and RunInput pinning only.
+Validation covers Source/Join/Union/Output plus deterministic transforms.
+Full-data materialization lives in dataset_preparation_materialization /
+worker — this module does not execute DataFrames.
 """
 
 from __future__ import annotations
@@ -15,10 +17,45 @@ from sqlalchemy.orm import Session
 from app.db import models
 from app.schemas.v1 import DatasetPreparationGraph
 
-NODE_TYPES = frozenset({"source", "join", "union", "output"})
+TRANSFORM_TYPES = frozenset(
+    {
+        "select",
+        "drop",
+        "rename",
+        "filter",
+        "cast",
+        "deduplicate",
+        "fill_constant",
+        "derived_column",
+    }
+)
+NODE_TYPES = frozenset({"source", "join", "union", "output"}) | TRANSFORM_TYPES
 VERSION_STRATEGIES = frozenset({"fixed", "latest"})
 JOIN_HOWS = frozenset({"inner", "left", "right", "full"})
 UNION_MODES = frozenset({"strict", "align_by_name"})
+FILTER_COMBINES = frozenset({"and", "or"})
+FILTER_OPERATORS = frozenset(
+    {
+        "eq",
+        "neq",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "contains",
+        "starts_with",
+        "ends_with",
+        "is_null",
+        "not_null",
+        "in",
+    }
+)
+FILTER_NULLARY_OPS = frozenset({"is_null", "not_null"})
+CAST_TYPES = frozenset({"integer", "float", "string", "boolean", "datetime"})
+DEDUP_KEEP = frozenset({"first", "last"})
+DERIVED_OPS = frozenset({"add", "subtract", "multiply", "divide", "concat"})
+OPERAND_KINDS = frozenset({"column", "literal"})
+JSON_SCALAR_TYPES = (str, int, float, bool)
 
 
 class PreparationValidationError(Exception):
@@ -260,6 +297,304 @@ def _validate_union_config(node_id: str, config: dict[str, Any]) -> list[str]:
     return []
 
 
+def _validate_string_column_list(
+    node_id: str,
+    node_type: str,
+    columns: Any,
+    *,
+    field_name: str = "columns",
+) -> tuple[list[str], bool]:
+    """Return (errors, is_empty). Empty list is not a hard error here."""
+    errors: list[str] = []
+    if not isinstance(columns, list):
+        return [f"{node_type} node '{node_id}': {field_name} must be a list of strings"], True
+    if any(not isinstance(item, str) or not item.strip() for item in columns):
+        errors.append(
+            f"{node_type} node '{node_id}': {field_name} entries must be non-empty strings"
+        )
+    stripped = [str(item).strip() for item in columns if isinstance(item, str)]
+    if len(stripped) != len(set(stripped)):
+        errors.append(f"{node_type} node '{node_id}': {field_name} must not contain duplicates")
+    return errors, len(stripped) == 0
+
+
+def _validate_select_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"select node '{node_id}': config must be an object"], warnings
+    col_errors, empty = _validate_string_column_list(node_id, "select", config.get("columns"))
+    errors.extend(col_errors)
+    if empty and not col_errors:
+        message = f"select node '{node_id}': columns must be a non-empty list"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    return errors, warnings
+
+
+def _validate_drop_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"drop node '{node_id}': config must be an object"], warnings
+    col_errors, empty = _validate_string_column_list(node_id, "drop", config.get("columns"))
+    errors.extend(col_errors)
+    if empty and not col_errors:
+        message = f"drop node '{node_id}': columns must be a non-empty list"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    return errors, warnings
+
+
+def _validate_rename_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"rename node '{node_id}': config must be an object"], warnings
+    mapping = config.get("mapping")
+    if not isinstance(mapping, dict):
+        return [f"rename node '{node_id}': mapping must be an object"], warnings
+    if not mapping:
+        message = f"rename node '{node_id}': mapping must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+    targets: list[str] = []
+    for source, target in mapping.items():
+        if not isinstance(source, str) or not source.strip():
+            errors.append(f"rename node '{node_id}': mapping keys must be non-empty strings")
+            continue
+        if not isinstance(target, str) or not target.strip():
+            errors.append(
+                f"rename node '{node_id}': mapping values must be non-empty strings"
+            )
+            continue
+        targets.append(target.strip())
+    if len(targets) != len(set(targets)):
+        errors.append(f"rename node '{node_id}': mapping targets must be unique")
+    return errors, warnings
+
+
+def _validate_filter_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"filter node '{node_id}': config must be an object"], warnings
+    combine = config.get("combine", "and")
+    if combine not in FILTER_COMBINES:
+        errors.append(f"filter node '{node_id}': combine must be 'and' or 'or'")
+    conditions = config.get("conditions")
+    if not isinstance(conditions, list):
+        return [f"filter node '{node_id}': conditions must be a list"], warnings
+    if not conditions:
+        message = f"filter node '{node_id}': conditions must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+    for idx, condition in enumerate(conditions):
+        prefix = f"filter node '{node_id}' condition {idx + 1}"
+        if not isinstance(condition, dict):
+            errors.append(f"{prefix}: must be an object")
+            continue
+        column = condition.get("column")
+        if not isinstance(column, str) or not column.strip():
+            errors.append(f"{prefix}: column must be a non-empty string")
+        operator = condition.get("operator")
+        if operator not in FILTER_OPERATORS:
+            errors.append(f"{prefix}: unsupported operator")
+            continue
+        if operator in FILTER_NULLARY_OPS:
+            continue
+        value = condition.get("value")
+        if operator == "in":
+            if not isinstance(value, list) or not value:
+                errors.append(f"{prefix}: 'in' operator requires a non-empty list value")
+        elif value is None:
+            errors.append(f"{prefix}: value is required")
+    return errors, warnings
+
+
+def _validate_cast_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"cast node '{node_id}': config must be an object"], warnings
+    casts = config.get("casts")
+    if not isinstance(casts, dict):
+        return [f"cast node '{node_id}': casts must be an object"], warnings
+    if not casts:
+        message = f"cast node '{node_id}': casts must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+    for column, cast_type in casts.items():
+        if not isinstance(column, str) or not column.strip():
+            errors.append(f"cast node '{node_id}': cast keys must be non-empty strings")
+            continue
+        if cast_type not in CAST_TYPES:
+            errors.append(
+                f"cast node '{node_id}': unsupported type '{cast_type}' for column '{column}'"
+            )
+    return errors, warnings
+
+
+def _validate_deduplicate_config(node_id: str, config: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(config, dict):
+        return [f"deduplicate node '{node_id}': config must be an object"]
+    columns = config.get("columns", [])
+    if not isinstance(columns, list):
+        errors.append(f"deduplicate node '{node_id}': columns must be a list of strings")
+    elif any(not isinstance(item, str) or not item.strip() for item in columns):
+        errors.append(
+            f"deduplicate node '{node_id}': columns entries must be non-empty strings"
+        )
+    elif len([str(c).strip() for c in columns]) != len(
+        {str(c).strip() for c in columns}
+    ):
+        errors.append(f"deduplicate node '{node_id}': columns must not contain duplicates")
+    keep = config.get("keep", "first")
+    if keep not in DEDUP_KEEP:
+        errors.append(f"deduplicate node '{node_id}': keep must be 'first' or 'last'")
+    return errors
+
+
+def _validate_fill_constant_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"fill_constant node '{node_id}': config must be an object"], warnings
+    values = config.get("values")
+    if not isinstance(values, dict):
+        return [f"fill_constant node '{node_id}': values must be an object"], warnings
+    if not values:
+        message = f"fill_constant node '{node_id}': values must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+    for column, fill_value in values.items():
+        if not isinstance(column, str) or not column.strip():
+            errors.append(
+                f"fill_constant node '{node_id}': value keys must be non-empty strings"
+            )
+            continue
+        if fill_value is None:
+            errors.append(
+                f"fill_constant node '{node_id}': null fill value is not allowed for '{column}'"
+            )
+        elif isinstance(fill_value, (list, dict)):
+            errors.append(
+                f"fill_constant node '{node_id}': fill value for '{column}' must be a scalar"
+            )
+        elif not isinstance(fill_value, (str, int, float, bool)):
+            errors.append(
+                f"fill_constant node '{node_id}': fill value for '{column}' must be string, number, or boolean"
+            )
+    return errors, warnings
+
+
+def _validate_operand(node_id: str, side: str, operand: Any) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(operand, dict):
+        return [f"derived_column node '{node_id}': {side} must be an object"]
+    kind = operand.get("kind")
+    if kind not in OPERAND_KINDS:
+        errors.append(f"derived_column node '{node_id}': {side}.kind must be column or literal")
+        return errors
+    if kind == "column":
+        value = operand.get("value")
+        if not isinstance(value, str) or not value.strip():
+            errors.append(
+                f"derived_column node '{node_id}': {side} column value must be a non-empty string"
+            )
+    else:
+        value = operand.get("value")
+        if value is None or isinstance(value, (list, dict)):
+            errors.append(
+                f"derived_column node '{node_id}': {side} literal must be a JSON scalar"
+            )
+        elif not isinstance(value, (str, int, float, bool)):
+            errors.append(
+                f"derived_column node '{node_id}': {side} literal must be string, number, or boolean"
+            )
+    return errors
+
+
+def _validate_derived_column_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"derived_column node '{node_id}': config must be an object"], warnings
+    name = config.get("name")
+    if not isinstance(name, str) or not name.strip():
+        message = f"derived_column node '{node_id}': name must be a non-empty string"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    operation = config.get("operation")
+    if operation not in DERIVED_OPS:
+        errors.append(
+            f"derived_column node '{node_id}': operation must be one of "
+            "add, subtract, multiply, divide, concat"
+        )
+    errors.extend(_validate_operand(node_id, "left", config.get("left")))
+    errors.extend(_validate_operand(node_id, "right", config.get("right")))
+    return errors, warnings
+
+
+def _validate_transform_config(
+    node_id: str,
+    node_type: str,
+    config: dict[str, Any],
+    *,
+    strict: bool,
+) -> tuple[list[str], list[str]]:
+    if node_type == "select":
+        return _validate_select_config(node_id, config, strict=strict)
+    if node_type == "drop":
+        return _validate_drop_config(node_id, config, strict=strict)
+    if node_type == "rename":
+        return _validate_rename_config(node_id, config, strict=strict)
+    if node_type == "filter":
+        return _validate_filter_config(node_id, config, strict=strict)
+    if node_type == "cast":
+        return _validate_cast_config(node_id, config, strict=strict)
+    if node_type == "deduplicate":
+        return _validate_deduplicate_config(node_id, config), []
+    if node_type == "fill_constant":
+        return _validate_fill_constant_config(node_id, config, strict=strict)
+    if node_type == "derived_column":
+        return _validate_derived_column_config(node_id, config, strict=strict)
+    return [], []
+
+
 def validate_preparation_graph(
     db: Session,
     project_id: int,
@@ -379,6 +714,12 @@ def validate_preparation_graph(
             errors.extend(_validate_join_config(node_id, config))
         elif node_type == "union":
             errors.extend(_validate_union_config(node_id, config))
+        elif node_type in TRANSFORM_TYPES:
+            transform_errors, transform_warnings = _validate_transform_config(
+                node_id, node_type, config, strict=strict
+            )
+            errors.extend(transform_errors)
+            warnings.extend(transform_warnings)
         elif node_type == "output" and config:
             warnings.append(f"output node '{node_id}': config should be an empty object")
 
@@ -437,6 +778,8 @@ def validate_preparation_graph(
                     )
         if node_type == "union" and len(incoming_edges) < 2:
             soft(f"union node '{node_id}' must have at least 2 incoming edges")
+        if node_type in TRANSFORM_TYPES and len(incoming_edges) != 1:
+            soft(f"{node_type} node '{node_id}' must have exactly one incoming edge")
 
     return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 

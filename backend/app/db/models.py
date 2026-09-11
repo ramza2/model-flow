@@ -784,7 +784,7 @@ class DatasetPreparationVersion(Base):
 
 
 class DatasetPreparationRun(Base):
-    """Pinned, reproducible preparation run snapshot (execution is Phase 2-C)."""
+    """Pinned, reproducible preparation run snapshot (Phase 2-C executes from pins)."""
 
     __tablename__ = "dataset_preparation_runs"
 
@@ -801,6 +801,11 @@ class DatasetPreparationRun(Base):
         default=DatasetPreparationRunStatus.created,
         nullable=False,
     )
+    # Logical Dataset this run will materialize into (pinned at create/queue time).
+    output_dataset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("datasets.id"), nullable=True, index=True
+    )
+    # Immutable DatasetVersion produced on success (null until succeeded).
     output_dataset_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("dataset_versions.id"), nullable=True, index=True
     )
