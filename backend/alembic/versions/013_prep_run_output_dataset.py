@@ -17,32 +17,27 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "dataset_preparation_runs",
-        sa.Column("output_dataset_id", sa.Integer(), nullable=True),
-    )
-    op.create_index(
-        "ix_dataset_preparation_runs_output_dataset_id",
-        "dataset_preparation_runs",
-        ["output_dataset_id"],
-    )
-    op.create_foreign_key(
-        "fk_dataset_preparation_runs_output_dataset_id",
-        "dataset_preparation_runs",
-        "datasets",
-        ["output_dataset_id"],
-        ["id"],
-    )
+    # batch_alter_table keeps SQLite migration tests working while remaining
+    # additive on Postgres.
+    with op.batch_alter_table("dataset_preparation_runs") as batch_op:
+        batch_op.add_column(sa.Column("output_dataset_id", sa.Integer(), nullable=True))
+        batch_op.create_index(
+            "ix_dataset_preparation_runs_output_dataset_id",
+            ["output_dataset_id"],
+        )
+        batch_op.create_foreign_key(
+            "fk_dataset_preparation_runs_output_dataset_id",
+            "datasets",
+            ["output_dataset_id"],
+            ["id"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "fk_dataset_preparation_runs_output_dataset_id",
-        "dataset_preparation_runs",
-        type_="foreignkey",
-    )
-    op.drop_index(
-        "ix_dataset_preparation_runs_output_dataset_id",
-        table_name="dataset_preparation_runs",
-    )
-    op.drop_column("dataset_preparation_runs", "output_dataset_id")
+    with op.batch_alter_table("dataset_preparation_runs") as batch_op:
+        batch_op.drop_constraint(
+            "fk_dataset_preparation_runs_output_dataset_id",
+            type_="foreignkey",
+        )
+        batch_op.drop_index("ix_dataset_preparation_runs_output_dataset_id")
+        batch_op.drop_column("output_dataset_id")

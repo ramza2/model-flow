@@ -2,23 +2,22 @@
 
 ## Current phase
 
-**Enhancement Phase 2-B — Visual Dataset Preparation + Sample Preview** is the current implementation phase.
+**Enhancement Phase 2-C — Transformation & Materialization** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
-- Preparation persistence
-- immutable versions
-- validation
-- fixed/latest pinned RunInput foundation
+Phase **2-B — Visual Dataset Preparation + Sample Preview** is complete on `main` (merged via PR #39; merge commit `3c6db3c4c4d4771ed03c67ecad6406fd43dc8cfd`).
 
-Phase 2-B delivers:
+Phase 2-C delivers:
 
-- Visual Preparation Builder
-- Source / Join / Union / Output nodes
-- sampled server preview
-- validation / save-version UX
+- full Dataset Preparation worker execution
+- deterministic transforms (select/drop/rename/filter/cast/deduplicate/fill_constant/derived_column)
+- Parquet materialization into derived DatasetVersions
+- output Dataset create/assign + Run output pin
+- run history / execute queue UX
+- upstream Dataset lineage for preparation-produced versions
 
-Next: **Phase 2-C — Transformation & Materialization**.
+Next: **Phase 2-D — Training Integration**.
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -40,6 +39,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 2-B merge (PR #39): `3c6db3c4c4d4771ed03c67ecad6406fd43dc8cfd`
 - Phase 2-A foundation merge (PR #38): `4b3146a1550938ca1bc143ec88e852c422be09b4`
 - Phase 1.5 completion merge (PR #36): `13cb5f43ed0f21c00d542eadd9043d091f8c7fa2`
 - Git tag: `v1.0.0-rc.1` (unchanged)
@@ -193,7 +193,9 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-After Phase 2-B: **Phase 2-C — Transformation & Materialization** (full Dataset execution, worker runs, derived DatasetVersion materialization).
+After Phase 2-C: **Phase 2-D — Training Integration** (Train this result / TrainingJob multi-dataset integration — out of Phase 2-C scope).
+
+Known limitation of Phase 2-C: Pandas in-memory execution only (no Spark/Dask/distributed/chunked processing).
 
 Known UX debt retained from Phase 1.5 (not in scope for Phase 1.5 cleanup):
 
