@@ -112,6 +112,14 @@ function stubQualityApi() {
     if (path.includes("/versions/1/preview")) {
       return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
     }
+    if (path.includes("/versions/1/lineage")) {
+      return {
+        dataset_version: version,
+        upstream: null,
+        training_jobs: [],
+        model_versions: [],
+      };
+    }
     if (path.includes("/quality-checks?dataset_version_id=11")) return [check];
     if (path.includes("/splits")) return [];
     if (path === "/projects/7/quality-rules" && method === "POST") {
@@ -275,6 +283,14 @@ describe("DatasetDetail quality management", () => {
       if (path.includes("/versions/1/preview")) {
         return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
       }
+      if (path.includes("/versions/1/lineage")) {
+        return {
+          dataset_version: version,
+          upstream: null,
+          training_jobs: [],
+          model_versions: [],
+        };
+      }
       if (path.includes("/quality-checks?dataset_version_id=11")) return [check];
       if (path.includes("/splits")) return [];
       if (path === "/projects/7/quality-rules/99" && method === "PATCH") {
@@ -304,6 +320,14 @@ describe("DatasetDetail quality management", () => {
       if (path.includes("/quality-rules?dataset_id=3")) return [activeRule, inactiveRule];
       if (path.includes("/versions/1/preview")) {
         return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/versions/1/lineage")) {
+        return {
+          dataset_version: version,
+          upstream: null,
+          training_jobs: [],
+          model_versions: [],
+        };
       }
       if (path.includes("/quality-checks?dataset_version_id=11") && method === "GET") return [check];
       if (path.includes("/splits")) return [];
@@ -405,5 +429,83 @@ describe("DatasetDetail saved splits", () => {
       test_ratio: 0.15,
       random_seed: 42,
     });
+  });
+});
+
+describe("DatasetDetail upstream lineage", () => {
+  beforeEach(() => {
+    canWriteRef.value = true;
+    apiMock.mockReset();
+  });
+
+  it("shows upstream card for preparation-sourced versions", async () => {
+    const preparedVersion = {
+      ...version,
+      id: 22,
+      version: 2,
+      source_type: "preparation",
+      original_filename: "prepared.parquet",
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/datasets/3") return { ...dataset, latest_version: 2 };
+      if (path === "/projects/7/datasets/3/versions") return [preparedVersion, version];
+      if (path.includes("/quality-rules?")) return [];
+      if (path.includes("/versions/2/preview")) {
+        return { columns: dataset.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/versions/2/lineage")) {
+        return {
+          dataset_version: preparedVersion,
+          upstream: {
+            preparation: { id: 9, name: "Demo prep" },
+            preparation_version: { id: 1, version: 1 },
+            preparation_run: { id: 44, status: "succeeded" },
+            input_versions: [
+              {
+                node_id: "source-1",
+                dataset_id: 2,
+                dataset_name: "iris",
+                dataset_version_id: 11,
+                version: 1,
+              },
+            ],
+          },
+          training_jobs: [],
+          model_versions: [],
+        };
+      }
+      if (path.includes("/quality-checks?")) return [];
+      if (path.includes("/splits")) return [];
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/datasets/3"]}>
+        <Routes>
+          <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
+          <Route path="/projects/:projectId/preparations/:preparationId" element={<div>Prep</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const card = await screen.findByTestId("dataset-upstream-lineage");
+    expect(card).toHaveTextContent("Prepared from recipe");
+    expect(card).toHaveTextContent("Demo prep");
+    expect(card).toHaveTextContent("v1");
+    expect(screen.getByTestId("dataset-upstream-preparation-link")).toHaveAttribute(
+      "href",
+      "/projects/7/preparations/9",
+    );
+    expect(screen.getByTestId("dataset-upstream-inputs")).toHaveTextContent("iris");
+    expect(screen.getByTestId("dataset-upstream-inputs")).toHaveTextContent("source-1");
+  });
+
+  it("keeps normal lineage unchanged for upload versions", async () => {
+    stubQualityApi();
+    renderPage();
+    await screen.findByTestId("quality-rule-12");
+    expect(screen.queryByTestId("dataset-upstream-lineage")).not.toBeInTheDocument();
+    expect(screen.getByTestId("dataset-lifecycle-entry")).toBeInTheDocument();
   });
 });
