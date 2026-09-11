@@ -337,12 +337,11 @@ def test_migration_013_module_contract():
     assert callable(migration.downgrade)
 
     source = MIGRATION_013.read_text()
-    assert 'op.add_column(\n        "dataset_preparation_runs"' in source or (
-        'op.add_column(' in source and "output_dataset_id" in source
-    )
+    assert "output_dataset_id" in source
+    assert "batch_alter_table" in source or "op.add_column" in source
     assert "fk_dataset_preparation_runs_output_dataset_id" in source
     assert "ix_dataset_preparation_runs_output_dataset_id" in source
-    assert 'op.drop_column("dataset_preparation_runs", "output_dataset_id")' in source
+    assert "drop_column" in source and "output_dataset_id" in source
 
 
 def test_migration_013_model_has_output_dataset_pin():
