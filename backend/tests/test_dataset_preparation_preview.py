@@ -14,7 +14,6 @@ from app.core.security import hash_password
 from app.db.models import (
     Base,
     Dataset,
-    DatasetPreparation,
     DatasetPreparationRun,
     DatasetPreparationRunInput,
     DatasetPreparationVersion,
