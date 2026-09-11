@@ -190,8 +190,6 @@ const versionsByDataset: Record<number, Array<Record<string, unknown>>> = {
   ],
 };
 
-const versions = versionsByDataset[2];
-
 const defaultPreview = {
   node_id: "source-1",
   columns: ["sepal_length", "target"],

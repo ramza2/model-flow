@@ -333,12 +333,12 @@ export default function PreparationBuilder() {
       map.set(preparation.version.id, preparation.version.version);
     }
     return map;
-  }, [prepVersions, preparation?.version]);
+  }, [prepVersions, preparation]);
 
   const outputDataset = useMemo(() => {
     if (preparation?.output_dataset_id == null) return null;
     return datasets.find((dataset) => dataset.id === preparation.output_dataset_id) || null;
-  }, [datasets, preparation?.output_dataset_id]);
+  }, [datasets, preparation]);
 
   useEffect(() => {
     if (!selectedNode || selectedNode.data.node_type !== "source" || !projectId) {
