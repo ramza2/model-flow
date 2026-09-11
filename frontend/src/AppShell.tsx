@@ -15,6 +15,7 @@ const projectGroups: { label: string; items: ProjectNavItem[] }[] = [
     items: [
       { label: "Data Sources", path: "data-sources", icon: "⌁" },
       { label: "Datasets", path: "datasets", icon: "▤" },
+      { label: "Preparations", path: "preparations", icon: "⧉" },
     ],
   },
   {
@@ -46,6 +47,7 @@ const crumbLabels: Record<string, string> = {
   projects: "Projects",
   "data-sources": "Data Sources",
   datasets: "Datasets",
+  preparations: "Preparations",
   experiments: "Experiments",
   jobs: "Training Jobs",
   pipelines: "Pipelines",

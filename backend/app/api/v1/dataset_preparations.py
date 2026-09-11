@@ -31,6 +31,7 @@ from app.schemas.v1 import (
     DatasetPreparationCreate,
     DatasetPreparationGraph,
     DatasetPreparationGraphRequest,
+    DatasetPreparationPreviewRequest,
     DatasetPreparationRunCreate,
     DatasetPreparationUpdate,
 )
@@ -41,6 +42,10 @@ from app.services.dataset_preparation import (
     parse_graph_json,
     resolve_source_pins,
     validate_preparation_graph,
+)
+from app.services.dataset_preparation_execution import (
+    PreparationExecutionError,
+    preview_preparation_graph,
 )
 
 router = APIRouter(tags=["dataset-preparations"])
@@ -320,6 +325,34 @@ def validate_preparation(
     return validate_preparation_graph(
         db, project_id, graph, strict=True, resolve_latest=True
     )
+
+
+@router.post("/projects/{project_id}/dataset-preparations/{preparation_id}/preview")
+def preview_preparation(
+    project_id: int,
+    preparation_id: int,
+    body: DatasetPreparationPreviewRequest,
+    _=Depends(require_project_perm(Permission.DATA_READ)),
+    db: Session = Depends(get_db),
+):
+    """Sampled read-only preview. Does not create versions, runs, or artifacts."""
+    get_owned(db, DatasetPreparation, preparation_id, project_id, "Preparation")
+    try:
+        return preview_preparation_graph(
+            db,
+            project_id,
+            body.graph,
+            node_id=body.node_id,
+            limit=body.limit,
+        )
+    except PreparationValidationError as exc:
+        raise friendly(
+            exc.status_code,
+            "Preparation graph is invalid for preview.",
+            "; ".join(exc.errors),
+        ) from exc
+    except PreparationExecutionError as exc:
+        raise friendly(exc.status_code, exc.message) from exc
 
 
 @router.post(
