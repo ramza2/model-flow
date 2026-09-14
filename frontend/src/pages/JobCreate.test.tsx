@@ -547,6 +547,100 @@ describe("JobCreate UX", () => {
     });
   });
 
+  it.each(["abc", "0", ""])(
+    "does not fall back to latest for malformed explicit datasetVersionId=%j",
+    async (malformed) => {
+      const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 12,
+                name: "prepared",
+                latest_version: 3,
+                columns: ["a", "b", "c", "target", "extra_latest"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 45,
+                dataset_id: 12,
+                version: 2,
+                original_filename: "prepared-v2.parquet",
+                columns: ["a", "b", "target"],
+              },
+              {
+                id: 99,
+                dataset_id: 12,
+                version: 3,
+                original_filename: "prepared-v3.parquet",
+                columns: ["a", "b", "c", "target", "extra_latest"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              requested_problem_type: "auto",
+              resolved_problem_type: "classification",
+              target_column: "target",
+              dataset_id: 12,
+              dataset_version_id: 45,
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(
+        <MemoryRouter
+          initialEntries={[
+            `/projects/7/jobs/new?datasetId=12&datasetVersionId=${encodeURIComponent(malformed)}`,
+          ]}
+        >
+          <Routes>
+            <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(/invalid/i);
+      expect(screen.getByTestId("job-submit")).toBeDisabled();
+      expect(screen.getByTestId("job-dataset-version")).toHaveValue("");
+      expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes("/resolve-problem-type")),
+      ).toBe(false);
+
+      fireEvent.change(screen.getByTestId("job-dataset-version"), { target: { value: "45" } });
+      await waitFor(() => {
+        expect(screen.queryByTestId("job-dataset-version-error")).not.toBeInTheDocument();
+        expect(screen.getByTestId("job-dataset-version")).toHaveValue("45");
+        expect(screen.getByTestId("target-a")).toBeInTheDocument();
+        expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+      });
+    },
+  );
+
   it("keeps cloneFrom dataset/version ahead of query-string handoff", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input);

@@ -33,15 +33,28 @@ export default function JobCreate() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const requestedDatasetId = params.get("datasetId") || "";
-  const requestedDatasetVersionIdParam = params.get("datasetVersionId");
-  const requestedDatasetVersionId = (() => {
-    if (!requestedDatasetVersionIdParam) return null;
-    const parsed = Number(requestedDatasetVersionIdParam);
-    return Number.isFinite(parsed) ? parsed : null;
-  })();
   const cloneFrom = params.get("cloneFrom") || "";
+  // Presence of datasetVersionId must be tracked separately from parse validity so
+  // malformed values (abc, 0, empty) never silently fall back to latest.
+  const hasExplicitDatasetVersionParam = params.has("datasetVersionId");
+  const rawDatasetVersionIdParam = hasExplicitDatasetVersionParam
+    ? (params.get("datasetVersionId") ?? "")
+    : null;
+  const parsedDatasetVersionId = (() => {
+    if (rawDatasetVersionIdParam == null) return null;
+    // Positive integer ids only — reject "", "abc", "0", "-1", "1.5", "01".
+    if (!/^[1-9]\d*$/.test(rawDatasetVersionIdParam)) return null;
+    const parsed = Number(rawDatasetVersionIdParam);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  })();
   // cloneFrom wins over query-string dataset/version preselection
-  const handoffVersionId = cloneFrom ? null : requestedDatasetVersionId;
+  const shouldHonorExplicitVersion = !cloneFrom && hasExplicitDatasetVersionParam;
+  const handoffVersionId = shouldHonorExplicitVersion ? parsedDatasetVersionId : null;
+  const malformedExplicitVersion =
+    shouldHonorExplicitVersion && parsedDatasetVersionId == null;
+  const malformedVersionError = malformedExplicitVersion
+    ? `Dataset version "${rawDatasetVersionIdParam}" is invalid. Select a valid version to continue.`
+    : null;
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
@@ -70,8 +83,8 @@ export default function JobCreate() {
   const [submitError, setSubmitError] = useState("");
   const [busy, setBusy] = useState(false);
   const [cloneLoaded, setCloneLoaded] = useState(!cloneFrom);
-  const [versionError, setVersionError] = useState<string | null>(null);
-  const [honorHandoffVersion, setHonorHandoffVersion] = useState(Boolean(handoffVersionId));
+  const [versionError, setVersionError] = useState<string | null>(malformedVersionError);
+  const [honorHandoffVersion, setHonorHandoffVersion] = useState(shouldHonorExplicitVersion);
   const [versionsResolved, setVersionsResolved] = useState(false);
 
   const selected = datasets.find((d) => String(d.id) === datasetId);
@@ -106,9 +119,9 @@ export default function JobCreate() {
         const nextDatasetId = requestedDatasetId || String(datasetRows[0]?.id || "");
         setDatasetId((current) => current || nextDatasetId);
         const selectedDataset = datasetRows.find((x) => String(x.id) === nextDatasetId);
-        // When an explicit datasetVersionId handoff is present, wait for that version's
-        // schema before choosing targets to avoid a latest-schema flicker.
-        if (!handoffVersionId) {
+        // When an explicit datasetVersionId handoff is present (valid or malformed),
+        // wait for version resolution before choosing targets to avoid a latest-schema flicker.
+        if (!shouldHonorExplicitVersion) {
           if (selectedDataset?.columns.includes("target")) setTargets(["target"]);
           else if (selectedDataset?.columns.length) {
             setTargets([selectedDataset.columns[selectedDataset.columns.length - 1]]);
@@ -119,7 +132,7 @@ export default function JobCreate() {
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Datasets could not be loaded."))
       .finally(() => setLoading(false));
-  }, [handoffVersionId, projectId, requestedDatasetId]);
+  }, [projectId, requestedDatasetId, shouldHonorExplicitVersion]);
 
   useEffect(() => {
     if (!cloneFrom || !projectId || !catalog.length) return;
@@ -168,23 +181,32 @@ export default function JobCreate() {
 
         setDatasetVersionId((current) => {
           if (current && rows.some((row) => row.id === current)) return current;
-          if (honorHandoffVersion && handoffVersionId != null) {
+          if (honorHandoffVersion) {
+            // Explicit query handoff: never silently fall back to latest,
+            // including when the param is malformed (handoffVersionId == null).
+            if (handoffVersionId == null) return null;
             const exact = rows.find((row) => row.id === handoffVersionId);
-            if (exact) return exact.id;
-            return null;
+            return exact ? exact.id : null;
           }
           const preferred =
             rows.find((row) => row.version === selected.latest_version) || rows[0];
           return preferred?.id ?? null;
         });
 
-        if (honorHandoffVersion && handoffVersionId != null) {
-          const exact = rows.find((row) => row.id === handoffVersionId);
-          if (exact) setVersionError(null);
-          else {
+        if (honorHandoffVersion) {
+          if (handoffVersionId == null) {
             setVersionError(
-              `Dataset version #${handoffVersionId} was not found for this dataset. Select a valid version to continue.`,
+              malformedVersionError
+                ?? "Dataset version query value is invalid. Select a valid version to continue.",
             );
+          } else {
+            const exact = rows.find((row) => row.id === handoffVersionId);
+            if (exact) setVersionError(null);
+            else {
+              setVersionError(
+                `Dataset version #${handoffVersionId} was not found for this dataset. Select a valid version to continue.`,
+              );
+            }
           }
         } else {
           setVersionError(null);
@@ -196,9 +218,12 @@ export default function JobCreate() {
           setVersions([]);
           setDatasetVersionId(null);
           setVersionsResolved(true);
-          if (honorHandoffVersion && handoffVersionId != null) {
+          if (honorHandoffVersion) {
             setVersionError(
-              `Dataset version #${handoffVersionId} could not be loaded. Select a valid version to continue.`,
+              handoffVersionId == null
+                ? (malformedVersionError
+                  ?? "Dataset version query value is invalid. Select a valid version to continue.")
+                : `Dataset version #${handoffVersionId} could not be loaded. Select a valid version to continue.`,
             );
           }
         }
@@ -206,7 +231,7 @@ export default function JobCreate() {
     return () => {
       cancelled = true;
     };
-  }, [handoffVersionId, honorHandoffVersion, projectId, selected]);
+  }, [handoffVersionId, honorHandoffVersion, malformedVersionError, projectId, selected]);
 
   useEffect(() => {
     if (!projectId || !datasetVersionId) {

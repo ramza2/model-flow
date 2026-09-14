@@ -551,4 +551,43 @@ describe("DatasetDetail upstream lineage", () => {
     });
   });
 
+  it("hides navigable Train link until a DatasetVersion is selected", async () => {
+    let resolveVersions: ((value: unknown) => void) | null = null;
+    const versionsPromise = new Promise((resolve) => {
+      resolveVersions = resolve;
+    });
+    stubQualityApi();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets/3") return { ...dataset, latest_version: 2 };
+      if (path === "/projects/7/datasets/3/versions") return versionsPromise;
+      if (path.includes("/quality-rules?")) return [activeRule, inactiveRule];
+      if (path.includes("/quality-checks?")) return [];
+      if (path.includes("/splits")) return [];
+      if (path.includes("/preview")) {
+        return { columns: version.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/lineage")) {
+        return { dataset_version: version, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      throw new Error(`Unhandled api call ${path}`);
+    });
+    renderPage();
+    expect(screen.queryByTestId("train-on-dataset")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Train on dataset/i })).not.toBeInTheDocument();
+
+    resolveVersions!([
+      { ...version, id: 22, version: 2, original_filename: "sites-v2.csv" },
+      { ...version, id: 11, version: 1 },
+    ]);
+    const train = await screen.findByTestId("train-on-dataset");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=22");
+    fireEvent.change(screen.getByDisplayValue(/v2 /), { target: { value: "11" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("train-on-dataset")).toHaveAttribute(
+        "href",
+        "/projects/7/jobs/new?datasetId=3&datasetVersionId=11",
+      );
+    });
+  });
+
 });
