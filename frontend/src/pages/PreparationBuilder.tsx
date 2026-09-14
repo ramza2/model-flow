@@ -2587,6 +2587,22 @@ function GroupByInspector({
   );
   const [errors, setErrors] = useState<string[]>([]);
 
+  function evaluateDraft(nextKeysText: string, nextRows: GroupByAggregationRow[]) {
+    return serializeGroupByConfig({
+      groupKeys: parseKeyList(nextKeysText),
+      aggregations: nextRows,
+    });
+  }
+
+  // Validate on mount so empty defaults gate Save/Validate/Preview/Run.
+  // Start from [] and setErrors here so the publish effect runs after the
+  // parent selectedId clear in the same selection turn.
+  useEffect(() => {
+    const serialized = evaluateDraft(groupKeysText, rows);
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
   useEffect(() => {
     onValidationChange?.(errors);
   }, [errors, onValidationChange]);
@@ -2594,13 +2610,10 @@ function GroupByInspector({
   function commit(nextKeysText: string, nextRows: GroupByAggregationRow[]) {
     setGroupKeysText(nextKeysText);
     setRows(nextRows);
-    const serialized = serializeGroupByConfig({
-      groupKeys: parseKeyList(nextKeysText),
-      aggregations: nextRows,
-    });
+    const serialized = evaluateDraft(nextKeysText, nextRows);
     setErrors(serialized.errors);
-    onValidationChange?.(serialized.errors);
     if (serialized.errors.length > 0) {
+      // Keep last-good graph config; do not write invalid drafts.
       return;
     }
     onChange({

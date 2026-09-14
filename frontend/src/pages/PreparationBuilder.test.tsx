@@ -1428,6 +1428,97 @@ describe("PreparationBuilder", () => {
     expect(screen.queryByTestId("preparation-train-this-result")).not.toBeInTheDocument();
   });
 
+  it("gates actions on empty Group By defaults without any field edits", async () => {
+    let saved: unknown = null;
+    let previewCalls = 0;
+    let validateCalls = 0;
+    let runCalls = 0;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        previewCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        validateCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "POST") {
+        runCalls += 1;
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-group_by"));
+    expect(await screen.findByTestId("preparation-groupby-inspector")).toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-groupby-errors")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-groupby-errors")).toHaveTextContent(
+      "At least one group key is required",
+    );
+    expect(screen.getByTestId("preparation-groupby-errors")).toHaveTextContent(
+      "At least one aggregation is required",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    const previewBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewBefore);
+
+    const validateBefore = validateCalls;
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(validateCalls).toBe(validateBefore);
+
+    const runBefore = runCalls;
+    // Graph is dirty after adding a node, so Run is disabled; click must not enqueue a run.
+    fireEvent.click(screen.getByTestId("preparation-run"));
+    expect(runCalls).toBe(runBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-groupby-keys"), {
+      target: { value: "region" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-groupby-add"));
+    fireEvent.change(screen.getByTestId("preparation-groupby-column-0"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-op-0"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-output-0"), {
+      target: { value: "sales_sum" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-groupby-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(
+      (saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } })
+        .graph!.nodes!.find((node) => node.id === "group_by-1")?.config,
+    ).toEqual({
+      group_by: ["region"],
+      aggregations: [{ column: "sales", op: "sum", output: "sales_sum" }],
+    });
+  });
+
   it("configures group by inspector with validation gating", async () => {
     let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
       null;
