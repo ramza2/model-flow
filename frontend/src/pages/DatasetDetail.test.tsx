@@ -166,7 +166,7 @@ describe("DatasetDetail quality management", () => {
     renderPage();
     await screen.findByTestId("quality-rule-12");
     const train = screen.getByTestId("train-on-dataset");
-    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=11");
     expect(train).toHaveTextContent(/Train on dataset/i);
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Unique site ID")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Active")).toBeInTheDocument();
@@ -508,4 +508,86 @@ describe("DatasetDetail upstream lineage", () => {
     expect(screen.queryByTestId("dataset-upstream-lineage")).not.toBeInTheDocument();
     expect(screen.getByTestId("dataset-lifecycle-entry")).toBeInTheDocument();
   });
+
+  it("keeps Train on dataset pinned to the selected non-latest version", async () => {
+    const older = { ...version, id: 11, version: 1 };
+    const newer = {
+      ...version,
+      id: 22,
+      version: 2,
+      original_filename: "sites-v2.csv",
+      columns: ["site_id", "a", "target", "extra"],
+    };
+    stubQualityApi();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets/3") return { ...dataset, latest_version: 2 };
+      if (path === "/projects/7/datasets/3/versions") return [newer, older];
+      if (path.includes("/versions/2/preview")) {
+        return { columns: newer.columns, rows: [{ site_id: "S1", a: 1, target: 0, extra: 9 }] };
+      }
+      if (path.includes("/versions/2/lineage")) {
+        return { dataset_version: newer, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      if (path.includes("/versions/1/preview")) {
+        return { columns: older.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/versions/1/lineage")) {
+        return { dataset_version: older, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      if (path.includes("/quality-rules?")) return [activeRule, inactiveRule];
+      if (path.includes("/quality-checks?")) return [];
+      if (path.includes("/splits")) return [];
+      throw new Error(`Unhandled api call ${path}`);
+    });
+    renderPage();
+    const train = await screen.findByTestId("train-on-dataset");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=22");
+    fireEvent.change(screen.getByDisplayValue(/v2 /), { target: { value: "11" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("train-on-dataset")).toHaveAttribute(
+        "href",
+        "/projects/7/jobs/new?datasetId=3&datasetVersionId=11",
+      );
+    });
+  });
+
+  it("hides navigable Train link until a DatasetVersion is selected", async () => {
+    let resolveVersions: ((value: unknown) => void) | null = null;
+    const versionsPromise = new Promise((resolve) => {
+      resolveVersions = resolve;
+    });
+    stubQualityApi();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets/3") return { ...dataset, latest_version: 2 };
+      if (path === "/projects/7/datasets/3/versions") return versionsPromise;
+      if (path.includes("/quality-rules?")) return [activeRule, inactiveRule];
+      if (path.includes("/quality-checks?")) return [];
+      if (path.includes("/splits")) return [];
+      if (path.includes("/preview")) {
+        return { columns: version.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/lineage")) {
+        return { dataset_version: version, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      throw new Error(`Unhandled api call ${path}`);
+    });
+    renderPage();
+    expect(screen.queryByTestId("train-on-dataset")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Train on dataset/i })).not.toBeInTheDocument();
+
+    resolveVersions!([
+      { ...version, id: 22, version: 2, original_filename: "sites-v2.csv" },
+      { ...version, id: 11, version: 1 },
+    ]);
+    const train = await screen.findByTestId("train-on-dataset");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=22");
+    fireEvent.change(screen.getByDisplayValue(/v2 /), { target: { value: "11" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("train-on-dataset")).toHaveAttribute(
+        "href",
+        "/projects/7/jobs/new?datasetId=3&datasetVersionId=11",
+      );
+    });
+  });
+
 });

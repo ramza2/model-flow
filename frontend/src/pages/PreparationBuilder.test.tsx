@@ -1246,7 +1246,13 @@ describe("PreparationBuilder", () => {
         "href",
         "/projects/7/datasets/3",
       );
+      expect(screen.getByTestId("preparation-train-result-60")).toHaveAttribute(
+        "href",
+        "/projects/7/jobs/new?datasetId=3&datasetVersionId=21",
+      );
     });
+    // Success-banner "Train this result" is only shown when this session queued the run.
+    expect(screen.queryByTestId("preparation-train-this-result")).not.toBeInTheDocument();
     vi.useRealTimers();
   });
 
@@ -1302,4 +1308,107 @@ describe("PreparationBuilder", () => {
       ).toBe(true);
     });
   });
+
+  it("uses each historical run output version for Train this result", async () => {
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      runs: [
+        {
+          id: 10,
+          project_id: 7,
+          preparation_id: 9,
+          preparation_version_id: 1,
+          status: "succeeded",
+          output_dataset_id: 5,
+          output_dataset_version_id: 21,
+          logs: "ok",
+          error_message: null,
+          created_at: "2026-09-11T01:00:00Z",
+          started_at: "2026-09-11T01:00:01Z",
+          finished_at: "2026-09-11T01:00:05Z",
+        },
+        {
+          id: 11,
+          project_id: 7,
+          preparation_id: 9,
+          preparation_version_id: 1,
+          status: "succeeded",
+          output_dataset_id: 5,
+          output_dataset_version_id: 22,
+          logs: "ok",
+          error_message: null,
+          created_at: "2026-09-11T02:00:00Z",
+          started_at: "2026-09-11T02:00:01Z",
+          finished_at: "2026-09-11T02:00:05Z",
+        },
+        {
+          id: 12,
+          project_id: 7,
+          preparation_id: 9,
+          preparation_version_id: 1,
+          status: "failed",
+          output_dataset_id: 5,
+          output_dataset_version_id: null,
+          logs: "boom",
+          error_message: "failed",
+          created_at: "2026-09-11T03:00:00Z",
+          started_at: "2026-09-11T03:00:01Z",
+          finished_at: "2026-09-11T03:00:02Z",
+        },
+        {
+          id: 13,
+          project_id: 7,
+          preparation_id: 9,
+          preparation_version_id: 1,
+          status: "running",
+          output_dataset_id: null,
+          output_dataset_version_id: null,
+          logs: "",
+          error_message: null,
+          created_at: "2026-09-11T04:00:00Z",
+          started_at: "2026-09-11T04:00:01Z",
+          finished_at: null,
+        },
+      ],
+    });
+    renderBuilder();
+    expect(await screen.findByTestId("preparation-train-result-10")).toHaveAttribute(
+      "href",
+      "/projects/7/jobs/new?datasetId=5&datasetVersionId=21",
+    );
+    expect(screen.getByTestId("preparation-train-result-11")).toHaveAttribute(
+      "href",
+      "/projects/7/jobs/new?datasetId=5&datasetVersionId=22",
+    );
+    expect(screen.queryByTestId("preparation-train-result-12")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-train-result-13")).not.toBeInTheDocument();
+  });
+
+  it("hides Train this result write actions for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      runs: [
+        {
+          id: 10,
+          project_id: 7,
+          preparation_id: 9,
+          preparation_version_id: 1,
+          status: "succeeded",
+          output_dataset_id: 5,
+          output_dataset_version_id: 21,
+          logs: "ok",
+          error_message: null,
+          created_at: "2026-09-11T01:00:00Z",
+          started_at: "2026-09-11T01:00:01Z",
+          finished_at: "2026-09-11T01:00:05Z",
+        },
+      ],
+    });
+    renderBuilder();
+    await screen.findByTestId("preparation-run-open-10");
+    expect(screen.queryByTestId("preparation-train-result-10")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-train-this-result")).not.toBeInTheDocument();
+  });
+
 });

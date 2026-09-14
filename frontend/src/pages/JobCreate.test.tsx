@@ -341,6 +341,448 @@ describe("JobCreate UX", () => {
     });
   });
 
+  it("preselects exact non-latest datasetVersionId from query and submits that id", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 12,
+              name: "prepared",
+              latest_version: 3,
+              columns: ["a", "b", "c", "target", "extra_latest"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 45,
+              dataset_id: 12,
+              version: 2,
+              original_filename: "prepared-v2.parquet",
+              columns: ["a", "b", "target"],
+            },
+            {
+              id: 99,
+              dataset_id: 12,
+              version: 3,
+              original_filename: "prepared-v3.parquet",
+              columns: ["a", "b", "c", "target", "extra_latest"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 12,
+            dataset_version_id: 45,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: 321,
+            ...body,
+            status: "pending",
+            logs: "",
+            metrics: {},
+            mlflow_run_id: null,
+            model_uri: null,
+            error_message: null,
+            retry_count: 0,
+            parent_job_id: null,
+            created_at: "2026-01-01",
+            started_at: null,
+            finished_at: null,
+            project_id: 7,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new?datasetId=12&datasetVersionId=45"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("job-dataset-version")).toHaveValue("45");
+    });
+    expect(await screen.findByTestId("target-a")).toBeInTheDocument();
+    expect(screen.getByTestId("target-b")).toBeInTheDocument();
+    expect(screen.getByTestId("target-target")).toBeInTheDocument();
+    expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("feature-extra_latest")).not.toBeInTheDocument();
+    expect(screen.getByTestId("feature-a")).toBeChecked();
+    expect(screen.getByTestId("feature-b")).toBeChecked();
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(
+        ([input, init]) => String(input).endsWith("/jobs") && init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+      const body = JSON.parse(String(createCall![1]?.body));
+      expect(body.dataset_id).toBe(12);
+      expect(body.dataset_version_id).toBe(45);
+      expect(body.target_columns).toEqual(["target"]);
+      expect(body.feature_columns).toEqual(["a", "b"]);
+    });
+  });
+
+  it("shows validation for invalid explicit datasetVersionId and clears after a valid pick", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 12,
+              name: "prepared",
+              latest_version: 3,
+              columns: ["a", "b", "c", "target", "extra_latest"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 45,
+              dataset_id: 12,
+              version: 2,
+              original_filename: "prepared-v2.parquet",
+              columns: ["a", "b", "target"],
+            },
+            {
+              id: 99,
+              dataset_id: 12,
+              version: 3,
+              original_filename: "prepared-v3.parquet",
+              columns: ["a", "b", "c", "target", "extra_latest"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 12,
+            dataset_version_id: 45,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new?datasetId=12&datasetVersionId=777"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(
+      /Dataset version #777 was not found/,
+    );
+    expect(screen.getByTestId("job-submit")).toBeDisabled();
+    expect(screen.getByTestId("job-dataset-version")).toHaveValue("");
+    expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("job-dataset-version"), { target: { value: "45" } });
+    await waitFor(() => {
+      expect(screen.queryByTestId("job-dataset-version-error")).not.toBeInTheDocument();
+      expect(screen.getByTestId("job-dataset-version")).toHaveValue("45");
+      expect(screen.getByTestId("target-a")).toBeInTheDocument();
+      expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+    });
+  });
+
+  it.each(["abc", "0", ""])(
+    "does not fall back to latest for malformed explicit datasetVersionId=%j",
+    async (malformed) => {
+      const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/datasets")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 12,
+                name: "prepared",
+                latest_version: 3,
+                columns: ["a", "b", "c", "target", "extra_latest"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/training/algorithms")) {
+          return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+        }
+        if (url.includes("/splits")) {
+          return { ok: true, status: 200, json: async () => [] };
+        }
+        if (url.includes("/versions") && !url.includes("resolve")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => [
+              {
+                id: 45,
+                dataset_id: 12,
+                version: 2,
+                original_filename: "prepared-v2.parquet",
+                columns: ["a", "b", "target"],
+              },
+              {
+                id: 99,
+                dataset_id: 12,
+                version: 3,
+                original_filename: "prepared-v3.parquet",
+                columns: ["a", "b", "c", "target", "extra_latest"],
+              },
+            ],
+          };
+        }
+        if (url.includes("/resolve-problem-type")) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              requested_problem_type: "auto",
+              resolved_problem_type: "classification",
+              target_column: "target",
+              dataset_id: 12,
+              dataset_version_id: 45,
+            }),
+          };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(
+        <MemoryRouter
+          initialEntries={[
+            `/projects/7/jobs/new?datasetId=12&datasetVersionId=${encodeURIComponent(malformed)}`,
+          ]}
+        >
+          <Routes>
+            <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(/invalid/i);
+      expect(screen.getByTestId("job-submit")).toBeDisabled();
+      expect(screen.getByTestId("job-dataset-version")).toHaveValue("");
+      expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some(([input]) => String(input).includes("/resolve-problem-type")),
+      ).toBe(false);
+
+      fireEvent.change(screen.getByTestId("job-dataset-version"), { target: { value: "45" } });
+      await waitFor(() => {
+        expect(screen.queryByTestId("job-dataset-version-error")).not.toBeInTheDocument();
+        expect(screen.getByTestId("job-dataset-version")).toHaveValue("45");
+        expect(screen.getByTestId("target-a")).toBeInTheDocument();
+        expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
+      });
+    },
+  );
+
+  it("keeps cloneFrom dataset/version ahead of query-string handoff", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+            {
+              id: 12,
+              name: "prepared",
+              latest_version: 2,
+              columns: ["a", "b", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 55,
+              name: "split-1",
+              dataset_version_id: 11,
+              train_ratio: 0.7,
+              val_ratio: 0.15,
+              test_ratio: 0.15,
+              random_seed: 42,
+            },
+          ],
+        };
+      }
+      if (url.includes("/datasets/1/versions")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/datasets/12/versions")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 45,
+              dataset_id: 12,
+              version: 2,
+              original_filename: "prepared-v2.parquet",
+              columns: ["a", "b", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.includes("/jobs/") && (!init || init.method === "GET" || !init.method)) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 99,
+            name: "source-job",
+            description: "cloned",
+            dataset_id: 1,
+            dataset_version_id: 11,
+            target_column: "target",
+            problem_type: "classification",
+            algorithm: "logistic_regression",
+            hyperparameters: { C: 0.5, max_iter: 200 },
+            feature_columns: ["sepal length (cm)", "sepal width (cm)"],
+            ratios: { train: 0.7, validation: 0.15, test: 0.15 },
+            random_seed: 7,
+            split_id: 55,
+            max_retries: 1,
+            status: "failed",
+            logs: "",
+            metrics: {},
+            mlflow_run_id: null,
+            model_uri: null,
+            error_message: null,
+            retry_count: 0,
+            parent_job_id: null,
+            created_at: "2026-01-01",
+            started_at: null,
+            finished_at: null,
+            project_id: 7,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new?cloneFrom=99&datasetId=12&datasetVersionId=45"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("job-name")).toHaveValue("source-job (clone)");
+    await waitFor(() => {
+      expect(screen.getByTestId("job-dataset")).toHaveValue("1");
+      expect(screen.getByTestId("job-dataset-version")).toHaveValue("11");
+    });
+    expect(screen.queryByTestId("job-dataset-version-error")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-a")).not.toBeInTheDocument();
+    expect(screen.getByTestId("target-target")).toBeInTheDocument();
+  });
+
   it("includes split_id in create payload and clears submitError on split change", async () => {
     const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
