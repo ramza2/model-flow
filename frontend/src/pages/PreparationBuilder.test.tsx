@@ -1550,26 +1550,31 @@ describe("PreparationBuilder", () => {
       preparation: {
         ...preparation,
         version: {
-          ...preparation.version!,
+          ...preparation.version,
           graph: {
-            schema_version: 1,
+            schema_version: 1 as const,
             nodes: [
               {
                 id: "source-1",
-                type: "source",
+                type: "source" as const,
                 config: { dataset_id: 1, version_strategy: "latest" },
                 position: { x: 0, y: 0 },
               },
               {
                 id: "group_by-1",
-                type: "group_by",
+                type: "group_by" as const,
                 config: {
                   group_by: ["region"],
                   aggregations: [{ column: "sales", op: "sum", output: "sales_sum" }],
                 },
                 position: { x: 200, y: 0 },
               },
-              { id: "output-1", type: "output", config: {}, position: { x: 400, y: 0 } },
+              {
+                id: "output-1",
+                type: "output" as const,
+                config: {},
+                position: { x: 400, y: 0 },
+              },
             ],
             edges: [
               { id: "e1", source: "source-1", target: "group_by-1" },
@@ -1577,7 +1582,7 @@ describe("PreparationBuilder", () => {
             ],
           },
         },
-      },
+      } as typeof preparation,
     });
     renderBuilder();
     fireEvent.click(await screen.findByTestId("canvas-node-group_by-1"));
