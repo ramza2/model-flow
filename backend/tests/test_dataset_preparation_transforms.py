@@ -14,7 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.core.security import hash_password
 from app.db.models import Base, User
 from app.db.session import get_db
-from app.main import app
+from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
 from app.services.dataset_preparation import _validate_transform_config
 from app.services.dataset_preparation_execution import (
@@ -528,6 +528,7 @@ def test_chain_source_filter_select_derived_rename_cast_dedupe_output():
 @pytest.fixture(autouse=True)
 def setup_api(monkeypatch):
     Base.metadata.create_all(engine)
+    _rate_windows.clear()
 
     def override_get_db():
         db = TestingSessionLocal()

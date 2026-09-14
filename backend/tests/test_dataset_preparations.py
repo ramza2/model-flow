@@ -20,7 +20,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
-from app.main import app
+from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
 
 engine = create_engine(
@@ -37,6 +37,7 @@ SCIENTIST_PASSWORD = secrets.token_urlsafe(24)
 @pytest.fixture(autouse=True)
 def setup_api(monkeypatch):
     Base.metadata.create_all(engine)
+    _rate_windows.clear()
 
     def override_get_db():
         db = TestingSessionLocal()

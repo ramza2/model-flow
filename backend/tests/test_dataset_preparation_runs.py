@@ -25,7 +25,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
-from app.main import app
+from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
 from app.workers import runner
 
@@ -56,6 +56,7 @@ def _csv_n(n: int) -> bytes:
 def setup_api(monkeypatch):
     Base.metadata.create_all(engine)
     artifact_store.clear()
+    _rate_windows.clear()
 
     def override_get_db():
         db = TestingSessionLocal()
