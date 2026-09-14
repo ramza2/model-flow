@@ -2,18 +2,22 @@ import { describe, expect, it } from "vitest";
 import type { DatasetPreparationGraph } from "./api";
 import {
   apiGraphToFlow,
+  coerceDerivedLiteral,
+  coerceFilterValue,
   defaultConfigForPreparation,
   emptyPreparationGraph,
   flowToApiGraph,
+  formatDerivedLiteralInput,
+  formatFilterValueInput,
   formatKeyList,
   formatRenameMapping,
-  coerceFilterValue,
-  formatFilterValueInput,
+  inferDerivedLiteralType,
   inferFilterValueType,
   isPreparationRunActive,
   isPreparationTransformType,
   nextPreparationNodeId,
   parseCasts,
+  parseDerivedOperand,
   parseFillValues,
   parseFilterConditions,
   parseKeyList,
@@ -72,7 +76,7 @@ describe("preparationHelpers", () => {
       name: "",
       operation: "add",
       left: { kind: "column", value: "" },
-      right: { kind: "literal", value: 0 },
+      right: { kind: "literal", value_type: "number", value: 0 },
     });
   });
 
@@ -177,6 +181,29 @@ describe("preparationHelpers", () => {
     expect(invalid.errors.length).toBeGreaterThan(0);
     expect(invalid.values).toEqual({});
     expect(Object.values(invalid.values)).not.toContain(0);
+  });
+
+  it("coerces derived literals without collapsing numeric-looking strings", () => {
+    expect(inferDerivedLiteralType("001")).toBe("string");
+    expect(inferDerivedLiteralType(5)).toBe("number");
+    expect(inferDerivedLiteralType(true)).toBe("boolean");
+    expect(formatDerivedLiteralInput("001")).toBe("001");
+    expect(coerceDerivedLiteral("001", "string")).toEqual({ ok: true, value: "001" });
+    expect(coerceDerivedLiteral("5", "number")).toEqual({ ok: true, value: 5 });
+    expect(coerceDerivedLiteral("true", "boolean")).toEqual({ ok: true, value: true });
+    expect(coerceDerivedLiteral("abc", "number").ok).toBe(false);
+    expect(
+      parseDerivedOperand(
+        { kind: "literal", value: "001" },
+        { kind: "literal", value: 0 },
+      ),
+    ).toEqual({ kind: "literal", value: "001", value_type: "string" });
+    expect(
+      parseDerivedOperand(
+        { kind: "literal", value: 5 },
+        { kind: "literal", value: 0 },
+      ),
+    ).toEqual({ kind: "literal", value: 5, value_type: "number" });
   });
 
   it("serializes filter conditions including in and nullary ops", () => {

@@ -509,7 +509,13 @@ def _execute_fill_constant(
     out = frame.copy()
     for column, fill_value in values.items():
         col_name = _require_column(out, node_id, str(column))
-        out[col_name] = out[col_name].fillna(fill_value)
+        try:
+            out[col_name] = out[col_name].fillna(fill_value)
+        except (TypeError, ValueError) as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': could not fill column '{col_name}' "
+                f"with the supplied value."
+            ) from exc
     return out
 
 

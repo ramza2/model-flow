@@ -203,6 +203,8 @@ export type FilterCondition = {
 export type DerivedOperand = {
   kind: "column" | "literal";
   value: string | number | boolean;
+  /** Optional UI metadata for literals; backend execution uses JSON-typed `value`. */
+  value_type?: FilterValueType;
 };
 
 export type FillValueKind = "string" | "number" | "boolean";
@@ -269,7 +271,7 @@ export function defaultConfigForPreparation(
         name: "",
         operation: "add",
         left: { kind: "column", value: "" },
-        right: { kind: "literal", value: 0 },
+        right: { kind: "literal", value_type: "number", value: 0 },
       };
     case "output":
       return {};
@@ -744,12 +746,53 @@ export function parseDerivedOperand(value: unknown, fallback: DerivedOperand): D
   const kind = row.kind === "literal" ? "literal" : "column";
   if (kind === "literal") {
     const raw = row.value;
+    const storedType = row.value_type;
+    const valueType: FilterValueType =
+      storedType === "string" || storedType === "number" || storedType === "boolean"
+        ? storedType
+        : inferDerivedLiteralType(raw);
     if (typeof raw === "boolean" || typeof raw === "number") {
-      return { kind, value: raw };
+      return { kind, value: raw, value_type: valueType };
     }
-    return { kind, value: raw == null ? "" : String(raw) };
+    return { kind, value: raw == null ? "" : String(raw), value_type: valueType };
   }
   return { kind: "column", value: String(row.value ?? "") };
+}
+
+export function inferDerivedLiteralType(value: unknown): FilterValueType {
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  return "string";
+}
+
+export function formatDerivedLiteralInput(value: unknown): string {
+  if (value == null) return "";
+  return String(value);
+}
+
+/** Coerce a derived literal draft into a JSON-typed value. Never falls back to 0. */
+export function coerceDerivedLiteral(
+  raw: string,
+  valueType: FilterValueType,
+): CoerceResult {
+  if (valueType === "number") {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      return { ok: false, error: "Number value is required." };
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return { ok: false, error: `Invalid number: "${raw}"` };
+    }
+    return { ok: true, value: parsed };
+  }
+  if (valueType === "boolean") {
+    const lower = raw.trim().toLowerCase();
+    if (lower === "true" || lower === "1") return { ok: true, value: true };
+    if (lower === "false" || lower === "0") return { ok: true, value: false };
+    return { ok: false, error: `Invalid boolean: "${raw}"` };
+  }
+  return { ok: true, value: raw };
 }
 
 export function emptyPreparationGraph(): DatasetPreparationGraph {

@@ -828,6 +828,82 @@ describe("PreparationBuilder", () => {
     ]);
   });
 
+  it("preserves derived literal types for concat string, number, and boolean", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-derived_column"));
+    fireEvent.click(await screen.findByTestId("canvas-node-derived_column-1"));
+    fireEvent.change(screen.getByTestId("preparation-derived-name"), {
+      target: { value: "code_label" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-operation"), {
+      target: { value: "concat" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-left-kind"), {
+      target: { value: "column" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-left-value"), {
+      target: { value: "code" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-kind"), {
+      target: { value: "literal" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value-type"), {
+      target: { value: "string" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value"), {
+      target: { value: "001" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "derived_column-1")?.config).toMatchObject({
+      name: "code_label",
+      operation: "concat",
+      left: { kind: "column", value: "code" },
+      right: { kind: "literal", value_type: "string", value: "001" },
+    });
+
+    fireEvent.change(screen.getByTestId("preparation-derived-operation"), {
+      target: { value: "add" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value-type"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value"), {
+      target: { value: "5" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(
+        saved!.graph!.nodes!.find((node) => node.id === "derived_column-1")?.config,
+      ).toMatchObject({
+        right: { kind: "literal", value_type: "number", value: 5 },
+      });
+    });
+
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value-type"), {
+      target: { value: "boolean" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value"), {
+      target: { value: "true" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(
+        saved!.graph!.nodes!.find((node) => node.id === "derived_column-1")?.config,
+      ).toMatchObject({
+        right: { kind: "literal", value_type: "boolean", value: true },
+      });
+    });
+  });
+
   it("blocks save when filter number input is invalid", async () => {
     let saved: unknown = null;
     stubPreparationApi({

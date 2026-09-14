@@ -68,6 +68,9 @@ import {
   serializeCasts,
   serializeFillValues,
   serializeFilterConditions,
+  coerceDerivedLiteral,
+  formatDerivedLiteralInput,
+  inferDerivedLiteralType,
   sourceDatasetIdsInGraph,
   staggerPreparationPosition,
   type DerivedOperand,
@@ -1115,6 +1118,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "derived_column" && (
                 <DerivedInspector
+                  key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -2304,7 +2308,11 @@ function DerivedInspector({
   onChange: (next: Record<string, unknown>) => void;
 }) {
   const left = parseDerivedOperand(config.left, { kind: "column", value: "" });
-  const right = parseDerivedOperand(config.right, { kind: "literal", value: 0 });
+  const right = parseDerivedOperand(config.right, {
+    kind: "literal",
+    value_type: "number",
+    value: 0,
+  });
 
   function updateOperand(side: "left" | "right", next: DerivedOperand) {
     onChange({ ...config, [side]: next });
@@ -2367,6 +2375,40 @@ function OperandFields({
   canWrite: boolean;
   onChange: (next: DerivedOperand) => void;
 }) {
+  const literalType: FilterValueType =
+    operand.kind === "literal"
+      ? (operand.value_type ?? inferDerivedLiteralType(operand.value))
+      : "string";
+  const [literalDraft, setLiteralDraft] = useState(() =>
+    operand.kind === "literal" ? formatDerivedLiteralInput(operand.value) : "",
+  );
+  const [literalError, setLiteralError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (operand.kind !== "literal") {
+      setLiteralDraft("");
+      setLiteralError(null);
+      return;
+    }
+    setLiteralDraft(formatDerivedLiteralInput(operand.value));
+    setLiteralError(null);
+  }, [operand.kind, operand.value, operand.value_type]);
+
+  function commitLiteral(nextType: FilterValueType, raw: string) {
+    setLiteralDraft(raw);
+    const coerced = coerceDerivedLiteral(raw, nextType);
+    if (!coerced.ok) {
+      setLiteralError(coerced.error);
+      return;
+    }
+    setLiteralError(null);
+    onChange({
+      kind: "literal",
+      value_type: nextType,
+      value: coerced.value as string | number | boolean,
+    });
+  }
+
   return (
     <fieldset className="preparation-operand-fields">
       <legend>{label}</legend>
@@ -2376,41 +2418,85 @@ function OperandFields({
           data-testid={`${testIdPrefix}-kind`}
           disabled={!canWrite}
           value={operand.kind}
-          onChange={(event) =>
-            onChange({
-              kind: event.target.value === "literal" ? "literal" : "column",
-              value: event.target.value === "literal" ? 0 : "",
-            })
-          }
+          onChange={(event) => {
+            if (event.target.value === "literal") {
+              setLiteralDraft("0");
+              setLiteralError(null);
+              onChange({ kind: "literal", value_type: "number", value: 0 });
+              return;
+            }
+            setLiteralDraft("");
+            setLiteralError(null);
+            onChange({ kind: "column", value: "" });
+          }}
         >
           <option value="column">column</option>
           <option value="literal">literal</option>
         </select>
       </label>
-      <label>
-        Value
-        <input
-          data-testid={`${testIdPrefix}-value`}
-          disabled={!canWrite}
-          value={String(operand.value ?? "")}
-          onChange={(event) => {
-            if (operand.kind === "literal") {
-              const raw = event.target.value;
-              if (raw === "true" || raw === "false") {
-                onChange({ kind: "literal", value: raw === "true" });
-                return;
-              }
-              const asNumber = Number(raw);
-              onChange({
-                kind: "literal",
-                value: raw !== "" && Number.isFinite(asNumber) ? asNumber : raw,
-              });
-              return;
-            }
-            onChange({ kind: "column", value: event.target.value });
-          }}
-        />
-      </label>
+      {operand.kind === "literal" ? (
+        <>
+          <label>
+            Value type
+            <select
+              data-testid={`${testIdPrefix}-value-type`}
+              disabled={!canWrite}
+              value={literalType}
+              onChange={(event) => {
+                const nextType = event.target.value as FilterValueType;
+                const nextDraft =
+                  nextType === "boolean"
+                    ? literalDraft === "true" || literalDraft === "false"
+                      ? literalDraft
+                      : "false"
+                    : literalDraft;
+                commitLiteral(nextType, nextDraft);
+              }}
+            >
+              <option value="string">string</option>
+              <option value="number">number</option>
+              <option value="boolean">boolean</option>
+            </select>
+          </label>
+          <label>
+            Value
+            {literalType === "boolean" ? (
+              <select
+                data-testid={`${testIdPrefix}-value`}
+                disabled={!canWrite}
+                value={literalDraft === "true" ? "true" : "false"}
+                onChange={(event) => commitLiteral("boolean", event.target.value)}
+              >
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (
+              <input
+                data-testid={`${testIdPrefix}-value`}
+                disabled={!canWrite}
+                type={literalType === "number" ? "number" : "text"}
+                value={literalDraft}
+                onChange={(event) => commitLiteral(literalType, event.target.value)}
+              />
+            )}
+          </label>
+          {literalError ? (
+            <p className="error" data-testid={`${testIdPrefix}-error`}>
+              {literalError}
+            </p>
+          ) : null}
+        </>
+      ) : (
+        <label>
+          Value
+          <input
+            data-testid={`${testIdPrefix}-value`}
+            disabled={!canWrite}
+            value={String(operand.value ?? "")}
+            onChange={(event) => onChange({ kind: "column", value: event.target.value })}
+          />
+        </label>
+      )}
     </fieldset>
   );
 }

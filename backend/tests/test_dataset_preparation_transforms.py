@@ -337,6 +337,17 @@ def test_fill_constant_string_number_boolean_and_invalid_null():
     assert any("null fill value is not allowed" in err for err in errors)
 
 
+def test_fill_constant_incompatible_value_raises_node_aware():
+    frame = _frame(cat=pd.Series(pd.Categorical(["a", None])))
+    with pytest.raises(
+        PreparationExecutionError,
+        match=(
+            r"Node 't': could not fill column 'cat' with the supplied value"
+        ),
+    ):
+        _run("fill_constant", {"values": {"cat": 1}}, frame)
+
+
 # ---------------------------------------------------------------------------
 # Derived column
 # ---------------------------------------------------------------------------
@@ -404,6 +415,18 @@ def test_derived_add_sub_mul_div_concat_literal_missing_conflict_divzero():
         frame,
     )
     assert concat["label"].tolist() == ["A-ok", "B-ok"]
+
+    concat_code = _run(
+        "derived_column",
+        {
+            "name": "code_label",
+            "operation": "concat",
+            "left": {"kind": "column", "value": "name"},
+            "right": {"kind": "literal", "value": "001"},
+        },
+        frame,
+    )
+    assert concat_code["code_label"].tolist() == ["A001", "B001"]
 
     with pytest.raises(PreparationExecutionError, match="missing"):
         _run(
