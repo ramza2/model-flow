@@ -122,10 +122,12 @@ A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed
 - Join / Union
 - Filter / Select / Rename / Type Cast
 - Computed Column
-- Group By (SUM / AVG / MIN / MAX / COUNT)
-- Pivot / Unpivot
+- Group By (SUM / AVG / MIN / MAX / COUNT) — Phase 2-E (in progress)
+- Pivot / Unpivot — Phase 2-F (next)
 
 **Depends on:** stable Phase 1.5 pipeline interaction patterns and existing dataset versioning.
+
+Phase 2-D (Training Integration: exact prepared DatasetVersion → TrainingJob) is complete on `main` (PR #41).
 
 ---
 

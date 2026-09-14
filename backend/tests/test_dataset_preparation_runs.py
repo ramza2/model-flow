@@ -1160,3 +1160,156 @@ def test_join_preparation_trains_on_pinned_parquet_version(client, auth_headers,
     assert {"feat_a", "feat_b", "target"}.issubset(set(frame.columns))
     assert len(frame) == 4
     assert set(frame["target"].tolist()) == {0, 1}
+
+
+def test_group_by_full_materialization_success(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "gb.csv",
+        b"region,category,sales,order_id\n"
+        b"west,A,10,1\n"
+        b"east,A,20,2\n"
+        b"west,B,30,\n"
+        b"east,A,40,4\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "group_by-1",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region", "category"],
+                    "aggregations": [
+                        {"column": "sales", "op": "sum", "output": "sales_sum"},
+                        {"column": "order_id", "op": "count", "output": "order_count"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "group_by-1"},
+            {"id": "e2", "source": "group_by-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="GroupByFull")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Group By Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.succeeded, live.error_message
+        assert live.output_dataset_version_id is not None
+        version = db.get(DatasetVersion, live.output_dataset_version_id)
+        assert version.format == "parquet"
+        assert version.source_type == "preparation"
+        assert version.row_count == 3
+        assert version.column_count == 4
+        columns = __import__("json").loads(version.columns_json)
+        assert columns == ["region", "category", "sales_sum", "order_count"]
+        frame = pd.read_parquet(__import__("io").BytesIO(artifact_store[version.object_key]))
+        assert list(frame.columns) == columns
+        west_a = frame[(frame["region"] == "west") & (frame["category"] == "A")].iloc[0]
+        assert west_a["sales_sum"] == 10
+        assert west_a["order_count"] == 1
+        east_a = frame[(frame["region"] == "east") & (frame["category"] == "A")].iloc[0]
+        assert east_a["sales_sum"] == 60
+        assert east_a["order_count"] == 2
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == version.version == 1
+        version_number = version.version
+        prep_id = prep["id"]
+        run_id = run["id"]
+        source_id = source["id"]
+
+    derived_lineage = client.get(
+        f"/api/v1/projects/{project_id}/datasets/{output_id}/versions/"
+        f"{version_number}/lineage",
+        headers=auth_headers,
+    )
+    assert derived_lineage.status_code == 200, derived_lineage.text
+    upstream = derived_lineage.json()["upstream"]
+    assert upstream is not None
+    assert upstream["preparation"]["id"] == prep_id
+    assert upstream["preparation_run"]["id"] == run_id
+    assert len(upstream["input_versions"]) == 1
+    assert upstream["input_versions"][0]["dataset_id"] == source_id
+
+
+def test_group_by_incompatible_sum_no_partial_version(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "bad-gb.csv",
+        b"region,label\nwest,a\neast,b\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "group_by-1",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region"],
+                    "aggregations": [
+                        {"column": "label", "op": "sum", "output": "label_sum"}
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "group_by-1"},
+            {"id": "e2", "source": "group_by-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="FailGroupBy")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Fail GB Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.failed
+        assert live.error_message
+        assert "group_by-1" in live.error_message
+        assert live.output_dataset_version_id is None
+        versions = db.scalars(
+            select(DatasetVersion).where(DatasetVersion.dataset_id == output_id)
+        ).all()
+        assert versions == []
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == 0

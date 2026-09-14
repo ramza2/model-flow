@@ -19,6 +19,7 @@ export const PREPARATION_NODE_TYPES = [
   "deduplicate",
   "fill_constant",
   "derived_column",
+  "group_by",
   "output",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
@@ -31,7 +32,10 @@ export const PREPARATION_TRANSFORM_TYPES = [
   "deduplicate",
   "fill_constant",
   "derived_column",
+  "group_by",
 ] as const satisfies readonly DatasetPreparationNodeType[];
+
+export const GROUP_BY_OPS = ["sum", "avg", "min", "max", "count"] as const;
 
 export const FILTER_OPERATORS = [
   "eq",
@@ -142,6 +146,12 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
     label: "Derived",
     description: "Add a column from an arithmetic or concat expression.",
     icon: "ƒ",
+  },
+  {
+    type: "group_by",
+    label: "Group By",
+    description: "Group rows and calculate aggregate values.",
+    icon: "Σ",
   },
 ];
 
@@ -273,6 +283,8 @@ export function defaultConfigForPreparation(
         left: { kind: "column", value: "" },
         right: { kind: "literal", value_type: "number", value: 0 },
       };
+    case "group_by":
+      return { group_by: [], aggregations: [] };
     case "output":
       return {};
     default:
@@ -487,6 +499,17 @@ export function preparationConfigSummary(
       const name = String(config.name || "").trim();
       lines.push(name || "Unnamed column");
       lines.push(String(config.operation || "add"));
+      break;
+    }
+    case "group_by": {
+      const keys = Array.isArray(config.group_by) ? config.group_by.map(String).filter(Boolean) : [];
+      const aggregations = Array.isArray(config.aggregations) ? config.aggregations : [];
+      lines.push(keys.length ? `By ${keys.join(", ")}` : "No group keys");
+      lines.push(
+        aggregations.length
+          ? `${aggregations.length} aggregation${aggregations.length === 1 ? "" : "s"}`
+          : "No aggregations",
+      );
       break;
     }
     case "output":
@@ -812,4 +835,81 @@ export function sourceDatasetIdsInGraph(
     if (Number.isFinite(id)) ids.add(id);
   }
   return ids;
+}
+
+export type GroupByAggregationRow = {
+  column: string;
+  op: (typeof GROUP_BY_OPS)[number] | string;
+  output: string;
+};
+
+export function parseGroupByAggregations(value: unknown): GroupByAggregationRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const row =
+      item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : {};
+    const opRaw = String(row.op ?? "sum").trim().toLowerCase();
+    const op = (GROUP_BY_OPS as readonly string[]).includes(opRaw) ? opRaw : opRaw;
+    return {
+      column: String(row.column ?? ""),
+      op,
+      output: String(row.output ?? ""),
+    };
+  });
+}
+
+export function serializeGroupByConfig(input: {
+  groupKeys: string[];
+  aggregations: GroupByAggregationRow[];
+}): {
+  group_by: string[];
+  aggregations: Array<{ column: string; op: string; output: string }>;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const group_by = input.groupKeys.map((key) => key.trim()).filter(Boolean);
+  if (group_by.length === 0) {
+    errors.push("At least one group key is required.");
+  }
+  if (group_by.length !== new Set(group_by).size) {
+    errors.push("Group keys must be unique.");
+  }
+
+  const groupKeySet = new Set(group_by);
+  const aggregations: Array<{ column: string; op: string; output: string }> = [];
+  const outputs: string[] = [];
+
+  if (input.aggregations.length === 0) {
+    errors.push("At least one aggregation is required.");
+  }
+
+  input.aggregations.forEach((row, index) => {
+    const prefix = `Aggregation ${index + 1}`;
+    const column = row.column.trim();
+    const output = row.output.trim();
+    const op = String(row.op || "").trim().toLowerCase();
+    if (!column) {
+      errors.push(`${prefix}: source column is required.`);
+    }
+    if (!(GROUP_BY_OPS as readonly string[]).includes(op)) {
+      errors.push(`${prefix}: function must be SUM, AVG, MIN, MAX, or COUNT.`);
+    }
+    if (!output) {
+      errors.push(`${prefix}: output column is required.`);
+    } else {
+      if (groupKeySet.has(output)) {
+        errors.push(`${prefix}: output '${output}' collides with a group key.`);
+      }
+      outputs.push(output);
+    }
+    aggregations.push({ column, op, output });
+  });
+
+  if (outputs.length !== new Set(outputs).size) {
+    errors.push("Aggregation outputs must be unique.");
+  }
+
+  return { group_by, aggregations, errors };
 }

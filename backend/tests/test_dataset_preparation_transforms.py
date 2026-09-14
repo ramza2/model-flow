@@ -674,3 +674,213 @@ def test_preview_api_one_transform_flow(client, auth_headers):
     assert body["columns"] == ["customer_id", "amount"]
     assert len(body["rows"]) == 2
     assert {row["amount"] for row in body["rows"]} == {20, 30}
+
+
+# ---------------------------------------------------------------------------
+# Group By
+# ---------------------------------------------------------------------------
+
+
+def test_group_by_validation_contract():
+    valid, warnings = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [
+                {"column": "sales", "op": "sum", "output": "sales_sum"},
+            ],
+        },
+        strict=True,
+    )
+    assert valid == []
+    assert warnings == []
+
+    errors, _ = _validate_transform_config(
+        "gb", "group_by", {"group_by": [], "aggregations": [{"column": "a", "op": "sum", "output": "a_sum"}]}, strict=True
+    )
+    assert any("group_by must not be empty" in e for e in errors)
+
+    errors, warnings = _validate_transform_config(
+        "gb", "group_by", {"group_by": [], "aggregations": [{"column": "a", "op": "sum", "output": "a_sum"}]}, strict=False
+    )
+    assert errors == []
+    assert any("group_by must not be empty" in w for w in warnings)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region", "region"],
+            "aggregations": [{"column": "a", "op": "sum", "output": "a_sum"}],
+        },
+        strict=True,
+    )
+    assert any("duplicates" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {"group_by": ["region"], "aggregations": []},
+        strict=True,
+    )
+    assert any("aggregations must not be empty" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [{"column": "a", "op": "median", "output": "a_med"}],
+        },
+        strict=True,
+    )
+    assert any("op must be one of" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [{"column": "  ", "op": "sum", "output": "a_sum"}],
+        },
+        strict=True,
+    )
+    assert any("column must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [{"column": "a", "op": "sum", "output": ""}],
+        },
+        strict=True,
+    )
+    assert any("output must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [
+                {"column": "a", "op": "sum", "output": "x"},
+                {"column": "b", "op": "avg", "output": "x"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("outputs must be unique" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "gb",
+        "group_by",
+        {
+            "group_by": ["region"],
+            "aggregations": [{"column": "a", "op": "sum", "output": "region"}],
+        },
+        strict=True,
+    )
+    assert any("collides with a group_by key" in e for e in errors)
+
+
+def test_group_by_execution_semantics():
+    frame = _frame(
+        region=["west", "east", "west", None, "east"],
+        category=["A", "A", "B", "A", "A"],
+        sales=[10.0, 20.0, 30.0, 40.0, 50.0],
+        margin=[1.0, 2.0, 3.0, 4.0, 5.0],
+        order_id=[1, 2, None, 4, 5],
+        label=["x", "y", "z", "w", "v"],
+    )
+    out = _run(
+        "group_by",
+        {
+            "group_by": ["region", "category"],
+            "aggregations": [
+                {"column": "sales", "op": "sum", "output": "sales_sum"},
+                {"column": "sales", "op": "avg", "output": "sales_avg"},
+                {"column": "margin", "op": "min", "output": "margin_min"},
+                {"column": "margin", "op": "max", "output": "margin_max"},
+                {"column": "order_id", "op": "count", "output": "order_count"},
+            ],
+        },
+        frame,
+    )
+    assert list(out.columns) == [
+        "region",
+        "category",
+        "sales_sum",
+        "sales_avg",
+        "margin_min",
+        "margin_max",
+        "order_count",
+    ]
+    # first-seen group order: west/A, east/A, west/B, None/A
+    regions = out["region"].tolist()
+    categories = out["category"].tolist()
+    assert regions[0] == "west" and categories[0] == "A"
+    assert regions[1] == "east" and categories[1] == "A"
+    assert regions[2] == "west" and categories[2] == "B"
+    assert pd.isna(regions[3]) and categories[3] == "A"
+
+    west_a = out.iloc[0]
+    assert west_a["sales_sum"] == 10.0
+    assert west_a["sales_avg"] == 10.0
+    assert west_a["order_count"] == 1
+
+    east_a = out.iloc[1]
+    assert east_a["sales_sum"] == 70.0
+    assert east_a["sales_avg"] == 35.0
+    assert east_a["margin_min"] == 2.0
+    assert east_a["margin_max"] == 5.0
+    assert east_a["order_count"] == 2  # one null order_id excluded
+
+    null_a = out.iloc[3]
+    assert null_a["sales_sum"] == 40.0
+    assert null_a["order_count"] == 1
+
+
+def test_group_by_execution_errors():
+    frame = _frame(region=["a"], sales=[1], label=["x"])
+
+    with pytest.raises(PreparationExecutionError, match="missing"):
+        _run(
+            "group_by",
+            {
+                "group_by": ["missing_key"],
+                "aggregations": [{"column": "sales", "op": "sum", "output": "s"}],
+            },
+            frame,
+        )
+
+    with pytest.raises(PreparationExecutionError, match="missing"):
+        _run(
+            "group_by",
+            {
+                "group_by": ["region"],
+                "aggregations": [{"column": "nope", "op": "sum", "output": "s"}],
+            },
+            frame,
+        )
+
+    with pytest.raises(PreparationExecutionError, match="aggregation 'sum'"):
+        _run(
+            "group_by",
+            {
+                "group_by": ["region"],
+                "aggregations": [{"column": "label", "op": "sum", "output": "s"}],
+            },
+            frame,
+        )
+
+    with pytest.raises(PreparationExecutionError, match="aggregation 'avg'"):
+        _run(
+            "group_by",
+            {
+                "group_by": ["region"],
+                "aggregations": [{"column": "label", "op": "avg", "output": "s"}],
+            },
+            frame,
+        )

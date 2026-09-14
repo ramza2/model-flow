@@ -734,6 +734,23 @@ describe("PreparationBuilder", () => {
     fireEvent.change(screen.getByTestId("preparation-derived-operation"), {
       target: { value: "add" },
     });
+
+    fireEvent.click(screen.getByTestId("preparation-library-group_by"));
+    fireEvent.click(await screen.findByTestId("canvas-node-group_by-1"));
+    expect(screen.getByTestId("preparation-groupby-inspector")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("preparation-groupby-keys"), {
+      target: { value: "region, category" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-groupby-add"));
+    fireEvent.change(screen.getByTestId("preparation-groupby-column-0"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-op-0"), {
+      target: { value: "avg" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-output-0"), {
+      target: { value: "sales_avg" },
+    });
   });
 
   it("saves transform configs in the version payload", async () => {
@@ -1409,6 +1426,167 @@ describe("PreparationBuilder", () => {
     await screen.findByTestId("preparation-run-open-10");
     expect(screen.queryByTestId("preparation-train-result-10")).not.toBeInTheDocument();
     expect(screen.queryByTestId("preparation-train-this-result")).not.toBeInTheDocument();
+  });
+
+  it("configures group by inspector with validation gating", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    let previewCalls = 0;
+    let runCalls = 0;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        previewCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "POST") {
+        runCalls += 1;
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-group_by"));
+    fireEvent.click(await screen.findByTestId("canvas-node-group_by-1"));
+    expect(screen.getByTestId("preparation-groupby-inspector")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("preparation-groupby-keys"), {
+      target: { value: "region, region" },
+    });
+    expect(await screen.findByTestId("preparation-groupby-errors")).toHaveTextContent(
+      "Group keys must be unique",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    const previewBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewBefore);
+
+    const runBefore = runCalls;
+    fireEvent.click(screen.getByTestId("preparation-run"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(runCalls).toBe(runBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-groupby-keys"), {
+      target: { value: "region" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-groupby-add"));
+    fireEvent.change(screen.getByTestId("preparation-groupby-column-0"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-op-0"), {
+      target: { value: "sum" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-output-0"), {
+      target: { value: "region" },
+    });
+    expect(screen.getByTestId("preparation-groupby-errors")).toHaveTextContent(
+      "collides with a group key",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-groupby-output-0"), {
+      target: { value: "sales_sum" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-groupby-add"));
+    fireEvent.change(screen.getByTestId("preparation-groupby-column-1"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-op-1"), {
+      target: { value: "avg" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-groupby-output-1"), {
+      target: { value: "sales_avg" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-groupby-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-groupby-remove-1"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-groupby-row-1")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "group_by-1")?.config).toEqual({
+      group_by: ["region"],
+      aggregations: [{ column: "sales", op: "sum", output: "sales_sum" }],
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-group_by"));
+    fireEvent.click(await screen.findByTestId("canvas-node-group_by-2"));
+    fireEvent.change(screen.getByTestId("preparation-groupby-keys"), {
+      target: { value: "a, a" },
+    });
+    expect(await screen.findByTestId("preparation-groupby-errors")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("canvas-node-group_by-1"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-groupby-errors")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preparation-groupby-keys")).toHaveValue("region");
+  });
+
+  it("keeps group by inspector read-only for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version!,
+          graph: {
+            schema_version: 1,
+            nodes: [
+              {
+                id: "source-1",
+                type: "source",
+                config: { dataset_id: 1, version_strategy: "latest" },
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "group_by-1",
+                type: "group_by",
+                config: {
+                  group_by: ["region"],
+                  aggregations: [{ column: "sales", op: "sum", output: "sales_sum" }],
+                },
+                position: { x: 200, y: 0 },
+              },
+              { id: "output-1", type: "output", config: {}, position: { x: 400, y: 0 } },
+            ],
+            edges: [
+              { id: "e1", source: "source-1", target: "group_by-1" },
+              { id: "e2", source: "group_by-1", target: "output-1" },
+            ],
+          },
+        },
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-group_by-1"));
+    expect(await screen.findByTestId("preparation-groupby-keys")).toBeDisabled();
+    expect(screen.getByTestId("preparation-groupby-column-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-groupby-op-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-groupby-output-0")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-groupby-add")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-groupby-remove-0")).not.toBeInTheDocument();
   });
 
 });
