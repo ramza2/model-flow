@@ -1122,6 +1122,7 @@ export default function PreparationBuilder() {
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
                 />
               )}
               {selectedNode.data.node_type === "output" && (
@@ -2302,10 +2303,12 @@ function DerivedInspector({
   config,
   canWrite,
   onChange,
+  onValidationChange,
 }: {
   config: Record<string, unknown>;
   canWrite: boolean;
   onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
 }) {
   const left = parseDerivedOperand(config.left, { kind: "column", value: "" });
   const right = parseDerivedOperand(config.right, {
@@ -2313,6 +2316,15 @@ function DerivedInspector({
     value_type: "number",
     value: 0,
   });
+  const [leftError, setLeftError] = useState<string | null>(null);
+  const [rightError, setRightError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const errors = [leftError, rightError].filter(
+      (error): error is string => Boolean(error),
+    );
+    onValidationChange?.(errors);
+  }, [leftError, rightError, onValidationChange]);
 
   function updateOperand(side: "left" | "right", next: DerivedOperand) {
     onChange({ ...config, [side]: next });
@@ -2350,6 +2362,7 @@ function DerivedInspector({
         operand={left}
         canWrite={canWrite}
         onChange={(next) => updateOperand("left", next)}
+        onValidationChange={setLeftError}
       />
       <OperandFields
         label="Right"
@@ -2357,7 +2370,17 @@ function DerivedInspector({
         operand={right}
         canWrite={canWrite}
         onChange={(next) => updateOperand("right", next)}
+        onValidationChange={setRightError}
       />
+      {(leftError || rightError) && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-derived-errors">
+          {[leftError, rightError]
+            .filter((error): error is string => Boolean(error))
+            .map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -2368,12 +2391,14 @@ function OperandFields({
   operand,
   canWrite,
   onChange,
+  onValidationChange,
 }: {
   label: string;
   testIdPrefix: string;
   operand: DerivedOperand;
   canWrite: boolean;
   onChange: (next: DerivedOperand) => void;
+  onValidationChange?: (error: string | null) => void;
 }) {
   const literalType: FilterValueType =
     operand.kind === "literal"
@@ -2388,20 +2413,24 @@ function OperandFields({
     if (operand.kind !== "literal") {
       setLiteralDraft("");
       setLiteralError(null);
+      onValidationChange?.(null);
       return;
     }
     setLiteralDraft(formatDerivedLiteralInput(operand.value));
     setLiteralError(null);
-  }, [operand.kind, operand.value, operand.value_type]);
+    onValidationChange?.(null);
+  }, [operand.kind, operand.value, operand.value_type, onValidationChange]);
 
   function commitLiteral(nextType: FilterValueType, raw: string) {
     setLiteralDraft(raw);
     const coerced = coerceDerivedLiteral(raw, nextType);
     if (!coerced.ok) {
       setLiteralError(coerced.error);
+      onValidationChange?.(coerced.error);
       return;
     }
     setLiteralError(null);
+    onValidationChange?.(null);
     onChange({
       kind: "literal",
       value_type: nextType,
@@ -2422,11 +2451,13 @@ function OperandFields({
             if (event.target.value === "literal") {
               setLiteralDraft("0");
               setLiteralError(null);
+              onValidationChange?.(null);
               onChange({ kind: "literal", value_type: "number", value: 0 });
               return;
             }
             setLiteralDraft("");
             setLiteralError(null);
+            onValidationChange?.(null);
             onChange({ kind: "column", value: "" });
           }}
         >

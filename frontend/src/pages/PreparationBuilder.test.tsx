@@ -904,6 +904,63 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("blocks save and preview while derived number literal is invalid", async () => {
+    let saved: unknown = null;
+    let previewCalls = 0;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/dataset-preparations/9/preview" && (init?.method || "GET") === "POST") {
+        previewCalls += 1;
+      }
+      return base(path, init);
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-derived_column"));
+    fireEvent.click(await screen.findByTestId("canvas-node-derived_column-1"));
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value-type"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value"), {
+      target: { value: "abc" },
+    });
+    expect(await screen.findByTestId("preparation-derived-right-error")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-derived-errors")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    const previewCountBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewCountBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-derived-right-value"), {
+      target: { value: "5" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-derived-errors")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(
+      (saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } })
+        .graph!.nodes!.find((node) => node.id === "derived_column-1")?.config,
+    ).toMatchObject({
+      right: { kind: "literal", value_type: "number", value: 5 },
+    });
+  });
+
   it("blocks save when filter number input is invalid", async () => {
     let saved: unknown = null;
     stubPreparationApi({

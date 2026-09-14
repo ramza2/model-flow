@@ -798,6 +798,76 @@ def test_failure_invalid_cast_no_partial_version(client, auth_headers):
         assert dataset.latest_version == 0
 
 
+def test_failure_incompatible_fill_no_partial_version(client, auth_headers, monkeypatch):
+    """Full run fillna TypeError becomes failed run with node-aware error and no output version."""
+    import pandas as pd
+
+    from app.services import datasets as datasets_service
+
+    project_id = _create_project(client, auth_headers)
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "cat.csv",
+        b"cat\na\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "fill-1",
+                "type": "fill_constant",
+                "config": {"values": {"cat": 1}},
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "fill-1"},
+            {"id": "e2", "source": "fill-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="FailFill")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Fail Fill Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+
+    monkeypatch.setattr(
+        datasets_service,
+        "load_dataset_version_dataframe",
+        lambda _version: pd.DataFrame({"cat": pd.Series(pd.Categorical(["a", None]))}),
+    )
+
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.failed
+        assert live.finished_at is not None
+        assert live.error_message
+        assert "fill-1" in live.error_message
+        assert "cat" in live.error_message
+        assert live.output_dataset_version_id is None
+        versions = db.scalars(
+            select(DatasetVersion).where(DatasetVersion.dataset_id == output_id)
+        ).all()
+        assert versions == []
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == 0
+
+
 # ---------------------------------------------------------------------------
 # N / O. Collision + repeat runs
 # ---------------------------------------------------------------------------
