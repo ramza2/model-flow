@@ -20,7 +20,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
-from app.main import app
+from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
 
 engine = create_engine(
@@ -37,6 +37,7 @@ SCIENTIST_PASSWORD = secrets.token_urlsafe(24)
 @pytest.fixture(autouse=True)
 def setup_api(monkeypatch):
     Base.metadata.create_all(engine)
+    _rate_windows.clear()
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -1118,14 +1119,22 @@ def test_rbac_viewer_and_scientist(client, auth_headers):
     assert allowed.status_code == 201
 
 
-def test_worker_does_not_claim_preparation_runs():
+def test_worker_claims_queued_preparation_runs_only():
     import inspect
 
     from app.workers import runner
 
     source = inspect.getsource(runner)
-    assert "DatasetPreparationRun" not in source
-    assert "dataset_preparation" not in source.lower()
+    assert "claim_next_preparation_run" in source
+    assert "process_preparation_run" in source
+    assert "DatasetPreparationRunStatus.queued" in source
+    # Must not use JobStatus claim helper for preparation runs.
+    claim_src = inspect.getsource(runner.claim_next_preparation_run)
+    # Docstring may mention JobStatus; the claim body must not use it.
+    body = claim_src.split('"""', 2)[-1] if '"""' in claim_src else claim_src
+    assert "JobStatus" not in body
+    assert "DatasetPreparationRunStatus.queued" in claim_src
+    assert "created" not in claim_src or "queued" in claim_src
 
 
 def test_join_graph_run_snapshot(client, auth_headers):

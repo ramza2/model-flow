@@ -23,7 +23,7 @@ from app.db.models import (
     User,
 )
 from app.db.session import get_db
-from app.main import app
+from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
 
 engine = create_engine(
@@ -40,6 +40,7 @@ OUTSIDER_PASSWORD = secrets.token_urlsafe(24)
 @pytest.fixture(autouse=True)
 def setup_api(monkeypatch):
     Base.metadata.create_all(engine)
+    _rate_windows.clear()
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -607,3 +608,58 @@ def test_preview_rbac(client, auth_headers):
         },
     )
     assert denied.status_code in {403, 404}
+
+
+def test_preview_incompatible_fill_returns_400_with_node_and_column(
+    client, auth_headers, monkeypatch
+):
+    """Preview must map fillna TypeError to friendly 400 with node id + column."""
+    import pandas as pd
+
+    from app.services import dataset_preparation_execution as execution
+
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client, auth_headers, project_id, "cat.csv", b"cat\na\n"
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+
+    def _categorical_preview(*, columns, preview_rows):
+        return pd.DataFrame({"cat": pd.Series(pd.Categorical(["a", None]))})
+
+    monkeypatch.setattr(execution, "frame_from_preview", _categorical_preview)
+
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "fill-1",
+                "type": "fill_constant",
+                "config": {"values": {"cat": 1}},
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "fill-1"},
+            {"id": "e2", "source": "fill-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert response.status_code == 400, response.text
+    assert response.status_code != 500
+    text = response.text.lower()
+    assert "fill-1" in text
+    assert "cat" in text

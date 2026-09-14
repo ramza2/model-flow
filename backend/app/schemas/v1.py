@@ -408,7 +408,20 @@ class DatasetPreparationNodePosition(BaseModel):
 
 class DatasetPreparationNode(BaseModel):
     id: str = Field(min_length=1, max_length=200)
-    type: Literal["source", "join", "union", "output"]
+    type: Literal[
+        "source",
+        "join",
+        "union",
+        "select",
+        "drop",
+        "rename",
+        "filter",
+        "cast",
+        "deduplicate",
+        "fill_constant",
+        "derived_column",
+        "output",
+    ]
     config: dict[str, Any] = Field(default_factory=dict)
     position: DatasetPreparationNodePosition | None = None
 
@@ -453,4 +466,9 @@ class DatasetPreparationGraphRequest(BaseModel):
 
 class DatasetPreparationRunCreate(BaseModel):
     version: int | None = None
+
+
+class DatasetPreparationOutputDatasetCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
 

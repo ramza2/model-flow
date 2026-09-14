@@ -262,12 +262,17 @@ describe("JobCreate UX", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByTestId("detected-problem-type")).toHaveTextContent("Classification");
-    const algorithm = await screen.findByTestId("job-algorithm");
-    expect(algorithm).toHaveTextContent("Random forest");
-    expect(algorithm).not.toHaveTextContent("Ridge regression");
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("job-algorithm");
+      expect(algorithm).toHaveTextContent("Random forest");
+      expect(algorithm).not.toHaveTextContent("Ridge regression");
+    });
     fireEvent.change(screen.getByTestId("job-problem-type"), { target: { value: "regression" } });
-    await waitFor(() => expect(screen.getByTestId("job-algorithm")).toHaveTextContent("Ridge regression"));
-    expect(screen.getByTestId("job-algorithm")).not.toHaveTextContent("Logistic regression");
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("job-algorithm");
+      expect(algorithm).toHaveTextContent("Ridge regression");
+      expect(algorithm).not.toHaveTextContent("Logistic regression");
+    });
   });
 
   it("resets hyperparameters when algorithm changes", async () => {

@@ -6,6 +6,7 @@ import {
   type Dataset,
   type DatasetSplit,
   type DatasetVersion,
+  type DatasetVersionLineage,
   type QualityCheck,
   type QualityRule,
 } from "../api";
@@ -118,6 +119,7 @@ export default function DatasetDetail() {
   const [legacyRules, setLegacyRules] = useState<QualityRule[]>([]);
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [splits, setSplits] = useState<DatasetSplit[]>([]);
+  const [lineage, setLineage] = useState<DatasetVersionLineage | null>(null);
   const [showSplitForm, setShowSplitForm] = useState(false);
   const [splitName, setSplitName] = useState("split-1");
   const [splitTrainRatio, setSplitTrainRatio] = useState("0.70");
@@ -207,17 +209,22 @@ export default function DatasetDetail() {
     const selected = versions.find((version) => version.id === selectedVersionId);
     if (!selected) return;
     setPreview(null);
+    setLineage(null);
     Promise.all([
       api<{ columns: string[]; rows: Array<Record<string, unknown>> }>(
         `/projects/${projectId}/datasets/${datasetId}/versions/${selected.version}/preview`,
       ),
       api<QualityCheck[]>(`/projects/${projectId}/quality-checks?dataset_version_id=${selected.id}`),
       api<DatasetSplit[]>(`/projects/${projectId}/dataset-versions/${selected.id}/splits`),
+      api<DatasetVersionLineage>(
+        `/projects/${projectId}/datasets/${datasetId}/versions/${selected.version}/lineage`,
+      ).catch(() => null),
     ])
-      .then(([previewRows, checkRows, splitRows]) => {
+      .then(([previewRows, checkRows, splitRows, lineageRow]) => {
         setChecks(checkRows);
         setSplits(splitRows);
         setPreview(previewRows);
+        setLineage(lineageRow);
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Version details could not be loaded."));
   }, [datasetId, projectId, selectedVersionId, versions]);
@@ -545,6 +552,59 @@ export default function DatasetDetail() {
               Use Train on dataset to open Job Create with this dataset preselected.
             </p>
           </section>
+          {lineage?.upstream && (
+            <section
+              className="panel dataset-upstream-lineage"
+              data-testid="dataset-upstream-lineage"
+            >
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">Upstream</span>
+                  <h2>Prepared from recipe</h2>
+                </div>
+              </div>
+              <dl>
+                <div>
+                  <dt>Preparation</dt>
+                  <dd>
+                    <Link
+                      to={`/projects/${projectId}/preparations/${lineage.upstream.preparation.id}`}
+                      data-testid="dataset-upstream-preparation-link"
+                    >
+                      {lineage.upstream.preparation.name}
+                    </Link>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Recipe version</dt>
+                  <dd>v{lineage.upstream.preparation_version.version}</dd>
+                </div>
+                <div>
+                  <dt>Preparation run</dt>
+                  <dd>
+                    #{lineage.upstream.preparation_run.id} ·{" "}
+                    <StatusBadge status={lineage.upstream.preparation_run.status} />
+                  </dd>
+                </div>
+              </dl>
+              {lineage.upstream.input_versions.length > 0 && (
+                <div>
+                  <span className="eyebrow">Input versions</span>
+                  <ul className="dataset-upstream-inputs" data-testid="dataset-upstream-inputs">
+                    {lineage.upstream.input_versions.map((input) => (
+                      <li key={`${input.node_id}-${input.dataset_version_id}`}>
+                        <Link to={`/projects/${projectId}/datasets/${input.dataset_id}`}>
+                          {input.dataset_name || `Dataset #${input.dataset_id}`}
+                        </Link>
+                        {input.version != null ? ` · v${input.version}` : ""} · node{" "}
+                        {input.node_id}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
           <section className="panel">
             <div className="panel-title"><div><span className="eyebrow">Profile</span><h2>Column statistics</h2></div></div>
             <div className="table-wrap">

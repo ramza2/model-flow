@@ -126,6 +126,7 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
     className: "run",
     icon: "◷",
     values: new Set([
+      "created",
       "pending",
       "queued",
       "dispatched",

@@ -1075,6 +1075,101 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   white-space: nowrap;
   font-size: .78rem;
 }
+.preparation-library-group { display: grid; gap: .35rem; }
+.preparation-library-group-label {
+  color: var(--muted);
+  font-size: .68rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.preparation-output-dataset {
+  display: grid;
+  gap: .65rem;
+  margin-top: .35rem;
+  padding-top: .65rem;
+  border-top: 1px solid var(--border);
+}
+.preparation-output-dataset.is-compact { margin-top: .15rem; }
+.preparation-output-create { display: grid; gap: .55rem; }
+.preparation-filter-rows,
+.preparation-cast-rows,
+.preparation-fill-rows { display: grid; gap: .45rem; }
+.preparation-filter-row,
+.preparation-cast-row,
+.preparation-fill-row {
+  display: grid;
+  gap: .35rem;
+  padding: .45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.preparation-operand-fields {
+  margin: 0;
+  padding: .55rem .65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  gap: .45rem;
+}
+.preparation-operand-fields legend {
+  padding: 0 .25rem;
+  color: var(--muted);
+  font-size: .72rem;
+}
+.preparation-run-history { margin-top: 1rem; }
+.preparation-run-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.preparation-run-table-wrap table { margin: 0; min-width: 100%; }
+.preparation-run-table-wrap th,
+.preparation-run-table-wrap td {
+  font-size: .78rem;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.preparation-run-detail {
+  display: grid;
+  gap: .65rem;
+  padding: .35rem 0;
+  white-space: normal;
+}
+.preparation-run-logs {
+  margin: 0;
+  padding: .7rem .85rem;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: .72rem;
+  white-space: pre-wrap;
+}
+.preparation-success-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .85rem;
+  margin-bottom: 1rem;
+}
+.preparation-success-cta h2 { margin: .2rem 0 0; font-size: 1.1rem; }
+.dataset-upstream-lineage { display: grid; gap: .65rem; }
+.dataset-upstream-lineage dl {
+  display: grid;
+  gap: .4rem;
+  margin: 0;
+}
+.dataset-upstream-lineage dt {
+  color: var(--muted);
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.dataset-upstream-lineage dd { margin: 0; }
+.dataset-upstream-inputs { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
 .pipeline-validation-errors ul { margin: .4rem 0 0; padding-left: 1.1rem; }
 .pipeline-validation-errors li { color: #ef8e8e; font-size: .82rem; }
 .advanced-json { margin-top: .35rem; }

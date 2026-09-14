@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.v1.common import (
     audit_event,
+    dataset_out,
     dataset_preparation_out,
     dataset_preparation_run_input_out,
     dataset_preparation_run_out,
@@ -31,6 +32,7 @@ from app.schemas.v1 import (
     DatasetPreparationCreate,
     DatasetPreparationGraph,
     DatasetPreparationGraphRequest,
+    DatasetPreparationOutputDatasetCreate,
     DatasetPreparationPreviewRequest,
     DatasetPreparationRunCreate,
     DatasetPreparationUpdate,
@@ -47,6 +49,7 @@ from app.services.dataset_preparation_execution import (
     PreparationExecutionError,
     preview_preparation_graph,
 )
+from app.services.dataset_preparation_materialization import validate_run_for_queue
 
 router = APIRouter(tags=["dataset-preparations"])
 
@@ -401,6 +404,7 @@ def create_run(
         preparation_id=preparation.id,
         preparation_version_id=version.id,
         status=DatasetPreparationRunStatus.created,
+        output_dataset_id=preparation.output_dataset_id,
         output_dataset_version_id=None,
         logs="",
         created_by=auth.user.id,
@@ -501,3 +505,129 @@ def list_run_inputs(
         .order_by(DatasetPreparationRunInput.node_id.asc())
     ).all()
     return [dataset_preparation_run_input_out(row) for row in rows]
+
+
+@router.post(
+    "/projects/{project_id}/dataset-preparations/{preparation_id}/output-dataset",
+    status_code=201,
+)
+def create_output_dataset(
+    project_id: int,
+    preparation_id: int,
+    body: DatasetPreparationOutputDatasetCreate,
+    access=Depends(require_project_perm(Permission.DATA_WRITE)),
+    db: Session = Depends(get_db),
+):
+    """Create an empty logical Dataset and attach it as this preparation's output."""
+    auth, _, _ = access
+    preparation = get_owned(
+        db, DatasetPreparation, preparation_id, project_id, "Preparation"
+    )
+    name = body.name.strip()
+    if not name:
+        raise friendly(400, "Dataset name is required.")
+    existing = db.scalar(
+        select(Dataset).where(
+            Dataset.project_id == project_id,
+            func.lower(Dataset.name) == name.lower(),
+        )
+    )
+    if existing:
+        raise friendly(409, "A dataset with this name already exists in the project.")
+
+    dataset = Dataset(
+        project_id=project_id,
+        name=name,
+        description=body.description or "",
+        latest_version=0,
+        created_by=auth.user.id,
+    )
+    db.add(dataset)
+    db.flush()
+    preparation.output_dataset_id = dataset.id
+    audit_event(
+        db,
+        auth,
+        "dataset_preparation.output_dataset.create",
+        "dataset_preparation",
+        preparation.id,
+        after={
+            "preparation_id": preparation.id,
+            "output_dataset_id": dataset.id,
+            "output_dataset_name": dataset.name,
+        },
+    )
+    db.commit()
+    db.refresh(preparation)
+    db.refresh(dataset)
+    return {
+        "preparation": dataset_preparation_out(preparation),
+        "output_dataset": dataset_out(dataset),
+    }
+
+
+@router.post(
+    "/projects/{project_id}/dataset-preparation-runs/{run_id}/execute",
+    status_code=202,
+)
+def execute_preparation_run(
+    project_id: int,
+    run_id: int,
+    access=Depends(require_project_perm(Permission.DATA_WRITE)),
+    db: Session = Depends(get_db),
+):
+    """Queue a created preparation run for async worker materialization."""
+    auth, _, _ = access
+    run = db.scalar(
+        select(DatasetPreparationRun)
+        .where(DatasetPreparationRun.id == run_id)
+        .options(selectinload(DatasetPreparationRun.inputs))
+    )
+    if not run or run.project_id != project_id:
+        raise friendly(404, "Preparation run not found.")
+    preparation = get_owned(
+        db, DatasetPreparation, run.preparation_id, project_id, "Preparation"
+    )
+
+    if run.status != DatasetPreparationRunStatus.created:
+        raise friendly(
+            409,
+            "Only created preparation runs can be queued. Create a new run to re-execute.",
+        )
+
+    try:
+        validate_run_for_queue(db, run, preparation)
+    except ValueError as exc:
+        message = str(exc)
+        if "Configure an output dataset" in message:
+            raise friendly(409, message) from exc
+        if "cannot also be used as a source" in message:
+            raise friendly(409, message) from exc
+        if "not found" in message.lower():
+            raise friendly(404, message) from exc
+        if "invalid" in message.lower():
+            raise friendly(400, message) from exc
+        raise friendly(409, message) from exc
+
+    run.status = DatasetPreparationRunStatus.queued
+    run.logs = (run.logs or "") + "Queued for preparation execution.\n"
+    audit_event(
+        db,
+        auth,
+        "dataset_preparation.run.queue",
+        "dataset_preparation_run",
+        run.id,
+        after={
+            "preparation_id": preparation.id,
+            "preparation_version_id": run.preparation_version_id,
+            "output_dataset_id": run.output_dataset_id,
+            "input_count": len(run.inputs or []),
+        },
+    )
+    db.commit()
+    run = db.scalar(
+        select(DatasetPreparationRun)
+        .where(DatasetPreparationRun.id == run.id)
+        .options(selectinload(DatasetPreparationRun.inputs))
+    )
+    return dataset_preparation_run_out(run, include_inputs=True)

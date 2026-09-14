@@ -25,6 +25,8 @@ from app.db.models import (
     DataSource,
     DataSourceType,
     Dataset,
+    DatasetPreparationRun,
+    DatasetPreparationRunStatus,
     DatasetSplit,
     DatasetVersion,
     DriftRun,
@@ -38,6 +40,7 @@ from app.db.models import (
 from app.db.session import SessionLocal
 from app.services import datasets, drift, inference, pipeline_engine, scheduler, storage
 from app.services.alerts import create_alert
+from app.services.dataset_preparation_materialization import execute_claimed_preparation_run
 from app.services.dataset_splits import content_sha256
 from app.services.prediction_serialization import (
     assign_batch_prediction_columns,
@@ -149,6 +152,58 @@ def claim_next_drift_run() -> DriftRun | None:
 
 def claim_next_import_job() -> DataImportJob | None:
     return _claim_next(DataImportJob)
+
+
+def claim_next_preparation_run() -> DatasetPreparationRun | None:
+    """Claim the next queued preparation run (not JobStatus-based)."""
+    db = SessionLocal()
+    try:
+        run = db.scalar(
+            select(DatasetPreparationRun)
+            .where(DatasetPreparationRun.status == DatasetPreparationRunStatus.queued)
+            .order_by(DatasetPreparationRun.id.asc())
+            .with_for_update(skip_locked=True)
+        )
+        if not run:
+            db.rollback()
+            return None
+        run.status = DatasetPreparationRunStatus.running
+        run.started_at = datetime.now(timezone.utc)
+        run.logs = (run.logs or "") + "Worker claimed preparation run.\n"
+        db.commit()
+        db.refresh(run)
+        db.expunge(run)
+        return run
+    finally:
+        db.close()
+
+
+def process_preparation_run(run: DatasetPreparationRun) -> None:
+    db = SessionLocal()
+    try:
+        execute_claimed_preparation_run(db, run)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        live = db.get(DatasetPreparationRun, run.id)
+        if live:
+            live.status = DatasetPreparationRunStatus.failed
+            live.error_message = str(exc)[:2000]
+            live.finished_at = datetime.now(timezone.utc)
+            live.output_dataset_version_id = None
+            live.logs = (live.logs or "") + f"Preparation failed: {exc}\n"
+            live.logs = (live.logs or "") + traceback.format_exc()[-4000:]
+            _failure_alert(
+                db,
+                project_id=live.project_id,
+                job_id=live.id,
+                job_kind="dataset_preparation_run",
+                message=str(exc)[:1000],
+            )
+            db.commit()
+        logger.exception("Preparation run failed id=%s", run.id)
+    finally:
+        db.close()
 
 
 def _failure_alert(
@@ -835,6 +890,11 @@ def run_forever() -> None:
                 ("batch inference job", claim_next_batch_job, process_batch_job),
                 ("drift run", claim_next_drift_run, process_drift_run),
                 ("data import job", claim_next_import_job, process_import_job),
+                (
+                    "dataset preparation run",
+                    claim_next_preparation_run,
+                    process_preparation_run,
+                ),
             )
             for label, claim, process in work:
                 item = claim()
