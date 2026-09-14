@@ -950,7 +950,7 @@ describe("PreparationBuilder", () => {
 
     fireEvent.click(screen.getByTestId("canvas-node-fill_constant-2"));
     expect(await screen.findByTestId("preparation-fill-column-0")).toHaveValue("amount");
-    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue("0");
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue(0);
 
     fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
       target: { value: "abc" },
