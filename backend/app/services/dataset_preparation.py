@@ -27,6 +27,7 @@ TRANSFORM_TYPES = frozenset(
         "deduplicate",
         "fill_constant",
         "derived_column",
+        "group_by",
     }
 )
 NODE_TYPES = frozenset({"source", "join", "union", "output"}) | TRANSFORM_TYPES
@@ -54,6 +55,7 @@ FILTER_NULLARY_OPS = frozenset({"is_null", "not_null"})
 CAST_TYPES = frozenset({"integer", "float", "string", "boolean", "datetime"})
 DEDUP_KEEP = frozenset({"first", "last"})
 DERIVED_OPS = frozenset({"add", "subtract", "multiply", "divide", "concat"})
+GROUP_BY_OPS = frozenset({"sum", "avg", "min", "max", "count"})
 OPERAND_KINDS = frozenset({"column", "literal"})
 JSON_SCALAR_TYPES = (str, int, float, bool)
 
@@ -569,6 +571,83 @@ def _validate_derived_column_config(
     return errors, warnings
 
 
+def _validate_group_by_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"group_by node '{node_id}': config must be an object"], warnings
+
+    group_by = config.get("group_by")
+    if not isinstance(group_by, list):
+        return [f"group_by node '{node_id}': group_by must be a list"], warnings
+    if not group_by:
+        message = f"group_by node '{node_id}': group_by must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    else:
+        cleaned_keys: list[str] = []
+        for key in group_by:
+            if not isinstance(key, str) or not key.strip():
+                errors.append(
+                    f"group_by node '{node_id}': group_by entries must be non-empty strings"
+                )
+                continue
+            cleaned_keys.append(key.strip())
+        if cleaned_keys and len(cleaned_keys) != len(set(cleaned_keys)):
+            errors.append(f"group_by node '{node_id}': group_by must not contain duplicates")
+
+    aggregations = config.get("aggregations")
+    if not isinstance(aggregations, list):
+        return (
+            errors + [f"group_by node '{node_id}': aggregations must be a list"],
+            warnings,
+        )
+    if not aggregations:
+        message = f"group_by node '{node_id}': aggregations must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+
+    group_key_set = {
+        str(key).strip()
+        for key in group_by
+        if isinstance(key, str) and key.strip()
+    }
+    outputs: list[str] = []
+    for index, row in enumerate(aggregations):
+        prefix = f"group_by node '{node_id}': aggregations[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        column = row.get("column")
+        if not isinstance(column, str) or not column.strip():
+            errors.append(f"{prefix}: column must be a non-empty string")
+        op = row.get("op")
+        if op not in GROUP_BY_OPS:
+            errors.append(
+                f"{prefix}: op must be one of sum, avg, min, max, count"
+            )
+        output = row.get("output")
+        if not isinstance(output, str) or not output.strip():
+            errors.append(f"{prefix}: output must be a non-empty string")
+            continue
+        alias = output.strip()
+        if alias in group_key_set:
+            errors.append(
+                f"{prefix}: output '{alias}' collides with a group_by key"
+            )
+        outputs.append(alias)
+    if outputs and len(outputs) != len(set(outputs)):
+        errors.append(f"group_by node '{node_id}': aggregation outputs must be unique")
+    return errors, warnings
+
+
 def _validate_transform_config(
     node_id: str,
     node_type: str,
@@ -592,6 +671,8 @@ def _validate_transform_config(
         return _validate_fill_constant_config(node_id, config, strict=strict)
     if node_type == "derived_column":
         return _validate_derived_column_config(node_id, config, strict=strict)
+    if node_type == "group_by":
+        return _validate_group_by_config(node_id, config, strict=strict)
     return [], []
 
 

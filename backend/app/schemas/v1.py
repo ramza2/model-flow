@@ -420,6 +420,7 @@ class DatasetPreparationNode(BaseModel):
         "deduplicate",
         "fill_constant",
         "derived_column",
+        "group_by",
         "output",
     ]
     config: dict[str, Any] = Field(default_factory=dict)

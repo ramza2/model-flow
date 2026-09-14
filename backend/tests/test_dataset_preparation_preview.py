@@ -663,3 +663,102 @@ def test_preview_incompatible_fill_returns_400_with_node_and_column(
     text = response.text.lower()
     assert "fill-1" in text
     assert "cat" in text
+
+
+def test_group_by_preview_warning_and_incompatible_sum(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "sales.csv",
+        b"region,sales,label\nwest,10,a\neast,20,b\nwest,30,c\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    group_config = {
+        "group_by": ["region"],
+        "aggregations": [
+            {"column": "sales", "op": "sum", "output": "sales_sum"},
+            {"column": "sales", "op": "count", "output": "sales_count"},
+        ],
+    }
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {"id": "group_by-1", "type": "group_by", "config": group_config},
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "group_by-1"},
+            {"id": "e2", "source": "group_by-1", "target": "out"},
+        ],
+    }
+
+    preview_out = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert preview_out.status_code == 200, preview_out.text
+    body = preview_out.json()
+    assert any("Group By preview is computed from sampled source rows" in w for w in body["warnings"])
+    assert body["columns"] == ["region", "sales_sum", "sales_count"]
+
+    preview_group = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph, "node_id": "group_by-1"},
+    )
+    assert preview_group.status_code == 200, preview_group.text
+    assert any(
+        "Group By preview is computed from sampled source rows" in w
+        for w in preview_group.json()["warnings"]
+    )
+
+    preview_src = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph, "node_id": "src"},
+    )
+    assert preview_src.status_code == 200, preview_src.text
+    assert not any(
+        "Group By preview is computed from sampled source rows" in w
+        for w in preview_src.json()["warnings"]
+    )
+
+    bad = {
+        **graph,
+        "nodes": [
+            graph["nodes"][0],
+            {
+                "id": "group_by-1",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region"],
+                    "aggregations": [
+                        {"column": "label", "op": "sum", "output": "label_sum"}
+                    ],
+                },
+            },
+            graph["nodes"][2],
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": bad},
+    )
+    assert response.status_code == 400, response.text
+    text = response.text.lower()
+    assert "group_by-1" in text
+    assert "label" in text
+    assert "sum" in text

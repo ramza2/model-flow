@@ -24,6 +24,7 @@ from app.services.dataset_preparation import (
     FILTER_COMBINES,
     FILTER_NULLARY_OPS,
     FILTER_OPERATORS,
+    GROUP_BY_OPS,
     JOIN_HOWS,
     TRANSFORM_TYPES,
     UNION_MODES,
@@ -43,6 +44,10 @@ JOIN_HOW_PANDAS = {
 PREVIEW_SOURCE_ROW_CAP = 100
 PREVIEW_WARNING = (
     "Preview uses stored DatasetVersion sample rows and may not represent the full dataset."
+)
+PREVIEW_GROUP_BY_WARNING = (
+    "Group By preview is computed from sampled source rows; "
+    "aggregate values and group counts may differ in a full run."
 )
 
 _BOOLEAN_STRING_MAP = {
@@ -628,6 +633,135 @@ def _execute_derived_column(
     return out
 
 
+def _group_by_aggfunc(op: str) -> str:
+    if op == "sum":
+        return "sum"
+    if op == "avg":
+        return "mean"
+    if op == "min":
+        return "min"
+    if op == "max":
+        return "max"
+    if op == "count":
+        return "count"
+    raise ValueError(f"unsupported aggregation op '{op}'")
+
+
+def _execute_group_by(node_id: str, config: dict[str, Any], frame: pd.DataFrame) -> pd.DataFrame:
+    group_by = config.get("group_by")
+    aggregations = config.get("aggregations")
+    if not isinstance(group_by, list) or not group_by:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': group_by requires at least one grouping column."
+        )
+    if not isinstance(aggregations, list) or not aggregations:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': group_by requires at least one aggregation."
+        )
+
+    normalized_keys: list[str] = []
+    for key in group_by:
+        if not isinstance(key, str) or not key.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': group_by keys must be non-empty strings."
+            )
+        name = _require_column(frame, node_id, key.strip())
+        if name in normalized_keys:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate group_by key '{name}'."
+            )
+        normalized_keys.append(name)
+
+    named_aggs: dict[str, pd.NamedAgg] = {}
+    output_order: list[str] = []
+    for index, row in enumerate(aggregations):
+        if not isinstance(row, dict):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregations[{index}] must be an object."
+            )
+        column = row.get("column")
+        op = row.get("op")
+        output = row.get("output")
+        if not isinstance(column, str) or not column.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregations[{index}].column must be a non-empty string."
+            )
+        if not isinstance(op, str) or op not in GROUP_BY_OPS:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregations[{index}].op must be one of "
+                "sum, avg, min, max, count."
+            )
+        if not isinstance(output, str) or not output.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregations[{index}].output must be a non-empty string."
+            )
+        source_column = _require_column(frame, node_id, column.strip())
+        output_name = output.strip()
+        if output_name in normalized_keys:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregation output '{output_name}' "
+                "collides with a group_by key."
+            )
+        if output_name in named_aggs:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate aggregation output '{output_name}'."
+            )
+        series = frame[source_column]
+        if op in {"sum", "avg"}:
+            # Booleans are numeric in pandas; reject them for SUM/AVG (no implicit bool math).
+            if pd.api.types.is_bool_dtype(series) or not pd.api.types.is_numeric_dtype(
+                series
+            ):
+                raise PreparationExecutionError(
+                    f"Node '{node_id}': aggregation '{op}' could not be applied "
+                    f"to column '{source_column}'."
+                )
+        named_aggs[output_name] = pd.NamedAgg(
+            column=source_column, aggfunc=_group_by_aggfunc(op)
+        )
+        output_order.append(output_name)
+
+    try:
+        grouped = frame.groupby(normalized_keys, dropna=False, sort=False)
+        result = grouped.agg(**named_aggs)
+    except PreparationExecutionError:
+        raise
+    except TypeError as exc:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': aggregation could not be applied ({exc})."
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - normalize pandas aggregation failures
+        message = str(exc)
+        for output_name, named in named_aggs.items():
+            op = next(
+                (
+                    row.get("op")
+                    for row in aggregations
+                    if isinstance(row, dict)
+                    and isinstance(row.get("output"), str)
+                    and row.get("output", "").strip() == output_name
+                ),
+                None,
+            )
+            if op in {"sum", "avg"} and named.column in message:
+                raise PreparationExecutionError(
+                    f"Node '{node_id}': aggregation '{op}' could not be applied "
+                    f"to column '{named.column}'."
+                ) from exc
+        raise PreparationExecutionError(
+            f"Node '{node_id}': aggregation could not be applied ({message})."
+        ) from exc
+
+    result = result.reset_index()
+    ordered_columns = normalized_keys + output_order
+    missing = [column for column in ordered_columns if column not in result.columns]
+    if missing:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': group_by result missing expected columns {missing}."
+        )
+    return result.loc[:, ordered_columns].reset_index(drop=True)
+
+
 def _execute_transform(
     node_id: str,
     node_type: str,
@@ -650,9 +784,57 @@ def _execute_transform(
         return _execute_fill_constant(node_id, config, frame)
     if node_type == "derived_column":
         return _execute_derived_column(node_id, config, frame)
+    if node_type == "group_by":
+        return _execute_group_by(node_id, config, frame)
     raise PreparationExecutionError(
         f"Unsupported transform type '{node_type}' on '{node_id}'."
     )
+
+
+def _preview_path_includes_group_by(
+    nodes: list[Any],
+    edges: list[Any],
+    target_node_id: str | None,
+) -> bool:
+    """True when target (or default Output) has a group_by ancestor, including itself."""
+    node_map: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        if not isinstance(node, dict) or not node.get("id"):
+            continue
+        node_map[str(node["id"]).strip()] = node
+    if not node_map:
+        return False
+
+    effective = target_node_id
+    if effective is None:
+        outputs = [nid for nid, node in node_map.items() if node.get("type") == "output"]
+        if len(outputs) != 1:
+            return False
+        effective = outputs[0]
+    if effective not in node_map:
+        return False
+
+    parents: dict[str, list[str]] = defaultdict(list)
+    for edge in edges:
+        if not isinstance(edge, dict):
+            continue
+        source = str(edge.get("source") or "").strip()
+        target = str(edge.get("target") or "").strip()
+        if source in node_map and target in node_map:
+            parents[target].append(source)
+
+    seen: set[str] = set()
+    stack = [effective]
+    while stack:
+        node_id = stack.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node = node_map.get(node_id)
+        if node is not None and node.get("type") == "group_by":
+            return True
+        stack.extend(parents.get(node_id, []))
+    return False
 
 
 def execute_preparation_graph(
@@ -908,6 +1090,13 @@ def preview_preparation_graph(
             if isinstance(node, dict) and node.get("type") == "output" and node.get("id")
         ]
         effective_node_id = outputs[0] if outputs else None
+
+    if _preview_path_includes_group_by(
+        data.get("nodes") or [],
+        data.get("edges") or [],
+        effective_node_id,
+    ):
+        warnings.append(PREVIEW_GROUP_BY_WARNING)
 
     payload = dataframe_preview_payload(result_frame, limit=limit)
     return {

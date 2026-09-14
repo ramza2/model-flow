@@ -31,6 +31,7 @@ import {
   serializeCasts,
   serializeFillValues,
   serializeFilterConditions,
+  serializeGroupByConfig,
   sourceDatasetIdsInGraph,
   staggerPreparationPosition,
   targetHandleToPort,
@@ -78,11 +79,16 @@ describe("preparationHelpers", () => {
       left: { kind: "column", value: "" },
       right: { kind: "literal", value_type: "number", value: 0 },
     });
+    expect(defaultConfigForPreparation("group_by")).toEqual({
+      group_by: [],
+      aggregations: [],
+    });
   });
 
   it("exposes transform types in library groups and flat list", () => {
     expect(PREPARATION_NODE_TYPES).toContain("select");
     expect(PREPARATION_NODE_TYPES).toContain("derived_column");
+    expect(PREPARATION_NODE_TYPES).toContain("group_by");
     expect(PREPARATION_NODE_LIBRARY.map((item) => item.type)).toContain("filter");
     const transformGroup = PREPARATION_NODE_LIBRARY_GROUPS.find(
       (group) => group.id === "transform",
@@ -96,8 +102,10 @@ describe("preparationHelpers", () => {
       "deduplicate",
       "fill_constant",
       "derived_column",
+      "group_by",
     ]);
     expect(isPreparationTransformType("select")).toBe(true);
+    expect(isPreparationTransformType("group_by")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
   });
 
@@ -402,8 +410,52 @@ describe("preparationHelpers", () => {
       "deduplicate",
       "fill_constant",
       "derived_column",
+      "group_by",
       "output",
     ]);
+    expect(
+      preparationConfigSummary("group_by", {
+        group_by: ["region", "category"],
+        aggregations: [{}, {}, {}],
+      }),
+    ).toEqual(["By region, category", "3 aggregations"]);
+    expect(preparationConfigSummary("group_by", { group_by: [], aggregations: [] })).toEqual([
+      "No group keys",
+      "No aggregations",
+    ]);
+    expect(
+      serializeGroupByConfig({
+        groupKeys: ["region", "region"],
+        aggregations: [{ column: "sales", op: "SUM", output: "sales_sum" }],
+      }).errors,
+    ).toContain("Group keys must be unique.");
+    expect(
+      serializeGroupByConfig({
+        groupKeys: ["region"],
+        aggregations: [
+          { column: "sales", op: "sum", output: "x" },
+          { column: "sales", op: "avg", output: "x" },
+        ],
+      }).errors,
+    ).toContain("Aggregation outputs must be unique.");
+    expect(
+      serializeGroupByConfig({
+        groupKeys: ["region"],
+        aggregations: [{ column: "sales", op: "sum", output: "region" }],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("collides with a group key")]),
+    );
+    expect(
+      serializeGroupByConfig({
+        groupKeys: ["region"],
+        aggregations: [{ column: "sales", op: "AVG", output: "sales_avg" }],
+      }),
+    ).toEqual({
+      group_by: ["region"],
+      aggregations: [{ column: "sales", op: "avg", output: "sales_avg" }],
+      errors: [],
+    });
     expect(
       sourceDatasetIdsInGraph([
         { data: { node_type: "source", config: { dataset_id: 2 } } },

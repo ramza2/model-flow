@@ -233,6 +233,7 @@ export type DatasetPreparationNodeType =
   | "deduplicate"
   | "fill_constant"
   | "derived_column"
+  | "group_by"
   | "output";
 
 export type DatasetPreparationNodePosition = {

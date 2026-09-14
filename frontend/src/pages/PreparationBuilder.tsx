@@ -46,6 +46,7 @@ import {
   DERIVED_OPERATIONS,
   FILTER_NULLARY_OPS,
   FILTER_OPERATORS,
+  GROUP_BY_OPS,
   PREPARATION_FLOW_NODE_TYPE,
   PREPARATION_NODE_LIBRARY_GROUPS,
   apiGraphToFlow,
@@ -62,12 +63,14 @@ import {
   parseDerivedOperand,
   parseFillValues,
   parseFilterConditions,
+  parseGroupByAggregations,
   parseKeyList,
   parseRenameMapping,
   preparationConfigSummary,
   serializeCasts,
   serializeFillValues,
   serializeFilterConditions,
+  serializeGroupByConfig,
   coerceDerivedLiteral,
   formatDerivedLiteralInput,
   inferDerivedLiteralType,
@@ -77,6 +80,7 @@ import {
   type FillValueRow,
   type FilterCondition,
   type FilterValueType,
+  type GroupByAggregationRow,
   type PreparationFlowEdge,
   type PreparationFlowNode,
 } from "../preparationHelpers";
@@ -1131,6 +1135,15 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "derived_column" && (
                 <DerivedInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
+                />
+              )}
+              {selectedNode.data.node_type === "group_by" && (
+                <GroupByInspector
                   key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
@@ -2554,5 +2567,152 @@ function OperandFields({
         </label>
       )}
     </fieldset>
+  );
+}
+
+function GroupByInspector({
+  config,
+  canWrite,
+  onChange,
+  onValidationChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
+}) {
+  const [groupKeysText, setGroupKeysText] = useState(() => formatKeyList(config.group_by));
+  const [rows, setRows] = useState<GroupByAggregationRow[]>(() =>
+    parseGroupByAggregations(config.aggregations),
+  );
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function evaluateDraft(nextKeysText: string, nextRows: GroupByAggregationRow[]) {
+    return serializeGroupByConfig({
+      groupKeys: parseKeyList(nextKeysText),
+      aggregations: nextRows,
+    });
+  }
+
+  // Validate on mount so empty defaults gate Save/Validate/Preview/Run.
+  // Start from [] and setErrors here so the publish effect runs after the
+  // parent selectedId clear in the same selection turn.
+  useEffect(() => {
+    const serialized = evaluateDraft(groupKeysText, rows);
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function commit(nextKeysText: string, nextRows: GroupByAggregationRow[]) {
+    setGroupKeysText(nextKeysText);
+    setRows(nextRows);
+    const serialized = evaluateDraft(nextKeysText, nextRows);
+    setErrors(serialized.errors);
+    if (serialized.errors.length > 0) {
+      // Keep last-good graph config; do not write invalid drafts.
+      return;
+    }
+    onChange({
+      ...config,
+      group_by: serialized.group_by,
+      aggregations: serialized.aggregations,
+    });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-groupby-inspector">
+      <label>
+        Group keys
+        <textarea
+          data-testid="preparation-groupby-keys"
+          disabled={!canWrite}
+          rows={2}
+          placeholder="region, category"
+          value={groupKeysText}
+          onChange={(event) => commit(event.target.value, rows)}
+        />
+      </label>
+      <div className="preparation-groupby-rows">
+        {rows.map((row, index) => (
+          <div
+            key={index}
+            className="preparation-groupby-row"
+            data-testid={`preparation-groupby-row-${index}`}
+          >
+            <input
+              data-testid={`preparation-groupby-column-${index}`}
+              disabled={!canWrite}
+              placeholder="source column"
+              value={row.column}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, column: event.target.value };
+                commit(groupKeysText, next);
+              }}
+            />
+            <select
+              data-testid={`preparation-groupby-op-${index}`}
+              disabled={!canWrite}
+              value={row.op}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, op: event.target.value };
+                commit(groupKeysText, next);
+              }}
+            >
+              {GROUP_BY_OPS.map((op) => (
+                <option key={op} value={op}>
+                  {op.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <input
+              data-testid={`preparation-groupby-output-${index}`}
+              disabled={!canWrite}
+              placeholder="output column"
+              value={row.output}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = { ...row, output: event.target.value };
+                commit(groupKeysText, next);
+              }}
+            />
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-groupby-remove-${index}`}
+                onClick={() => commit(groupKeysText, rows.filter((_, i) => i !== index))}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-groupby-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-groupby-add"
+          onClick={() =>
+            commit(groupKeysText, [...rows, { column: "", op: "sum", output: "" }])
+          }
+        >
+          Add aggregation
+        </button>
+      )}
+    </div>
   );
 }
