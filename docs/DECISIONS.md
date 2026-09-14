@@ -86,6 +86,7 @@ Historical; see D-016.
 
 - **Choice:** Pin MinIO/mc/Postgres/Node/nginx/Playwright/MLflow/Python tags after pull verification. See compose + verify.sh.
 - **Consequences:** Re-verify before upgrades; never invent unverified tags.
+- **Follow-up (2026-09):** MinIO server/client images are pulled from `quay.io/minio/*` (same release tags). Docker Hub `minio/minio` / `minio/mc` repositories no longer allow anonymous pulls.
 
 ## D-017: GitHub Actions CI runs the same verify.sh gate
 
