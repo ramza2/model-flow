@@ -190,10 +190,14 @@ export type PreparationFlowEdge = {
 
 export const PREPARATION_FLOW_NODE_TYPE = "preparationStep";
 
+export type FilterValueType = "string" | "number" | "boolean";
+
 export type FilterCondition = {
   column: string;
   operator: string;
   value?: unknown;
+  /** Optional UI metadata; backend execution uses JSON-typed `value`. */
+  value_type?: FilterValueType;
 };
 
 export type DerivedOperand = {
@@ -527,6 +531,18 @@ export function formatRenameMapping(mapping: unknown): string {
     .join("\n");
 }
 
+export function inferFilterValueType(value: unknown): FilterValueType {
+  if (typeof value === "number") return "number";
+  if (typeof value === "boolean") return "boolean";
+  if (Array.isArray(value)) {
+    const first = value.find((item) => item != null);
+    if (typeof first === "number") return "number";
+    if (typeof first === "boolean") return "boolean";
+    return "string";
+  }
+  return "string";
+}
+
 export function parseFilterConditions(value: unknown): FilterCondition[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
@@ -534,39 +550,128 @@ export function parseFilterConditions(value: unknown): FilterCondition[] {
       item && typeof item === "object" && !Array.isArray(item)
         ? (item as Record<string, unknown>)
         : {};
+    const operator = String(row.operator ?? "eq");
+    if (FILTER_NULLARY_OPS.has(operator)) {
+      return { column: String(row.column ?? ""), operator };
+    }
+    const storedType = row.value_type;
+    const valueType: FilterValueType =
+      storedType === "string" || storedType === "number" || storedType === "boolean"
+        ? storedType
+        : inferFilterValueType(row.value);
     return {
       column: String(row.column ?? ""),
-      operator: String(row.operator ?? "eq"),
-      ...(FILTER_NULLARY_OPS.has(String(row.operator ?? "eq"))
-        ? {}
-        : { value: row.value }),
+      operator,
+      value: row.value,
+      value_type: valueType,
     };
   });
+}
+
+/** Display text for a filter value input (scalar or comma-separated list). */
+export function formatFilterValueInput(condition: FilterCondition): string {
+  if (FILTER_NULLARY_OPS.has(condition.operator)) return "";
+  if (Array.isArray(condition.value)) {
+    return condition.value.map(String).join(", ");
+  }
+  if (condition.value == null) return "";
+  return String(condition.value);
+}
+
+export type CoerceResult =
+  | { ok: true; value: unknown }
+  | { ok: false; error: string };
+
+/** Coerce a raw UI string into a JSON-typed filter value. Never falls back to 0. */
+export function coerceFilterValue(
+  raw: string,
+  valueType: FilterValueType,
+  operator: string,
+): CoerceResult {
+  if (operator === "in") {
+    const parts = parseKeyList(raw);
+    if (valueType === "number") {
+      const numbers: number[] = [];
+      for (const part of parts) {
+        const trimmed = part.trim();
+        const parsed = Number(trimmed);
+        if (trimmed === "" || !Number.isFinite(parsed)) {
+          return { ok: false, error: `Invalid number in list: "${part}"` };
+        }
+        numbers.push(parsed);
+      }
+      return { ok: true, value: numbers };
+    }
+    if (valueType === "boolean") {
+      const bools: boolean[] = [];
+      for (const part of parts) {
+        const lower = part.trim().toLowerCase();
+        if (lower === "true" || lower === "1") bools.push(true);
+        else if (lower === "false" || lower === "0") bools.push(false);
+        else return { ok: false, error: `Invalid boolean in list: "${part}"` };
+      }
+      return { ok: true, value: bools };
+    }
+    return { ok: true, value: parts };
+  }
+
+  if (valueType === "number") {
+    const trimmed = raw.trim();
+    if (trimmed === "") {
+      return { ok: false, error: "Number value is required." };
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      return { ok: false, error: `Invalid number: "${raw}"` };
+    }
+    return { ok: true, value: parsed };
+  }
+
+  if (valueType === "boolean") {
+    const lower = raw.trim().toLowerCase();
+    if (lower === "true" || lower === "1") return { ok: true, value: true };
+    if (lower === "false" || lower === "0") return { ok: true, value: false };
+    return { ok: false, error: `Invalid boolean: "${raw}"` };
+  }
+
+  return { ok: true, value: raw };
 }
 
 export function serializeFilterConditions(
   conditions: FilterCondition[],
   combine: "and" | "or" = "and",
-): { combine: "and" | "or"; conditions: FilterCondition[] } {
-  return {
-    combine,
-    conditions: conditions.map((condition) => {
-      if (FILTER_NULLARY_OPS.has(condition.operator)) {
-        return { column: condition.column, operator: condition.operator };
-      }
-      if (condition.operator === "in") {
-        const list = Array.isArray(condition.value)
-          ? condition.value
-          : parseKeyList(String(condition.value ?? ""));
-        return { column: condition.column, operator: "in", value: list };
-      }
+): {
+  combine: "and" | "or";
+  conditions: FilterCondition[];
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const serialized: FilterCondition[] = conditions.map((condition, index) => {
+    if (FILTER_NULLARY_OPS.has(condition.operator)) {
+      return { column: condition.column, operator: condition.operator };
+    }
+    const valueType = condition.value_type ?? inferFilterValueType(condition.value);
+    const raw = Array.isArray(condition.value)
+      ? condition.value.map(String).join(", ")
+      : String(condition.value ?? "");
+    const coerced = coerceFilterValue(raw, valueType, condition.operator);
+    if (!coerced.ok) {
+      errors.push(`Condition ${index + 1}: ${coerced.error}`);
       return {
         column: condition.column,
         operator: condition.operator,
-        value: condition.value ?? "",
+        value_type: valueType,
+        value: condition.value,
       };
-    }),
-  };
+    }
+    return {
+      column: condition.column,
+      operator: condition.operator,
+      value_type: valueType,
+      value: coerced.value,
+    };
+  });
+  return { combine, conditions: serialized, errors };
 }
 
 export function parseCasts(value: unknown): Array<{ column: string; dtype: string }> {
@@ -604,21 +709,33 @@ export function parseFillValues(value: unknown): FillValueRow[] {
   }));
 }
 
-export function serializeFillValues(rows: FillValueRow[]): Record<string, string | number | boolean> {
+export function serializeFillValues(rows: FillValueRow[]): {
+  values: Record<string, string | number | boolean>;
+  errors: string[];
+} {
   const values: Record<string, string | number | boolean> = {};
-  for (const row of rows) {
+  const errors: string[] = [];
+  rows.forEach((row, index) => {
     const column = row.column.trim();
-    if (!column) continue;
+    if (!column) return;
     if (row.kind === "boolean") {
-      values[column] = row.value === "true" || row.value === "1";
+      const lower = row.value.trim().toLowerCase();
+      if (lower === "true" || lower === "1") values[column] = true;
+      else if (lower === "false" || lower === "0") values[column] = false;
+      else errors.push(`Fill row ${index + 1}: invalid boolean "${row.value}"`);
     } else if (row.kind === "number") {
-      const number = Number(row.value);
-      values[column] = Number.isFinite(number) ? number : 0;
+      const trimmed = row.value.trim();
+      const number = Number(trimmed);
+      if (trimmed === "" || !Number.isFinite(number)) {
+        errors.push(`Fill row ${index + 1}: invalid number "${row.value}"`);
+        return;
+      }
+      values[column] = number;
     } else {
       values[column] = row.value;
     }
-  }
-  return values;
+  });
+  return { values, errors };
 }
 
 export function parseDerivedOperand(value: unknown, fallback: DerivedOperand): DerivedOperand {

@@ -7,6 +7,9 @@ import {
   flowToApiGraph,
   formatKeyList,
   formatRenameMapping,
+  coerceFilterValue,
+  formatFilterValueInput,
+  inferFilterValueType,
   isPreparationRunActive,
   isPreparationTransformType,
   nextPreparationNodeId,
@@ -102,30 +105,51 @@ describe("preparationHelpers", () => {
     expect(formatRenameMapping({ a: "b", c: "d" })).toBe("a = b\nc = d");
   });
 
-  it("serializes filter conditions including in and nullary ops", () => {
-    expect(parseFilterConditions([{ column: "x", operator: "eq", value: 1 }])).toEqual([
-      { column: "x", operator: "eq", value: 1 },
-    ]);
+  it("serializes typed filter values for number, string, boolean, and in", () => {
     expect(
       serializeFilterConditions(
         [
-          { column: "a", operator: "is_null" },
-          { column: "b", operator: "in", value: "x, y" },
-          { column: "c", operator: "eq", value: "z" },
+          { column: "age", operator: "gte", value_type: "number", value: "18" },
+          { column: "id", operator: "in", value_type: "number", value: "1, 2" },
+          { column: "code", operator: "eq", value_type: "string", value: "001" },
+          { column: "active", operator: "eq", value_type: "boolean", value: "true" },
         ],
-        "or",
+        "and",
       ),
     ).toEqual({
-      combine: "or",
+      combine: "and",
       conditions: [
-        { column: "a", operator: "is_null" },
-        { column: "b", operator: "in", value: ["x", "y"] },
-        { column: "c", operator: "eq", value: "z" },
+        { column: "age", operator: "gte", value_type: "number", value: 18 },
+        { column: "id", operator: "in", value_type: "number", value: [1, 2] },
+        { column: "code", operator: "eq", value_type: "string", value: "001" },
+        { column: "active", operator: "eq", value_type: "boolean", value: true },
       ],
+      errors: [],
     });
   });
 
-  it("serializes cast and fill helpers", () => {
+  it("rejects invalid filter numbers without coercing to 0", () => {
+    const result = serializeFilterConditions(
+      [{ column: "age", operator: "gte", value_type: "number", value: "abc" }],
+      "and",
+    );
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.conditions[0].value).toBe("abc");
+    expect(result.conditions[0].value).not.toBe(0);
+  });
+
+  it("infers value_type from existing graphs without metadata", () => {
+    expect(inferFilterValueType(18)).toBe("number");
+    expect(inferFilterValueType(true)).toBe("boolean");
+    expect(inferFilterValueType("001")).toBe("string");
+    expect(inferFilterValueType([1, 2])).toBe("number");
+    expect(
+      parseFilterConditions([{ column: "age", operator: "gte", value: 18 }])[0]
+        .value_type,
+    ).toBe("number");
+  });
+
+  it("serializes cast and fill helpers without silent zero", () => {
     expect(parseCasts({ age: "integer", name: "string" })).toEqual([
       { column: "age", dtype: "integer" },
       { column: "name", dtype: "string" },
@@ -140,9 +164,43 @@ describe("preparationHelpers", () => {
       serializeFillValues([
         { column: "a", kind: "number", value: "2.5" },
         { column: "b", kind: "boolean", value: "true" },
-        { column: "c", kind: "string", value: "hi" },
+        { column: "c", kind: "string", value: "001" },
+        { column: "d", kind: "number", value: "-3" },
       ]),
-    ).toEqual({ a: 2.5, b: true, c: "hi" });
+    ).toEqual({
+      values: { a: 2.5, b: true, c: "001", d: -3 },
+      errors: [],
+    });
+    const invalid = serializeFillValues([
+      { column: "amount", kind: "number", value: "abc" },
+    ]);
+    expect(invalid.errors.length).toBeGreaterThan(0);
+    expect(invalid.values).toEqual({});
+    expect(Object.values(invalid.values)).not.toContain(0);
+  });
+
+  it("serializes filter conditions including in and nullary ops", () => {
+    expect(parseFilterConditions([{ column: "x", operator: "eq", value: 1 }])).toEqual([
+      { column: "x", operator: "eq", value: 1, value_type: "number" },
+    ]);
+    expect(
+      serializeFilterConditions(
+        [
+          { column: "a", operator: "is_null" },
+          { column: "b", operator: "in", value_type: "string", value: "x, y" },
+          { column: "c", operator: "eq", value_type: "string", value: "z" },
+        ],
+        "or",
+      ),
+    ).toEqual({
+      combine: "or",
+      conditions: [
+        { column: "a", operator: "is_null" },
+        { column: "b", operator: "in", value_type: "string", value: ["x", "y"] },
+        { column: "c", operator: "eq", value_type: "string", value: "z" },
+      ],
+      errors: [],
+    });
   });
 
   it("detects active preparation run statuses", () => {

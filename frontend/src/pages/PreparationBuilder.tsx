@@ -51,8 +51,10 @@ import {
   apiGraphToFlow,
   defaultConfigForPreparation,
   flowToApiGraph,
+  formatFilterValueInput,
   formatKeyList,
   formatRenameMapping,
+  inferFilterValueType,
   isPreparationRunActive,
   labelForPreparationType,
   nextPreparationNodeId,
@@ -71,6 +73,7 @@ import {
   type DerivedOperand,
   type FillValueRow,
   type FilterCondition,
+  type FilterValueType,
   type PreparationFlowEdge,
   type PreparationFlowNode,
 } from "../preparationHelpers";
@@ -188,6 +191,7 @@ export default function PreparationBuilder() {
     null,
   );
   const [preview, setPreview] = useState<DatasetPreparationPreviewResult | null>(null);
+  const [inspectorErrors, setInspectorErrors] = useState<string[]>([]);
   const previewSeqRef = useRef(0);
   const previewAbortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -323,6 +327,10 @@ export default function PreparationBuilder() {
     () => nodes.find((node) => node.id === selectedId) || null,
     [nodes, selectedId],
   );
+
+  useEffect(() => {
+    setInspectorErrors([]);
+  }, [selectedId]);
 
   const usedSourceDatasetIds = useMemo(() => sourceDatasetIdsInGraph(nodes), [nodes]);
 
@@ -503,8 +511,15 @@ export default function PreparationBuilder() {
     [canWrite, edges, markGraphEdited, nodes],
   );
 
+  function guardInspectorErrors(): boolean {
+    if (inspectorErrors.length === 0) return true;
+    setError(inspectorErrors[0]);
+    return false;
+  }
+
   async function saveVersion() {
     if (!canWrite) return;
+    if (!guardInspectorErrors()) return;
     setBusy("save");
     setError("");
     setSuccess("");
@@ -537,6 +552,7 @@ export default function PreparationBuilder() {
   }
 
   async function runValidate() {
+    if (!guardInspectorErrors()) return;
     setBusy("validate");
     setError("");
     try {
@@ -553,6 +569,7 @@ export default function PreparationBuilder() {
   }
 
   async function runPreview() {
+    if (!guardInspectorErrors()) return;
     setBusy("preview");
     setError("");
     previewAbortRef.current?.abort();
@@ -671,6 +688,7 @@ export default function PreparationBuilder() {
 
   async function runPreparation() {
     if (!canWrite || !preparation) return;
+    if (!guardInspectorErrors()) return;
     setBusy("run");
     setError("");
     setSuccess("");
@@ -821,7 +839,11 @@ export default function PreparationBuilder() {
           )}
         </div>
       </header>
-      <ErrorNotice message={error} />
+      {error ? (
+        <div data-testid="preparation-error">
+          <ErrorNotice message={error} />
+        </div>
+      ) : null}
       <SuccessNotice message={success} />
       {dirty && (
         <p className="form-hint" data-testid="preparation-dirty-hint">
@@ -1060,9 +1082,11 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "filter" && (
                 <FilterInspector
+                  key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
                 />
               )}
               {selectedNode.data.node_type === "cast" && (
@@ -1086,6 +1110,7 @@ export default function PreparationBuilder() {
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
                 />
               )}
               {selectedNode.data.node_type === "derived_column" && (
@@ -1800,21 +1825,39 @@ function FilterInspector({
   config,
   canWrite,
   onChange,
+  onValidationChange,
 }: {
   config: Record<string, unknown>;
   canWrite: boolean;
   onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
 }) {
   const combine = config.combine === "or" ? "or" : "and";
-  const conditions = parseFilterConditions(config.conditions);
+  const [drafts, setDrafts] = useState<FilterCondition[]>(() =>
+    parseFilterConditions(config.conditions).map((condition) => ({
+      ...condition,
+      value_type: condition.value_type ?? inferFilterValueType(condition.value),
+    })),
+  );
+  const [errors, setErrors] = useState<string[]>([]);
 
-  function commit(
-    nextConditions: FilterCondition[],
-    nextCombine: "and" | "or" = combine,
-  ) {
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function publish(nextDrafts: FilterCondition[], nextCombine: "and" | "or" = combine) {
+    setDrafts(nextDrafts);
+    const serialized = serializeFilterConditions(nextDrafts, nextCombine);
+    setErrors(serialized.errors);
+    onValidationChange?.(serialized.errors);
+    if (serialized.errors.length > 0) {
+      // Keep last good graph config; do not write invalid typed values.
+      return;
+    }
     onChange({
       ...config,
-      ...serializeFilterConditions(nextConditions, nextCombine),
+      combine: serialized.combine,
+      conditions: serialized.conditions,
     });
   }
 
@@ -1827,7 +1870,7 @@ function FilterInspector({
           disabled={!canWrite}
           value={combine}
           onChange={(event) =>
-            commit(conditions, event.target.value === "or" ? "or" : "and")
+            publish(drafts, event.target.value === "or" ? "or" : "and")
           }
         >
           <option value="and">and</option>
@@ -1835,8 +1878,10 @@ function FilterInspector({
         </select>
       </label>
       <div className="preparation-filter-rows">
-        {conditions.map((condition, index) => {
+        {drafts.map((condition, index) => {
           const nullary = FILTER_NULLARY_OPS.has(condition.operator);
+          const valueType: FilterValueType =
+            condition.value_type ?? inferFilterValueType(condition.value);
           return (
             <div
               key={index}
@@ -1849,9 +1894,9 @@ function FilterInspector({
                 placeholder="column"
                 value={condition.column}
                 onChange={(event) => {
-                  const next = [...conditions];
+                  const next = [...drafts];
                   next[index] = { ...condition, column: event.target.value };
-                  commit(next);
+                  publish(next);
                 }}
               />
               <select
@@ -1859,9 +1904,17 @@ function FilterInspector({
                 disabled={!canWrite}
                 value={condition.operator}
                 onChange={(event) => {
-                  const next = [...conditions];
-                  next[index] = { ...condition, operator: event.target.value };
-                  commit(next);
+                  const operator = event.target.value;
+                  const next = [...drafts];
+                  next[index] = FILTER_NULLARY_OPS.has(operator)
+                    ? { column: condition.column, operator }
+                    : {
+                        column: condition.column,
+                        operator,
+                        value_type: condition.value_type ?? "string",
+                        value: formatFilterValueInput(condition),
+                      };
+                  publish(next);
                 }}
               >
                 {FILTER_OPERATORS.map((operator) => (
@@ -1871,28 +1924,83 @@ function FilterInspector({
                 ))}
               </select>
               {!nullary && (
-                <input
-                  data-testid={`preparation-filter-value-${index}`}
-                  disabled={!canWrite}
-                  placeholder={condition.operator === "in" ? "a, b, c" : "value"}
-                  value={
-                    Array.isArray(condition.value)
-                      ? condition.value.map(String).join(", ")
-                      : String(condition.value ?? "")
-                  }
-                  onChange={(event) => {
-                    const next = [...conditions];
-                    next[index] = { ...condition, value: event.target.value };
-                    commit(next);
-                  }}
-                />
+                <>
+                  <select
+                    data-testid={`preparation-filter-value-type-${index}`}
+                    disabled={!canWrite}
+                    value={valueType}
+                    onChange={(event) => {
+                      const nextType = event.target.value as FilterValueType;
+                      const next = [...drafts];
+                      next[index] = {
+                        ...condition,
+                        value_type: nextType,
+                        value:
+                          nextType === "boolean"
+                            ? "false"
+                            : formatFilterValueInput(condition),
+                      };
+                      publish(next);
+                    }}
+                  >
+                    <option value="string">string</option>
+                    <option value="number">number</option>
+                    <option value="boolean">boolean</option>
+                  </select>
+                  {valueType === "boolean" && condition.operator !== "in" ? (
+                    <select
+                      data-testid={`preparation-filter-value-${index}`}
+                      disabled={!canWrite}
+                      value={
+                        condition.value === true || condition.value === "true"
+                          ? "true"
+                          : "false"
+                      }
+                      onChange={(event) => {
+                        const next = [...drafts];
+                        next[index] = {
+                          ...condition,
+                          value_type: "boolean",
+                          value: event.target.value,
+                        };
+                        publish(next);
+                      }}
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  ) : (
+                    <input
+                      data-testid={`preparation-filter-value-${index}`}
+                      disabled={!canWrite}
+                      type={valueType === "number" && condition.operator !== "in" ? "number" : "text"}
+                      placeholder={
+                        condition.operator === "in"
+                          ? valueType === "number"
+                            ? "1, 2, 3"
+                            : "a, b, c"
+                          : "value"
+                      }
+                      value={formatFilterValueInput(condition)}
+                      onChange={(event) => {
+                        const next = [...drafts];
+                        next[index] = {
+                          ...condition,
+                          value_type: valueType,
+                          value: event.target.value,
+                        };
+                        publish(next);
+                      }}
+                    />
+                  )}
+                </>
               )}
               {canWrite && (
                 <button
                   type="button"
                   className="btn link danger-text"
                   data-testid={`preparation-filter-remove-${index}`}
-                  onClick={() => commit(conditions.filter((_, i) => i !== index))}
+                  onClick={() => publish(drafts.filter((_, i) => i !== index))}
                 >
                   Remove
                 </button>
@@ -1901,13 +2009,23 @@ function FilterInspector({
           );
         })}
       </div>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-filter-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
       {canWrite && (
         <button
           type="button"
           className="btn secondary"
           data-testid="preparation-filter-add"
           onClick={() =>
-            commit([...conditions, { column: "", operator: "eq", value: "" }])
+            publish([
+              ...drafts,
+              { column: "", operator: "eq", value_type: "string", value: "" },
+            ])
           }
         >
           Add condition
@@ -2043,16 +2161,30 @@ function FillInspector({
   config,
   canWrite,
   onChange,
+  onValidationChange,
 }: {
   config: Record<string, unknown>;
   canWrite: boolean;
   onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
 }) {
   const [rows, setRows] = useState(() => parseFillValues(config.values));
+  const [errors, setErrors] = useState<string[]>([]);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
 
   function commit(nextRows: FillValueRow[]) {
     setRows(nextRows);
-    onChange({ ...config, values: serializeFillValues(nextRows) });
+    const serialized = serializeFillValues(nextRows);
+    setErrors(serialized.errors);
+    onValidationChange?.(serialized.errors);
+    if (serialized.errors.length > 0) {
+      // Do not overwrite graph config with silent zeros / invalid values.
+      return;
+    }
+    onChange({ ...config, values: serialized.values });
   }
 
   return (
@@ -2084,6 +2216,12 @@ function FillInspector({
                 next[index] = {
                   ...row,
                   kind: event.target.value as FillValueRow["kind"],
+                  value:
+                    event.target.value === "boolean"
+                      ? row.value === "true"
+                        ? "true"
+                        : "false"
+                      : row.value,
                 };
                 commit(next);
               }}
@@ -2110,6 +2248,7 @@ function FillInspector({
               <input
                 data-testid={`preparation-fill-value-${index}`}
                 disabled={!canWrite}
+                type={row.kind === "number" ? "number" : "text"}
                 placeholder="value"
                 value={row.value}
                 onChange={(event) => {
@@ -2132,6 +2271,13 @@ function FillInspector({
           </div>
         ))}
       </div>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-fill-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
       {canWrite && (
         <button
           type="button"

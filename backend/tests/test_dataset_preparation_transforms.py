@@ -214,6 +214,36 @@ def test_filter_invalid_operator_validation():
         )
 
 
+def test_filter_numeric_value_ok_and_incompatible_string_raises_node_aware():
+    frame = _frame(age=[10, 18, 25])
+
+    ok = _run(
+        "filter",
+        {
+            "combine": "and",
+            "conditions": [{"column": "age", "operator": "gte", "value": 18}],
+        },
+        frame,
+    )
+    assert ok["age"].tolist() == [18, 25]
+
+    with pytest.raises(
+        PreparationExecutionError,
+        match=(
+            r"Node 't': operator 'gte' could not be applied to column "
+            r"'age' with the supplied value"
+        ),
+    ):
+        _run(
+            "filter",
+            {
+                "combine": "and",
+                "conditions": [{"column": "age", "operator": "gte", "value": "18"}],
+            },
+            frame,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Cast
 # ---------------------------------------------------------------------------

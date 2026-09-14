@@ -759,6 +759,225 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("serializes typed filter values into the save payload", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; type?: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    fireEvent.click(await screen.findByTestId("canvas-node-filter-1"));
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-0"), {
+      target: { value: "age" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-operator-0"), {
+      target: { value: "gte" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-0"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-0"), {
+      target: { value: "18" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-1"), {
+      target: { value: "id" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-operator-1"), {
+      target: { value: "in" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-1"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-1"), {
+      target: { value: "1, 2" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-2"), {
+      target: { value: "code" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-2"), {
+      target: { value: "string" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-2"), {
+      target: { value: "001" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-3"), {
+      target: { value: "active" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-3"), {
+      target: { value: "boolean" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-3"), {
+      target: { value: "true" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const filterNode = saved!.graph!.nodes!.find((node) => node.id === "filter-1");
+    expect(filterNode?.config?.conditions).toEqual([
+      { column: "age", operator: "gte", value_type: "number", value: 18 },
+      { column: "id", operator: "in", value_type: "number", value: [1, 2] },
+      { column: "code", operator: "eq", value_type: "string", value: "001" },
+      { column: "active", operator: "eq", value_type: "boolean", value: true },
+    ]);
+  });
+
+  it("blocks save when filter number input is invalid", async () => {
+    let saved: unknown = null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    fireEvent.click(await screen.findByTestId("canvas-node-filter-1"));
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-0"), {
+      target: { value: "age" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-0"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-0"), {
+      target: { value: "abc" },
+    });
+    expect(await screen.findByTestId("preparation-filter-errors")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+  });
+
+  it("keeps cast inspector state isolated across nodes", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-cast"));
+    fireEvent.click(await screen.findByTestId("canvas-node-cast-1"));
+    fireEvent.click(screen.getByTestId("preparation-cast-add"));
+    fireEvent.change(screen.getByTestId("preparation-cast-column-0"), {
+      target: { value: "age" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-cast-dtype-0"), {
+      target: { value: "integer" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-cast"));
+    fireEvent.click(await screen.findByTestId("canvas-node-cast-2"));
+    fireEvent.click(screen.getByTestId("preparation-cast-add"));
+    fireEvent.change(screen.getByTestId("preparation-cast-column-0"), {
+      target: { value: "amount" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-cast-dtype-0"), {
+      target: { value: "float" },
+    });
+
+    fireEvent.click(screen.getByTestId("canvas-node-cast-1"));
+    expect(await screen.findByTestId("preparation-cast-column-0")).toHaveValue("age");
+    expect(screen.getByTestId("preparation-cast-dtype-0")).toHaveValue("integer");
+
+    fireEvent.click(screen.getByTestId("canvas-node-cast-2"));
+    expect(await screen.findByTestId("preparation-cast-column-0")).toHaveValue("amount");
+    expect(screen.getByTestId("preparation-cast-dtype-0")).toHaveValue("float");
+    fireEvent.change(screen.getByTestId("preparation-cast-column-0"), {
+      target: { value: "price" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "cast-1")?.config).toEqual({
+      casts: { age: "integer" },
+    });
+    expect(saved!.graph!.nodes!.find((node) => node.id === "cast-2")?.config).toEqual({
+      casts: { price: "float" },
+    });
+  });
+
+  it("keeps fill inspector state isolated and rejects invalid numbers", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-fill_constant"));
+    fireEvent.click(await screen.findByTestId("canvas-node-fill_constant-1"));
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    fireEvent.change(screen.getByTestId("preparation-fill-column-0"), {
+      target: { value: "country" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-kind-0"), {
+      target: { value: "string" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "UNKNOWN" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-fill_constant"));
+    fireEvent.click(await screen.findByTestId("canvas-node-fill_constant-2"));
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    fireEvent.change(screen.getByTestId("preparation-fill-column-0"), {
+      target: { value: "amount" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-kind-0"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "0" },
+    });
+
+    fireEvent.click(screen.getByTestId("canvas-node-fill_constant-1"));
+    expect(await screen.findByTestId("preparation-fill-column-0")).toHaveValue("country");
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue("UNKNOWN");
+
+    fireEvent.click(screen.getByTestId("canvas-node-fill_constant-2"));
+    expect(await screen.findByTestId("preparation-fill-column-0")).toHaveValue("amount");
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue("0");
+
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "abc" },
+    });
+    expect(await screen.findByTestId("preparation-fill-errors")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "2.5" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-fill-errors")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "fill_constant-1")?.config).toEqual({
+      values: { country: "UNKNOWN" },
+    });
+    expect(saved!.graph!.nodes!.find((node) => node.id === "fill_constant-2")?.config).toEqual({
+      values: { amount: 2.5 },
+    });
+  });
+
   it("creates and selects an output dataset", async () => {
     renderBuilder();
     await screen.findByTestId("preparation-output-empty");

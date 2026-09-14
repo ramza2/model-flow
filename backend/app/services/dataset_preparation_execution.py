@@ -324,20 +324,32 @@ def _filter_condition_mask(
             raise PreparationExecutionError(
                 f"Node '{node_id}': 'in' operator requires a list value."
             )
-        return series.isin(value).fillna(False)
+        try:
+            return series.isin(value).fillna(False)
+        except (TypeError, ValueError) as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': operator 'in' could not be applied to column "
+                f"'{col_name}' with the supplied value."
+            ) from exc
 
-    if operator == "eq":
-        return (series == value).fillna(False)
-    if operator == "neq":
-        return (series != value).fillna(False)
-    if operator == "gt":
-        return (series > value).fillna(False)
-    if operator == "gte":
-        return (series >= value).fillna(False)
-    if operator == "lt":
-        return (series < value).fillna(False)
-    if operator == "lte":
-        return (series <= value).fillna(False)
+    try:
+        if operator == "eq":
+            return (series == value).fillna(False)
+        if operator == "neq":
+            return (series != value).fillna(False)
+        if operator == "gt":
+            return (series > value).fillna(False)
+        if operator == "gte":
+            return (series >= value).fillna(False)
+        if operator == "lt":
+            return (series < value).fillna(False)
+        if operator == "lte":
+            return (series <= value).fillna(False)
+    except (TypeError, ValueError) as exc:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': operator '{operator}' could not be applied to column "
+            f"'{col_name}' with the supplied value."
+        ) from exc
 
     # String matchers: convert to string; null rows are false.
     as_str = series.astype("string")
