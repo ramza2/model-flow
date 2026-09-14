@@ -525,7 +525,7 @@ export default function DatasetDetail() {
       <PageHeader
         title={ds?.name ?? "Dataset"}
         description={ds ? `${ds.row_count.toLocaleString()} rows · ${ds.column_count} columns · ${versions.length} version${versions.length === 1 ? "" : "s"}` : "Dataset profile and history."}
-        actions={canWrite ? <Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}`} data-testid="train-on-dataset">▶ Train on dataset</Link> : undefined}
+        actions={canWrite ? <Link className="btn" to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}${selectedVersionId != null ? `&datasetVersionId=${selectedVersionId}` : ""}`} data-testid="train-on-dataset">▶ Train on dataset</Link> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />

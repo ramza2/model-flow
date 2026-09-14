@@ -879,15 +879,28 @@ export default function PreparationBuilder() {
               })()}
             </h2>
           </div>
-          {successRun.output_dataset_id != null && (
-            <Link
-              className="btn"
-              to={`/projects/${projectId}/datasets/${successRun.output_dataset_id}`}
-              data-testid="preparation-open-output-dataset"
-            >
-              Open dataset
-            </Link>
-          )}
+          <div className="row-actions" data-testid="preparation-success-actions">
+            {successRun.output_dataset_id != null && (
+              <Link
+                className="btn"
+                to={`/projects/${projectId}/datasets/${successRun.output_dataset_id}`}
+                data-testid="preparation-open-output-dataset"
+              >
+                Open dataset
+              </Link>
+            )}
+            {canWrite &&
+              successRun.output_dataset_id != null &&
+              successRun.output_dataset_version_id != null && (
+                <Link
+                  className="btn secondary"
+                  to={`/projects/${projectId}/jobs/new?datasetId=${successRun.output_dataset_id}&datasetVersionId=${successRun.output_dataset_version_id}`}
+                  data-testid="preparation-train-this-result"
+                >
+                  Train this result
+                </Link>
+              )}
+          </div>
         </div>
       )}
 
@@ -1247,6 +1260,18 @@ export default function PreparationBuilder() {
                               Open dataset
                             </Link>
                           )}
+                          {canWrite &&
+                            status === "succeeded" &&
+                            run.output_dataset_id != null &&
+                            run.output_dataset_version_id != null && (
+                              <Link
+                                className="btn link"
+                                to={`/projects/${projectId}/jobs/new?datasetId=${run.output_dataset_id}&datasetVersionId=${run.output_dataset_version_id}`}
+                                data-testid={`preparation-train-result-${run.id}`}
+                              >
+                                Train this result
+                              </Link>
+                            )}
                           {status === "failed" && (
                             <button
                               type="button"

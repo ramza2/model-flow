@@ -195,3 +195,9 @@ Historical; see D-016.
 - **Context:** Legacy Postgres sources may store encrypted `dsn`/`url` secrets. Typed Host/Port edit UI must not expose those values, and switching modes must not leave stale DSN/URL secrets that override typed config.
 - **Choice:** API responses include non-sensitive `connection_mode` (`host_port` | `connection_url` | null). PATCH accepts `clear_secrets` for explicit removals; empty `secrets: {}` still means keep. Frontend Connection mode selector drives blank-keep vs clear semantics.
 - **Consequences:** Name-only edits of DSN/URL sources work without secret disclosure; mode switches clear conflicting secret keys so `_connection_url()` matches the UI mode.
+
+## D-035: Training consumes one pinned materialized DatasetVersion
+
+- **Context:** Phase 2 multi-dataset flows (Join/Union and later transforms) produce training-ready tables. TrainingJob historically pins a single `dataset_id` + `dataset_version_id`. Expanding TrainingJob to accept many raw datasets would duplicate Preparation concerns and weaken reproducibility.
+- **Choice:** Multi-dataset composition belongs to Dataset Preparation. TrainingJob continues to consume exactly one rectangular materialized DatasetVersion (including Parquet outputs from Preparation). Reproducibility is guaranteed by pinning `dataset_version_id`; upstream multi-dataset lineage is traced via DatasetVersion lineage, not via TrainingJob multi-input tables.
+- **Consequences:** No TrainingJob many-to-many input table or migration for Phase 2-D. Frontend handoffs (`Train this result`, Dataset Detail train, Job Create query params) must pass the exact prepared version id and must not silently retarget latest. Group By / Pivot / Unpivot remain separate Phase 2 work.

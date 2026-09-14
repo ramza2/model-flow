@@ -26,12 +26,22 @@ function titleCaseProblemType(value: string): string {
   return value;
 }
 
+const EMPTY_COLUMNS: string[] = [];
+
 export default function JobCreate() {
   const { projectId } = useParams();
   const [params] = useSearchParams();
   const nav = useNavigate();
   const requestedDatasetId = params.get("datasetId") || "";
+  const requestedDatasetVersionIdParam = params.get("datasetVersionId");
+  const requestedDatasetVersionId = (() => {
+    if (!requestedDatasetVersionIdParam) return null;
+    const parsed = Number(requestedDatasetVersionIdParam);
+    return Number.isFinite(parsed) ? parsed : null;
+  })();
   const cloneFrom = params.get("cloneFrom") || "";
+  // cloneFrom wins over query-string dataset/version preselection
+  const handoffVersionId = cloneFrom ? null : requestedDatasetVersionId;
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [versions, setVersions] = useState<DatasetVersion[]>([]);
@@ -60,8 +70,17 @@ export default function JobCreate() {
   const [submitError, setSubmitError] = useState("");
   const [busy, setBusy] = useState(false);
   const [cloneLoaded, setCloneLoaded] = useState(!cloneFrom);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [honorHandoffVersion, setHonorHandoffVersion] = useState(Boolean(handoffVersionId));
+  const [versionsResolved, setVersionsResolved] = useState(false);
 
   const selected = datasets.find((d) => String(d.id) === datasetId);
+  const selectedVersion = versions.find((version) => version.id === datasetVersionId) ?? null;
+  const schemaColumns = useMemo(() => {
+    if (selectedVersion == null) return EMPTY_COLUMNS;
+    if (selectedVersion.columns.length > 0) return selectedVersion.columns;
+    return selected?.columns || EMPTY_COLUMNS;
+  }, [selected?.columns, selectedVersion]);
   const primaryTarget = targets[0] ?? "";
   const isMultiTarget = targets.length > 1;
   const effectiveProblemType = isMultiTarget
@@ -74,7 +93,7 @@ export default function JobCreate() {
     [catalog, effectiveProblemType],
   );
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
-  const availableFeatures = (selected?.columns || []).filter((column) => !targets.includes(column));
+  const availableFeatures = schemaColumns.filter((column) => !targets.includes(column));
 
   useEffect(() => {
     Promise.all([
@@ -87,16 +106,20 @@ export default function JobCreate() {
         const nextDatasetId = requestedDatasetId || String(datasetRows[0]?.id || "");
         setDatasetId((current) => current || nextDatasetId);
         const selectedDataset = datasetRows.find((x) => String(x.id) === nextDatasetId);
-        if (selectedDataset?.columns.includes("target")) setTargets(["target"]);
-        else if (selectedDataset?.columns.length) {
-          setTargets([selectedDataset.columns[selectedDataset.columns.length - 1]]);
+        // When an explicit datasetVersionId handoff is present, wait for that version's
+        // schema before choosing targets to avoid a latest-schema flicker.
+        if (!handoffVersionId) {
+          if (selectedDataset?.columns.includes("target")) setTargets(["target"]);
+          else if (selectedDataset?.columns.length) {
+            setTargets([selectedDataset.columns[selectedDataset.columns.length - 1]]);
+          }
         }
         const defaults = catalogRows.algorithms.find((item) => item.id === "random_forest");
         if (defaults) setHyperparameters(formatHyperparameters(defaults.default_hyperparameters));
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Datasets could not be loaded."))
       .finally(() => setLoading(false));
-  }, [projectId, requestedDatasetId]);
+  }, [handoffVersionId, projectId, requestedDatasetId]);
 
   useEffect(() => {
     if (!cloneFrom || !projectId || !catalog.length) return;
@@ -137,27 +160,53 @@ export default function JobCreate() {
   useEffect(() => {
     if (!selected || !projectId) return;
     let cancelled = false;
+    setVersionsResolved(false);
     api<DatasetVersion[]>(`/projects/${projectId}/datasets/${selected.id}/versions`)
       .then((rows) => {
         if (cancelled) return;
         setVersions(rows);
+
         setDatasetVersionId((current) => {
           if (current && rows.some((row) => row.id === current)) return current;
+          if (honorHandoffVersion && handoffVersionId != null) {
+            const exact = rows.find((row) => row.id === handoffVersionId);
+            if (exact) return exact.id;
+            return null;
+          }
           const preferred =
             rows.find((row) => row.version === selected.latest_version) || rows[0];
           return preferred?.id ?? null;
         });
+
+        if (honorHandoffVersion && handoffVersionId != null) {
+          const exact = rows.find((row) => row.id === handoffVersionId);
+          if (exact) setVersionError(null);
+          else {
+            setVersionError(
+              `Dataset version #${handoffVersionId} was not found for this dataset. Select a valid version to continue.`,
+            );
+          }
+        } else {
+          setVersionError(null);
+        }
+        setVersionsResolved(true);
       })
       .catch(() => {
         if (!cancelled) {
           setVersions([]);
           setDatasetVersionId(null);
+          setVersionsResolved(true);
+          if (honorHandoffVersion && handoffVersionId != null) {
+            setVersionError(
+              `Dataset version #${handoffVersionId} could not be loaded. Select a valid version to continue.`,
+            );
+          }
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [projectId, selected]);
+  }, [handoffVersionId, honorHandoffVersion, projectId, selected]);
 
   useEffect(() => {
     if (!projectId || !datasetVersionId) {
@@ -186,32 +235,34 @@ export default function JobCreate() {
   }, [datasetVersionId, projectId]);
 
   useEffect(() => {
-    if (!selected) return;
+    if (!versionsResolved || versionError) return;
+    if (schemaColumns.length === 0) return;
     if (cloneFrom && !cloneLoaded) return;
-    const validTargets = targets.filter((column) => selected.columns.includes(column));
+    const validTargets = targets.filter((column) => schemaColumns.includes(column));
     if (validTargets.length === 0) {
-      if (selected.columns.includes("target") && !cloneFrom) setTargets(["target"]);
-      else setTargets([selected.columns[selected.columns.length - 1] || ""]);
+      if (schemaColumns.includes("target") && !cloneFrom) setTargets(["target"]);
+      else setTargets([schemaColumns[schemaColumns.length - 1] || ""]);
     } else if (validTargets.length !== targets.length) {
       setTargets(validTargets);
     }
-  }, [cloneFrom, cloneLoaded, selected, targets]);
+  }, [cloneFrom, cloneLoaded, schemaColumns, targets, versionError, versionsResolved]);
 
   useEffect(() => {
-    if (!selected || targets.length === 0) return;
+    if (!versionsResolved || versionError) return;
+    if (schemaColumns.length === 0 || targets.length === 0) return;
     if (cloneFrom && !cloneLoaded) return;
     setFeatureColumns((current) => {
-      const available = selected.columns.filter((column) => !targets.includes(column));
+      const available = schemaColumns.filter((column) => !targets.includes(column));
       const kept = current.filter(
-        (column) => !targets.includes(column) && selected.columns.includes(column),
+        (column) => !targets.includes(column) && schemaColumns.includes(column),
       );
-      const datasetMismatch = current.some(
-        (column) => !selected.columns.includes(column) && !targets.includes(column),
+      const schemaMismatch = current.some(
+        (column) => !schemaColumns.includes(column) && !targets.includes(column),
       );
-      if (!current.length || datasetMismatch) return available;
+      if (!current.length || schemaMismatch) return available;
       return kept;
     });
-  }, [cloneFrom, cloneLoaded, selected, targets]);
+  }, [cloneFrom, cloneLoaded, schemaColumns, targets, versionError, versionsResolved]);
 
   useEffect(() => {
     if (!projectId || !datasetId || targets.length === 0 || isMultiTarget) {
@@ -226,6 +277,12 @@ export default function JobCreate() {
       if (!isMultiTarget && problemType !== "auto") {
         setResolvingProblemType(false);
       }
+      return;
+    }
+    if (!versionsResolved || versionError || datasetVersionId == null) {
+      setDetectedType(null);
+      setProblemTypeDetectionError(null);
+      setResolvingProblemType(false);
       return;
     }
     let cancelled = false;
@@ -256,7 +313,7 @@ export default function JobCreate() {
     return () => {
       cancelled = true;
     };
-  }, [datasetId, datasetVersionId, isMultiTarget, primaryTarget, problemType, projectId, targets]);
+  }, [datasetId, datasetVersionId, isMultiTarget, primaryTarget, problemType, projectId, targets, versionError, versionsResolved]);
 
   useEffect(() => {
     if (!catalog.length) return;
@@ -303,6 +360,9 @@ export default function JobCreate() {
     setBusy(true);
     setSubmitError("");
     try {
+      if (versionError || datasetVersionId == null) {
+        throw new Error(versionError || "Select a dataset version.");
+      }
       if (targets.length === 0) {
         throw new Error("Select at least one target column.");
       }
@@ -408,11 +468,15 @@ export default function JobCreate() {
                   value={datasetId}
                   onChange={(event) => {
                     setSubmitError("");
+                    setHonorHandoffVersion(false);
+                    setVersionError(null);
+                    setVersionsResolved(false);
                     setDatasetId(event.target.value);
                     setDatasetVersionId(null);
                     setSplitId(null);
                     setSavedSplits([]);
                     setFeatureColumns([]);
+                    setTargets([]);
                   }}
                   required
                   data-testid="job-dataset"
@@ -424,7 +488,7 @@ export default function JobCreate() {
             <fieldset className="feature-columns" data-testid="job-targets">
               <legend>Target columns · {targets.length} selected</legend>
               <div className="feature-column-list">
-                {selected?.columns.map((column) => (
+                {schemaColumns.map((column) => (
                   <label key={column} className="feature-column-option">
                     <input
                       type="checkbox"
@@ -438,17 +502,25 @@ export default function JobCreate() {
               </div>
               {targets.length === 0 && <p className="form-hint">Select at least one target column.</p>}
             </fieldset>
-            {versions.length > 1 && (
+            {versionError ? (
+              <p className="form-hint" role="alert" data-testid="job-dataset-version-error">
+                {versionError}
+              </p>
+            ) : null}
+            {versions.length > 0 && (
               <label>Dataset version
                 <select
                   value={datasetVersionId ?? ""}
                   onChange={(event) => {
                     setSubmitError("");
+                    setHonorHandoffVersion(false);
+                    setVersionError(null);
                     setSplitId(null);
                     setDatasetVersionId(Number(event.target.value));
                   }}
                   data-testid="job-dataset-version"
                 >
+                  {versionError ? <option value="">Select a dataset version</option> : null}
                   {versions.map((version) => (
                     <option key={version.id} value={version.id}>v{version.version} · {version.original_filename}</option>
                   ))}
@@ -552,7 +624,7 @@ export default function JobCreate() {
               <button
                 className="btn"
                 type="submit"
-                disabled={busy || !datasetId || targets.length === 0 || featureColumns.length === 0 || waitingForDetection}
+                disabled={busy || !datasetId || datasetVersionId == null || Boolean(versionError) || targets.length === 0 || featureColumns.length === 0 || waitingForDetection || !versionsResolved}
                 data-testid="job-submit"
               >
                 {busy ? "Queuing…" : "Start training"}

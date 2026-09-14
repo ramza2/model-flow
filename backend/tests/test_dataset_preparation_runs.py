@@ -20,6 +20,8 @@ from app.db.models import (
     DatasetPreparationRun,
     DatasetPreparationRunStatus,
     DatasetVersion,
+    JobStatus,
+    TrainingJob,
     ProjectMembership,
     ProjectRole,
     User,
@@ -27,6 +29,7 @@ from app.db.models import (
 from app.db.session import get_db
 from app.main import _rate_windows, app
 from app.services import mlflow_service, registry_service, storage
+from app.services.training import TrainingJobContext, TrainingResult
 from app.workers import runner
 
 engine = create_engine(
@@ -1040,3 +1043,120 @@ def test_worker_claim_functions_still_exist():
     assert callable(runner.claim_next_import_job)
     assert callable(runner.claim_next_preparation_run)
     assert callable(runner.process_preparation_run)
+
+# ---------------------------------------------------------------------------
+# Phase 2-D: Preparation → TrainingJob pinned parquet integration
+# ---------------------------------------------------------------------------
+
+
+def test_join_preparation_trains_on_pinned_parquet_version(client, auth_headers, monkeypatch):
+    """Multi-source prep output must train on the exact pinned DatasetVersion."""
+    project_id = _create_project(client, auth_headers)
+    left = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "customers.csv",
+        b"customer_id,feat_a,target\n1,1.0,0\n2,2.0,1\n3,3.0,0\n4,4.0,1\n",
+    )
+    right = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "scores.csv",
+        b"customer_id,feat_b\n1,10\n2,20\n3,30\n4,40\n",
+    )
+    graph = _join_graph(
+        left["id"], left["version"]["id"], right["id"], right["version"]["id"]
+    )
+    prep = _create_prep(client, auth_headers, project_id, graph, name="JoinTrain")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Joined Train Out"
+    )
+    assert out.status_code == 201, out.text
+    output_dataset_id = out.json()["output_dataset"]["id"]
+
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.succeeded, live.error_message
+        pinned_version_id = live.output_dataset_version_id
+        assert pinned_version_id is not None
+        pinned = db.get(DatasetVersion, pinned_version_id)
+        assert pinned is not None
+        assert pinned.format == "parquet"
+        assert pinned.dataset_id == output_dataset_id
+        pinned_key = pinned.object_key
+        assert pinned_key in artifact_store
+
+    # Newer output version on the same dataset — TrainingJob must still pin v1.
+    run2 = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run2["id"]).status_code == 202
+    _claim_and_process()
+    with TestingSessionLocal() as db:
+        live2 = db.get(DatasetPreparationRun, run2["id"])
+        assert live2.status == DatasetPreparationRunStatus.succeeded, live2.error_message
+        latest_version_id = live2.output_dataset_version_id
+        assert latest_version_id != pinned_version_id
+        latest = db.get(DatasetVersion, latest_version_id)
+        assert latest is not None
+        assert latest.object_key != pinned_key
+        latest_key = latest.object_key
+
+    captured: list[TrainingJobContext] = []
+
+    class _FakeRunner:
+        def run(self, ctx: TrainingJobContext) -> TrainingResult:
+            captured.append(ctx)
+            return TrainingResult(
+                mlflow_run_id="prep-train-1",
+                model_uri="models:/prep-train/1",
+                metrics={"accuracy": 1.0},
+                logs="ok",
+                params={},
+            )
+
+    monkeypatch.setattr(runner, "get_training_runner", lambda: _FakeRunner())
+
+    create = client.post(
+        f"/api/v1/projects/{project_id}/jobs",
+        headers=auth_headers,
+        json={
+            "name": "train-joined-pinned",
+            "dataset_id": output_dataset_id,
+            "dataset_version_id": pinned_version_id,
+            "target_column": "target",
+            "feature_columns": ["feat_a", "feat_b"],
+            "algorithm": "random_forest",
+            "problem_type": "classification",
+            "hyperparameters": {"n_estimators": 5, "max_depth": 2},
+        },
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert body["dataset_version_id"] == pinned_version_id
+    assert body["dataset_id"] == output_dataset_id
+    job_id = body["id"]
+
+    runner.process_job(type("Claim", (), {"id": job_id})())
+
+    with TestingSessionLocal() as db:
+        job = db.get(TrainingJob, job_id)
+        assert job is not None
+        assert job.status == JobStatus.succeeded, getattr(job, "error_message", None)
+        assert job.dataset_version_id == pinned_version_id
+
+    assert len(captured) == 1
+    ctx = captured[0]
+    assert ctx.dataset_version_id == pinned_version_id
+    assert ctx.data_format == "parquet"
+    assert pinned_key != latest_key
+    assert ctx.csv_bytes == artifact_store[pinned_key]
+    # Content may match across identical re-runs; pin is proven by version id + object key.
+    frame = pd.read_parquet(__import__("io").BytesIO(ctx.csv_bytes))
+    assert {"feat_a", "feat_b", "target"}.issubset(set(frame.columns))
+    assert len(frame) == 4
+    assert set(frame["target"].tolist()) == {0, 1}
