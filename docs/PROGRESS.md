@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 2-E — Group By Aggregation** is the current implementation phase.
+**Enhancement Phase 2-F1 — Unpivot Reshape** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -11,6 +11,8 @@ Phase **2-B — Visual Dataset Preparation + Sample Preview** is complete on `ma
 Phase **2-C — Transformation & Materialization** is complete on `main` (merged via PR #40; merge commit `bd0e8db3319a88d57411be6ad67204f4d77b6d77`).
 
 Phase **2-D — Training Integration** is complete on `main` (merged via PR #41; merge commit `50de4dc08657e7432699652465a42b1564c327d0`).
+
+Phase **2-E — Group By Aggregation** is complete on `main` (merged via PR #42; merge commit `bb8df0212641f70308ca1dfa77cddc8e3aff5f77`).
 
 Phase 2-C delivered:
 
@@ -29,17 +31,23 @@ Phase 2-D delivered:
 - Dataset Detail **Train on dataset** pins the currently selected DatasetVersion
 - prepared Parquet DatasetVersion → TrainingJob integration (existing single `dataset_version_id` pin; no multi-input TrainingJob)
 
-Phase 2-E scope (this implementation):
+Phase 2-E delivered:
 
 - `group_by` Preparation transform (SUM / AVG / MIN / MAX / COUNT)
 - explicit aggregation output aliases; SQL-like null group retention + non-null COUNT
 - Preview sample-derived aggregate warning when Group By is on the preview target path
 - GroupByInspector + shared `execute_preparation_graph()` Preview/Run path
 
-Not in this Phase 2-E slice (still on the Phase 2 roadmap, not marked complete):
+Phase 2-F1 scope (this implementation):
 
-- Pivot
-- Unpivot
+- `unpivot` Preparation transform (explicit `id_columns` + `value_columns` wide → long)
+- deterministic row/column order; null value rows retained; unlisted source columns omitted
+- UnpivotInspector + shared `execute_preparation_graph()` Preview/Run path
+
+Not in this Phase 2-F1 slice (still on the Phase 2 roadmap, not marked complete):
+
+- Phase **2-F2 — Pivot Reshape** (pending)
+- Phase 2-F as a whole remains incomplete until Pivot lands
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -61,6 +69,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 2-E merge (PR #42): `bb8df0212641f70308ca1dfa77cddc8e3aff5f77`
 - Phase 2-D merge (PR #41): `50de4dc08657e7432699652465a42b1564c327d0`
 - Phase 2-C merge (PR #40): `bd0e8db3319a88d57411be6ad67204f4d77b6d77`
 - Phase 2-B merge (PR #39): `3c6db3c4c4d4771ed03c67ecad6406fd43dc8cfd`
@@ -217,7 +226,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Implement **Phase 2-E — Group By Aggregation** (`group_by` transform end-to-end on Dataset Preparation). Next planned Phase 2 item after that: **Phase 2-F — Pivot / Unpivot Reshape** (not started; do not mark complete here). Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Implement **Phase 2-F1 — Unpivot Reshape** (`unpivot` transform end-to-end on Dataset Preparation). Next planned Phase 2 item after that: **Phase 2-F2 — Pivot Reshape** (pending; do not mark Phase 2-F complete here). Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
 Known limitation of Phase 2-C (still applies): Pandas in-memory execution only (no Spark/Dask/distributed/chunked processing).
 

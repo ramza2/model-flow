@@ -28,6 +28,7 @@ TRANSFORM_TYPES = frozenset(
         "fill_constant",
         "derived_column",
         "group_by",
+        "unpivot",
     }
 )
 NODE_TYPES = frozenset({"source", "join", "union", "output"}) | TRANSFORM_TYPES
@@ -648,6 +649,99 @@ def _validate_group_by_config(
     return errors, warnings
 
 
+def _validate_unpivot_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"unpivot node '{node_id}': config must be an object"], warnings
+
+    id_columns = config.get("id_columns")
+    if not isinstance(id_columns, list):
+        return [f"unpivot node '{node_id}': id_columns must be a list"], warnings
+    cleaned_ids: list[str] = []
+    for key in id_columns:
+        if not isinstance(key, str) or not key.strip():
+            errors.append(
+                f"unpivot node '{node_id}': id_columns entries must be non-empty strings"
+            )
+            continue
+        cleaned_ids.append(key.strip())
+    if cleaned_ids and len(cleaned_ids) != len(set(cleaned_ids)):
+        errors.append(f"unpivot node '{node_id}': id_columns must not contain duplicates")
+
+    value_columns = config.get("value_columns")
+    if not isinstance(value_columns, list):
+        return (
+            errors + [f"unpivot node '{node_id}': value_columns must be a list"],
+            warnings,
+        )
+    if not value_columns:
+        message = f"unpivot node '{node_id}': value_columns must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    cleaned_values: list[str] = []
+    for key in value_columns:
+        if not isinstance(key, str) or not key.strip():
+            errors.append(
+                f"unpivot node '{node_id}': value_columns entries must be non-empty strings"
+            )
+            continue
+        cleaned_values.append(key.strip())
+    if cleaned_values and len(cleaned_values) != len(set(cleaned_values)):
+        errors.append(
+            f"unpivot node '{node_id}': value_columns must not contain duplicates"
+        )
+
+    id_set = set(cleaned_ids)
+    value_set = set(cleaned_values)
+    if id_set & value_set:
+        errors.append(
+            f"unpivot node '{node_id}': id_columns and value_columns must not overlap"
+        )
+
+    variable_column = config.get("variable_column")
+    if not isinstance(variable_column, str) or not variable_column.strip():
+        errors.append(
+            f"unpivot node '{node_id}': variable_column must be a non-empty string"
+        )
+        variable_alias = None
+    else:
+        variable_alias = variable_column.strip()
+
+    value_column = config.get("value_column")
+    if not isinstance(value_column, str) or not value_column.strip():
+        errors.append(
+            f"unpivot node '{node_id}': value_column must be a non-empty string"
+        )
+        value_alias = None
+    else:
+        value_alias = value_column.strip()
+
+    if (
+        variable_alias is not None
+        and value_alias is not None
+        and variable_alias == value_alias
+    ):
+        errors.append(
+            f"unpivot node '{node_id}': variable_column and value_column must be different"
+        )
+    if variable_alias is not None and variable_alias in id_set:
+        errors.append(
+            f"unpivot node '{node_id}': variable_column '{variable_alias}' "
+            "collides with an id_columns entry"
+        )
+    if value_alias is not None and value_alias in id_set:
+        errors.append(
+            f"unpivot node '{node_id}': value_column '{value_alias}' "
+            "collides with an id_columns entry"
+        )
+    return errors, warnings
+
+
 def _validate_transform_config(
     node_id: str,
     node_type: str,
@@ -673,6 +767,8 @@ def _validate_transform_config(
         return _validate_derived_column_config(node_id, config, strict=strict)
     if node_type == "group_by":
         return _validate_group_by_config(node_id, config, strict=strict)
+    if node_type == "unpivot":
+        return _validate_unpivot_config(node_id, config, strict=strict)
     return [], []
 
 

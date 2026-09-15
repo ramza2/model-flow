@@ -884,3 +884,317 @@ def test_group_by_execution_errors():
             },
             frame,
         )
+
+
+# ---------------------------------------------------------------------------
+# Unpivot
+# ---------------------------------------------------------------------------
+
+
+def test_unpivot_validation_contract():
+    valid, warnings = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["customer_id", "region"],
+            "value_columns": ["jan", "feb"],
+            "variable_column": "month",
+            "value_column": "sales",
+        },
+        strict=True,
+    )
+    assert valid == []
+    assert warnings == []
+
+    valid, warnings = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": [],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert valid == []
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": [],
+            "value_columns": [],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("value_columns must not be empty" in e for e in errors)
+
+    errors, warnings = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": [],
+            "value_columns": [],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=False,
+    )
+    assert errors == []
+    assert any("value_columns must not be empty" in w for w in warnings)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id", ""],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("id_columns entries must be non-empty strings" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id", "id"],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("id_columns must not contain duplicates" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["  "],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("value_columns entries must be non-empty strings" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan", "jan"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("value_columns must not contain duplicates" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["id"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("must not overlap" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan"],
+            "variable_column": "  ",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("variable_column must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "",
+        },
+        strict=True,
+    )
+    assert any("value_column must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan"],
+            "variable_column": "same",
+            "value_column": "same",
+        },
+        strict=True,
+    )
+    assert any("must be different" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan"],
+            "variable_column": "id",
+            "value_column": "value",
+        },
+        strict=True,
+    )
+    assert any("variable_column 'id' collides with an id_columns entry" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "u",
+        "unpivot",
+        {
+            "id_columns": ["id"],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "id",
+        },
+        strict=True,
+    )
+    assert any("value_column 'id' collides with an id_columns entry" in e for e in errors)
+
+
+def test_unpivot_execution_semantics():
+    frame = _frame(
+        customer_id=[1, 2],
+        region=["Seoul", "Busan"],
+        jan=[10, 30],
+        feb=[20, None],
+        ignored=["A", "B"],
+    )
+    out = _run(
+        "unpivot",
+        {
+            "id_columns": ["customer_id", "region"],
+            "value_columns": ["jan", "feb"],
+            "variable_column": "month",
+            "value_column": "sales",
+        },
+        frame,
+    )
+    assert list(out.columns) == ["customer_id", "region", "month", "sales"]
+    assert out["month"].tolist() == ["jan", "jan", "feb", "feb"]
+    assert out["customer_id"].tolist() == [1, 2, 1, 2]
+    assert out["sales"].tolist()[:3] == [10, 30, 20]
+    assert pd.isna(out["sales"].iloc[3])
+    assert "ignored" not in out.columns
+
+    empty_ids = _run(
+        "unpivot",
+        {
+            "id_columns": [],
+            "value_columns": ["jan"],
+            "variable_column": "variable",
+            "value_column": "value",
+        },
+        frame,
+    )
+    assert list(empty_ids.columns) == ["variable", "value"]
+    assert empty_ids["variable"].tolist() == ["jan", "jan"]
+    assert empty_ids["value"].tolist() == [10, 30]
+
+    aliased = _run(
+        "unpivot",
+        {
+            "id_columns": ["customer_id"],
+            "value_columns": ["jan", "feb"],
+            "variable_column": "jan",
+            "value_column": "feb",
+        },
+        frame,
+    )
+    assert list(aliased.columns) == ["customer_id", "jan", "feb"]
+    assert aliased["jan"].tolist() == ["jan", "jan", "feb", "feb"]
+
+
+def test_unpivot_execution_errors():
+    frame = _frame(id=[1], jan=[10], feb=[20])
+    with pytest.raises(PreparationExecutionError, match="missing"):
+        _run(
+            "unpivot",
+            {
+                "id_columns": ["missing_id"],
+                "value_columns": ["jan"],
+                "variable_column": "variable",
+                "value_column": "value",
+            },
+            frame,
+        )
+    with pytest.raises(PreparationExecutionError, match="missing"):
+        _run(
+            "unpivot",
+            {
+                "id_columns": ["id"],
+                "value_columns": ["nope"],
+                "variable_column": "variable",
+                "value_column": "value",
+            },
+            frame,
+        )
+
+
+def test_group_by_then_unpivot_chain():
+    frame = _frame(
+        region=["west", "west", "east"],
+        jan=[10, 20, 30],
+        feb=[1, 2, 3],
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {"id": "src", "type": "source", "config": {"dataset_id": 1}},
+            {
+                "id": "gb",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region"],
+                    "aggregations": [
+                        {"column": "jan", "op": "sum", "output": "jan"},
+                        {"column": "feb", "op": "sum", "output": "feb"},
+                    ],
+                },
+            },
+            {
+                "id": "u",
+                "type": "unpivot",
+                "config": {
+                    "id_columns": ["region"],
+                    "value_columns": ["jan", "feb"],
+                    "variable_column": "month",
+                    "value_column": "total",
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "gb"},
+            {"id": "e2", "source": "gb", "target": "u"},
+            {"id": "e3", "source": "u", "target": "out"},
+        ],
+    }
+    out = execute_preparation_graph(graph, {"src": frame})
+    assert list(out.columns) == ["region", "month", "total"]
+    assert len(out) == 4

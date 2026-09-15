@@ -32,6 +32,7 @@ import {
   serializeFillValues,
   serializeFilterConditions,
   serializeGroupByConfig,
+  serializeUnpivotConfig,
   sourceDatasetIdsInGraph,
   staggerPreparationPosition,
   targetHandleToPort,
@@ -83,12 +84,19 @@ describe("preparationHelpers", () => {
       group_by: [],
       aggregations: [],
     });
+    expect(defaultConfigForPreparation("unpivot")).toEqual({
+      id_columns: [],
+      value_columns: [],
+      variable_column: "variable",
+      value_column: "value",
+    });
   });
 
   it("exposes transform types in library groups and flat list", () => {
     expect(PREPARATION_NODE_TYPES).toContain("select");
     expect(PREPARATION_NODE_TYPES).toContain("derived_column");
     expect(PREPARATION_NODE_TYPES).toContain("group_by");
+    expect(PREPARATION_NODE_TYPES).toContain("unpivot");
     expect(PREPARATION_NODE_LIBRARY.map((item) => item.type)).toContain("filter");
     const transformGroup = PREPARATION_NODE_LIBRARY_GROUPS.find(
       (group) => group.id === "transform",
@@ -103,9 +111,11 @@ describe("preparationHelpers", () => {
       "fill_constant",
       "derived_column",
       "group_by",
+      "unpivot",
     ]);
     expect(isPreparationTransformType("select")).toBe(true);
     expect(isPreparationTransformType("group_by")).toBe(true);
+    expect(isPreparationTransformType("unpivot")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
   });
 
@@ -411,6 +421,7 @@ describe("preparationHelpers", () => {
       "fill_constant",
       "derived_column",
       "group_by",
+      "unpivot",
       "output",
     ]);
     expect(
@@ -424,11 +435,121 @@ describe("preparationHelpers", () => {
       "No aggregations",
     ]);
     expect(
+      preparationConfigSummary("unpivot", {
+        id_columns: ["customer_id", "region"],
+        value_columns: ["sales_2024", "sales_2025"],
+        variable_column: "year",
+        value_column: "sales",
+      }),
+    ).toEqual([
+      "IDs: customer_id, region",
+      "Values: sales_2024, sales_2025",
+      "Output: year / sales",
+    ]);
+    expect(
+      preparationConfigSummary("unpivot", {
+        id_columns: [],
+        value_columns: [],
+        variable_column: "variable",
+        value_column: "value",
+      }),
+    ).toEqual(["No ID columns", "No value columns", "Output: variable / value"]);
+    expect(
       serializeGroupByConfig({
         groupKeys: ["region", "region"],
         aggregations: [{ column: "sales", op: "SUM", output: "sales_sum" }],
       }).errors,
     ).toContain("Group keys must be unique.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id", "id"],
+        valueColumns: ["jan"],
+        variableColumn: "variable",
+        valueColumn: "value",
+      }).errors,
+    ).toContain("Identifier columns must be unique.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: [],
+        variableColumn: "variable",
+        valueColumn: "value",
+      }).errors,
+    ).toContain("At least one column to unpivot is required.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: ["jan", "jan"],
+        variableColumn: "variable",
+        valueColumn: "value",
+      }).errors,
+    ).toContain("Columns to unpivot must be unique.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: ["id"],
+        variableColumn: "variable",
+        valueColumn: "value",
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("cannot be both an identifier and an unpivot value"),
+      ]),
+    );
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: ["jan"],
+        variableColumn: "same",
+        valueColumn: "same",
+      }).errors,
+    ).toContain("Variable and value column names must be different.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["customer_id"],
+        valueColumns: ["jan"],
+        variableColumn: "customer_id",
+        valueColumn: "sales",
+      }).errors,
+    ).toContain("Variable column 'customer_id' collides with an identifier column.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["customer_id"],
+        valueColumns: ["jan"],
+        variableColumn: "month",
+        valueColumn: "customer_id",
+      }).errors,
+    ).toContain("Value column 'customer_id' collides with an identifier column.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: ["jan"],
+        variableColumn: "  ",
+        valueColumn: "value",
+      }).errors,
+    ).toContain("Variable column name is required.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["id"],
+        valueColumns: ["jan"],
+        variableColumn: "variable",
+        valueColumn: "",
+      }).errors,
+    ).toContain("Value column name is required.");
+    expect(
+      serializeUnpivotConfig({
+        idColumns: ["customer_id"],
+        valueColumns: ["jan", "feb"],
+        variableColumn: "month",
+        valueColumn: "sales",
+      }),
+    ).toEqual({
+      id_columns: ["customer_id"],
+      value_columns: ["jan", "feb"],
+      variable_column: "month",
+      value_column: "sales",
+      errors: [],
+    });
     expect(
       serializeGroupByConfig({
         groupKeys: ["region"],

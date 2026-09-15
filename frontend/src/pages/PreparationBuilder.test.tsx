@@ -1685,4 +1685,220 @@ describe("PreparationBuilder", () => {
     expect(screen.queryByTestId("preparation-groupby-remove-0")).not.toBeInTheDocument();
   });
 
+  it("gates actions on empty Unpivot defaults without any field edits", async () => {
+    let saved: unknown = null;
+    let previewCalls = 0;
+    let validateCalls = 0;
+    let runCalls = 0;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        previewCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        validateCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "POST") {
+        runCalls += 1;
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-unpivot"));
+    expect(await screen.findByTestId("preparation-unpivot-inspector")).toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-unpivot-errors")).toHaveTextContent(
+      "At least one column to unpivot is required",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    const previewBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewBefore);
+
+    const validateBefore = validateCalls;
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(validateCalls).toBe(validateBefore);
+
+    const runBefore = runCalls;
+    fireEvent.click(screen.getByTestId("preparation-run"));
+    expect(runCalls).toBe(runBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-ids"), {
+      target: { value: "customer_id, region" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-values"), {
+      target: { value: "sales_2024, sales_2025" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-variable"), {
+      target: { value: "year" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-value"), {
+      target: { value: "sales" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-unpivot-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(
+      (saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } })
+        .graph!.nodes!.find((node) => node.id === "unpivot-1")?.config,
+    ).toEqual({
+      id_columns: ["customer_id", "region"],
+      value_columns: ["sales_2024", "sales_2025"],
+      variable_column: "year",
+      value_column: "sales",
+    });
+  });
+
+  it("validates Unpivot inspector collisions and clears stale errors on node switch", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-unpivot"));
+    fireEvent.click(await screen.findByTestId("canvas-node-unpivot-1"));
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-ids"), {
+      target: { value: "id, id" },
+    });
+    expect(await screen.findByTestId("preparation-unpivot-errors")).toHaveTextContent(
+      "Identifier columns must be unique",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-ids"), {
+      target: { value: "id" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-values"), {
+      target: { value: "id" },
+    });
+    expect(screen.getByTestId("preparation-unpivot-errors")).toHaveTextContent(
+      "cannot be both an identifier and an unpivot value",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-values"), {
+      target: { value: "jan" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-variable"), {
+      target: { value: "same" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-value"), {
+      target: { value: "same" },
+    });
+    expect(screen.getByTestId("preparation-unpivot-errors")).toHaveTextContent(
+      "must be different",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-variable"), {
+      target: { value: "id" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-unpivot-value"), {
+      target: { value: "sales" },
+    });
+    expect(screen.getByTestId("preparation-unpivot-errors")).toHaveTextContent(
+      "collides with an identifier column",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-unpivot-variable"), {
+      target: { value: "month" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-unpivot-errors")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "unpivot-1")?.config).toEqual({
+      id_columns: ["id"],
+      value_columns: ["jan"],
+      variable_column: "month",
+      value_column: "sales",
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-unpivot"));
+    fireEvent.click(await screen.findByTestId("canvas-node-unpivot-2"));
+    expect(await screen.findByTestId("preparation-unpivot-errors")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("canvas-node-unpivot-1"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-unpivot-errors")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preparation-unpivot-ids")).toHaveValue("id");
+  });
+
+  it("keeps Unpivot inspector read-only for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version,
+          graph: {
+            schema_version: 1 as const,
+            nodes: [
+              {
+                id: "source-1",
+                type: "source" as const,
+                config: { dataset_id: 1, version_strategy: "latest" },
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "unpivot-1",
+                type: "unpivot" as const,
+                config: {
+                  id_columns: ["id"],
+                  value_columns: ["jan"],
+                  variable_column: "month",
+                  value_column: "sales",
+                },
+                position: { x: 200, y: 0 },
+              },
+              {
+                id: "output-1",
+                type: "output" as const,
+                config: {},
+                position: { x: 400, y: 0 },
+              },
+            ],
+            edges: [
+              { id: "e1", source: "source-1", target: "unpivot-1" },
+              { id: "e2", source: "unpivot-1", target: "output-1" },
+            ],
+          },
+        },
+      } as typeof preparation,
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-unpivot-1"));
+    expect(await screen.findByTestId("preparation-unpivot-ids")).toBeDisabled();
+    expect(screen.getByTestId("preparation-unpivot-values")).toBeDisabled();
+    expect(screen.getByTestId("preparation-unpivot-variable")).toBeDisabled();
+    expect(screen.getByTestId("preparation-unpivot-value")).toBeDisabled();
+  });
+
 });
