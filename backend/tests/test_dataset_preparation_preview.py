@@ -884,3 +884,298 @@ def test_unpivot_preview_and_missing_column_400(client, auth_headers):
     text = response.text.lower()
     assert "unpivot-1" in text
     assert "missing_col" in text
+
+
+def test_pivot_preview_schema_stability_and_warning(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "long.csv",
+        b"customer_id,region,month,sales\n"
+        b"1,Seoul,jan,10\n"
+        b"1,Seoul,feb,20\n"
+        b"2,Busan,jan,30\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id", "region"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [
+                        {"value": "jan", "output": "jan_sales"},
+                        {"value": "feb", "output": "feb_sales"},
+                        {"value": "mar", "output": "mar_sales"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "pivot-1"},
+            {"id": "e2", "source": "pivot-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["columns"] == ["customer_id", "region", "jan_sales", "feb_sales", "mar_sales"]
+    assert any("Pivot preview" in w for w in body["warnings"])
+    # mar is configured but absent from sample -> null column retained
+    for row in body["rows"]:
+        assert "mar_sales" in row
+        assert row["mar_sales"] is None
+
+    # Missing columns_column is normalized to a node-aware 400 (Group By → Pivot
+    # warning coverage lives in test_group_by_then_pivot_preview_warnings).
+    bad = {
+        **graph,
+        "nodes": [
+            graph["nodes"][0],
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id"],
+                    "columns_column": "missing_month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+                },
+            },
+            graph["nodes"][2],
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": bad},
+    )
+    assert response.status_code == 400, response.text
+    text = response.text.lower()
+    assert "pivot-1" in text
+    assert "missing_month" in text
+
+
+def test_group_by_then_pivot_preview_warnings(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "long2.csv",
+        b"region,month,sales\nwest,jan,10\nwest,jan,5\neast,feb,7\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "group_by-1",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region", "month"],
+                    "aggregations": [{"column": "sales", "op": "sum", "output": "sales"}],
+                },
+            },
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["region"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [
+                        {"value": "jan", "output": "jan_sales"},
+                        {"value": "feb", "output": "feb_sales"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "group_by-1"},
+            {"id": "e2", "source": "group_by-1", "target": "pivot-1"},
+            {"id": "e3", "source": "pivot-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert any("Group By preview" in w for w in warnings)
+    assert any("Pivot preview" in w for w in warnings)
+
+def test_pivot_preview_unrelated_path_and_error_normalization(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "pivot_err.csv",
+        b"customer_id,month,sales,label\n"
+        b"1,jan,10,a\n"
+        b"1,feb,20,b\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+
+    # Previewing an ancestor that does not include Pivot must omit the Pivot warning.
+    pivot_graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "pivot-1"},
+            {"id": "e2", "source": "pivot-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": pivot_graph, "node_id": "src"},
+    )
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert not any("Pivot preview" in w for w in warnings)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": pivot_graph, "node_id": "pivot-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert any("Pivot preview" in w for w in response.json()["warnings"])
+
+    base_nodes = [
+        {
+            "id": "src",
+            "type": "source",
+            "config": {
+                "dataset_id": dataset["id"],
+                "version_strategy": "fixed",
+                "dataset_version_id": dataset["version"]["id"],
+            },
+        },
+        {"id": "out", "type": "output", "config": {}},
+    ]
+    edges = [
+        {"id": "e1", "source": "src", "target": "pivot-1"},
+        {"id": "e2", "source": "pivot-1", "target": "out"},
+    ]
+
+    missing_value = {
+        "schema_version": 1,
+        "nodes": [
+            base_nodes[0],
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id"],
+                    "columns_column": "month",
+                    "value_column": "missing_sales",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+                },
+            },
+            base_nodes[1],
+        ],
+        "edges": edges,
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": missing_value},
+    )
+    assert response.status_code == 400, response.text
+    text_l = response.text.lower()
+    assert "pivot-1" in text_l
+    assert "missing_sales" in text_l
+
+    bad_sum = {
+        "schema_version": 1,
+        "nodes": [
+            base_nodes[0],
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id"],
+                    "columns_column": "month",
+                    "value_column": "label",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": "jan", "output": "jan_label"}],
+                },
+            },
+            base_nodes[1],
+        ],
+        "edges": edges,
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": bad_sum},
+    )
+    assert response.status_code == 400, response.text
+    text_l = response.text.lower()
+    assert "pivot-1" in text_l
+    assert "label" in text_l
+    assert "sum" in text_l
+    # raw pandas / numpy noise should not leak
+    assert "traceback" not in text_l
+    assert "dtype" not in text_l
+

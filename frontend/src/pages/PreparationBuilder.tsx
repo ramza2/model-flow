@@ -72,6 +72,7 @@ import {
   serializeFilterConditions,
   serializeGroupByConfig,
   serializeUnpivotConfig,
+  serializePivotConfig,
   coerceDerivedLiteral,
   formatDerivedLiteralInput,
   inferDerivedLiteralType,
@@ -82,6 +83,8 @@ import {
   type FilterCondition,
   type FilterValueType,
   type GroupByAggregationRow,
+  type PivotValueDraft,
+  type PivotValueType,
   type PreparationFlowEdge,
   type PreparationFlowNode,
 } from "../preparationHelpers";
@@ -1154,6 +1157,15 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "unpivot" && (
                 <UnpivotInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
+                />
+              )}
+              {selectedNode.data.node_type === "pivot" && (
+                <PivotInspector
                   key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
@@ -2857,6 +2869,292 @@ function UnpivotInspector({
       </label>
       {errors.length > 0 && (
         <ul className="preparation-inspector-errors" data-testid="preparation-unpivot-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function parsePivotValueDrafts(raw: unknown): PivotValueDraft[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    if (!row || typeof row !== "object") {
+      return { value: "", value_type: "string" as PivotValueType, output: "" };
+    }
+    const record = row as Record<string, unknown>;
+    const rawValue = record.value;
+    let valueType: PivotValueType = "string";
+    if (record.value_type === "number" || record.value_type === "string") {
+      valueType = record.value_type;
+    } else if (typeof rawValue === "number") {
+      valueType = "number";
+    }
+    return {
+      value: rawValue == null ? "" : String(rawValue),
+      value_type: valueType,
+      output: String(record.output ?? ""),
+    };
+  });
+}
+
+function PivotInspector({
+  config,
+  canWrite,
+  onChange,
+  onValidationChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
+}) {
+  const [indexColumnsText, setIndexColumnsText] = useState(() =>
+    formatKeyList(config.index_columns),
+  );
+  const [columnsColumn, setColumnsColumn] = useState(() =>
+    String(config.columns_column ?? ""),
+  );
+  const [valueColumn, setValueColumn] = useState(() => String(config.value_column ?? ""));
+  const [aggregation, setAggregation] = useState(() =>
+    String(config.aggregation ?? "sum").toLowerCase() || "sum",
+  );
+  const [pivotValues, setPivotValues] = useState<PivotValueDraft[]>(() =>
+    parsePivotValueDrafts(config.pivot_values),
+  );
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function evaluateDraft(
+    nextIndexText: string,
+    nextColumnsColumn: string,
+    nextValueColumn: string,
+    nextAggregation: string,
+    nextPivotValues: PivotValueDraft[],
+  ) {
+    return serializePivotConfig({
+      indexColumns: parseKeyList(nextIndexText),
+      columnsColumn: nextColumnsColumn,
+      valueColumn: nextValueColumn,
+      aggregation: nextAggregation,
+      pivotValues: nextPivotValues,
+    });
+  }
+
+  // Validate on mount so empty defaults gate Save/Validate/Preview/Run.
+  useEffect(() => {
+    const serialized = evaluateDraft(
+      indexColumnsText,
+      columnsColumn,
+      valueColumn,
+      aggregation,
+      pivotValues,
+    );
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function commit(
+    nextIndexText: string,
+    nextColumnsColumn: string,
+    nextValueColumn: string,
+    nextAggregation: string,
+    nextPivotValues: PivotValueDraft[],
+  ) {
+    setIndexColumnsText(nextIndexText);
+    setColumnsColumn(nextColumnsColumn);
+    setValueColumn(nextValueColumn);
+    setAggregation(nextAggregation);
+    setPivotValues(nextPivotValues);
+    const serialized = evaluateDraft(
+      nextIndexText,
+      nextColumnsColumn,
+      nextValueColumn,
+      nextAggregation,
+      nextPivotValues,
+    );
+    setErrors(serialized.errors);
+    if (serialized.errors.length > 0) {
+      return;
+    }
+    onChange({
+      ...config,
+      index_columns: serialized.index_columns,
+      columns_column: serialized.columns_column,
+      value_column: serialized.value_column,
+      aggregation: serialized.aggregation,
+      pivot_values: serialized.pivot_values,
+    });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-pivot-inspector">
+      <label>
+        Index columns
+        <textarea
+          data-testid="preparation-pivot-index"
+          disabled={!canWrite}
+          rows={2}
+          placeholder="customer_id, region"
+          value={indexColumnsText}
+          onChange={(event) =>
+            commit(
+              event.target.value,
+              columnsColumn,
+              valueColumn,
+              aggregation,
+              pivotValues,
+            )
+          }
+        />
+      </label>
+      <label>
+        Pivot column
+        <input
+          data-testid="preparation-pivot-columns-column"
+          disabled={!canWrite}
+          placeholder="month"
+          value={columnsColumn}
+          onChange={(event) =>
+            commit(
+              indexColumnsText,
+              event.target.value,
+              valueColumn,
+              aggregation,
+              pivotValues,
+            )
+          }
+        />
+      </label>
+      <label>
+        Value column
+        <input
+          data-testid="preparation-pivot-value-column"
+          disabled={!canWrite}
+          placeholder="sales"
+          value={valueColumn}
+          onChange={(event) =>
+            commit(
+              indexColumnsText,
+              columnsColumn,
+              event.target.value,
+              aggregation,
+              pivotValues,
+            )
+          }
+        />
+      </label>
+      <label>
+        Aggregation
+        <select
+          data-testid="preparation-pivot-aggregation"
+          disabled={!canWrite}
+          value={aggregation}
+          onChange={(event) =>
+            commit(
+              indexColumnsText,
+              columnsColumn,
+              valueColumn,
+              event.target.value,
+              pivotValues,
+            )
+          }
+        >
+          <option value="sum">SUM</option>
+          <option value="avg">AVG</option>
+          <option value="min">MIN</option>
+          <option value="max">MAX</option>
+          <option value="count">COUNT</option>
+        </select>
+      </label>
+      <div className="preparation-inspector-list" data-testid="preparation-pivot-values">
+        <span className="eyebrow">Pivot values</span>
+        {pivotValues.map((row, index) => (
+          <div
+            key={`pivot-value-${index}`}
+            className="preparation-inspector-row"
+            data-testid={`preparation-pivot-value-row-${index}`}
+          >
+            <select
+              data-testid={`preparation-pivot-value-type-${index}`}
+              disabled={!canWrite}
+              value={row.value_type}
+              onChange={(event) => {
+                const next = [...pivotValues];
+                next[index] = {
+                  ...row,
+                  value_type: event.target.value === "number" ? "number" : "string",
+                };
+                commit(indexColumnsText, columnsColumn, valueColumn, aggregation, next);
+              }}
+            >
+              <option value="string">String</option>
+              <option value="number">Number</option>
+            </select>
+            <input
+              data-testid={`preparation-pivot-value-input-${index}`}
+              disabled={!canWrite}
+              placeholder="jan"
+              value={row.value}
+              onChange={(event) => {
+                const next = [...pivotValues];
+                next[index] = { ...row, value: event.target.value };
+                commit(indexColumnsText, columnsColumn, valueColumn, aggregation, next);
+              }}
+            />
+            <input
+              data-testid={`preparation-pivot-value-output-${index}`}
+              disabled={!canWrite}
+              placeholder="sales_jan"
+              value={row.output}
+              onChange={(event) => {
+                const next = [...pivotValues];
+                next[index] = { ...row, output: event.target.value };
+                commit(indexColumnsText, columnsColumn, valueColumn, aggregation, next);
+              }}
+            />
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-pivot-value-remove-${index}`}
+                onClick={() => {
+                  const next = pivotValues.filter((_, rowIndex) => rowIndex !== index);
+                  commit(indexColumnsText, columnsColumn, valueColumn, aggregation, next);
+                }}
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+        {canWrite && (
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="preparation-pivot-value-add"
+            onClick={() =>
+              commit(indexColumnsText, columnsColumn, valueColumn, aggregation, [
+                ...pivotValues,
+                { value: "", value_type: "string", output: "" },
+              ])
+            }
+          >
+            Add pivot value
+          </button>
+        )}
+      </div>
+      <p className="muted" data-testid="preparation-pivot-help">
+        Only configured pivot values become output columns; other or null pivot values are
+        ignored.
+      </p>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-pivot-errors">
           {errors.map((message) => (
             <li key={message}>{message}</li>
           ))}

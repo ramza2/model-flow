@@ -33,6 +33,7 @@ import {
   serializeFilterConditions,
   serializeGroupByConfig,
   serializeUnpivotConfig,
+  serializePivotConfig,
   sourceDatasetIdsInGraph,
   staggerPreparationPosition,
   targetHandleToPort,
@@ -90,6 +91,13 @@ describe("preparationHelpers", () => {
       variable_column: "variable",
       value_column: "value",
     });
+ expect(defaultConfigForPreparation("pivot")).toEqual({
+      index_columns: [],
+      columns_column: "",
+      value_column: "",
+      aggregation: "sum",
+      pivot_values: [],
+    });
   });
 
   it("exposes transform types in library groups and flat list", () => {
@@ -97,6 +105,7 @@ describe("preparationHelpers", () => {
     expect(PREPARATION_NODE_TYPES).toContain("derived_column");
     expect(PREPARATION_NODE_TYPES).toContain("group_by");
     expect(PREPARATION_NODE_TYPES).toContain("unpivot");
+    expect(PREPARATION_NODE_TYPES).toContain("pivot");
     expect(PREPARATION_NODE_LIBRARY.map((item) => item.type)).toContain("filter");
     const transformGroup = PREPARATION_NODE_LIBRARY_GROUPS.find(
       (group) => group.id === "transform",
@@ -112,10 +121,12 @@ describe("preparationHelpers", () => {
       "derived_column",
       "group_by",
       "unpivot",
+      "pivot",
     ]);
     expect(isPreparationTransformType("select")).toBe(true);
     expect(isPreparationTransformType("group_by")).toBe(true);
     expect(isPreparationTransformType("unpivot")).toBe(true);
+    expect(isPreparationTransformType("pivot")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
   });
 
@@ -422,6 +433,7 @@ describe("preparationHelpers", () => {
       "derived_column",
       "group_by",
       "unpivot",
+      "pivot",
       "output",
     ]);
     expect(
@@ -548,6 +560,156 @@ describe("preparationHelpers", () => {
       value_columns: ["jan", "feb"],
       variable_column: "month",
       value_column: "sales",
+      errors: [],
+    });
+    expect(
+      preparationConfigSummary("pivot", {
+        index_columns: ["customer_id", "region"],
+        columns_column: "month",
+        value_column: "sales",
+        aggregation: "sum",
+        pivot_values: [
+          { value: "jan", output: "jan_sales" },
+          { value: "feb", output: "feb_sales" },
+        ],
+      }),
+    ).toEqual([
+      "Index: customer_id, region",
+      "Columns: month",
+      "Value: sales · SUM",
+      "Outputs: 2",
+    ]);
+    expect(
+      preparationConfigSummary("pivot", {
+        index_columns: [],
+        columns_column: "",
+        value_column: "",
+        aggregation: "sum",
+        pivot_values: [],
+      }),
+    ).toEqual([
+      "No index columns",
+      "Pivot column not set",
+      "Value column not set",
+      "No pivot values",
+    ]);
+    expect(
+      serializePivotConfig({
+        indexColumns: [],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+      }).errors,
+    ).toContain("At least one index column is required.");
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id", "id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+      }).errors,
+    ).toContain("Index columns must be unique.");
+    expect(
+      serializePivotConfig({
+        indexColumns: ["month"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("collides with an index column"),
+      ]),
+    );
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "month",
+        aggregation: "sum",
+        pivotValues: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+      }).errors,
+    ).toContain("Pivot column and value column must be different.");
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [],
+      }).errors,
+    ).toContain("At least one pivot value is required.");
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [{ value: "abc", value_type: "number", output: "x" }],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("invalid number")]),
+    );
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [
+          { value: "jan", value_type: "string", output: "a" },
+          { value: "jan", value_type: "string", output: "b" },
+        ],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("duplicate pivot value")]),
+    );
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [
+          { value: "jan", value_type: "string", output: "same" },
+          { value: "feb", value_type: "string", output: "same" },
+        ],
+      }).errors,
+    ).toContain("Pivot output columns must be unique.");
+    expect(
+      serializePivotConfig({
+        indexColumns: ["id"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "sum",
+        pivotValues: [{ value: "jan", value_type: "string", output: "id" }],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("collides with an index column")]),
+    );
+    expect(
+      serializePivotConfig({
+        indexColumns: ["customer_id", "region"],
+        columnsColumn: "month",
+        valueColumn: "sales",
+        aggregation: "SUM",
+        pivotValues: [
+          { value: "jan", value_type: "string", output: "jan_sales" },
+          { value: "2024", value_type: "number", output: "y2024" },
+        ],
+      }),
+    ).toEqual({
+      index_columns: ["customer_id", "region"],
+      columns_column: "month",
+      value_column: "sales",
+      aggregation: "sum",
+      pivot_values: [
+        { value: "jan", value_type: "string", output: "jan_sales" },
+        { value: 2024, value_type: "number", output: "y2024" },
+      ],
       errors: [],
     });
     expect(

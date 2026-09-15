@@ -422,6 +422,7 @@ class DatasetPreparationNode(BaseModel):
         "derived_column",
         "group_by",
         "unpivot",
+        "pivot",
         "output",
     ]
     config: dict[str, Any] = Field(default_factory=dict)

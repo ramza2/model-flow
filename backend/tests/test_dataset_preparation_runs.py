@@ -1462,3 +1462,151 @@ def test_unpivot_missing_column_no_partial_version(client, auth_headers):
         assert versions == []
         dataset = db.get(Dataset, output_id)
         assert dataset.latest_version == 0
+
+
+def test_pivot_full_materialization_success(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "pivot.csv",
+        b"customer_id,region,month,sales\n"
+        b"1,Seoul,jan,10\n"
+        b"1,Seoul,feb,20\n"
+        b"2,Busan,jan,30\n"
+        b"2,Busan,feb,\n"
+        b"3,Incheon,apr,99\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["customer_id", "region"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [
+                        {"value": "jan", "output": "jan_sales"},
+                        {"value": "feb", "output": "feb_sales"},
+                        {"value": "mar", "output": "mar_sales"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "pivot-1"},
+            {"id": "e2", "source": "pivot-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="PivotFull")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Pivot Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.succeeded, live.error_message
+        assert live.output_dataset_version_id is not None
+        version = db.get(DatasetVersion, live.output_dataset_version_id)
+        assert version.format == "parquet"
+        assert version.source_type == "preparation"
+        assert version.row_count == 3
+        assert version.column_count == 5
+        columns = __import__("json").loads(version.columns_json)
+        assert columns == [
+            "customer_id",
+            "region",
+            "jan_sales",
+            "feb_sales",
+            "mar_sales",
+        ]
+        frame = pd.read_parquet(__import__("io").BytesIO(artifact_store[version.object_key]))
+        assert list(frame.columns) == columns
+        assert frame["customer_id"].tolist() == [1, 2, 3]
+        assert frame["jan_sales"].tolist()[:2] == [10, 30]
+        assert pd.isna(frame["jan_sales"].iloc[2])
+        assert frame["feb_sales"].tolist()[0] == 20
+        assert pd.isna(frame["feb_sales"].iloc[1])
+        assert frame["mar_sales"].isna().all()
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == version.version == 1
+
+
+def test_pivot_missing_column_no_partial_version(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "bad-pivot.csv",
+        b"id,month,sales\n1,jan,10\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "pivot-1",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["id"],
+                    "columns_column": "month",
+                    "value_column": "missing_sales",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "pivot-1"},
+            {"id": "e2", "source": "pivot-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="FailPivot")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Fail Pivot Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.failed
+        assert live.error_message
+        assert "pivot-1" in live.error_message
+        assert live.output_dataset_version_id is None
+        versions = db.scalars(
+            select(DatasetVersion).where(DatasetVersion.dataset_id == output_id)
+        ).all()
+        assert versions == []
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == 0

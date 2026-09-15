@@ -1901,4 +1901,280 @@ describe("PreparationBuilder", () => {
     expect(screen.getByTestId("preparation-unpivot-value")).toBeDisabled();
   });
 
+
+  it("gates actions on empty Pivot defaults without any field edits", async () => {
+    let saved: unknown = null;
+    let previewCalls = 0;
+    let validateCalls = 0;
+    let runCalls = 0;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        previewCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        validateCalls += 1;
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "POST") {
+        runCalls += 1;
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-pivot"));
+    expect(await screen.findByTestId("preparation-pivot-inspector")).toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "At least one index column is required",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    const previewBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewBefore);
+
+    const validateBefore = validateCalls;
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(validateCalls).toBe(validateBefore);
+
+    const runBefore = runCalls;
+    fireEvent.click(screen.getByTestId("preparation-run"));
+    expect(runCalls).toBe(runBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-index"), {
+      target: { value: "customer_id, region" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-columns-column"), {
+      target: { value: "month" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-column"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-aggregation"), {
+      target: { value: "sum" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-pivot-value-add"));
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-type-0"), {
+      target: { value: "string" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-input-0"), {
+      target: { value: "jan" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-output-0"), {
+      target: { value: "jan_sales" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-pivot-value-add"));
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-type-1"), {
+      target: { value: "number" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-input-1"), {
+      target: { value: "2024" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-output-1"), {
+      target: { value: "y2024" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-pivot-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(
+      (saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } })
+        .graph!.nodes!.find((node) => node.id === "pivot-1")?.config,
+    ).toEqual({
+      index_columns: ["customer_id", "region"],
+      columns_column: "month",
+      value_column: "sales",
+      aggregation: "sum",
+      pivot_values: [
+        { value: "jan", value_type: "string", output: "jan_sales" },
+        { value: 2024, value_type: "number", output: "y2024" },
+      ],
+    });
+
+    // invalid number must not coerce to 0 / write graph
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-input-1"), {
+      target: { value: "abc" },
+    });
+    expect(await screen.findByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "invalid number",
+    );
+    const savedBefore = saved;
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBe(savedBefore);
+  });
+
+  it("validates Pivot inspector collisions and clears stale errors on node switch", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-pivot"));
+    fireEvent.click(await screen.findByTestId("canvas-node-pivot-1"));
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-index"), {
+      target: { value: "id, id" },
+    });
+    expect(await screen.findByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "Index columns must be unique",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-index"), {
+      target: { value: "id" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-columns-column"), {
+      target: { value: "id" },
+    });
+    expect(screen.getByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "collides with an index column",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-columns-column"), {
+      target: { value: "month" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-column"), {
+      target: { value: "month" },
+    });
+    expect(screen.getByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "must be different",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-column"), {
+      target: { value: "sales" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-pivot-value-add"));
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-input-0"), {
+      target: { value: "jan" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-output-0"), {
+      target: { value: "id" },
+    });
+    expect(screen.getByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "collides with an index column",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-output-0"), {
+      target: { value: "jan_sales" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-pivot-value-add"));
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-input-1"), {
+      target: { value: "jan" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-pivot-value-output-1"), {
+      target: { value: "jan_sales_2" },
+    });
+    expect(screen.getByTestId("preparation-pivot-errors")).toHaveTextContent(
+      "duplicate pivot value",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-pivot-value-remove-1"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-pivot-errors")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "pivot-1")?.config).toEqual({
+      index_columns: ["id"],
+      columns_column: "month",
+      value_column: "sales",
+      aggregation: "sum",
+      pivot_values: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-pivot"));
+    fireEvent.click(await screen.findByTestId("canvas-node-pivot-2"));
+    expect(await screen.findByTestId("preparation-pivot-errors")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("canvas-node-pivot-1"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-pivot-errors")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preparation-pivot-index")).toHaveValue("id");
+  });
+
+  it("keeps Pivot inspector read-only for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version,
+          graph: {
+            schema_version: 1 as const,
+            nodes: [
+              {
+                id: "source-1",
+                type: "source" as const,
+                config: { dataset_id: 1, version_strategy: "latest" },
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "pivot-1",
+                type: "pivot" as const,
+                config: {
+                  index_columns: ["id"],
+                  columns_column: "month",
+                  value_column: "sales",
+                  aggregation: "sum",
+                  pivot_values: [{ value: "jan", value_type: "string", output: "jan_sales" }],
+                },
+                position: { x: 200, y: 0 },
+              },
+              {
+                id: "output-1",
+                type: "output" as const,
+                config: {},
+                position: { x: 400, y: 0 },
+              },
+            ],
+            edges: [
+              { id: "e1", source: "source-1", target: "pivot-1" },
+              { id: "e2", source: "pivot-1", target: "output-1" },
+            ],
+          },
+        },
+      } as typeof preparation,
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-pivot-1"));
+    expect(await screen.findByTestId("preparation-pivot-index")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-columns-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-value-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-aggregation")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-value-type-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-value-input-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-pivot-value-output-0")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-pivot-value-add")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-pivot-value-remove-0")).not.toBeInTheDocument();
+  });
+
+
 });

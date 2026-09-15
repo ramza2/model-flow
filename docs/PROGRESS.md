@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 2-F1 — Unpivot Reshape** is the current implementation phase.
+**Enhancement Phase 2-F2 — Pivot Reshape** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -38,16 +38,25 @@ Phase 2-E delivered:
 - Preview sample-derived aggregate warning when Group By is on the preview target path
 - GroupByInspector + shared `execute_preparation_graph()` Preview/Run path
 
-Phase 2-F1 scope (this implementation):
+Phase **2-F1 — Unpivot Reshape** is complete on `main` (merged via PR #43; merge commit `e848a9c7a53bc9e791294e60ec4e6baf95409f37`).
+
+Phase 2-F1 delivered:
 
 - `unpivot` Preparation transform (explicit `id_columns` + `value_columns` wide → long)
 - deterministic row/column order; null value rows retained; unlisted source columns omitted
 - UnpivotInspector + shared `execute_preparation_graph()` Preview/Run path
 
-Not in this Phase 2-F1 slice (still on the Phase 2 roadmap, not marked complete):
+Phase 2-F2 scope (this implementation):
 
-- Phase **2-F2 — Pivot Reshape** (pending)
-- Phase 2-F as a whole remains incomplete until Pivot lands
+- `pivot` Preparation transform (explicit `index_columns` + `columns_column` + `value_column` + `aggregation` + `pivot_values` long → wide)
+- Group By aggregation ops reused (`sum` / `avg` / `min` / `max` / `count`); no automatic pivot-value discovery
+- stable Preview/Full schemas from configured outputs; null index groups retained; first-seen index order
+- PivotInspector + shared `execute_preparation_graph()` Preview/Run path
+
+Not in this Phase 2-F2 slice (still on the Phase 2 roadmap, not marked complete):
+
+- Phase **2-G — Phase 2 final hardening / end-to-end regression** (pending)
+- Phase 2-F as a whole remains incomplete until this Pivot PR merges
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -226,7 +235,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Implement **Phase 2-F1 — Unpivot Reshape** (`unpivot` transform end-to-end on Dataset Preparation). Next planned Phase 2 item after that: **Phase 2-F2 — Pivot Reshape** (pending; do not mark Phase 2-F complete here). Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Implement **Phase 2-F2 — Pivot Reshape** (`pivot` transform end-to-end on Dataset Preparation). Next planned Phase 2 item after that: **Phase 2-G — Phase 2 final hardening / end-to-end regression** (pending; do not mark Phase 2-F complete until this Pivot PR merges). Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
 Known limitation of Phase 2-C (still applies): Pandas in-memory execution only (no Spark/Dask/distributed/chunked processing).
 
