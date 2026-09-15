@@ -71,6 +71,7 @@ import {
   serializeFillValues,
   serializeFilterConditions,
   serializeGroupByConfig,
+  serializeUnpivotConfig,
   coerceDerivedLiteral,
   formatDerivedLiteralInput,
   inferDerivedLiteralType,
@@ -1144,6 +1145,15 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "group_by" && (
                 <GroupByInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
+                />
+              )}
+              {selectedNode.data.node_type === "unpivot" && (
+                <UnpivotInspector
                   key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
@@ -2712,6 +2722,145 @@ function GroupByInspector({
         >
           Add aggregation
         </button>
+      )}
+    </div>
+  );
+}
+
+function UnpivotInspector({
+  config,
+  canWrite,
+  onChange,
+  onValidationChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
+}) {
+  const [idColumnsText, setIdColumnsText] = useState(() => formatKeyList(config.id_columns));
+  const [valueColumnsText, setValueColumnsText] = useState(() =>
+    formatKeyList(config.value_columns),
+  );
+  const [variableColumn, setVariableColumn] = useState(() =>
+    String(config.variable_column ?? "variable"),
+  );
+  const [valueColumn, setValueColumn] = useState(() => String(config.value_column ?? "value"));
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function evaluateDraft(
+    nextIdsText: string,
+    nextValuesText: string,
+    nextVariable: string,
+    nextValue: string,
+  ) {
+    return serializeUnpivotConfig({
+      idColumns: parseKeyList(nextIdsText),
+      valueColumns: parseKeyList(nextValuesText),
+      variableColumn: nextVariable,
+      valueColumn: nextValue,
+    });
+  }
+
+  // Validate on mount so empty defaults gate Save/Validate/Preview/Run.
+  useEffect(() => {
+    const serialized = evaluateDraft(
+      idColumnsText,
+      valueColumnsText,
+      variableColumn,
+      valueColumn,
+    );
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function commit(
+    nextIdsText: string,
+    nextValuesText: string,
+    nextVariable: string,
+    nextValue: string,
+  ) {
+    setIdColumnsText(nextIdsText);
+    setValueColumnsText(nextValuesText);
+    setVariableColumn(nextVariable);
+    setValueColumn(nextValue);
+    const serialized = evaluateDraft(nextIdsText, nextValuesText, nextVariable, nextValue);
+    setErrors(serialized.errors);
+    if (serialized.errors.length > 0) {
+      return;
+    }
+    onChange({
+      ...config,
+      id_columns: serialized.id_columns,
+      value_columns: serialized.value_columns,
+      variable_column: serialized.variable_column,
+      value_column: serialized.value_column,
+    });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-unpivot-inspector">
+      <label>
+        Identifier columns
+        <textarea
+          data-testid="preparation-unpivot-ids"
+          disabled={!canWrite}
+          rows={2}
+          placeholder="customer_id, region"
+          value={idColumnsText}
+          onChange={(event) =>
+            commit(event.target.value, valueColumnsText, variableColumn, valueColumn)
+          }
+        />
+      </label>
+      <label>
+        Columns to unpivot
+        <textarea
+          data-testid="preparation-unpivot-values"
+          disabled={!canWrite}
+          rows={2}
+          placeholder="sales_2024, sales_2025"
+          value={valueColumnsText}
+          onChange={(event) =>
+            commit(idColumnsText, event.target.value, variableColumn, valueColumn)
+          }
+        />
+      </label>
+      <p className="muted" data-testid="preparation-unpivot-help">
+        Columns not listed as identifiers or unpivot values are omitted from the result.
+      </p>
+      <label>
+        Variable column
+        <input
+          data-testid="preparation-unpivot-variable"
+          disabled={!canWrite}
+          value={variableColumn}
+          onChange={(event) =>
+            commit(idColumnsText, valueColumnsText, event.target.value, valueColumn)
+          }
+        />
+      </label>
+      <label>
+        Value column
+        <input
+          data-testid="preparation-unpivot-value"
+          disabled={!canWrite}
+          value={valueColumn}
+          onChange={(event) =>
+            commit(idColumnsText, valueColumnsText, variableColumn, event.target.value)
+          }
+        />
+      </label>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-unpivot-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

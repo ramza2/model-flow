@@ -20,6 +20,7 @@ export const PREPARATION_NODE_TYPES = [
   "fill_constant",
   "derived_column",
   "group_by",
+  "unpivot",
   "output",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
@@ -33,6 +34,7 @@ export const PREPARATION_TRANSFORM_TYPES = [
   "fill_constant",
   "derived_column",
   "group_by",
+  "unpivot",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
 export const GROUP_BY_OPS = ["sum", "avg", "min", "max", "count"] as const;
@@ -152,6 +154,12 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
     label: "Group By",
     description: "Group rows and calculate aggregate values.",
     icon: "Σ",
+  },
+  {
+    type: "unpivot",
+    label: "Unpivot",
+    description: "Turn selected columns into variable/value rows.",
+    icon: "⇅",
   },
 ];
 
@@ -285,6 +293,13 @@ export function defaultConfigForPreparation(
       };
     case "group_by":
       return { group_by: [], aggregations: [] };
+    case "unpivot":
+      return {
+        id_columns: [],
+        value_columns: [],
+        variable_column: "variable",
+        value_column: "value",
+      };
     case "output":
       return {};
     default:
@@ -510,6 +525,20 @@ export function preparationConfigSummary(
           ? `${aggregations.length} aggregation${aggregations.length === 1 ? "" : "s"}`
           : "No aggregations",
       );
+      break;
+    }
+    case "unpivot": {
+      const ids = Array.isArray(config.id_columns)
+        ? config.id_columns.map(String).filter(Boolean)
+        : [];
+      const values = Array.isArray(config.value_columns)
+        ? config.value_columns.map(String).filter(Boolean)
+        : [];
+      const variableName = String(config.variable_column || "").trim() || "variable";
+      const valueName = String(config.value_column || "").trim() || "value";
+      lines.push(ids.length ? `IDs: ${ids.join(", ")}` : "No ID columns");
+      lines.push(values.length ? `Values: ${values.join(", ")}` : "No value columns");
+      lines.push(`Output: ${variableName} / ${valueName}`);
       break;
     }
     case "output":
@@ -912,4 +941,58 @@ export function serializeGroupByConfig(input: {
   }
 
   return { group_by, aggregations, errors };
+}
+
+export function serializeUnpivotConfig(input: {
+  idColumns: string[];
+  valueColumns: string[];
+  variableColumn: string;
+  valueColumn: string;
+}): {
+  id_columns: string[];
+  value_columns: string[];
+  variable_column: string;
+  value_column: string;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const id_columns = input.idColumns.map((key) => key.trim()).filter(Boolean);
+  if (id_columns.length !== new Set(id_columns).size) {
+    errors.push("Identifier columns must be unique.");
+  }
+
+  const value_columns = input.valueColumns.map((key) => key.trim()).filter(Boolean);
+  if (value_columns.length === 0) {
+    errors.push("At least one column to unpivot is required.");
+  }
+  if (value_columns.length !== new Set(value_columns).size) {
+    errors.push("Columns to unpivot must be unique.");
+  }
+
+  const idSet = new Set(id_columns);
+  for (const column of value_columns) {
+    if (idSet.has(column)) {
+      errors.push(`Column '${column}' cannot be both an identifier and an unpivot value.`);
+    }
+  }
+
+  const variable_column = input.variableColumn.trim();
+  const value_column = input.valueColumn.trim();
+  if (!variable_column) {
+    errors.push("Variable column name is required.");
+  }
+  if (!value_column) {
+    errors.push("Value column name is required.");
+  }
+  if (variable_column && value_column && variable_column === value_column) {
+    errors.push("Variable and value column names must be different.");
+  }
+  if (variable_column && idSet.has(variable_column)) {
+    errors.push(`Variable column '${variable_column}' collides with an identifier column.`);
+  }
+  if (value_column && idSet.has(value_column)) {
+    errors.push(`Value column '${value_column}' collides with an identifier column.`);
+  }
+
+  return { id_columns, value_columns, variable_column, value_column, errors };
 }

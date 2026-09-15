@@ -786,9 +786,120 @@ def _execute_transform(
         return _execute_derived_column(node_id, config, frame)
     if node_type == "group_by":
         return _execute_group_by(node_id, config, frame)
+    if node_type == "unpivot":
+        return _execute_unpivot(node_id, config, frame)
     raise PreparationExecutionError(
         f"Unsupported transform type '{node_type}' on '{node_id}'."
     )
+
+
+def _unpivot_temp_name(prefix: str, reserved: set[str]) -> str:
+    index = 0
+    while True:
+        candidate = f"__modelflow_unpivot_{prefix}_{index}__"
+        if candidate not in reserved:
+            reserved.add(candidate)
+            return candidate
+        index += 1
+
+
+def _execute_unpivot(node_id: str, config: dict[str, Any], frame: pd.DataFrame) -> pd.DataFrame:
+    id_columns = config.get("id_columns")
+    value_columns = config.get("value_columns")
+    variable_column = config.get("variable_column")
+    value_column = config.get("value_column")
+
+    if not isinstance(id_columns, list):
+        raise PreparationExecutionError(
+            f"Node '{node_id}': id_columns must be a list."
+        )
+    if not isinstance(value_columns, list) or not value_columns:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': unpivot requires at least one value column."
+        )
+    if not isinstance(variable_column, str) or not variable_column.strip():
+        raise PreparationExecutionError(
+            f"Node '{node_id}': variable_column must be a non-empty string."
+        )
+    if not isinstance(value_column, str) or not value_column.strip():
+        raise PreparationExecutionError(
+            f"Node '{node_id}': value_column must be a non-empty string."
+        )
+
+    normalized_ids: list[str] = []
+    for key in id_columns:
+        if not isinstance(key, str) or not key.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': id_columns entries must be non-empty strings."
+            )
+        name = _require_column(frame, node_id, key.strip())
+        if name in normalized_ids:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate id_columns entry '{name}'."
+            )
+        normalized_ids.append(name)
+
+    normalized_values: list[str] = []
+    for key in value_columns:
+        if not isinstance(key, str) or not key.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': value_columns entries must be non-empty strings."
+            )
+        name = _require_column(frame, node_id, key.strip())
+        if name in normalized_values:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate value_columns entry '{name}'."
+            )
+        if name in normalized_ids:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': id_columns and value_columns must not overlap "
+                f"(column '{name}')."
+            )
+        normalized_values.append(name)
+
+    variable_alias = variable_column.strip()
+    value_alias = value_column.strip()
+    if variable_alias == value_alias:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': variable_column and value_column must be different."
+        )
+    if variable_alias in normalized_ids:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': variable_column '{variable_alias}' collides with an "
+            "id_columns entry."
+        )
+    if value_alias in normalized_ids:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': value_column '{value_alias}' collides with an "
+            "id_columns entry."
+        )
+
+    selected = frame.loc[:, normalized_ids + normalized_values]
+    reserved = set(selected.columns) | {variable_alias, value_alias}
+    temp_var = _unpivot_temp_name("var", reserved)
+    temp_val = _unpivot_temp_name("val", reserved)
+
+    try:
+        melted = selected.melt(
+            id_vars=normalized_ids,
+            value_vars=normalized_values,
+            var_name=temp_var,
+            value_name=temp_val,
+            ignore_index=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - normalize pandas melt failures
+        raise PreparationExecutionError(
+            f"Node '{node_id}': unpivot could not be applied ({exc})."
+        ) from exc
+
+    result = melted.rename(columns={temp_var: variable_alias, temp_val: value_alias})
+    ordered = normalized_ids + [variable_alias, value_alias]
+    missing = [column for column in ordered if column not in result.columns]
+    if missing:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': unpivot result missing expected columns {missing}."
+        )
+    return result.loc[:, ordered].reset_index(drop=True)
 
 
 def _preview_path_includes_group_by(

@@ -762,3 +762,125 @@ def test_group_by_preview_warning_and_incompatible_sum(client, auth_headers):
     assert "group_by-1" in text
     assert "label" in text
     assert "sum" in text
+
+
+def test_unpivot_preview_and_missing_column_400(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "wide.csv",
+        b"customer_id,region,jan,feb,ignored\n1,Seoul,10,20,A\n2,Busan,30,,B\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "unpivot-1",
+                "type": "unpivot",
+                "config": {
+                    "id_columns": ["customer_id", "region"],
+                    "value_columns": ["jan", "feb"],
+                    "variable_column": "month",
+                    "value_column": "sales",
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "unpivot-1"},
+            {"id": "e2", "source": "unpivot-1", "target": "out"},
+        ],
+    }
+
+    preview = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["columns"] == ["customer_id", "region", "month", "sales"]
+    assert len(body["rows"]) == 4
+    assert not any("Group By preview" in w for w in body["warnings"])
+    assert any("sample" in w.lower() or "Sample" in w or "Preview" in w for w in body["warnings"])
+
+    # Group By ancestor warning still fires when Group By precedes Unpivot.
+    chained = {
+        "schema_version": 1,
+        "nodes": [
+            graph["nodes"][0],
+            {
+                "id": "group_by-1",
+                "type": "group_by",
+                "config": {
+                    "group_by": ["region"],
+                    "aggregations": [{"column": "jan", "op": "sum", "output": "jan"}],
+                },
+            },
+            {
+                "id": "unpivot-1",
+                "type": "unpivot",
+                "config": {
+                    "id_columns": ["region"],
+                    "value_columns": ["jan"],
+                    "variable_column": "metric",
+                    "value_column": "amount",
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "group_by-1"},
+            {"id": "e2", "source": "group_by-1", "target": "unpivot-1"},
+            {"id": "e3", "source": "unpivot-1", "target": "out"},
+        ],
+    }
+    chained_preview = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": chained},
+    )
+    assert chained_preview.status_code == 200, chained_preview.text
+    assert any(
+        "Group By preview is computed from sampled source rows" in w
+        for w in chained_preview.json()["warnings"]
+    )
+
+    bad = {
+        **graph,
+        "nodes": [
+            graph["nodes"][0],
+            {
+                "id": "unpivot-1",
+                "type": "unpivot",
+                "config": {
+                    "id_columns": ["customer_id"],
+                    "value_columns": ["missing_col"],
+                    "variable_column": "month",
+                    "value_column": "sales",
+                },
+            },
+            graph["nodes"][2],
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": bad},
+    )
+    assert response.status_code == 400, response.text
+    text = response.text.lower()
+    assert "unpivot-1" in text
+    assert "missing_col" in text

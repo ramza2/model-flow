@@ -234,6 +234,7 @@ export type DatasetPreparationNodeType =
   | "fill_constant"
   | "derived_column"
   | "group_by"
+  | "unpivot"
   | "output";
 
 export type DatasetPreparationNodePosition = {
