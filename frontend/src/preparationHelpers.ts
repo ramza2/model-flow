@@ -21,6 +21,7 @@ export const PREPARATION_NODE_TYPES = [
   "derived_column",
   "group_by",
   "unpivot",
+  "pivot",
   "output",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
@@ -35,6 +36,7 @@ export const PREPARATION_TRANSFORM_TYPES = [
   "derived_column",
   "group_by",
   "unpivot",
+  "pivot",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
 export const GROUP_BY_OPS = ["sum", "avg", "min", "max", "count"] as const;
@@ -160,6 +162,12 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
     label: "Unpivot",
     description: "Turn selected columns into variable/value rows.",
     icon: "⇅",
+  },
+  {
+    type: "pivot",
+    label: "Pivot",
+    description: "Turn configured row values into aggregate columns.",
+    icon: "⟷",
   },
 ];
 
@@ -299,6 +307,14 @@ export function defaultConfigForPreparation(
         value_columns: [],
         variable_column: "variable",
         value_column: "value",
+      };
+    case "pivot":
+      return {
+        index_columns: [],
+        columns_column: "",
+        value_column: "",
+        aggregation: "sum",
+        pivot_values: [],
       };
     case "output":
       return {};
@@ -539,6 +555,28 @@ export function preparationConfigSummary(
       lines.push(ids.length ? `IDs: ${ids.join(", ")}` : "No ID columns");
       lines.push(values.length ? `Values: ${values.join(", ")}` : "No value columns");
       lines.push(`Output: ${variableName} / ${valueName}`);
+      break;
+    }
+    case "pivot": {
+      const indexColumns = Array.isArray(config.index_columns)
+        ? config.index_columns.map(String).filter(Boolean)
+        : [];
+      const columnsColumn = String(config.columns_column || "").trim();
+      const valueColumn = String(config.value_column || "").trim();
+      const aggregation = String(config.aggregation || "sum").trim().toLowerCase() || "sum";
+      const pivotValues = Array.isArray(config.pivot_values) ? config.pivot_values : [];
+      lines.push(indexColumns.length ? `Index: ${indexColumns.join(", ")}` : "No index columns");
+      lines.push(columnsColumn ? `Columns: ${columnsColumn}` : "Pivot column not set");
+      lines.push(
+        valueColumn
+          ? `Value: ${valueColumn} · ${aggregation.toUpperCase()}`
+          : "Value column not set",
+      );
+      lines.push(
+        pivotValues.length
+          ? `Outputs: ${pivotValues.length}`
+          : "No pivot values",
+      );
       break;
     }
     case "output":
@@ -995,4 +1033,130 @@ export function serializeUnpivotConfig(input: {
   }
 
   return { id_columns, value_columns, variable_column, value_column, errors };
+}
+
+export type PivotValueType = "string" | "number";
+
+export type PivotValueDraft = {
+  value: string;
+  value_type: PivotValueType;
+  output: string;
+};
+
+export function serializePivotConfig(input: {
+  indexColumns: string[];
+  columnsColumn: string;
+  valueColumn: string;
+  aggregation: string;
+  pivotValues: PivotValueDraft[];
+}): {
+  index_columns: string[];
+  columns_column: string;
+  value_column: string;
+  aggregation: string;
+  pivot_values: Array<{ value: string | number; value_type?: PivotValueType; output: string }>;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const index_columns = input.indexColumns.map((key) => key.trim()).filter(Boolean);
+  if (index_columns.length === 0) {
+    errors.push("At least one index column is required.");
+  }
+  if (index_columns.length !== new Set(index_columns).size) {
+    errors.push("Index columns must be unique.");
+  }
+  const indexSet = new Set(index_columns);
+
+  const columns_column = input.columnsColumn.trim();
+  const value_column = input.valueColumn.trim();
+  if (!columns_column) {
+    errors.push("Pivot column is required.");
+  }
+  if (!value_column) {
+    errors.push("Value column is required.");
+  }
+  if (columns_column && indexSet.has(columns_column)) {
+    errors.push(`Pivot column '${columns_column}' collides with an index column.`);
+  }
+  if (value_column && indexSet.has(value_column)) {
+    errors.push(`Value column '${value_column}' collides with an index column.`);
+  }
+  if (columns_column && value_column && columns_column === value_column) {
+    errors.push("Pivot column and value column must be different.");
+  }
+
+  const aggregation = input.aggregation.trim().toLowerCase();
+  if (!(GROUP_BY_OPS as readonly string[]).includes(aggregation)) {
+    errors.push("Aggregation must be one of sum, avg, min, max, count.");
+  }
+
+  if (input.pivotValues.length === 0) {
+    errors.push("At least one pivot value is required.");
+  }
+
+  const pivot_values: Array<{
+    value: string | number;
+    value_type?: PivotValueType;
+    output: string;
+  }> = [];
+  const seenValues = new Set<string>();
+  const outputs: string[] = [];
+
+  input.pivotValues.forEach((row, index) => {
+    const prefix = `Pivot value ${index + 1}`;
+    const valueType: PivotValueType = row.value_type === "number" ? "number" : "string";
+    const raw = row.value.trim();
+    let typedValue: string | number | null = null;
+    if (!raw) {
+      errors.push(`${prefix}: value is required.`);
+    } else if (valueType === "number") {
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) {
+        errors.push(`${prefix}: invalid number "${row.value}".`);
+      } else {
+        typedValue = parsed;
+      }
+    } else {
+      typedValue = raw;
+    }
+
+    if (typedValue !== null) {
+      const valueKey = `${valueType}:${String(typedValue)}`;
+      if (seenValues.has(valueKey)) {
+        errors.push(`${prefix}: duplicate pivot value.`);
+      } else {
+        seenValues.add(valueKey);
+      }
+    }
+
+    const output = row.output.trim();
+    if (!output) {
+      errors.push(`${prefix}: output column is required.`);
+    } else if (indexSet.has(output)) {
+      errors.push(`${prefix}: output '${output}' collides with an index column.`);
+    } else {
+      outputs.push(output);
+    }
+
+    if (typedValue !== null && output) {
+      pivot_values.push({
+        value: typedValue,
+        value_type: valueType,
+        output,
+      });
+    }
+  });
+
+  if (outputs.length !== new Set(outputs).size) {
+    errors.push("Pivot output columns must be unique.");
+  }
+
+  return {
+    index_columns,
+    columns_column,
+    value_column,
+    aggregation,
+    pivot_values,
+    errors,
+  };
 }

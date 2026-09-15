@@ -29,6 +29,7 @@ TRANSFORM_TYPES = frozenset(
         "derived_column",
         "group_by",
         "unpivot",
+        "pivot",
     }
 )
 NODE_TYPES = frozenset({"source", "join", "union", "output"}) | TRANSFORM_TYPES
@@ -742,6 +743,162 @@ def _validate_unpivot_config(
     return errors, warnings
 
 
+def _is_allowed_pivot_value(value: Any) -> bool:
+    """Pivot values may be JSON strings or numbers; bool/null/complex are rejected."""
+    if isinstance(value, bool) or value is None:
+        return False
+    if isinstance(value, str):
+        return True
+    if isinstance(value, (int, float)):
+        return True
+    return False
+
+
+def _validate_pivot_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"pivot node '{node_id}': config must be an object"], warnings
+
+    index_columns = config.get("index_columns")
+    if not isinstance(index_columns, list):
+        return [f"pivot node '{node_id}': index_columns must be a list"], warnings
+    if not index_columns:
+        message = f"pivot node '{node_id}': index_columns must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    cleaned_index: list[str] = []
+    for key in index_columns:
+        if not isinstance(key, str) or not key.strip():
+            errors.append(
+                f"pivot node '{node_id}': index_columns entries must be non-empty strings"
+            )
+            continue
+        cleaned_index.append(key.strip())
+    if cleaned_index and len(cleaned_index) != len(set(cleaned_index)):
+        errors.append(f"pivot node '{node_id}': index_columns must not contain duplicates")
+    index_set = set(cleaned_index)
+
+    columns_column = config.get("columns_column")
+    if not isinstance(columns_column, str) or not columns_column.strip():
+        message = f"pivot node '{node_id}': columns_column must be a non-empty string"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        columns_name = None
+    else:
+        columns_name = columns_column.strip()
+        if columns_name in index_set:
+            errors.append(
+                f"pivot node '{node_id}': columns_column '{columns_name}' "
+                "collides with an index_columns entry"
+            )
+
+    value_column = config.get("value_column")
+    if not isinstance(value_column, str) or not value_column.strip():
+        message = f"pivot node '{node_id}': value_column must be a non-empty string"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        value_name = None
+    else:
+        value_name = value_column.strip()
+        if value_name in index_set:
+            errors.append(
+                f"pivot node '{node_id}': value_column '{value_name}' "
+                "collides with an index_columns entry"
+            )
+
+    if (
+        columns_name is not None
+        and value_name is not None
+        and columns_name == value_name
+    ):
+        errors.append(
+            f"pivot node '{node_id}': columns_column and value_column must be different"
+        )
+
+    aggregation = config.get("aggregation")
+    if aggregation not in GROUP_BY_OPS:
+        # Invalid aggregation is always an error (including blank defaults once set).
+        # Empty draft defaults use "sum", so this catches truly unsupported values.
+        if aggregation is None or aggregation == "":
+            message = (
+                f"pivot node '{node_id}': aggregation must be one of "
+                "sum, avg, min, max, count"
+            )
+            if strict:
+                errors.append(message)
+            else:
+                warnings.append(message)
+        else:
+            errors.append(
+                f"pivot node '{node_id}': aggregation must be one of "
+                "sum, avg, min, max, count"
+            )
+
+    pivot_values = config.get("pivot_values")
+    if not isinstance(pivot_values, list):
+        return (
+            errors + [f"pivot node '{node_id}': pivot_values must be a list"],
+            warnings,
+        )
+    if not pivot_values:
+        message = f"pivot node '{node_id}': pivot_values must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+
+    seen_values: list[Any] = []
+    outputs: list[str] = []
+    for index, row in enumerate(pivot_values):
+        prefix = f"pivot node '{node_id}': pivot_values[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        value = row.get("value")
+        if not _is_allowed_pivot_value(value):
+            errors.append(
+                f"{prefix}: value must be a string or number "
+                "(boolean and null are not supported)"
+            )
+        else:
+            if any(
+                type(existing) is type(value) and existing == value
+                for existing in seen_values
+            ):
+                errors.append(f"{prefix}: duplicate pivot value {value!r}")
+            else:
+                # Also treat 1 and 1.0 as the same pivot key for uniqueness.
+                if any(existing == value for existing in seen_values):
+                    errors.append(f"{prefix}: duplicate pivot value {value!r}")
+                else:
+                    seen_values.append(value)
+
+        output = row.get("output")
+        if not isinstance(output, str) or not output.strip():
+            errors.append(f"{prefix}: output must be a non-empty string")
+            continue
+        alias = output.strip()
+        if alias in index_set:
+            errors.append(
+                f"{prefix}: output '{alias}' collides with an index_columns entry"
+            )
+        outputs.append(alias)
+
+    if outputs and len(outputs) != len(set(outputs)):
+        errors.append(f"pivot node '{node_id}': pivot_values outputs must be unique")
+    return errors, warnings
+
+
 def _validate_transform_config(
     node_id: str,
     node_type: str,
@@ -769,8 +926,9 @@ def _validate_transform_config(
         return _validate_group_by_config(node_id, config, strict=strict)
     if node_type == "unpivot":
         return _validate_unpivot_config(node_id, config, strict=strict)
+    if node_type == "pivot":
+        return _validate_pivot_config(node_id, config, strict=strict)
     return [], []
-
 
 def validate_preparation_graph(
     db: Session,

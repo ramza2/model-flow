@@ -1198,3 +1198,435 @@ def test_group_by_then_unpivot_chain():
     out = execute_preparation_graph(graph, {"src": frame})
     assert list(out.columns) == ["region", "month", "total"]
     assert len(out) == 4
+
+
+# ---------------------------------------------------------------------------
+# Pivot
+# ---------------------------------------------------------------------------
+
+
+def test_pivot_validation_contract():
+    valid, warnings = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["customer_id", "region"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": "feb", "output": "feb_sales"},
+            ],
+        },
+        strict=True,
+    )
+    assert valid == []
+    assert warnings == []
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": [],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        strict=True,
+    )
+    assert any("index_columns must not be empty" in e for e in errors)
+
+    errors, warnings = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": [],
+            "columns_column": "",
+            "value_column": "",
+            "aggregation": "sum",
+            "pivot_values": [],
+        },
+        strict=False,
+    )
+    assert errors == []
+    assert any("index_columns must not be empty" in w for w in warnings)
+    assert any("columns_column must be a non-empty string" in w for w in warnings)
+    assert any("value_column must be a non-empty string" in w for w in warnings)
+    assert any("pivot_values must not be empty" in w for w in warnings)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id", "id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        strict=True,
+    )
+    assert any("index_columns must not contain duplicates" in e for e in errors)
+
+    for bad in (
+        {
+            "index_columns": ["month"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        {
+            "index_columns": ["sales"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        {
+            "index_columns": ["id"],
+            "columns_column": "sales",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+    ):
+        errors, _ = _validate_transform_config("p", "pivot", bad, strict=True)
+        assert errors
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "median",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        strict=True,
+    )
+    assert any("aggregation must be one of" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [],
+        },
+        strict=True,
+    )
+    assert any("pivot_values must not be empty" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": ["jan"],
+        },
+        strict=True,
+    )
+    assert any("must be an object" in e for e in errors)
+
+    for bad_value in (None, True, False, ["x"], {"a": 1}):
+        errors, _ = _validate_transform_config(
+            "p",
+            "pivot",
+            {
+                "index_columns": ["id"],
+                "columns_column": "month",
+                "value_column": "sales",
+                "aggregation": "sum",
+                "pivot_values": [{"value": bad_value, "output": "out"}],
+            },
+            strict=True,
+        )
+        assert any("string or number" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "a"},
+                {"value": "jan", "output": "b"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("duplicate pivot value" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "  "}],
+        },
+        strict=True,
+    )
+    assert any("output must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "same"},
+                {"value": "feb", "output": "same"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("outputs must be unique" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "id"}],
+        },
+        strict=True,
+    )
+    assert any("collides with an index_columns entry" in e for e in errors)
+
+    valid, _ = _validate_transform_config(
+        "p",
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "year",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": 2024, "output": "y2024"},
+                {"value": 2024.5, "output": "y2024_5"},
+            ],
+        },
+        strict=True,
+    )
+    assert valid == []
+
+
+def test_pivot_execution_semantics():
+    frame = _frame(
+        customer_id=[1, 1, 2, 2],
+        region=["Seoul", "Seoul", "Busan", "Busan"],
+        month=["jan", "feb", "jan", "feb"],
+        sales=[10, 20, 30, None],
+    )
+    out = _run(
+        "pivot",
+        {
+            "index_columns": ["customer_id", "region"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": "feb", "output": "feb_sales"},
+            ],
+        },
+        frame,
+    )
+    assert list(out.columns) == ["customer_id", "region", "jan_sales", "feb_sales"]
+    assert out["customer_id"].tolist() == [1, 2]
+    assert out["jan_sales"].tolist() == [10, 30]
+    assert out["feb_sales"].tolist()[0] == 20
+    assert pd.isna(out["feb_sales"].tolist()[1])
+
+    # Missing configured pivot value remains as null column.
+    with_missing = _run(
+        "pivot",
+        {
+            "index_columns": ["customer_id", "region"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": "mar", "output": "mar_sales"},
+            ],
+        },
+        frame,
+    )
+    assert list(with_missing.columns) == ["customer_id", "region", "jan_sales", "mar_sales"]
+    assert with_missing["mar_sales"].isna().all()
+
+    # Unlisted and null pivot keys are ignored; index rows still preserved.
+    mixed = _frame(
+        id=[1, 1, 2, 3],
+        month=["jan", "apr", None, "feb"],
+        sales=[10, 99, 5, 7],
+    )
+    out_mixed = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": "feb", "output": "feb_sales"},
+            ],
+        },
+        mixed,
+    )
+    assert out_mixed["id"].tolist() == [1, 2, 3]
+    assert out_mixed["jan_sales"].tolist()[0] == 10
+    assert pd.isna(out_mixed["jan_sales"].tolist()[1])
+    assert pd.isna(out_mixed["feb_sales"].tolist()[0])
+    assert out_mixed["feb_sales"].tolist()[2] == 7
+
+    # Duplicate cell aggregation.
+    dup = _frame(id=[1, 1], month=["jan", "jan"], sales=[10, 5])
+    summed = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+        },
+        dup,
+    )
+    assert summed["jan_sales"].tolist() == [15]
+
+    counted = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "count",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_c"},
+                {"value": "feb", "output": "feb_c"},
+            ],
+        },
+        _frame(id=[1, 1, 2], month=["jan", "jan", "feb"], sales=[None, None, 1]),
+    )
+    assert counted["jan_c"].tolist()[0] == 0
+    assert pd.isna(counted["feb_c"].tolist()[0])
+    assert pd.isna(counted["jan_c"].tolist()[1])
+    assert counted["feb_c"].tolist()[1] == 1
+
+    # Numeric pivot values + alias equal to former columns_column/value_column.
+    numeric = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "year",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": 2024, "output": "year"},
+                {"value": 2025, "output": "sales"},
+            ],
+        },
+        _frame(id=[1, 1], year=[2024, 2025], sales=[3, 4]),
+    )
+    assert list(numeric.columns) == ["id", "year", "sales"]
+    assert numeric["year"].tolist() == [3]
+    assert numeric["sales"].tolist() == [4]
+
+
+def test_pivot_execution_errors():
+    frame = _frame(id=[1], month=["jan"], sales=[10], label=["x"])
+    with pytest.raises(PreparationExecutionError, match="missing"):
+        _run(
+            "pivot",
+            {
+                "index_columns": ["missing_id"],
+                "columns_column": "month",
+                "value_column": "sales",
+                "aggregation": "sum",
+                "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+            },
+            frame,
+        )
+    with pytest.raises(PreparationExecutionError, match="could not be applied"):
+        _run(
+            "pivot",
+            {
+                "index_columns": ["id"],
+                "columns_column": "month",
+                "value_column": "label",
+                "aggregation": "sum",
+                "pivot_values": [{"value": "jan", "output": "jan_sales"}],
+            },
+            frame,
+        )
+
+
+def test_unpivot_then_pivot_chain():
+    frame = _frame(id=[1, 2], jan=[10, 30], feb=[20, 40])
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {"id": "src", "type": "source", "config": {"dataset_id": 1}},
+            {
+                "id": "u",
+                "type": "unpivot",
+                "config": {
+                    "id_columns": ["id"],
+                    "value_columns": ["jan", "feb"],
+                    "variable_column": "month",
+                    "value_column": "sales",
+                },
+            },
+            {
+                "id": "p",
+                "type": "pivot",
+                "config": {
+                    "index_columns": ["id"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [
+                        {"value": "jan", "output": "jan"},
+                        {"value": "feb", "output": "feb"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "u"},
+            {"id": "e2", "source": "u", "target": "p"},
+            {"id": "e3", "source": "p", "target": "out"},
+        ],
+    }
+    out = execute_preparation_graph(graph, {"src": frame})
+    assert list(out.columns) == ["id", "jan", "feb"]
+    assert out["id"].tolist() == [1, 2]
+    assert out["jan"].tolist() == [10, 30]
+    assert out["feb"].tolist() == [20, 40]

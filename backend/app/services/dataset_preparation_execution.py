@@ -49,6 +49,10 @@ PREVIEW_GROUP_BY_WARNING = (
     "Group By preview is computed from sampled source rows; "
     "aggregate values and group counts may differ in a full run."
 )
+PREVIEW_PIVOT_WARNING = (
+    "Pivot preview is computed from sampled source rows; "
+    "aggregate values and populated cells may differ in a full run."
+)
 
 _BOOLEAN_STRING_MAP = {
     "true": True,
@@ -788,6 +792,8 @@ def _execute_transform(
         return _execute_group_by(node_id, config, frame)
     if node_type == "unpivot":
         return _execute_unpivot(node_id, config, frame)
+    if node_type == "pivot":
+        return _execute_pivot(node_id, config, frame)
     raise PreparationExecutionError(
         f"Unsupported transform type '{node_type}' on '{node_id}'."
     )
@@ -902,12 +908,209 @@ def _execute_unpivot(node_id: str, config: dict[str, Any], frame: pd.DataFrame) 
     return result.loc[:, ordered].reset_index(drop=True)
 
 
-def _preview_path_includes_group_by(
+
+def _pivot_values_equal(left: object, right: object) -> bool:
+    """Compare configured pivot values against cell values without bool coercion traps."""
+    if left is None or right is None:
+        return False
+    if isinstance(left, bool) or isinstance(right, bool):
+        return False
+    try:
+        if pd.isna(left) or pd.isna(right):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return left == right
+
+
+def _aggregate_pivot_series(series: pd.Series, aggregation: str, node_id: str, column: str):
+    if aggregation in {"sum", "avg"}:
+        if pd.api.types.is_bool_dtype(series) or not pd.api.types.is_numeric_dtype(series):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregation '{aggregation}' could not be applied "
+                f"to column '{column}'."
+            )
+    try:
+        if aggregation == "sum":
+            return series.sum(min_count=1)
+        if aggregation == "avg":
+            return series.mean()
+        if aggregation == "min":
+            return series.min(skipna=True)
+        if aggregation == "max":
+            return series.max(skipna=True)
+        if aggregation == "count":
+            return int(series.count())
+    except TypeError as exc:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': aggregation '{aggregation}' could not be applied "
+            f"to column '{column}'."
+        ) from exc
+    except Exception as exc:  # noqa: BLE001 - normalize pandas aggregation failures
+        raise PreparationExecutionError(
+            f"Node '{node_id}': aggregation '{aggregation}' could not be applied "
+            f"to column '{column}' ({exc})."
+        ) from exc
+    raise PreparationExecutionError(
+        f"Node '{node_id}': unsupported aggregation '{aggregation}'."
+    )
+
+
+def _execute_pivot(node_id: str, config: dict[str, Any], frame: pd.DataFrame) -> pd.DataFrame:
+    index_columns = config.get("index_columns")
+    columns_column = config.get("columns_column")
+    value_column = config.get("value_column")
+    aggregation = config.get("aggregation")
+    pivot_values = config.get("pivot_values")
+
+    if not isinstance(index_columns, list) or not index_columns:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': pivot requires at least one index column."
+        )
+    if not isinstance(columns_column, str) or not columns_column.strip():
+        raise PreparationExecutionError(
+            f"Node '{node_id}': columns_column must be a non-empty string."
+        )
+    if not isinstance(value_column, str) or not value_column.strip():
+        raise PreparationExecutionError(
+            f"Node '{node_id}': value_column must be a non-empty string."
+        )
+    if not isinstance(aggregation, str) or aggregation not in GROUP_BY_OPS:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': aggregation must be one of sum, avg, min, max, count."
+        )
+    if not isinstance(pivot_values, list) or not pivot_values:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': pivot requires at least one pivot value."
+        )
+
+    normalized_index: list[str] = []
+    for key in index_columns:
+        if not isinstance(key, str) or not key.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': index_columns entries must be non-empty strings."
+            )
+        name = _require_column(frame, node_id, key.strip())
+        if name in normalized_index:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate index_columns entry '{name}'."
+            )
+        normalized_index.append(name)
+
+    columns_name = _require_column(frame, node_id, columns_column.strip())
+    value_name = _require_column(frame, node_id, value_column.strip())
+    if columns_name in normalized_index:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': columns_column '{columns_name}' collides with an "
+            "index_columns entry."
+        )
+    if value_name in normalized_index:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': value_column '{value_name}' collides with an "
+            "index_columns entry."
+        )
+    if columns_name == value_name:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': columns_column and value_column must be different."
+        )
+
+    parsed_values: list[tuple[object, str]] = []
+    seen_values: list[object] = []
+    outputs: list[str] = []
+    for index, row in enumerate(pivot_values):
+        if not isinstance(row, dict):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': pivot_values[{index}] must be an object."
+            )
+        value = row.get("value")
+        if isinstance(value, bool) or value is None or not isinstance(value, (str, int, float)):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': pivot_values[{index}].value must be a string or number."
+            )
+        if any(existing == value for existing in seen_values):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate pivot value {value!r}."
+            )
+        seen_values.append(value)
+        output = row.get("output")
+        if not isinstance(output, str) or not output.strip():
+            raise PreparationExecutionError(
+                f"Node '{node_id}': pivot_values[{index}].output must be a non-empty string."
+            )
+        alias = output.strip()
+        if alias in normalized_index:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': output '{alias}' collides with an index_columns entry."
+            )
+        if alias in outputs:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate pivot output '{alias}'."
+            )
+        outputs.append(alias)
+        parsed_values.append((value, alias))
+
+    # Preserve first-seen index combinations, including null index values.
+    base = frame.loc[:, normalized_index].drop_duplicates(keep="first").reset_index(drop=True)
+    result = base.copy()
+
+    for pivot_value, output_alias in parsed_values:
+        # Ignore null columns_column values; only configured scalar values contribute.
+        column_series = frame[columns_name]
+        mask = column_series.map(lambda cell, expected=pivot_value: _pivot_values_equal(cell, expected))
+        matched = frame.loc[mask]
+        if matched.empty:
+            result[output_alias] = pd.NA
+            continue
+
+        aggregated_rows: list[dict[str, Any]] = []
+        try:
+            grouped = matched.groupby(normalized_index, dropna=False, sort=False)[value_name]
+            for keys, series in grouped:
+                if not isinstance(keys, tuple):
+                    keys = (keys,)
+                row_data = {
+                    column: key_value
+                    for column, key_value in zip(normalized_index, keys, strict=True)
+                }
+                row_data[output_alias] = _aggregate_pivot_series(
+                    series, aggregation, node_id, value_name
+                )
+                aggregated_rows.append(row_data)
+        except PreparationExecutionError:
+            raise
+        except TypeError as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': aggregation '{aggregation}' could not be applied "
+                f"to column '{value_name}'."
+            ) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise PreparationExecutionError(
+                f"Node '{node_id}': pivot could not be applied ({exc})."
+            ) from exc
+
+        if not aggregated_rows:
+            result[output_alias] = pd.NA
+            continue
+
+        agg_frame = pd.DataFrame(aggregated_rows)
+        result = result.merge(agg_frame, on=normalized_index, how="left", sort=False)
+
+    ordered = normalized_index + outputs
+    missing = [column for column in ordered if column not in result.columns]
+    if missing:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': pivot result missing expected columns {missing}."
+        )
+    return result.loc[:, ordered].reset_index(drop=True)
+
+
+def _preview_path_includes_node_type(
     nodes: list[Any],
     edges: list[Any],
     target_node_id: str | None,
+    node_type: str,
 ) -> bool:
-    """True when target (or default Output) has a group_by ancestor, including itself."""
+    """True when target (or default Output) has a given ancestor type, including itself."""
     node_map: dict[str, dict[str, Any]] = {}
     for node in nodes:
         if not isinstance(node, dict) or not node.get("id"):
@@ -942,10 +1145,20 @@ def _preview_path_includes_group_by(
             continue
         seen.add(node_id)
         node = node_map.get(node_id)
-        if node is not None and node.get("type") == "group_by":
+        if node is not None and node.get("type") == node_type:
             return True
         stack.extend(parents.get(node_id, []))
     return False
+
+
+
+def _preview_path_includes_group_by(
+    nodes: list[Any],
+    edges: list[Any],
+    target_node_id: str | None,
+) -> bool:
+    """True when target (or default Output) has a group_by ancestor, including itself."""
+    return _preview_path_includes_node_type(nodes, edges, target_node_id, "group_by")
 
 
 def execute_preparation_graph(
@@ -1208,6 +1421,13 @@ def preview_preparation_graph(
         effective_node_id,
     ):
         warnings.append(PREVIEW_GROUP_BY_WARNING)
+    if _preview_path_includes_node_type(
+        data.get("nodes") or [],
+        data.get("edges") or [],
+        effective_node_id,
+        "pivot",
+    ):
+        warnings.append(PREVIEW_PIVOT_WARNING)
 
     payload = dataframe_preview_payload(result_frame, limit=limit)
     return {

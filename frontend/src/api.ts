@@ -235,6 +235,7 @@ export type DatasetPreparationNodeType =
   | "derived_column"
   | "group_by"
   | "unpivot"
+  | "pivot"
   | "output";
 
 export type DatasetPreparationNodePosition = {
