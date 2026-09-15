@@ -29,6 +29,7 @@ from app.services.dataset_preparation import (
     TRANSFORM_TYPES,
     UNION_MODES,
     PreparationValidationError,
+    _is_allowed_pivot_value,
     graph_to_dict,
     resolve_source_pins,
     validate_preparation_graph,
@@ -1023,9 +1024,10 @@ def _execute_pivot(node_id: str, config: dict[str, Any], frame: pd.DataFrame) ->
                 f"Node '{node_id}': pivot_values[{index}] must be an object."
             )
         value = row.get("value")
-        if isinstance(value, bool) or value is None or not isinstance(value, (str, int, float)):
+        if not _is_allowed_pivot_value(value):
             raise PreparationExecutionError(
-                f"Node '{node_id}': pivot_values[{index}].value must be a string or number."
+                f"Node '{node_id}': pivot_values[{index}].value must be a string or "
+                "finite number."
             )
         if any(existing == value for existing in seen_values):
             raise PreparationExecutionError(

@@ -8,6 +8,7 @@ worker — this module does not execute DataFrames.
 from __future__ import annotations
 
 import json
+import math
 from collections import defaultdict, deque
 from typing import Any
 
@@ -744,13 +745,15 @@ def _validate_unpivot_config(
 
 
 def _is_allowed_pivot_value(value: Any) -> bool:
-    """Pivot values may be JSON strings or numbers; bool/null/complex are rejected."""
+    """Pivot values may be JSON strings or finite numbers; bool/null/NaN/Inf rejected."""
     if isinstance(value, bool) or value is None:
         return False
     if isinstance(value, str):
         return True
-    if isinstance(value, (int, float)):
+    if isinstance(value, int):
         return True
+    if isinstance(value, float):
+        return math.isfinite(value)
     return False
 
 
@@ -867,8 +870,8 @@ def _validate_pivot_config(
         value = row.get("value")
         if not _is_allowed_pivot_value(value):
             errors.append(
-                f"{prefix}: value must be a string or number "
-                "(boolean and null are not supported)"
+                f"{prefix}: value must be a string or finite number "
+                "(boolean, null, NaN, and Infinity are not supported)"
             )
         else:
             if any(

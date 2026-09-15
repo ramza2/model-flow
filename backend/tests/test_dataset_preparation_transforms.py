@@ -1338,7 +1338,7 @@ def test_pivot_validation_contract():
     )
     assert any("must be an object" in e for e in errors)
 
-    for bad_value in (None, True, False, ["x"], {"a": 1}):
+    for bad_value in (None, True, False, ["x"], {"a": 1}, float("nan"), float("inf"), float("-inf")):
         errors, _ = _validate_transform_config(
             "p",
             "pivot",
@@ -1351,7 +1351,7 @@ def test_pivot_validation_contract():
             },
             strict=True,
         )
-        assert any("string or number" in e for e in errors)
+        assert any("string or finite number" in e for e in errors)
 
     errors, _ = _validate_transform_config(
         "p",
@@ -1558,6 +1558,76 @@ def test_pivot_execution_semantics():
     assert numeric["year"].tolist() == [3]
     assert numeric["sales"].tolist() == [4]
 
+    # AVG / MIN / MAX on duplicate cells.
+    agg_frame = _frame(id=[1, 1, 1], month=["jan", "jan", "jan"], sales=[10, 20, 6])
+    averaged = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "avg",
+            "pivot_values": [{"value": "jan", "output": "jan_avg"}],
+        },
+        agg_frame,
+    )
+    assert averaged["jan_avg"].tolist() == [pytest.approx(12.0)]
+
+    minimized = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "min",
+            "pivot_values": [{"value": "jan", "output": "jan_min"}],
+        },
+        agg_frame,
+    )
+    assert minimized["jan_min"].tolist() == [6]
+
+    maximized = _run(
+        "pivot",
+        {
+            "index_columns": ["id"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "max",
+            "pivot_values": [{"value": "jan", "output": "jan_max"}],
+        },
+        agg_frame,
+    )
+    assert maximized["jan_max"].tolist() == [20]
+
+    # Null index groups retained; first-seen index order (B, null, A).
+    ordered = _frame(
+        key=["B", None, "A", "B", None],
+        month=["jan", "jan", "jan", "feb", "feb"],
+        sales=[1, 2, 3, 4, 5],
+    )
+    ordered_out = _run(
+        "pivot",
+        {
+            "index_columns": ["key"],
+            "columns_column": "month",
+            "value_column": "sales",
+            "aggregation": "sum",
+            "pivot_values": [
+                {"value": "jan", "output": "jan_sales"},
+                {"value": "feb", "output": "feb_sales"},
+            ],
+        },
+        ordered,
+    )
+    assert list(ordered_out.columns) == ["key", "jan_sales", "feb_sales"]
+    assert ordered_out["key"].tolist()[0] == "B"
+    assert pd.isna(ordered_out["key"].tolist()[1])
+    assert ordered_out["key"].tolist()[2] == "A"
+    assert ordered_out["jan_sales"].tolist() == [1, 2, 3]
+    assert ordered_out["feb_sales"].tolist()[0] == 4
+    assert ordered_out["feb_sales"].tolist()[1] == 5
+    assert pd.isna(ordered_out["feb_sales"].tolist()[2])
+
 
 def test_pivot_execution_errors():
     frame = _frame(id=[1], month=["jan"], sales=[10], label=["x"])
@@ -1585,6 +1655,19 @@ def test_pivot_execution_errors():
             },
             frame,
         )
+    for bad_value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(PreparationExecutionError, match="finite number"):
+            _run(
+                "pivot",
+                {
+                    "index_columns": ["id"],
+                    "columns_column": "month",
+                    "value_column": "sales",
+                    "aggregation": "sum",
+                    "pivot_values": [{"value": bad_value, "output": "jan_sales"}],
+                },
+                frame,
+            )
 
 
 def test_unpivot_then_pivot_chain():
