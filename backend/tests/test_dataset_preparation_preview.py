@@ -947,40 +947,8 @@ def test_pivot_preview_schema_stability_and_warning(client, auth_headers):
         assert "mar_sales" in row
         assert row["mar_sales"] is None
 
-    # Group By ancestor warning still fires when Group By precedes Pivot.
-    chained = {
-        "schema_version": 1,
-        "nodes": [
-            graph["nodes"][0],
-            {
-                "id": "group_by-1",
-                "type": "group_by",
-                "config": {
-                    "group_by": ["region"],
-                    "aggregations": [{"column": "sales", "op": "sum", "output": "sales"}],
-                },
-            },
-            {
-                "id": "pivot-1",
-                "type": "pivot",
-                "config": {
-                    "index_columns": ["region"],
-                    "columns_column": "month",
-                    "value_column": "sales",
-                    "aggregation": "sum",
-                    "pivot_values": [{"value": "jan", "output": "jan_sales"}],
-                },
-            },
-            {"id": "out", "type": "output", "config": {}},
-        ],
-        "edges": [
-            {"id": "e1", "source": "src", "target": "group_by-1"},
-            {"id": "e2", "source": "group_by-1", "target": "pivot-1"},
-            {"id": "e3", "source": "pivot-1", "target": "out"},
-        ],
-    }
-    # Rebuild chain with month still present for a workable demo path is not required;
-    # instead verify missing column 400 normalization.
+    # Missing columns_column is normalized to a node-aware 400 (Group By → Pivot
+    # warning coverage lives in test_group_by_then_pivot_preview_warnings).
     bad = {
         **graph,
         "nodes": [
