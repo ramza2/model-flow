@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 2-F2 — Pivot Reshape** is the current implementation phase.
+**Enhancement Phase 2-G — Final Hardening / End-to-End Regression** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -46,17 +46,31 @@ Phase 2-F1 delivered:
 - deterministic row/column order; null value rows retained; unlisted source columns omitted
 - UnpivotInspector + shared `execute_preparation_graph()` Preview/Run path
 
-Phase 2-F2 scope (this implementation):
+Phase **2-F2 — Pivot Reshape** is complete on `main` (merged via PR #44; merge commit `d44fffa1ffde80e604c01d38f5dbee9664251057`).
+
+Phase 2-F2 delivered:
 
 - `pivot` Preparation transform (explicit `index_columns` + `columns_column` + `value_column` + `aggregation` + `pivot_values` long → wide)
 - Group By aggregation ops reused (`sum` / `avg` / `min` / `max` / `count`); no automatic pivot-value discovery
 - stable Preview/Full schemas from configured outputs; null index groups retained; first-seen index order
 - PivotInspector + shared `execute_preparation_graph()` Preview/Run path
 
-Not in this Phase 2-F2 slice (still on the Phase 2 roadmap, not marked complete):
+Phase **2-F — Pivot / Unpivot Reshape** is complete on `main`.
 
-- Phase **2-G — Phase 2 final hardening / end-to-end regression** (pending)
-- Phase 2-F as a whole remains incomplete until this Pivot PR merges
+Phase 2-G scope (this implementation):
+
+- final Phase 2 coverage audit and regression consolidation
+- representative multi-source Preparation full-data path: Join → Filter → Derived Column → Group By → Unpivot → Pivot → Output
+- Run 1 exact source pins + Parquet output DatasetVersion V1 + lineage
+- source `latest` update followed by Run 2 output DatasetVersion V2
+- historical V1 immutability after V2 exists
+- TrainingJob explicitly pinned to historical V1 while output Dataset latest is V2
+- TrainingRunner exact V1 artifact consumption; no fallback to V2/latest
+- existing frontend historical **Train this result**, Dataset Detail, and JobCreate exact-version regressions retained instead of duplicating UX
+
+Phase 2-A through 2-F are complete. Phase 2 completes after Phase 2-G merges and the merge commit CI succeeds.
+
+Verification coverage for this final phase is documented in [`phase-2g-verification.md`](./phase-2g-verification.md).
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -78,6 +92,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 2-F2 merge (PR #44): `d44fffa1ffde80e604c01d38f5dbee9664251057`
+- Phase 2-F1 merge (PR #43): `e848a9c7a53bc9e791294e60ec4e6baf95409f37`
 - Phase 2-E merge (PR #42): `bb8df0212641f70308ca1dfa77cddc8e3aff5f77`
 - Phase 2-D merge (PR #41): `50de4dc08657e7432699652465a42b1564c327d0`
 - Phase 2-C merge (PR #40): `bd0e8db3319a88d57411be6ad67204f4d77b6d77`
@@ -235,9 +251,11 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Implement **Phase 2-F2 — Pivot Reshape** (`pivot` transform end-to-end on Dataset Preparation). Next planned Phase 2 item after that: **Phase 2-G — Phase 2 final hardening / end-to-end regression** (pending; do not mark Phase 2-F complete until this Pivot PR merges). Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Complete **Phase 2-G — Phase 2 final hardening / end-to-end regression**. After Phase 2-G merges and `main` CI passes, Phase 2 is complete and the next planned product phase is **Phase 3 — End-to-End Pipeline UX**. Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
 Known limitation of Phase 2-C (still applies): Pandas in-memory execution only (no Spark/Dask/distributed/chunked processing).
+
+Known object-store atomicity limitation retained for a later hardening slice: if artifact upload succeeds but the final DB commit fails, an orphaned object may require cleanup/reconciliation. Phase 2-G does not introduce a new GC/reconciliation subsystem.
 
 Known UX debt retained from Phase 1.5 (not in scope for Phase 1.5 cleanup):
 
