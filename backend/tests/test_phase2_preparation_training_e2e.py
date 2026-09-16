@@ -30,7 +30,6 @@ from app.services import mlflow_service, registry_service, storage
 from app.services.training import TrainingJobContext, TrainingResult
 from app.workers import runner
 
-
 engine = create_engine(
     "sqlite+pysqlite:///:memory:",
     connect_args={"check_same_thread": False},
@@ -63,10 +62,16 @@ def setup_api(monkeypatch):
             key, data
         ),
     )
-    monkeypatch.setattr(storage, "download_bytes", lambda bucket, key: artifact_store[key])
-    monkeypatch.setattr(storage, "delete_object", lambda bucket, key: artifact_store.pop(key, None))
+    monkeypatch.setattr(
+        storage, "download_bytes", lambda bucket, key: artifact_store[key]
+    )
+    monkeypatch.setattr(
+        storage, "delete_object", lambda bucket, key: artifact_store.pop(key, None)
+    )
     monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-phase2-g")
-    monkeypatch.setattr(registry_service, "_mlflow_logged_feature_schema", lambda run_id: [])
+    monkeypatch.setattr(
+        registry_service, "_mlflow_logged_feature_schema", lambda run_id: []
+    )
     monkeypatch.setattr(runner, "SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("app.db.session.SessionLocal", TestingSessionLocal)
 
@@ -195,7 +200,11 @@ def _create_and_process_run(
     return run_body, live
 
 
-def _phase2_graph(orders_dataset_id: int, segments_dataset_id: int, segments_version_id: int) -> dict:
+def _phase2_graph(
+    orders_dataset_id: int,
+    segments_dataset_id: int,
+    segments_version_id: int,
+) -> dict:
     return {
         "schema_version": 1,
         "nodes": [
@@ -322,7 +331,7 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
     auth_headers,
     monkeypatch,
 ):
-    """Phase 2 golden path stays reproducible after a newer prepared version exists."""
+    """Prepared V1 remains the exact training input after latest advances to V2."""
     project_id = _create_project(client, auth_headers)
 
     orders_v1 = _upload_dataset(
@@ -368,7 +377,9 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
     assert run1.status == DatasetPreparationRunStatus.succeeded, run1.error_message
     assert run1.output_dataset_version_id is not None
 
-    run1_pins = {row["dataset_id"]: row["dataset_version_id"] for row in run1_body["inputs"]}
+    run1_pins = {
+        row["dataset_id"]: row["dataset_version_id"] for row in run1_body["inputs"]
+    }
     assert run1_pins == {
         orders_v1["id"]: orders_v1["version"]["id"],
         segments_v1["id"]: segments_v1["version"]["id"],
@@ -394,13 +405,19 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
         v1_frame = _version_frame(v1)
         v1_version_number = v1.version
 
-    assert v1_frame["segment"].tolist() == ["metro", "regional", "coastal", "inland"]
+    assert v1_frame["segment"].tolist() == [
+        "metro",
+        "regional",
+        "coastal",
+        "inland",
+    ]
     assert v1_frame["category"].tolist() == ["A", "B", "A", "B"]
     assert v1_frame["adjusted_total"].tolist() == pytest.approx([275, 495, 715, 935])
     assert v1_frame["margin_avg"].tolist() == pytest.approx([12.5, 22.5, 32.5, 42.5])
 
     lineage = client.get(
-        f"/api/v1/projects/{project_id}/datasets/{output_dataset_id}/versions/{v1_version_number}/lineage",
+        f"/api/v1/projects/{project_id}/datasets/{output_dataset_id}/versions/"
+        f"{v1_version_number}/lineage",
         headers=auth_headers,
     )
     assert lineage.status_code == 200, lineage.text
@@ -439,7 +456,9 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
     assert run2.output_dataset_version_id is not None
     assert run2.output_dataset_version_id != run1.output_dataset_version_id
 
-    run2_pins = {row["dataset_id"]: row["dataset_version_id"] for row in run2_body["inputs"]}
+    run2_pins = {
+        row["dataset_id"]: row["dataset_version_id"] for row in run2_body["inputs"]
+    }
     assert run2_pins == {
         orders_v1["id"]: orders_v2["version"]["id"],
         segments_v1["id"]: segments_v1["version"]["id"],
@@ -493,9 +512,9 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
             "dataset_version_id": run1.output_dataset_version_id,
             "target_column": "adjusted_total",
             "feature_columns": ["margin_avg"],
-            "algorithm": "random_forest",
+            "algorithm": "ridge",
             "problem_type": "regression",
-            "hyperparameters": {"n_estimators": 5, "max_depth": 2},
+            "hyperparameters": {"alpha": 1.0},
         },
     )
     assert create_job.status_code == 201, create_job.text
@@ -510,7 +529,9 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
         assert job is not None
         assert job.status == JobStatus.succeeded, getattr(job, "error_message", None)
         assert job.dataset_version_id == run1.output_dataset_version_id
-        assert db.get(Dataset, output_dataset_id).latest_version == 2
+        output_dataset = db.get(Dataset, output_dataset_id)
+        assert output_dataset is not None
+        assert output_dataset.latest_version == 2
 
     assert len(captured) == 1
     ctx = captured[0]
@@ -522,5 +543,9 @@ def test_phase2_full_preparation_versions_and_training_pin_exact_v1(
 
     training_frame = pd.read_parquet(io.BytesIO(ctx.csv_bytes))
     pd.testing.assert_frame_equal(training_frame, v1_frame)
-    assert training_frame["adjusted_total"].tolist() == pytest.approx([275, 495, 715, 935])
-    assert training_frame["adjusted_total"].tolist() != v2_frame["adjusted_total"].tolist()
+    assert training_frame["adjusted_total"].tolist() == pytest.approx(
+        [275, 495, 715, 935]
+    )
+    assert training_frame["adjusted_total"].tolist() != v2_frame[
+        "adjusted_total"
+    ].tolist()
