@@ -26,6 +26,7 @@ import DeploymentApiUsage from "./pages/DeploymentApiUsage";
 import BatchInference from "./pages/BatchInference";
 import Schedules from "./pages/Schedules";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./pages/Pipelines";
+import PipelineDatasetHandoff from "./pages/PipelineDatasetHandoff";
 import Monitoring from "./pages/Monitoring";
 import Alerts from "./pages/Alerts";
 import AuditLogs from "./pages/AuditLogs";
@@ -55,6 +56,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
     <Route path="/projects/:projectId/jobs/:jobId" element={<JobDetail />} />
     <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+    <Route path="/projects/:projectId/pipelines/from-dataset" element={<PipelineDatasetHandoff />} />
     <Route path="/projects/:projectId/pipelines/:pipelineId" element={<PipelineBuilder />} />
     <Route path="/projects/:projectId/pipeline-runs/:runId" element={<PipelineRunDetail />} />
     <Route path="/projects/:projectId/schedules" element={<Schedules />} />
