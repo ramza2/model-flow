@@ -147,6 +147,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [unread, setUnread] = useState(0);
   const [navOpen, setNavOpen] = useState(false);
+  const [, forceProjectPickerSync] = useState(0);
   const isDrawerViewport = useDrawerViewport();
   const sidebarRef = useRef<HTMLElement | null>(null);
   const navToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -278,11 +279,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             onChange={(event) => {
               const id = Number(event.target.value);
               if (!confirmUnsavedNavigation()) {
-                const select = event.currentTarget;
-                const previousValue = selectedProject ? String(selectedProject.id) : "";
-                queueMicrotask(() => {
-                  select.value = previousValue;
-                });
+                forceProjectPickerSync((version) => version + 1);
                 return;
               }
               selectProject(id);
