@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 2-G — Final Hardening / End-to-End Regression** is the current implementation phase.
+**Enhancement Phase 3-A — Lifecycle Pipeline UX Foundation** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -57,7 +57,9 @@ Phase 2-F2 delivered:
 
 Phase **2-F — Pivot / Unpivot Reshape** is complete on `main`.
 
-Phase 2-G scope (this implementation):
+Phase **2-G — Final Hardening / End-to-End Regression** is complete on `main` (merged via PR #45; merge commit `b847f658f2f8bf78c9c5ad878750730da711775c`; merge commit CI PASS).
+
+Phase 2-G delivered:
 
 - final Phase 2 coverage audit and regression consolidation
 - representative multi-source Preparation full-data path: Join → Filter → Derived Column → Group By → Unpivot → Pivot → Output
@@ -68,9 +70,18 @@ Phase 2-G scope (this implementation):
 - TrainingRunner exact V1 artifact consumption; no fallback to V2/latest
 - existing frontend historical **Train this result**, Dataset Detail, and JobCreate exact-version regressions retained instead of duplicating UX
 
-Phase 2-A through 2-F are complete. Phase 2 completes after Phase 2-G merges and the merge commit CI succeeds.
+**Enhancement Phase 2 — Dataset Preparation is complete on `main`.**
 
-Verification coverage for this final phase is documented in [`phase-2g-verification.md`](./phase-2g-verification.md).
+Verification coverage for the final Phase 2 hardening is documented in [`phase-2g-verification.md`](./phase-2g-verification.md).
+
+Phase 3-A scope (current implementation):
+
+- align Pipeline Node Library groups to the end-to-end lifecycle: Source & Transform → Quality → Train → Registry & Governance → Deploy → Predict → Monitor
+- make the existing `dataset_load` step explicitly communicate exact DatasetVersion input, including materialized Dataset Preparation outputs
+- add shared lifecycle stage helpers for subsequent Pipeline Builder and Pipeline Run UX slices
+- preserve the existing backend Pipeline node/runtime contract; no new `preparation` runtime node, API, DB schema, or migration
+
+The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3 is not complete until the planned final hardening slice merges and `main` CI succeeds.
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -92,6 +103,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 2-G merge (PR #45): `b847f658f2f8bf78c9c5ad878750730da711775c`
 - Phase 2-F2 merge (PR #44): `d44fffa1ffde80e604c01d38f5dbee9664251057`
 - Phase 2-F1 merge (PR #43): `e848a9c7a53bc9e791294e60ec4e6baf95409f37`
 - Phase 2-E merge (PR #42): `bb8df0212641f70308ca1dfa77cddc8e3aff5f77`
@@ -251,13 +263,12 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 2-G — Phase 2 final hardening / end-to-end regression**. After Phase 2-G merges and `main` CI passes, Phase 2 is complete and the next planned product phase is **Phase 3 — End-to-End Pipeline UX**. Multi-dataset composition stays in Dataset Preparation; TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Complete **Phase 3-A — Lifecycle Pipeline UX Foundation**. After Phase 3-A merges, continue with the prepared-data handoff and lifecycle navigation slice defined in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
-Known limitation of Phase 2-C (still applies): Pandas in-memory execution only (no Spark/Dask/distributed/chunked processing).
+Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
-Known object-store atomicity limitation retained for a later hardening slice: if artifact upload succeeds but the final DB commit fails, an orphaned object may require cleanup/reconciliation. Phase 2-G does not introduce a new GC/reconciliation subsystem.
+Known object-store atomicity limitation retained for a later hardening slice: if artifact upload succeeds but the final DB commit fails, an orphaned object may require cleanup/reconciliation.
 
-Known UX debt retained from Phase 1.5 (not in scope for Phase 1.5 cleanup):
+Known UX debt retained from Phase 1.5:
 
 - full SPA / sidebar / project-switch unsaved navigation guard
-- Pipeline node drag/reposition (tracked for Phase 3 — End-to-End Pipeline UX backlog)
