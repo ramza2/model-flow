@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useLocation } from "react-router-dom";
 import { api, type Project, type ProjectRole, type User } from "./api";
 
 const PROJECT_KEY = "modelflow_project_id";
@@ -23,6 +24,7 @@ type ProjectValue = {
 const ProjectContext = createContext<ProjectValue | null>(null);
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(() => {
     const stored = localStorage.getItem(PROJECT_KEY);
@@ -55,6 +57,18 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refreshProjects().catch(() => undefined);
   }, [refreshProjects]);
+
+  useEffect(() => {
+    const match = location.pathname.match(/^\/projects\/(\d+)(?:\/|$)/);
+    if (!match || projects.length === 0) return;
+    const routeProjectId = Number(match[1]);
+    if (!projects.some((project) => project.id === routeProjectId)) return;
+    setSelectedId((current) => {
+      if (current === routeProjectId) return current;
+      localStorage.setItem(PROJECT_KEY, String(routeProjectId));
+      return routeProjectId;
+    });
+  }, [location.pathname, projects]);
 
   const selectProject = useCallback((id: number | null) => {
     setSelectedId(id);
