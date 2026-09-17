@@ -278,7 +278,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
             onChange={(event) => {
               const id = Number(event.target.value);
               if (!confirmUnsavedNavigation()) {
-                event.currentTarget.value = selectedProject ? String(selectedProject.id) : "";
+                const select = event.currentTarget;
+                const previousValue = selectedProject ? String(selectedProject.id) : "";
+                queueMicrotask(() => {
+                  select.value = previousValue;
+                });
                 return;
               }
               selectProject(id);
