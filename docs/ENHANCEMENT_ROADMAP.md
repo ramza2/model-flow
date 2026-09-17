@@ -63,7 +63,7 @@ Implemented scope:
 
 ## Phase 1.5 — UX Architecture & Frontend UX Refactoring
 
-**Status:** current planning / implementation phase
+**Status:** complete
 
 **Goal:** establish a coherent product-wide UX architecture and incrementally refactor the existing React frontend before broader data-prep and pipeline expansion.
 
@@ -97,12 +97,12 @@ Phase 1.5 does **not** require a Figma handoff. The current production React fro
 
 ### Implementation slices
 
-1. **Phase 1.5-A — Shell & shared design system**
-2. **Phase 1.5-B — Pipeline UX**
-3. **Phase 1.5-C — ML lifecycle UX**
-4. **Phase 1.5-D — Operations & overview UX**
+1. **Phase 1.5-A — Shell & shared design system** — complete
+2. **Phase 1.5-B — Pipeline UX** — complete
+3. **Phase 1.5-C — ML lifecycle UX** — complete
+4. **Phase 1.5-D — Operations & overview UX** — complete
 
-A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed to render the correct historical graph for a Pipeline Run. This is a compatibility/readability endpoint only, not a runtime-semantic change.
+A minimal read-only PipelineVersion lookup was added in Phase 1.5-B to render the correct historical graph for a Pipeline Run. This remains a compatibility/readability endpoint only, not a runtime-semantic change.
 
 ### Principles
 
@@ -118,6 +118,10 @@ A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed
 
 ## Phase 2 — Multi-dataset & Visual Data Preparation
 
+**Status:** complete (Phase 2-G merged via PR #45; `main` CI PASS)
+
+Implemented scope:
+
 - Multiple input datasets per workflow
 - Join / Union
 - Filter / Select / Rename / Type Cast
@@ -125,7 +129,7 @@ A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed
 - Group By (SUM / AVG / MIN / MAX / COUNT) — Phase 2-E (complete; PR #42)
 - Unpivot (wide → long) — Phase 2-F1 (complete; PR #43)
 - Pivot (long → wide) — Phase 2-F2 (complete; PR #44)
-- Phase 2 final hardening / end-to-end regression — Phase 2-G (**current**)
+- final hardening / end-to-end exact-version regression — Phase 2-G (complete; PR #45)
 
 **Depends on:** stable Phase 1.5 pipeline interaction patterns and existing dataset versioning.
 
@@ -133,11 +137,13 @@ Phase 2-D (Training Integration: exact prepared DatasetVersion → TrainingJob) 
 Phase 2-E (Group By Aggregation) is complete on `main` (PR #42).
 Phase 2-F1 (Unpivot Reshape) is complete on `main` (PR #43).
 Phase 2-F2 (Pivot Reshape) is complete on `main` (PR #44).
-Phase 2-A through Phase 2-F are complete. Phase 2 completes after Phase 2-G final hardening merges and its `main` CI passes.
+Phase 2-G (Final Hardening / End-to-End Regression) is complete on `main` (PR #45; merge `b847f658f2f8bf78c9c5ad878750730da711775c`).
 
 ---
 
 ## Phase 3 — End-to-End Pipeline UX
+
+**Status:** current — Phase 3-A
 
 Expand the stabilized Pipeline Canvas across the full lifecycle and the new Phase 2 data-preparation capabilities:
 
@@ -146,8 +152,29 @@ Expand the stabilized Pipeline Canvas across the full lifecycle and the new Phas
 - shared Node / Inspector / validation / run-state UX across expanded steps
 - consistent error and progress surfacing
 - end-to-end lifecycle navigation and lineage
+- exact prepared DatasetVersion handoff into Pipeline without duplicating Dataset Preparation execution semantics
 
-**Depends on:** Phase 1.5 UX architecture and Phase 2 transform capabilities.
+Implementation slices:
+
+1. **Phase 3-A — Lifecycle Pipeline UX Foundation** — current
+   - lifecycle-aligned Node Library taxonomy
+   - shared lifecycle-stage helpers
+   - existing `dataset_load` explicitly represents exact DatasetVersion input, including materialized Dataset Preparation output
+2. **Phase 3-B — Prepared-data Handoff & Lifecycle Navigation** — planned
+   - explicit Preparation-result → Pipeline authoring handoff
+   - exact historical DatasetVersion preservation
+   - lifecycle next-action navigation across related screens
+3. **Phase 3-C — Unified Run-state, Error, Progress & Lineage UX** — planned
+   - lifecycle-oriented run summaries and node-state presentation
+   - node-aware error/recovery cues
+   - cross-lifecycle lineage visibility using existing relationships
+4. **Phase 3-D — Final Hardening / Browser Regression** — planned
+   - representative browser regression, RBAC/read-only, navigation guard, responsive/accessibility verification
+   - full integrated verification before Phase 3 completion
+
+See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation boundary and acceptance rules.
+
+**Depends on:** Phase 1.5 UX architecture and completed Phase 2 transform/materialization capabilities.
 
 ---
 
