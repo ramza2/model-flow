@@ -1,7 +1,7 @@
 # Phase 3 — End-to-End Pipeline UX
 
-Status: **Implementation plan — Phase 3-A current**  
-Baseline: `main@b847f658f2f8bf78c9c5ad878750730da711775c`  
+Status: **Implementation plan — Phase 3-B current**  
+Baseline: `main@f30a9541c30c8722009e31839e819c30d6d69de9`  
 Depends on: Phase 1.5 UX architecture and completed Phase 2 Dataset Preparation
 
 ## Purpose
@@ -16,7 +16,7 @@ The functional source of truth remains the existing backend Pipeline node/runtim
 
 Dataset Preparation remains the place for multi-dataset composition and tabular transformations.
 
-A successful Preparation run materializes an immutable rectangular `DatasetVersion`. Pipeline does **not** add a second Preparation execution engine or a `preparation` runtime node in Phase 3-A. Instead, the existing `dataset_load` step consumes the exact materialized DatasetVersion.
+A successful Preparation run materializes an immutable rectangular `DatasetVersion`. Pipeline does **not** add a second Preparation execution engine or a `preparation` runtime node. Instead, the existing `dataset_load` step consumes the exact materialized DatasetVersion.
 
 ```text
 Dataset(s)
@@ -50,14 +50,16 @@ No backend node type is added or renamed by this taxonomy.
 
 ## Phase 3-A — Lifecycle Pipeline UX Foundation
 
-Current slice.
+**Complete on `main` via PR #46 (`f30a9541c30c8722009e31839e819c30d6d69de9`).**
 
-- align Node Library groups with the end-to-end lifecycle rather than implementation-oriented categories
-- make the existing `dataset_load` affordance explicitly describe exact DatasetVersion input, including materialized Dataset Preparation outputs
-- add shared lifecycle stage helpers so Builder, validation/run-state UI, and future navigation use one taxonomy
-- preserve all graph serialization, validation, RBAC, publish/run, scheduling, condition branch, and runtime semantics
+Delivered:
 
-Acceptance:
+- aligned Node Library groups with the end-to-end lifecycle rather than implementation-oriented categories
+- made the existing `dataset_load` affordance explicitly describe exact DatasetVersion input, including materialized Dataset Preparation outputs
+- added shared lifecycle stage helpers so Builder, validation/run-state UI, and future navigation use one taxonomy
+- preserved all graph serialization, validation, RBAC, publish/run, scheduling, condition branch, and runtime semantics
+
+Acceptance confirmed:
 
 - every existing runtime node appears exactly once in the lifecycle Node Library
 - lifecycle stage mapping is deterministic and unit tested
@@ -66,14 +68,32 @@ Acceptance:
 
 ## Phase 3-B — Prepared-data Handoff & Lifecycle Navigation
 
-Planned after 3-A.
+**Current implementation slice.**
 
-- explicit user handoff from a succeeded materialized Preparation result into Pipeline authoring
-- create/open Pipeline flow preconfigured to reference the exact prepared DatasetVersion where practical
-- lifecycle-oriented next-action links between Preparation, Dataset, Pipeline, Training/Model, Deployment, Prediction, and Monitoring screens using existing resource relationships
-- preserve historical exact-version selection; never resolve a user-selected historical result to latest
+- expose succeeded materialized Preparation runs as exact DatasetVersion handoff points into Pipeline authoring
+- create a Pipeline with an initial `dataset_load` node preconfigured to the exact selected DatasetVersion
+- preserve historical results even when the Dataset has a newer latest version
+- reject malformed, incomplete, missing, or wrong-dataset handoff versions without falling back to latest
+- keep exact input context readable for read-only users while withholding mutation actions according to existing Pipeline RBAC
+- reuse established lifecycle navigation already present in Dataset, Training Job, Experiment, Model Version, Deployment, Prediction, and Monitoring screens rather than duplicating parallel navigation concepts
 
-This slice may add small frontend routing/query-state helpers. A backend read endpoint is allowed only when persisted lineage cannot otherwise be represented correctly.
+Implementation boundary:
+
+- handoff is frontend routing/query state plus existing project-scoped Dataset/Pipeline APIs
+- no new Pipeline runtime node
+- no backend read endpoint is required because the exact DatasetVersion and ownership can be verified with existing Dataset APIs
+- no automatic Pipeline execution or TrainingJob creation
+
+Acceptance:
+
+- a historical succeeded Preparation Run that produced DatasetVersion V1 can create a Pipeline pinned to V1 even if the output Dataset latest is V2+
+- the generated graph contains one `dataset_load` node with the exact `dataset_id` and `dataset_version_id`
+- invalid explicit handoff input never resolves to latest
+- failed/non-materialized Preparation runs do not expose Pipeline handoff
+- users without Pipeline mutation permission do not receive the create action
+- existing downstream lifecycle navigation remains intact
+
+Phase 3-B remains incomplete while its Draft PR is open. It completes only after merge and the resulting `main` CI succeeds.
 
 ## Phase 3-C — Unified Run-state, Error, Progress & Lineage UX
 
