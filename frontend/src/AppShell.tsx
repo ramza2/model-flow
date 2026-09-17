@@ -3,6 +3,10 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api, type Alert } from "./api";
 import { useAuth } from "./AuthContext";
 import { hasProjectAdminRole, useProject } from "./ProjectContext";
+import {
+  confirmUnsavedNavigation,
+  shouldGuardAnchorNavigation,
+} from "./unsavedChanges";
 
 type NavItem = { label: string; to: string; icon: string; end?: boolean };
 type ProjectNavItem = { label: string; path: string; icon: string; end?: boolean };
@@ -171,6 +175,32 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [selectedProject]);
 
   useEffect(() => {
+    function guardLinkNavigation(event: MouseEvent) {
+      if (
+        event.defaultPrevented
+        || event.button !== 0
+        || event.metaKey
+        || event.ctrlKey
+        || event.shiftKey
+        || event.altKey
+      ) {
+        return;
+      }
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (!shouldGuardAnchorNavigation(anchor)) return;
+      if (confirmUnsavedNavigation()) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    document.addEventListener("click", guardLinkNavigation, true);
+    return () => document.removeEventListener("click", guardLinkNavigation, true);
+  }, []);
+
+  useEffect(() => {
     if (!isDrawerViewport || !navOpen) {
       return;
     }
@@ -210,6 +240,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }, [drawerClosed]);
 
   async function signOut() {
+    if (!confirmUnsavedNavigation()) return;
     await logout();
     navigate("/login", { replace: true });
   }
@@ -246,6 +277,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
             disabled={projectsLoading || projects.length === 0}
             onChange={(event) => {
               const id = Number(event.target.value);
+              if (!confirmUnsavedNavigation()) {
+                event.currentTarget.value = selectedProject ? String(selectedProject.id) : "";
+                return;
+              }
               selectProject(id);
               navigate(`/projects/${id}`);
             }}
