@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 3-A — Lifecycle Pipeline UX Foundation** is the current implementation phase.
+**Enhancement Phase 3-B — Prepared-data Handoff & Lifecycle Navigation** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -74,14 +74,25 @@ Phase 2-G delivered:
 
 Verification coverage for the final Phase 2 hardening is documented in [`phase-2g-verification.md`](./phase-2g-verification.md).
 
-Phase 3-A scope (current implementation):
+Phase **3-A — Lifecycle Pipeline UX Foundation** is complete on `main` (merged via PR #46; merge commit `f30a9541c30c8722009e31839e819c30d6d69de9`; merge commit CI PASS).
 
-- align Pipeline Node Library groups to the end-to-end lifecycle: Source & Transform → Quality → Train → Registry & Governance → Deploy → Predict → Monitor
-- make the existing `dataset_load` step explicitly communicate exact DatasetVersion input, including materialized Dataset Preparation outputs
-- add shared lifecycle stage helpers for subsequent Pipeline Builder and Pipeline Run UX slices
-- preserve the existing backend Pipeline node/runtime contract; no new `preparation` runtime node, API, DB schema, or migration
+Phase 3-A delivered:
 
-The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3 is not complete until the planned final hardening slice merges and `main` CI succeeds.
+- lifecycle-aligned Pipeline Node Library: Source & Transform → Quality → Train → Registry & Governance → Deploy → Predict → Monitor
+- shared lifecycle stage helpers and deterministic catalog coverage tests
+- Dataset Load copy that explicitly accepts an exact DatasetVersion, including a materialized Dataset Preparation output
+- existing Pipeline runtime contract preserved; no new `preparation` runtime node, backend API, DB schema, or migration
+
+Phase 3-B scope (current implementation):
+
+- expose succeeded materialized Preparation runs as exact historical DatasetVersion inputs for Pipeline authoring
+- create a Pipeline from one exact DatasetVersion with the initial `dataset_load` node pinned to that exact version
+- reject malformed, missing, or wrong-dataset handoff versions without resolving to latest
+- preserve readable exact-version context for read-only users while withholding Pipeline mutation actions according to existing RBAC
+- reuse existing lifecycle links already delivered in Phase 1.5 for Dataset → Training → Experiment/Registry → Deployment → Prediction/Monitoring instead of duplicating them
+- no backend/API/runtime/DB/migration changes
+
+The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3-B remains current until this Draft PR merges and its resulting `main` CI succeeds. Phase 3 is not complete until the planned final hardening slice merges and `main` CI succeeds.
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -103,6 +114,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 3-A merge (PR #46): `f30a9541c30c8722009e31839e819c30d6d69de9`
 - Phase 2-G merge (PR #45): `b847f658f2f8bf78c9c5ad878750730da711775c`
 - Phase 2-F2 merge (PR #44): `d44fffa1ffde80e604c01d38f5dbee9664251057`
 - Phase 2-F1 merge (PR #43): `e848a9c7a53bc9e791294e60ec4e6baf95409f37`
@@ -263,7 +275,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 3-A — Lifecycle Pipeline UX Foundation**. After Phase 3-A merges, continue with the prepared-data handoff and lifecycle navigation slice defined in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Complete **Phase 3-B — Prepared-data Handoff & Lifecycle Navigation**. After Phase 3-B merges and the merge commit CI passes, continue with **Phase 3-C — Unified Run-state, Error, Progress & Lineage UX**. Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
