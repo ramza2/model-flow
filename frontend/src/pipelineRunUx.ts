@@ -231,8 +231,10 @@ export function pipelineRunLineageItems(
   version: PipelineVersion | null | undefined,
   projectId: string | number,
 ): LineageItem[] {
-  const outputs = Object.values(run.node_states || {}).map((state) => state.output);
-  const outputBag = outputs.length ? outputs : Object.values(run.node_artifacts || {});
+  const outputBag = [
+    ...Object.values(run.node_states || {}).map((state) => state.output),
+    ...Object.values(run.node_artifacts || {}),
+  ];
   const datasetNode = version?.graph?.nodes.find((node) => graphNodeType(node) === "dataset_load");
   const datasetConfig = ((datasetNode?.data || {}) as Record<string, unknown>).config;
   const config = datasetConfig && typeof datasetConfig === "object"
