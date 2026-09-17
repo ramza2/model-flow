@@ -23,7 +23,8 @@ export function parsePipelineCreateHandoff(
   const requested =
     searchParams.has("datasetId") ||
     searchParams.has("datasetVersionId") ||
-    searchParams.get("from") === "preparation";
+    searchParams.get("from") === "preparation" ||
+    searchParams.get("from") === "dataset";
 
   if (!requested) return { requested: false, handoff: null, error: null };
 
@@ -75,10 +76,9 @@ export function pipelineCreateUrlForDataset(
   source: "preparation" | "dataset" = "preparation",
 ): string {
   const query = new URLSearchParams({
-    create: "1",
     datasetId: String(datasetId),
     datasetVersionId: String(datasetVersionId),
     from: source,
   });
-  return `/projects/${projectId}/pipelines?${query.toString()}`;
+  return `/projects/${projectId}/pipelines/from-dataset?${query.toString()}`;
 }
