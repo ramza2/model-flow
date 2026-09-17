@@ -95,6 +95,9 @@ test("unsaved pipeline edits guard sidebar navigation and project switching", as
   await expect(page.getByTestId("pipeline-builder-lifecycle-summary")).toBeVisible();
   await expect(page.getByTestId("pipeline-library-dataset_load")).toBeVisible();
 
+  const projectSelect = page.locator("#project-select");
+  await expect(projectSelect).toHaveValue(String(projectAId));
+
   await page.getByTestId("pipeline-library-dataset_load").click();
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
 
@@ -106,7 +109,6 @@ test("unsaved pipeline edits guard sidebar navigation and project switching", as
   await expect(page).toHaveURL(new RegExp(`/projects/${projectAId}/pipelines/${pipelineId}$`));
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
 
-  const projectSelect = page.locator("#project-select");
   page.once("dialog", async (dialog) => {
     expect(dialog.message()).toContain("Unsaved pipeline changes");
     await dialog.dismiss();
