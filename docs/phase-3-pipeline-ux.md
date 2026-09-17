@@ -1,7 +1,7 @@
 # Phase 3 — End-to-End Pipeline UX
 
-Status: **Implementation plan — Phase 3-B current**  
-Baseline: `main@f30a9541c30c8722009e31839e819c30d6d69de9`  
+Status: **Implementation plan — Phase 3-C current**  
+Baseline: `main@ffbe248a999c5fca1f26c54cd03de1d3eaebc643`  
 Depends on: Phase 1.5 UX architecture and completed Phase 2 Dataset Preparation
 
 ## Purpose
@@ -68,43 +68,61 @@ Acceptance confirmed:
 
 ## Phase 3-B — Prepared-data Handoff & Lifecycle Navigation
 
-**Current implementation slice.**
+**Complete on `main` via PR #47 (`ffbe248a999c5fca1f26c54cd03de1d3eaebc643`; merge commit CI PASS).**
 
-- expose succeeded materialized Preparation runs as exact DatasetVersion handoff points into Pipeline authoring
-- create a Pipeline with an initial `dataset_load` node preconfigured to the exact selected DatasetVersion
-- preserve historical results even when the Dataset has a newer latest version
-- reject malformed, incomplete, missing, or wrong-dataset handoff versions without falling back to latest
-- keep exact input context readable for read-only users while withholding mutation actions according to existing Pipeline RBAC
-- reuse established lifecycle navigation already present in Dataset, Training Job, Experiment, Model Version, Deployment, Prediction, and Monitoring screens rather than duplicating parallel navigation concepts
+Delivered:
 
-Implementation boundary:
+- succeeded materialized Preparation runs expose exact DatasetVersion handoff points into Pipeline authoring
+- Pipeline creation starts with one `dataset_load` node pinned to the exact selected DatasetVersion
+- historical results remain exact even when the Dataset has a newer latest version
+- malformed, incomplete, missing, or wrong-dataset handoffs are rejected without latest fallback
+- exact input context remains readable for read-only users while Pipeline mutations stay under existing RBAC
+- existing Dataset → Training → Experiment/Registry → Deployment → Prediction/Monitoring navigation is reused rather than duplicated
+
+Implementation boundary retained:
 
 - handoff is frontend routing/query state plus existing project-scoped Dataset/Pipeline APIs
 - no new Pipeline runtime node
-- no backend read endpoint is required because the exact DatasetVersion and ownership can be verified with existing Dataset APIs
+- no backend read endpoint was required
 - no automatic Pipeline execution or TrainingJob creation
 
-Acceptance:
+Acceptance confirmed:
 
-- a historical succeeded Preparation Run that produced DatasetVersion V1 can create a Pipeline pinned to V1 even if the output Dataset latest is V2+
-- the generated graph contains one `dataset_load` node with the exact `dataset_id` and `dataset_version_id`
-- invalid explicit handoff input never resolves to latest
+- historical Preparation Run output V1 can create a Pipeline pinned to V1 even if the output Dataset latest is V2+
+- generated graph contains one `dataset_load` node with the exact `dataset_id` and `dataset_version_id`
+- invalid explicit handoff never resolves to latest
 - failed/non-materialized Preparation runs do not expose Pipeline handoff
 - users without Pipeline mutation permission do not receive the create action
-- existing downstream lifecycle navigation remains intact
-
-Phase 3-B remains incomplete while its Draft PR is open. It completes only after merge and the resulting `main` CI succeeds.
+- downstream lifecycle navigation remains intact
 
 ## Phase 3-C — Unified Run-state, Error, Progress & Lineage UX
 
-Planned after 3-B.
+**Current implementation slice.**
 
-- use the lifecycle taxonomy for run-state summaries across Pipeline Builder and Pipeline Run
-- consistent pending/running/succeeded/failed/skipped/reused presentation
-- node-aware error focus and recovery cues
-- improve cross-lifecycle lineage visibility from exact DatasetVersion through Training/Model/Deployment where existing APIs expose relationships
+- use the shared lifecycle taxonomy for Builder coverage and Pipeline Run execution summaries
+- normalize pending/running/succeeded/failed/skipped/reused/cancelled status presentation without changing backend status semantics
+- show terminal-step progress and stage-level state from the persisted historical PipelineVersion graph
+- surface the first failed node as the recovery focus while retaining existing failed-node auto-selection and rerun-from-failed behavior
+- expose cross-lifecycle lineage recorded in graph configuration and persisted node artifacts: exact DatasetVersion, Training Job, Experiment Run, Model Version, Deployment, Batch Inference, and Alert
+- keep runtime retry/reuse, branch execution, artifacts, logging, and polling backend-owned
 
-Runtime retry/reuse semantics remain backend-owned.
+Implementation boundary:
+
+- presentation is frontend-only and wraps the existing Pipeline Builder / Pipeline Run Detail instead of replacing execution UX
+- lineage is derived only from existing Pipeline graph configuration, node state output, and persisted node artifacts
+- no new backend API, DB schema, migration, runtime state, retry rule, or artifact format
+- historical PipelineVersion remains the source of truth for run-stage mapping
+
+Acceptance:
+
+- the same lifecycle taxonomy is used in Builder and Run summaries
+- runtime status aliases map to one deterministic UI vocabulary with targeted tests
+- stage progress is computed from the historical graph and node states, including reused/skipped states as terminal
+- failed runs identify the first failed node and provide an explicit recovery cue without changing rerun semantics
+- exact DatasetVersion → Training Job → Experiment/Model → Deployment lineage links appear when those ids exist in persisted output/artifacts
+- a run from an older PipelineVersion never borrows the current Pipeline graph for stage mapping
+
+Phase 3-C remains incomplete while its Draft PR is open. It completes only after merge and the resulting `main` CI succeeds.
 
 ## Phase 3-D — Final Hardening / Browser Regression
 
