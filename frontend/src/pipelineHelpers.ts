@@ -17,50 +17,146 @@ export const PIPELINE_NODE_TYPES = [
 
 export type PipelineNodeType = (typeof PIPELINE_NODE_TYPES)[number];
 
+export type PipelineLifecycleStageId =
+  | "source_transform"
+  | "quality"
+  | "train"
+  | "registry"
+  | "deploy"
+  | "predict"
+  | "monitor";
+
+export const PIPELINE_LIFECYCLE_STAGES: {
+  id: PipelineLifecycleStageId;
+  label: string;
+  description: string;
+  nodeTypes: PipelineNodeType[];
+}[] = [
+  {
+    id: "source_transform",
+    label: "Source & Transform",
+    description: "Load an exact DatasetVersion and prepare it for downstream model work.",
+    nodeTypes: ["dataset_load", "preprocessing", "split"],
+  },
+  {
+    id: "quality",
+    label: "Quality",
+    description: "Evaluate data quality before model execution.",
+    nodeTypes: ["quality_check"],
+  },
+  {
+    id: "train",
+    label: "Train",
+    description: "Train and evaluate model results.",
+    nodeTypes: ["training", "evaluation"],
+  },
+  {
+    id: "registry",
+    label: "Registry & Governance",
+    description: "Branch on gates, register model versions, and request approval.",
+    nodeTypes: ["condition", "model_registration", "approval_request"],
+  },
+  {
+    id: "deploy",
+    label: "Deploy",
+    description: "Publish an approved model to an online endpoint.",
+    nodeTypes: ["endpoint_deployment"],
+  },
+  {
+    id: "predict",
+    label: "Predict",
+    description: "Run batch prediction from a model and exact dataset version.",
+    nodeTypes: ["batch_prediction"],
+  },
+  {
+    id: "monitor",
+    label: "Monitor",
+    description: "Surface lifecycle and operational outcomes as notifications or alerts.",
+    nodeTypes: ["notification"],
+  },
+];
+
+export function lifecycleStageForNodeType(
+  nodeType: string,
+): (typeof PIPELINE_LIFECYCLE_STAGES)[number] | null {
+  return (
+    PIPELINE_LIFECYCLE_STAGES.find((stage) =>
+      stage.nodeTypes.includes(nodeType as PipelineNodeType),
+    ) || null
+  );
+}
+
+export function lifecycleCoverage(nodeTypes: Iterable<string>): Record<PipelineLifecycleStageId, number> {
+  const coverage = Object.fromEntries(
+    PIPELINE_LIFECYCLE_STAGES.map((stage) => [stage.id, 0]),
+  ) as Record<PipelineLifecycleStageId, number>;
+  for (const nodeType of nodeTypes) {
+    const stage = lifecycleStageForNodeType(nodeType);
+    if (stage) coverage[stage.id] += 1;
+  }
+  return coverage;
+}
+
 export const PIPELINE_NODE_LIBRARY: {
   category: string;
   items: { type: PipelineNodeType; description: string; icon: string }[];
 }[] = [
   {
-    category: "Data",
+    category: "1. Source & Transform",
     items: [
-      { type: "dataset_load", description: "Load a dataset version into the graph.", icon: "▤" },
-      { type: "quality_check", description: "Run dataset quality rules.", icon: "✓" },
-      { type: "split", description: "Train / validation / test split.", icon: "⧉" },
-      { type: "preprocessing", description: "Advanced preprocessing step.", icon: "⚙" },
+      {
+        type: "dataset_load",
+        description:
+          "Load an exact DatasetVersion, including a materialized Dataset Preparation output.",
+        icon: "▤",
+      },
+      {
+        type: "preprocessing",
+        description: "Transform or preprocess data before training.",
+        icon: "⚙",
+      },
+      { type: "split", description: "Create deterministic train / validation / test splits.", icon: "⧉" },
     ],
   },
   {
-    category: "Train",
+    category: "2. Quality",
+    items: [{ type: "quality_check", description: "Run dataset quality rules.", icon: "✓" }],
+  },
+  {
+    category: "3. Train",
     items: [
       { type: "training", description: "Train a model estimator.", icon: "▶" },
       { type: "evaluation", description: "Evaluate metrics and gates.", icon: "◉" },
     ],
   },
   {
-    category: "Logic",
+    category: "4. Registry & Governance",
     items: [
       { type: "condition", description: "Branch on TRUE / FALSE / ALWAYS.", icon: "◇" },
-    ],
-  },
-  {
-    category: "Model Lifecycle",
-    items: [
-      { type: "model_registration", description: "Register a trained model.", icon: "◆" },
+      { type: "model_registration", description: "Register a trained model version.", icon: "◆" },
       { type: "approval_request", description: "Request model approval.", icon: "✎" },
     ],
   },
   {
-    category: "Serving",
+    category: "5. Deploy",
     items: [
       { type: "endpoint_deployment", description: "Deploy an online endpoint.", icon: "↗" },
+    ],
+  },
+  {
+    category: "6. Predict",
+    items: [
       { type: "batch_prediction", description: "Run batch inference.", icon: "⇩" },
     ],
   },
   {
-    category: "Operations",
+    category: "7. Monitor",
     items: [
-      { type: "notification", description: "Send an alert or notification.", icon: "⚑" },
+      {
+        type: "notification",
+        description: "Surface a lifecycle or operational result as an alert or notification.",
+        icon: "⚑",
+      },
     ],
   },
 ];
@@ -248,8 +344,8 @@ export function nodeConfigWarnings(
       break;
     case "training": {
       const hasTargets =
-        (typeof config.target_column === "string" && config.target_column.trim() !== "")
-        || (Array.isArray(config.target_columns) && config.target_columns.length > 0);
+        (typeof config.target_column === "string" && config.target_column.trim() !== "") ||
+        (Array.isArray(config.target_columns) && config.target_columns.length > 0);
       if (!hasTargets) warnings.push("Target column required");
       if (!config.algorithm) warnings.push("Algorithm required");
       if (!Array.isArray(config.feature_columns) || config.feature_columns.length === 0) {
