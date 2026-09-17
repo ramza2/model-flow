@@ -124,14 +124,16 @@ A minimal read-only PipelineVersion lookup may be added in Phase 1.5-B if needed
 - Computed Column
 - Group By (SUM / AVG / MIN / MAX / COUNT) — Phase 2-E (complete; PR #42)
 - Unpivot (wide → long) — Phase 2-F1 (complete; PR #43)
-- Pivot (long → wide) — Phase 2-F2 (in progress; Phase 2-F incomplete until Pivot lands)
-- Phase 2 final hardening / end-to-end regression — Phase 2-G (pending)
+- Pivot (long → wide) — Phase 2-F2 (complete; PR #44)
+- Phase 2 final hardening / end-to-end regression — Phase 2-G (**current**)
 
 **Depends on:** stable Phase 1.5 pipeline interaction patterns and existing dataset versioning.
 
 Phase 2-D (Training Integration: exact prepared DatasetVersion → TrainingJob) is complete on `main` (PR #41).
 Phase 2-E (Group By Aggregation) is complete on `main` (PR #42).
 Phase 2-F1 (Unpivot Reshape) is complete on `main` (PR #43).
+Phase 2-F2 (Pivot Reshape) is complete on `main` (PR #44).
+Phase 2-A through Phase 2-F are complete. Phase 2 completes after Phase 2-G final hardening merges and its `main` CI passes.
 
 ---
 
