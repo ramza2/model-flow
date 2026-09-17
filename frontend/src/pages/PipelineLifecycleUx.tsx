@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Pipeline, type PipelineRun, type PipelineVersion } from "../api";
 import { ErrorNotice, Loading, StatusBadge } from "../components";
@@ -8,6 +8,7 @@ import {
   summarizePipelineRunLifecycle,
   type LifecycleStageSummary,
 } from "../pipelineRunUx";
+import { setUnsavedChangesActive } from "../unsavedChanges";
 import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
 
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "canceled"]);
@@ -32,6 +33,33 @@ function StageStrip({ stages, showStatus }: { stages: LifecycleStageSummary[]; s
           ) : null}
         </div>
       ))}
+    </div>
+  );
+}
+
+function PipelineBuilderWithUnsavedBridge() {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    const sync = () => {
+      setUnsavedChangesActive(Boolean(host.querySelector("[data-testid='pipeline-dirty-badge']")));
+    };
+    const observer = new MutationObserver(sync);
+    observer.observe(host, { childList: true, subtree: true });
+    sync();
+
+    return () => {
+      observer.disconnect();
+      setUnsavedChangesActive(false);
+    };
+  }, []);
+
+  return (
+    <div ref={hostRef} data-testid="pipeline-builder-unsaved-bridge">
+      <PipelineBuilder />
     </div>
   );
 }
@@ -104,7 +132,7 @@ export function PipelineBuilderLifecyclePage() {
           </>
         )}
       </section>
-      <PipelineBuilder />
+      <PipelineBuilderWithUnsavedBridge />
     </>
   );
 }
