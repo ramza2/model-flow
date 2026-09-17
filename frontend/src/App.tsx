@@ -9,7 +9,7 @@ import ProjectCreate from "./pages/ProjectCreate";
 import ProjectOverview from "./pages/ProjectOverview";
 import DataSources from "./pages/DataSources";
 import Datasets from "./pages/Datasets";
-import PreparationBuilder from "./pages/PreparationBuilder";
+import PreparationLifecyclePage from "./pages/PreparationLifecyclePage";
 import Preparations from "./pages/Preparations";
 import DatasetDetail from "./pages/DatasetDetail";
 import JobCreate from "./pages/JobCreate";
@@ -26,6 +26,7 @@ import DeploymentApiUsage from "./pages/DeploymentApiUsage";
 import BatchInference from "./pages/BatchInference";
 import Schedules from "./pages/Schedules";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./pages/Pipelines";
+import PipelineDatasetHandoff from "./pages/PipelineDatasetHandoff";
 import Monitoring from "./pages/Monitoring";
 import Alerts from "./pages/Alerts";
 import AuditLogs from "./pages/AuditLogs";
@@ -47,7 +48,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/datasets" element={<Datasets />} />
     <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
     <Route path="/projects/:projectId/preparations" element={<Preparations />} />
-    <Route path="/projects/:projectId/preparations/:preparationId" element={<PreparationBuilder />} />
+    <Route path="/projects/:projectId/preparations/:preparationId" element={<PreparationLifecyclePage />} />
     <Route path="/projects/:projectId/experiments" element={<Runs />} />
     <Route path="/projects/:projectId/experiments/runs/:runId" element={<RunDetail />} />
     <Route path="/projects/:projectId/experiments/compare" element={<RunCompare />} />
@@ -55,6 +56,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
     <Route path="/projects/:projectId/jobs/:jobId" element={<JobDetail />} />
     <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+    <Route path="/projects/:projectId/pipelines/from-dataset" element={<PipelineDatasetHandoff />} />
     <Route path="/projects/:projectId/pipelines/:pipelineId" element={<PipelineBuilder />} />
     <Route path="/projects/:projectId/pipeline-runs/:runId" element={<PipelineRunDetail />} />
     <Route path="/projects/:projectId/schedules" element={<Schedules />} />
