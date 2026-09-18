@@ -41,6 +41,7 @@ class ProjectRole(str, enum.Enum):
 class DataSourceType(str, enum.Enum):
     file = "file"
     postgres = "postgres"
+    rest_api = "rest_api"
 
 
 class ModelLifecycle(str, enum.Enum):
