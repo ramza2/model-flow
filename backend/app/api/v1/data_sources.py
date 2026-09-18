@@ -336,15 +336,17 @@ def list_schemas(
     db: Session = Depends(get_db),
 ):
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
-    connector = connector_for_source(source)
+    connector = None
     try:
+        connector = connector_for_source(source)
         return connector.list_schemas()
     except Exception as exc:
         raise friendly(
             502, "Could not list schemas.", "Test the data source connection."
         ) from exc
     finally:
-        connector.close()
+        if connector is not None:
+            connector.close()
 
 
 @router.get("/projects/{project_id}/data-sources/{source_id}/tables")
@@ -356,15 +358,17 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
-    connector = connector_for_source(source)
+    connector = None
     try:
+        connector = connector_for_source(source)
         return connector.list_tables(schema=schema)
     except Exception as exc:
         raise friendly(
             502, "Could not list tables.", "Test the data source connection."
         ) from exc
     finally:
-        connector.close()
+        if connector is not None:
+            connector.close()
 
 
 @router.get("/projects/{project_id}/data-sources/{source_id}/preview")
@@ -379,8 +383,9 @@ def preview_data_source(
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
     if not source.is_active:
         raise friendly(409, "This data source is inactive.")
-    connector = connector_for_source(source)
+    connector = None
     try:
+        connector = connector_for_source(source)
         return connector.preview(resource, limit=limit).as_dict()
     except ConnectorOperationNotSupported as exc:
         raise friendly(400, str(exc)) from exc
@@ -391,7 +396,8 @@ def preview_data_source(
             "Check the resource path, response shape, and connection settings.",
         ) from exc
     finally:
-        connector.close()
+        if connector is not None:
+            connector.close()
 
 
 @router.post("/projects/{project_id}/data-sources/{source_id}/import", status_code=202)
