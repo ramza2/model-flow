@@ -525,7 +525,9 @@ export default function DataSources() {
       return;
     }
     let tableOrQuery = "";
-    if (importState.mode === "table") {
+    if (source.source_type === "rest_api") {
+      tableOrQuery = importState.resource.trim() || "/";
+    } else if (importState.mode === "table") {
       if (!importState.schema || !importState.table) {
         setError("Select a schema and table to import.");
         return;
@@ -607,10 +609,13 @@ export default function DataSources() {
             <select
               value={sourceType}
               disabled={Boolean(editing)}
-              onChange={(event) => setSourceType(event.target.value as "file" | "postgres")}
+              onChange={(event) =>
+                setSourceType(event.target.value as "file" | "postgres" | "rest_api")
+              }
               data-testid="data-source-type"
             >
               <option value="postgres">PostgreSQL</option>
+              <option value="rest_api">REST API</option>
               <option value="file">Managed file source</option>
             </select>
           </label>
