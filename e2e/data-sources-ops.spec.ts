@@ -301,3 +301,55 @@ test("typed postgres form connection test shows error styling on refused connect
   await expect(card.getByTestId(/last-test-message-/)).toHaveClass(/err/);
   await expect(card.getByTestId(/last-test-message-/)).toContainText(/Connection failed/i);
 });
+
+
+test("REST API source test preview and import use the existing dataset lifecycle", async ({ page }) => {
+  const projectName = `rest-source-${Date.now()}`;
+  const sourceName = `rest-health-${Date.now()}`;
+  const datasetName = `rest-health-dataset-${Date.now()}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(sourceName);
+  await page.getByTestId("data-source-type").selectOption("rest_api");
+  await page.getByTestId("data-source-rest-base-url").fill("http://backend:8000");
+  await page.getByTestId("data-source-rest-resource-path").fill("/api/v1/health");
+  await page.getByTestId("data-source-rest-auth-type").selectOption("none");
+  await page.getByTestId("data-source-save").click();
+
+  const card = page.locator("article.source-card").filter({ hasText: sourceName });
+  await expect(card).toBeVisible();
+  await expect(card).toContainText("REST API");
+
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: /JSON response received/i }),
+  ).toBeVisible({ timeout: 30_000 });
+
+  await card.getByRole("button", { name: "Import data" }).click();
+  const panel = page.getByTestId(/import-panel-/);
+  await expect(panel.getByText("Import from REST API")).toBeVisible();
+  await expect(panel.getByTestId("import-rest-resource")).toHaveValue("/api/v1/health");
+  await panel.getByTestId("import-dataset-name").fill(datasetName);
+
+  await panel.getByTestId("import-rest-preview").click();
+  const preview = panel.getByTestId("import-rest-preview-table");
+  await expect(preview).toBeVisible({ timeout: 30_000 });
+  await expect(preview).toContainText("status");
+  await expect(preview).toContainText("backend");
+
+  await panel.getByTestId("import-submit").click();
+  await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({
+    timeout: 120_000,
+  });
+  await panel.getByTestId("open-imported-dataset").click();
+  await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({
+    timeout: 30_000,
+  });
+});
