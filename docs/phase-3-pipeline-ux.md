@@ -1,7 +1,7 @@
 # Phase 3 — End-to-End Pipeline UX
 
-Status: **Implementation plan — Phase 3-D current**  
-Baseline: `main@33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`  
+Status: **Complete**  
+Completion baseline: `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4` (PR #50; post-merge CI #245 PASS)  
 Depends on: Phase 1.5 UX architecture and completed Phase 2 Dataset Preparation
 
 ## Purpose
@@ -125,32 +125,37 @@ Acceptance confirmed:
 
 ## Phase 3-D — Final Hardening / Browser Regression
 
-**Current final Phase 3 slice.**
+**Complete on `main` via PR #50 (`ff6c1f92752263c5684f4d3311d377d05b27f4e4`; post-merge CI #245 / run `35289545125` PASS).**
 
-- close the remaining unsaved Pipeline navigation gap beyond the existing browser `beforeunload` and Builder-local back-link confirmation
-- guard same-origin SPA/sidebar navigation and project switching while Pipeline edits are dirty
-- preserve in-page anchors, external links, modified-click behavior, and existing Builder-local back-link confirmation without duplicate prompts
-- run browser regression for lifecycle Builder read-only RBAC and responsive drawer behavior
-- confirm the expanded lifecycle UI does not introduce horizontal document overflow at the supported drawer breakpoint
-- retain all Phase 3-A/B/C unit and integration regressions plus the repository full verification gate
+Delivered:
 
-Implementation boundary:
+- closed the unsaved Pipeline navigation gap beyond the existing browser `beforeunload` and Builder-local back-link confirmation
+- guarded same-origin SPA/sidebar navigation, project switching, and sign-out while Pipeline edits are dirty
+- synchronized route project ids with `ProjectContext` so direct project URLs and the global project picker stay consistent
+- preserved in-page anchors, external links, modified-click behavior, and existing Builder-local back-link confirmation without duplicate prompts
+- added browser regression for lifecycle Builder read-only RBAC and responsive drawer behavior
+- confirmed the expanded lifecycle UI does not introduce horizontal document overflow at the supported drawer breakpoint
+- retained all Phase 3-A/B/C unit and integration regressions plus the repository full verification gate
+
+Implementation boundary retained:
 
 - frontend navigation hardening only; no Pipeline execution, backend API, DB schema, migration, artifact, retry/reuse, or scheduling changes
 - existing `useBeforeUnload` remains the hard-refresh/browser-close protection
 - the shared app guard covers same-origin SPA links and project-picker navigation while the Pipeline Builder reports unsaved state
 - existing read-only role rules remain authoritative
 
-Acceptance:
+Acceptance confirmed:
 
 - dismissing the unsaved confirmation keeps the user on the dirty Pipeline and preserves the dirty state
 - accepting the confirmation allows sidebar navigation or project switching
+- direct project URLs synchronize the global project picker to the route project
 - Viewer can inspect lifecycle coverage and graph configuration but receives no Builder mutation controls
 - at drawer viewport width, navigation toggle state/focus behavior remains accessible and lifecycle content remains usable without page-level horizontal overflow
 - all existing Phase 3 exact-version, run-state, recovery, lineage, RBAC, and Pipeline runtime regressions remain green
-- full repository verification and exact PR HEAD CI pass
+- pre-merge exact HEAD CI #244 / run `35202693765` PASS
+- post-merge `main` CI #245 / run `35289545125` PASS
 
-Phase 3-D remains incomplete while its Draft PR is open. **Phase 3 completes only after Phase 3-D merges and the resulting `main` CI succeeds.**
+**Enhancement Phase 3 — End-to-End Pipeline UX is complete.**
 
 ## Explicitly out of scope for Phase 3
 
@@ -167,4 +172,4 @@ Phase 3-D remains incomplete while its Draft PR is open. **Phase 3 completes onl
 
 ## Verification rule
 
-Each Phase 3 slice ships as an independent Draft PR from the latest `main`, with targeted regression tests plus the repository full verification gate. Phase 3 is complete only after Phase 3-D merges and the resulting `main` CI succeeds.
+Each Phase 3 slice shipped as an independent Draft PR from the latest `main`, with targeted regression tests plus the repository full verification gate. Phase 3 completed after Phase 3-D merged and the resulting `main` CI #245 passed.

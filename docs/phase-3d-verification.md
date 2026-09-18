@@ -1,8 +1,11 @@
 # Phase 3-D Verification — Final Hardening / Browser Regression
 
-Status: **Draft PR verification baseline**
+Status: **Complete**
 
-Baseline: `main@33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`
+Start baseline: `main@33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`  
+Pre-merge exact HEAD: `0ed343b8df0ef491a7759b3e75279bdb0409b44a` — CI #244 / run `35202693765` PASS  
+Merged via PR #50: `ff6c1f92752263c5684f4d3311d377d05b27f4e4`  
+Post-merge `main` CI: #245 / run `35289545125` PASS
 
 ## Purpose
 
@@ -78,7 +81,7 @@ Existing Phase 3-A/B/C unit suites remain authoritative for:
 
 The Phase 3-C lifecycle Run wrapper and the underlying historical Run Detail currently maintain independent active-run polling loops. This duplicates a small read-only request while a run is active but does not change state correctness, retry behavior, or persisted data. Consolidating those readers would require widening the existing Run Detail component contract and is retained as a later frontend performance cleanup rather than expanding the final Phase 3 hardening diff.
 
-## Merge gate
+## Completion evidence
 
 Before merge:
 
@@ -87,12 +90,13 @@ Before merge:
 - frontend production build PASS
 - all Playwright E2E PASS, including `phase3-pipeline-hardening.spec.ts`
 - repository `./scripts/verify.sh` PASS
-- exact PR HEAD GitHub Actions PASS
-- actual diff final review finds no blocker
+- exact PR HEAD `0ed343b8df0ef491a7759b3e75279bdb0409b44a` GitHub Actions CI #244 / run `35202693765` PASS
+- actual diff final review PASS / no blocker
 
 After merge:
 
-- new `main` commit is verified
-- post-merge `main` CI PASS
+- PR #50 squash-merged to `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`
+- post-merge `main` CI #245 / run `35289545125` PASS
+- `Full verification gate` PASS
 
-Only after the post-merge `main` CI passes is **Enhancement Phase 3 — End-to-End Pipeline UX** complete.
+**Enhancement Phase 3 — End-to-End Pipeline UX is complete.**
