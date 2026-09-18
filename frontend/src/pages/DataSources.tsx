@@ -996,7 +996,8 @@ export default function DataSources() {
                       {busy === `test-${source.id}` ? "Testing…" : "Test connection"}
                     </button>
                   )}
-                  {source.is_active && source.source_type === "postgres" && (
+                  {source.is_active &&
+                    (source.source_type === "postgres" || source.source_type === "rest_api") && (
                     <button
                       className="btn"
                       onClick={() => openImport(source)}
@@ -1043,32 +1044,34 @@ export default function DataSources() {
                   <div className="panel-title">
                     <div>
                       <span className="eyebrow">Import</span>
-                      <h3>Import from PostgreSQL</h3>
+                      <h3>{source.source_type === "rest_api" ? "Import from REST API" : "Import from PostgreSQL"}</h3>
                     </div>
                     <button className="btn link" type="button" onClick={closeImport}>
                       Close
                     </button>
                   </div>
-                  <div className="row-actions" role="tablist" aria-label="Import mode">
-                    <button
-                      type="button"
-                      className={importState.mode === "table" ? "btn" : "btn secondary"}
-                      onClick={() => setImportState((current) => ({ ...current, mode: "table" }))}
-                      data-testid="import-mode-table"
-                      disabled={importBusy}
-                    >
-                      Table
-                    </button>
-                    <button
-                      type="button"
-                      className={importState.mode === "sql" ? "btn" : "btn secondary"}
-                      onClick={() => setImportState((current) => ({ ...current, mode: "sql" }))}
-                      data-testid="import-mode-sql"
-                      disabled={importBusy}
-                    >
-                      SQL Query
-                    </button>
-                  </div>
+                  {source.source_type === "postgres" && (
+                    <div className="row-actions" role="tablist" aria-label="Import mode">
+                      <button
+                        type="button"
+                        className={importState.mode === "table" ? "btn" : "btn secondary"}
+                        onClick={() => setImportState((current) => ({ ...current, mode: "table" }))}
+                        data-testid="import-mode-table"
+                        disabled={importBusy}
+                      >
+                        Table
+                      </button>
+                      <button
+                        type="button"
+                        className={importState.mode === "sql" ? "btn" : "btn secondary"}
+                        onClick={() => setImportState((current) => ({ ...current, mode: "sql" }))}
+                        data-testid="import-mode-sql"
+                        disabled={importBusy}
+                      >
+                        SQL Query
+                      </button>
+                    </div>
+                  )}
                   <label>
                     Dataset name
                     <input
@@ -1081,7 +1084,62 @@ export default function DataSources() {
                       data-testid="import-dataset-name"
                     />
                   </label>
-                  {importState.mode === "table" ? (
+                  {source.source_type === "rest_api" ? (
+                    <>
+                      <label>
+                        Resource path
+                        <input
+                          value={importState.resource}
+                          onChange={(event) =>
+                            setImportState((current) => ({
+                              ...current,
+                              resource: event.target.value,
+                              preview: null,
+                              previewError: "",
+                            }))
+                          }
+                          placeholder="/customers?status=active"
+                          disabled={importBusy}
+                          data-testid="import-rest-resource"
+                        />
+                        <small>Relative GET path under the configured Base URL.</small>
+                      </label>
+                      <div className="row-actions">
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => previewRestResource(source)}
+                          disabled={importBusy || importState.previewLoading}
+                          data-testid="import-rest-preview"
+                        >
+                          {importState.previewLoading ? "Loading preview…" : "Preview response"}
+                        </button>
+                      </div>
+                      {importState.previewError && <ErrorNotice message={importState.previewError} />}
+                      {importState.preview && (
+                        <div className="table-wrap" data-testid="import-rest-preview-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                {importState.preview.columns.map((column) => (
+                                  <th key={column}>{column}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importState.preview.rows.map((row, index) => (
+                                <tr key={index}>
+                                  {importState.preview!.columns.map((column) => (
+                                    <td key={column}>{String(row[column] ?? "")}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  ) : importState.mode === "table" ? (
                     <>
                       <label>
                         Schema
