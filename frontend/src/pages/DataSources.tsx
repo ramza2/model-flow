@@ -223,6 +223,38 @@ export default function DataSources() {
           });
           setSuccess("Data source created.");
         }
+      } else if (sourceType === "rest_api") {
+        const payload = buildRestApiSavePayload({
+          form: restApiForm,
+          bearerToken,
+          apiKey,
+          editing: Boolean(editing),
+          previousAuthType: previousRestAuthType,
+          hasSecrets: Boolean(editing?.has_secrets),
+        });
+        if (editing) {
+          await api(`/projects/${projectId}/data-sources/${editing.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name,
+              config: payload.config,
+              secrets: payload.secrets,
+              ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
+            }),
+          });
+          setSuccess("Data source updated.");
+        } else {
+          await api(`/projects/${projectId}/data-sources`, {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              source_type: sourceType,
+              config: payload.config,
+              secrets: payload.secrets,
+            }),
+          });
+          setSuccess("Data source created.");
+        }
       } else {
         const parsed = JSON.parse(config) as Record<string, unknown>;
         if (editing) {
