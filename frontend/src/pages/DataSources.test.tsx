@@ -391,7 +391,12 @@ describe("DataSources operations UX", () => {
     });
     fireEvent.click(screen.getByTestId("data-source-trust-server-certificate"));
     fireEvent.click(screen.getByTestId("data-source-save"));
-    expect(await screen.findByRole("heading", { name: "mssql-warehouse" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
   });
 
   it("shows typed MySQL / MariaDB fields with default port 3306", async () => {

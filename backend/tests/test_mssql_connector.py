@@ -281,8 +281,9 @@ def test_live_mssql_connection_discovery_preview_and_read():
     assert frame.iloc[0]["name"] == "Ada Lovelace"
 
     with_frame = connector.read_frame(
-        "WITH top AS (SELECT name FROM dbo.customers WHERE segment = 'growth') "
-        "SELECT name FROM top"
+        "WITH growth_customers AS ("
+        "SELECT name FROM dbo.customers WHERE segment = 'growth'"
+        ") SELECT name FROM growth_customers"
     )
     assert with_frame.iloc[0]["name"] == "Grace Hopper"
 
