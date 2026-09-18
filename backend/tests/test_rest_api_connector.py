@@ -118,3 +118,32 @@ def test_rest_connector_reports_missing_data_path():
 
     with pytest.raises(ValueError, match="data_path segment"):
         connector.read_frame("")
+
+
+
+def test_rest_connector_rejects_credentials_embedded_in_base_url():
+    with pytest.raises(ValueError, match="credentials"):
+        RestApiConnector(
+            {
+                "base_url": "https://user:password@api.example.com/v1",
+                "auth_type": "none",
+            },
+            {},
+        )
+
+
+def test_rest_connector_rejects_resource_path_escape():
+    connector = RestApiConnector(
+        {
+            "base_url": "https://api.example.com/v1",
+            "resource_path": "/customers",
+            "auth_type": "none",
+        },
+        {},
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=[{"id": 1}])
+        ),
+    )
+
+    with pytest.raises(ValueError, match="remain under"):
+        connector.read_frame("../admin")
