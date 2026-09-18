@@ -36,6 +36,51 @@ credentials and change the bootstrap password immediately. Compose rejects empty
 required credentials. CI generates ephemeral values and must not depend on
 production secrets or paid external services.
 
+
+
+### Repository development workflow
+
+These rules apply to all new enhancement work unless a task explicitly overrides them.
+
+- Start from the latest `origin/main`; fetch first and report the actual base SHA used.
+- Work only on a feature branch. Never commit directly to `main`.
+- Create a **Draft PR** after implementation and verification. Do not mark Ready, merge, tag, release, or deploy unless explicitly requested.
+- Preserve existing API/auth/RBAC/runtime behavior unless the task explicitly changes it.
+- Do not weaken assertions, add broad skips, or remove regression coverage just to make CI pass. Fix the underlying defect.
+- Run targeted tests while developing, then run `./scripts/verify.sh` before considering the implementation complete.
+- Treat GitHub Actions on the exact PR HEAD as part of the verification evidence; do not claim CI PASS from an older SHA.
+- For completion reports, include branch, base SHA, final HEAD SHA, Draft PR URL/number, changed-file count, targeted/full verification results, Alembic head when applicable, known limitations, and an explicit statement that the PR was not merged.
+- Keep scope reviewable. Do not fold unrelated refactors, broad redesigns, or future-phase features into the current slice.
+- Update roadmap/progress/decision/verification docs when the implementation changes the documented architecture or phase status.
+- Current phase/status must come from repository docs (especially `docs/PROGRESS.md` and `docs/ENHANCEMENT_ROADMAP.md`), not from stale assumptions in prompts.
+
+### Data-source connector architecture
+
+Phase 4 establishes the reusable Data Source connector architecture. Read these before connector work:
+
+- `docs/phase-4-connectors.md`
+- `docs/ENHANCEMENT_ROADMAP.md`
+- `docs/PROGRESS.md`
+- `docs/DECISIONS.md`
+- `backend/app/connectors/base.py`
+- `backend/app/connectors/registry.py`
+- existing connector implementations and their regression tests
+
+Connector rules:
+
+- Route source-specific connection test, discovery, preview, and tabular reads through the connector registry/contract. Do not add new source-specific orchestration directly to API or worker modules unless the connector contract genuinely cannot represent it.
+- Reuse the existing ModelFlow orchestration for project scope, RBAC, audit, Data Source lifecycle, `DataImportJob`, immutable `DatasetVersion` materialization, and lineage. New connector types must not invent parallel job/version tables or bypass that lifecycle.
+- Credentials are encrypted secrets. Never return plaintext passwords, DSNs, bearer tokens, API keys, or equivalent secrets through API responses, audit summaries, frontend edit state, logs, or errors.
+- When editing a source, blank secret fields should preserve saved credentials only when the mode/auth semantics make that unambiguous. Mode switches must clear stale secrets that could override the newly selected configuration.
+- Prefer typed connection forms for common connectors. Keep raw/advanced configuration as progressive disclosure rather than the default path.
+- For SQLAlchemy-backed relational connectors, share only behavior that is truly common (identifier quoting, safe read-query validation, inspector discovery, bounded preview/read patterns). Keep driver, URL construction, default ports, connect args, transaction/read-only semantics, and database-specific schema behavior in the concrete connector.
+- Preserve or strengthen read-only protections. Table imports and read-only `SELECT`/supported `WITH` queries may be allowed; mutations, DDL, multiple statements, stored-procedure execution, and write-back must not be enabled implicitly.
+- Existing PostgreSQL and REST connector behavior is regression-critical. Connector refactors must keep their current tests and backward-compatibility semantics green.
+- If a connector claims support for a real database engine, add a disposable integration fixture when practical. Do not rely only on mocks for connection/discovery/import behavior. Pin external service images; do not use `latest`.
+- Integrated verification must not depend on paid services, production credentials, or uncontrolled public internet resources.
+- New connector support should include backend contract tests, worker/import lineage tests, frontend form/import tests, and a representative browser E2E where practical.
+- Security boundaries (secret redaction, URL/host handling, read-only behavior, response/query limits, error sanitization) are part of connector acceptance, not optional polish.
+
 ### Phase 1.5 frontend UX
 
 For every Phase 1.5 frontend task, read these documents before changing user-visible behavior:
