@@ -181,13 +181,25 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 
 ## Phase 4 — Connectors
 
-**Status:** next
+**Status:** current — Phase 4-A
 
-- REST API data source
-- SQL connector abstraction layer
-- MySQL / MariaDB
-- Microsoft SQL Server
-- Oracle
+Expand the existing Data Source lifecycle behind reusable connector contracts while preserving encrypted credentials, project scoping, import jobs, immutable DatasetVersions, and lineage.
+
+Implementation slices:
+
+1. **Phase 4-A — Connector Foundation + REST API Source** — current
+   - shared connector registry for test/discovery/preview/import reads
+   - move existing PostgreSQL operations behind the connector contract without changing PostgreSQL UX/runtime behavior
+   - REST API source with typed configuration and encrypted Bearer/API-key credentials
+   - GET-only JSON response preview and import through the existing DataImportJob → DatasetVersion path
+2. **Phase 4-B — MySQL / MariaDB** — planned
+3. **Phase 4-C — Microsoft SQL Server** — planned
+4. **Phase 4-D — Oracle** — planned
+5. **Phase 4-E — Final Hardening / Connector Regression** — planned
+
+Phase 4-A intentionally excludes automatic REST pagination, mutating HTTP methods, streaming ingestion, and arbitrary connector code.
+
+See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-A implementation boundary.
 
 **Depends on:** existing encrypted credential and import patterns plus stable data-source UX.
 
