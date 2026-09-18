@@ -397,8 +397,20 @@ export default function DataSources() {
     setSuccess("");
     setImportingId(source.id);
     const next = emptyImportState();
-    setImportState(next);
     void loadRecentJobs(source.id);
+
+    if (source.source_type === "rest_api") {
+      const resource = String(source.config.resource_path ?? "").trim() || "/";
+      setImportState({
+        ...next,
+        mode: "resource",
+        resource,
+        datasetName: suggestDatasetName(resource.split("?")[0].split("/").filter(Boolean).pop() || "api-data"),
+      });
+      return;
+    }
+
+    setImportState(next);
     setImportState((current) => ({ ...current, schemasLoading: true, schemasError: "" }));
     try {
       const schemas = await api<string[]>(`/projects/${projectId}/data-sources/${source.id}/schemas`);
@@ -416,6 +428,33 @@ export default function DataSources() {
           reason instanceof Error
             ? reason.message
             : "Could not load schemas. Test the data source connection and try again.",
+      }));
+    }
+  }
+
+  async function previewRestResource(source: DataSource) {
+    const resource = importState.resource.trim() || "/";
+    setImportState((current) => ({
+      ...current,
+      previewLoading: true,
+      previewError: "",
+      preview: null,
+    }));
+    try {
+      const preview = await api<{ columns: string[]; rows: Record<string, unknown>[] }>(
+        `/projects/${projectId}/data-sources/${source.id}/preview?resource=${encodeURIComponent(resource)}&limit=10`,
+      );
+      setImportState((current) => ({
+        ...current,
+        preview,
+        previewLoading: false,
+      }));
+    } catch (reason) {
+      setImportState((current) => ({
+        ...current,
+        previewLoading: false,
+        previewError:
+          reason instanceof Error ? reason.message : "REST API preview could not be loaded.",
       }));
     }
   }
