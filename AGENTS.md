@@ -75,7 +75,7 @@ Connector rules:
 - Prefer typed connection forms for common connectors. Keep raw/advanced configuration as progressive disclosure rather than the default path.
 - For SQLAlchemy-backed relational connectors, share only behavior that is truly common (identifier quoting, safe read-query validation, inspector discovery, bounded preview/read patterns). Keep driver, URL construction, default ports, connect args, transaction/read-only semantics, and database-specific schema behavior in the concrete connector.
 - Preserve or strengthen read-only protections. Table imports and read-only `SELECT`/supported `WITH` queries may be allowed; mutations, DDL, multiple statements, stored-procedure execution, and write-back must not be enabled implicitly.
-- Existing PostgreSQL and REST connector behavior is regression-critical. Connector refactors must keep their current tests and backward-compatibility semantics green.
+- Existing PostgreSQL, MySQL/MariaDB, and REST connector behavior is regression-critical. Connector refactors must keep their current tests and backward-compatibility semantics green.
 - If a connector claims support for a real database engine, add a disposable integration fixture when practical. Do not rely only on mocks for connection/discovery/import behavior. Pin external service images; do not use `latest`.
 - Integrated verification must not depend on paid services, production credentials, or uncontrolled public internet resources.
 - New connector support should include backend contract tests, worker/import lineage tests, frontend form/import tests, and a representative browser E2E where practical.
