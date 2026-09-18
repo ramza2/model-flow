@@ -410,6 +410,80 @@ test("mariadb import discovery UI when source credentials are available", async 
   });
 });
 
+async function createMssqlSource(
+  page: PlaywrightPage,
+  options: {
+    name: string;
+    host?: string;
+    port?: string;
+    database: string;
+    user: string;
+    password: string;
+  },
+) {
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(options.name);
+  await page.getByTestId("data-source-type").selectOption("mssql");
+  await page.getByTestId("data-source-connection-mode").selectOption("host_port");
+  await expect(page.getByTestId("data-source-host")).toBeVisible();
+  await expect(page.getByTestId("data-source-port")).toHaveValue("1433");
+  await page.getByTestId("data-source-host").fill(options.host ?? "mssql-source");
+  await page.getByTestId("data-source-port").fill(options.port ?? "1433");
+  await page.getByTestId("data-source-database").fill(options.database);
+  await page.getByTestId("data-source-user").fill(options.user);
+  await page.getByTestId("data-source-password").fill(options.password);
+  await page.getByTestId("data-source-trust-server-certificate").check();
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: options.name })).toBeVisible();
+}
+
+test("mssql import discovery UI when source credentials are available", async ({ page }) => {
+  const sourceDb = process.env.E2E_SOURCE_MSSQL_DB;
+  const sourceUser = process.env.E2E_SOURCE_MSSQL_USER;
+  const sourcePassword = process.env.E2E_SOURCE_MSSQL_PASSWORD;
+  const sourceHost = process.env.E2E_SOURCE_MSSQL_HOST || "mssql-source";
+  test.skip(!sourceDb || !sourceUser || !sourcePassword, "Source SQL Server credentials not provided");
+
+  const projectName = `ds-mssql-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const sourceName = `mssql-import-${Date.now()}`;
+  const datasetName = `customers-${Date.now()}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await createMssqlSource(page, {
+    name: sourceName,
+    host: sourceHost,
+    database: sourceDb!,
+    user: sourceUser!,
+    password: sourcePassword!,
+  });
+
+  const card = page.locator("article.source-card").filter({ hasText: sourceName });
+  await expect(card).toContainText("Microsoft SQL Server");
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 60_000,
+  });
+
+  await card.getByRole("button", { name: "Import data" }).click();
+  const panel = page.getByTestId(/import-panel-/);
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId("import-schema")).toBeVisible();
+  await panel.getByTestId("import-schema").selectOption("dbo");
+  await expect(panel.getByTestId("import-table")).toBeVisible();
+  await panel.getByTestId("import-table").selectOption("customers");
+  await panel.getByTestId("import-dataset-name").fill(datasetName);
+  await panel.getByTestId("import-submit").click();
+  await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
+  await panel.getByTestId("open-imported-dataset").click();
+  await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
+});
+
 test("REST API source test preview and import use the existing dataset lifecycle", async ({ page }) => {
   const projectName = `rest-source-${Date.now()}`;
   const sourceName = `rest-health-${Date.now()}`;

@@ -149,7 +149,7 @@ export type DataSource = {
   id: number;
   project_id: number;
   name: string;
-  source_type: "file" | "postgres" | "mysql" | "rest_api";
+  source_type: "file" | "postgres" | "mysql" | "mssql" | "rest_api";
   config: Record<string, unknown>;
   has_secrets: boolean;
   /** Non-sensitive hint; never includes secret values. Null for non-postgres sources. */
