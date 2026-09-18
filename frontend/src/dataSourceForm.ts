@@ -7,6 +7,15 @@ export const DEFAULT_POSTGRES_FORM = {
   user: "modelflow",
 };
 
+export const DEFAULT_MYSQL_PORT = 3306;
+
+export const DEFAULT_MYSQL_FORM = {
+  host: "mysql-source",
+  port: String(DEFAULT_MYSQL_PORT),
+  database: "modelflow",
+  user: "modelflow",
+};
+
 const POSTGRES_FIELD_KEYS = new Set(["host", "port", "database", "user"]);
 
 export type PostgresConnectionMode = "host_port" | "connection_url";
@@ -24,6 +33,10 @@ export type PostgresSavePayload = {
   clear_secrets?: string[];
 };
 
+export type SqlConnectionMode = PostgresConnectionMode;
+export type SqlConnectionForm = PostgresConnectionForm;
+export type SqlSavePayload = PostgresSavePayload;
+
 export function extraPostgresConfig(config: Record<string, unknown>): Record<string, unknown> {
   const extra: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(config)) {
@@ -34,20 +47,29 @@ export function extraPostgresConfig(config: Record<string, unknown>): Record<str
   return extra;
 }
 
-export function postgresFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
+export const extraSqlConfig = extraPostgresConfig;
+
+export function postgresFormFromConfig(
+  config: Record<string, unknown>,
+  defaultPort: number = DEFAULT_POSTGRES_PORT,
+): PostgresConnectionForm {
   const portValue = config.port;
   const port =
     typeof portValue === "number" && Number.isFinite(portValue)
       ? String(portValue)
       : typeof portValue === "string" && portValue.trim()
         ? portValue
-        : String(DEFAULT_POSTGRES_PORT);
+        : String(defaultPort);
   return {
     host: String(config.host ?? ""),
     port,
     database: String(config.database ?? ""),
     user: String(config.user ?? ""),
   };
+}
+
+export function mysqlFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
+  return postgresFormFromConfig(config, DEFAULT_MYSQL_PORT);
 }
 
 export function parsePostgresPort(port: string): number {
@@ -57,6 +79,8 @@ export function parsePostgresPort(port: string): number {
   }
   return parsed;
 }
+
+export const parseSqlPort = parsePostgresPort;
 
 export function postgresConfigFromForm(
   form: PostgresConnectionForm,
@@ -71,6 +95,8 @@ export function postgresConfigFromForm(
   };
 }
 
+export const sqlConfigFromForm = postgresConfigFromForm;
+
 export function postgresSecretsFromPassword(password: string): Record<string, string> {
   return password ? { password } : {};
 }
@@ -80,6 +106,8 @@ export function resolvePostgresConnectionMode(
 ): PostgresConnectionMode {
   return connectionMode === "connection_url" ? "connection_url" : "host_port";
 }
+
+export const resolveSqlConnectionMode = resolvePostgresConnectionMode;
 
 /** Strip host/port/database/user when switching to URL/DSN mode. */
 export function postgresExtraConfigForUrlMode(extra: Record<string, unknown>): Record<string, unknown> {
@@ -91,6 +119,8 @@ export function postgresExtraConfigForUrlMode(extra: Record<string, unknown>): R
   }
   return cleaned;
 }
+
+export const sqlExtraConfigForUrlMode = postgresExtraConfigForUrlMode;
 
 export function buildPostgresSavePayload(options: {
   mode: PostgresConnectionMode;
@@ -139,6 +169,9 @@ export function buildPostgresSavePayload(options: {
   }
   return payload;
 }
+
+/** Host/Port + Connection URL payload builder shared by PostgreSQL and MySQL. */
+export const buildSqlSavePayload = buildPostgresSavePayload;
 
 
 export type RestApiAuthType = "none" | "bearer" | "api_key";

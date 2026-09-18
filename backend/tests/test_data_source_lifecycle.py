@@ -589,9 +589,98 @@ def test_typed_source_reports_host_port_mode(client, auth_headers):
     assert source["connection_mode"] == "host_port"
 
 
+def test_mysql_source_connection_mode_blank_secret_and_mode_switch(client, auth_headers):
+    from app.connectors.mysql import MySqlConnector
+    from app.core.security import decrypt_secret
+    from app.db.models import DataSource
+    from sqlalchemy import select
 
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "mysql-warehouse",
+            "source_type": "mysql",
+            "config": {
+                "host": "mysql-source",
+                "port": 3306,
+                "database": "analytics",
+                "user": "reader",
+            },
+            "secrets": {"password": "mysql-secret-pass"},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["source_type"] == "mysql"
+    assert body["connection_mode"] == "host_port"
+    assert "mysql-secret-pass" not in json.dumps(body)
 
-def test_rest_api_source_secrets_are_encrypted_and_redacted(client, auth_headers):
+    source_id = body["id"]
+    renamed = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={"name": "mysql-warehouse-renamed", "config": body["config"], "secrets": {}},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "mysql-warehouse-renamed"
+    assert renamed.json()["connection_mode"] == "host_port"
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        assert row is not None
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "mysql-secret-pass"
+        connector = MySqlConnector(json.loads(row.config_json), stored)
+        assert "mysql+pymysql://" in connector._connection_url()
+
+    dsn = "mysql://reader:mysql-secret-pass@mysql-source:3306/analytics"
+    switched = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {},
+            "secrets": {"dsn": dsn},
+            "clear_secrets": ["password", "url"],
+        },
+    )
+    assert switched.status_code == 200
+    assert switched.json()["connection_mode"] == "connection_url"
+    assert "mysql-secret-pass" not in json.dumps(switched.json())
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("dsn") == dsn
+        assert "password" not in stored
+        connector = MySqlConnector(json.loads(row.config_json), stored)
+        assert connector._connection_url() == (
+            "mysql+pymysql://reader:mysql-secret-pass@mysql-source:3306/analytics"
+        )
+
+    back = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {
+                "host": "mysql-source",
+                "port": 3306,
+                "database": "analytics",
+                "user": "reader",
+            },
+            "secrets": {"password": "new-mysql-pass"},
+            "clear_secrets": ["dsn", "url"],
+        },
+    )
+    assert back.status_code == 200
+    assert back.json()["connection_mode"] == "host_port"
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "new-mysql-pass"
+        assert "dsn" not in stored
+
     project_id = _project(client, auth_headers)
     created = client.post(
         f"/api/v1/projects/{project_id}/data-sources",

@@ -34,6 +34,52 @@ services:
       timeout: 5s
       retries: 20
 
+  mysql-source:
+    image: mysql:8.4.5
+    profiles: ["source"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${SOURCE_MYSQL_ROOT_PASSWORD:?SOURCE_MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${SOURCE_MYSQL_DB:?SOURCE_MYSQL_DB is required}
+      MYSQL_USER: ${SOURCE_MYSQL_USER:?SOURCE_MYSQL_USER is required}
+      MYSQL_PASSWORD: ${SOURCE_MYSQL_PASSWORD:?SOURCE_MYSQL_PASSWORD is required}
+    ports:
+      - "${SOURCE_MYSQL_HOST_PORT:-3307}:3306"
+    volumes:
+      - mysql_source_data:/var/lib/mysql
+      - ./scripts/init-mysql-source.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  mariadb-source:
+    image: mariadb:11.4.5
+    profiles: ["source"]
+    environment:
+      MARIADB_ROOT_PASSWORD: ${SOURCE_MARIADB_ROOT_PASSWORD:?SOURCE_MARIADB_ROOT_PASSWORD is required}
+      MARIADB_DATABASE: ${SOURCE_MARIADB_DB:?SOURCE_MARIADB_DB is required}
+      MARIADB_USER: ${SOURCE_MARIADB_USER:?SOURCE_MARIADB_USER is required}
+      MARIADB_PASSWORD: ${SOURCE_MARIADB_PASSWORD:?SOURCE_MARIADB_PASSWORD is required}
+    ports:
+      - "${SOURCE_MARIADB_HOST_PORT:-3308}:3306"
+    volumes:
+      - mariadb_source_data:/var/lib/mysql
+      - ./scripts/init-mysql-source.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "healthcheck.sh --connect --innodb_initialized",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
@@ -131,6 +177,16 @@ services:
       MODELFLOW_ENCRYPTION_KEY: ${MODELFLOW_ENCRYPTION_KEY:?MODELFLOW_ENCRYPTION_KEY is required}
       MODELFLOW_GIT_SHA: ${MODELFLOW_GIT_SHA:-unknown}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
+      SOURCE_MYSQL_HOST: mysql-source
+      SOURCE_MYSQL_PORT: "3306"
+      SOURCE_MYSQL_USER: ${SOURCE_MYSQL_USER:-}
+      SOURCE_MYSQL_PASSWORD: ${SOURCE_MYSQL_PASSWORD:-}
+      SOURCE_MYSQL_DB: ${SOURCE_MYSQL_DB:-}
+      SOURCE_MARIADB_HOST: mariadb-source
+      SOURCE_MARIADB_PORT: "3306"
+      SOURCE_MARIADB_USER: ${SOURCE_MARIADB_USER:-}
+      SOURCE_MARIADB_PASSWORD: ${SOURCE_MARIADB_PASSWORD:-}
+      SOURCE_MARIADB_DB: ${SOURCE_MARIADB_DB:-}
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     command: >
@@ -193,4 +249,6 @@ services:
 volumes:
   postgres_data:
   postgres_source_data:
+  mysql_source_data:
+  mariadb_source_data:
   minio_data:

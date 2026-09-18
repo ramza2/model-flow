@@ -2,9 +2,13 @@
 
 ## Current phase
 
-**Enhancement Phase 4-A — Connector Foundation + REST API Source** is the current implementation phase.
+**Enhancement Phase 4-B — MySQL / MariaDB Connector** is the current implementation phase.
 
-Phase 3 remains complete on `main`. Phase 4-A starts from `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`.
+Phase **4-A — Connector Foundation + REST API Source** is complete on `main` (merged via PR #52; merge commit `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`; post-merge CI #254 PASS).
+
+Phase 4-B starts from `main@09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`.
+
+Phase 3 remains complete on `main`.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -316,7 +320,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 4-A — Connector Foundation + REST API Source** from `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`. Acceptance requires existing PostgreSQL behavior to remain green, REST credentials to stay encrypted/redacted, REST preview/import to reuse the existing DataImportJob → DatasetVersion lineage, and the full verification gate to pass.
+Complete **Phase 4-B — MySQL / MariaDB Connector** from `main@09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`. Acceptance requires disposable MySQL and MariaDB fixtures, shared SQLAlchemy relational helpers without regressing PostgreSQL/REST, encrypted Host/Port and DSN semantics for `source_type=mysql`, and the full verification gate to pass. Phase 4-B is not complete until this Draft PR merges and `main` CI passes.
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

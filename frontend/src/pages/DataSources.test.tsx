@@ -338,6 +338,66 @@ describe("DataSources operations UX", () => {
     expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
   });
 
+  it("shows typed MySQL / MariaDB fields with default port 3306", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];
+      if (path === "/projects/7/data-sources" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "mysql-warehouse",
+          source_type: "mysql",
+          config: {
+            host: "mysql-source",
+            port: 3306,
+            database: "analytics",
+            user: "reader",
+          },
+          secrets: { password: "mysql-secret" },
+        });
+        expect(JSON.stringify(body.config)).not.toContain("mysql-secret");
+        return {
+          id: 9,
+          project_id: 7,
+          name: "mysql-warehouse",
+          source_type: "mysql",
+          config: body.config,
+          has_secrets: true,
+          connection_mode: "host_port",
+          is_active: true,
+          last_test_status: null,
+          last_test_message: null,
+          last_tested_at: null,
+          created_by: 1,
+          created_at: "2026-01-01T00:00:00Z",
+        };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-type"), { target: { value: "mysql" } });
+    expect(screen.getByTestId("data-source-port")).toHaveValue(3306);
+    expect(screen.getByTestId("data-source-host")).toHaveValue("mysql-source");
+    expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("data-source-name"), {
+      target: { value: "mysql-warehouse" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-database"), {
+      target: { value: "analytics" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-user"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("data-source-password"), {
+      target: { value: "mysql-secret" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
   it("keeps JSON configuration for managed file sources", async () => {
     apiMock.mockResolvedValueOnce([]);
     renderPage();

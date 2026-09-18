@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_MYSQL_FORM,
+  DEFAULT_MYSQL_PORT,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_POSTGRES_PORT,
   DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
   buildRestApiSavePayload,
+  buildSqlSavePayload,
   extraPostgresConfig,
+  mysqlFormFromConfig,
   parsePostgresPort,
   postgresConfigFromForm,
   postgresFormFromConfig,
@@ -82,6 +86,51 @@ describe("postgres data source form helpers", () => {
     expect(() => parsePostgresPort("5432abc")).toThrow(/1 and 65535/i);
     expect(() => parsePostgresPort("0")).toThrow(/1 and 65535/i);
     expect(parsePostgresPort("5432")).toBe(5432);
+  });
+
+  it("builds MySQL host/port payloads with default port 3306 and no password in config", () => {
+    expect(DEFAULT_MYSQL_FORM.port).toBe(String(DEFAULT_MYSQL_PORT));
+    expect(DEFAULT_MYSQL_PORT).toBe(3306);
+    expect(mysqlFormFromConfig({})).toEqual({
+      host: "",
+      port: "3306",
+      database: "",
+      user: "",
+    });
+    const created = buildSqlSavePayload({
+      mode: "host_port",
+      form: {
+        host: "mysql-source",
+        port: "3306",
+        database: "analytics",
+        user: "reader",
+      },
+      extra: {},
+      password: "secret",
+      connectionUrl: "",
+      editing: false,
+      previousMode: null,
+    });
+    expect(created.config).toEqual({
+      host: "mysql-source",
+      port: 3306,
+      database: "analytics",
+      user: "reader",
+    });
+    expect(created.secrets).toEqual({ password: "secret" });
+    expect(JSON.stringify(created.config)).not.toContain("secret");
+
+    const blankEdit = buildSqlSavePayload({
+      mode: "host_port",
+      form: DEFAULT_MYSQL_FORM,
+      extra: {},
+      password: "",
+      connectionUrl: "",
+      editing: true,
+      previousMode: "host_port",
+    });
+    expect(blankEdit.secrets).toEqual({});
+    expect(blankEdit.clear_secrets).toEqual(["dsn", "url"]);
   });
 
   it("resolves connection mode metadata without exposing secrets", () => {

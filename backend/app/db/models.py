@@ -41,6 +41,7 @@ class ProjectRole(str, enum.Enum):
 class DataSourceType(str, enum.Enum):
     file = "file"
     postgres = "postgres"
+    mysql = "mysql"
     rest_api = "rest_api"
 
 

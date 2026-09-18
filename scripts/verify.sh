@@ -30,6 +30,8 @@ VERIFY_STACK_STARTED=0
 # Host ports for the isolated verification Compose project (same values as CI).
 VERIFY_POSTGRES_HOST_PORT=15432
 VERIFY_SOURCE_POSTGRES_HOST_PORT=15433
+VERIFY_SOURCE_MYSQL_HOST_PORT=13307
+VERIFY_SOURCE_MARIADB_HOST_PORT=13308
 VERIFY_MINIO_API_HOST_PORT=19000
 VERIFY_MINIO_CONSOLE_HOST_PORT=19001
 VERIFY_MLFLOW_HOST_PORT=15000
@@ -176,6 +178,58 @@ assert_services_healthy() {
   pass "all required services healthy"
 }
 
+# Verification-only: disposable source DBs used by connector integration/E2E.
+VERIFY_SOURCE_SERVICES=(postgres-source mysql-source mariadb-source)
+
+assert_source_services_healthy() {
+  info "Checking verification source DB health for: ${VERIFY_SOURCE_SERVICES[*]}"
+  local report
+  report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
+  echo "$report" | tee artifacts/verify/compose-ps-sources.txt
+  local svc health state line
+  for svc in "${VERIFY_SOURCE_SERVICES[@]}"; do
+    line="$(echo "$report" | grep "^${svc}=" || true)"
+    [[ -n "$line" ]] || fail "source service '$svc' not found in docker compose ps"
+    health="$(echo "$line" | cut -d= -f2)"
+    state="$(echo "$line" | cut -d= -f3)"
+    [[ "$state" == "running" ]] || fail "source service '$svc' state=$state (expected running)"
+    [[ "$health" == "healthy" ]] || fail "source service '$svc' health=$health (expected healthy)"
+  done
+  pass "verification source databases healthy"
+}
+
+wait_for_source_services_healthy() {
+  info "Waiting for verification source databases to become healthy"
+  local i report svc health state line ready
+  for i in $(seq 1 90); do
+    report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
+    echo "$report" | tee artifacts/verify/compose-ps-sources-wait.txt >/dev/null
+    ready=1
+    for svc in "${VERIFY_SOURCE_SERVICES[@]}"; do
+      line="$(echo "$report" | grep "^${svc}=" || true)"
+      if [[ -z "$line" ]]; then
+        ready=0
+        break
+      fi
+      health="$(echo "$line" | cut -d= -f2)"
+      state="$(echo "$line" | cut -d= -f3)"
+      if [[ "$state" != "running" || "$health" != "healthy" ]]; then
+        ready=0
+        break
+      fi
+    done
+    if [[ "$ready" -eq 1 ]]; then
+      assert_source_services_healthy
+      return 0
+    fi
+    sleep 2
+  done
+  modelflow_compose ps -a | tee artifacts/verify/compose-ps-sources-timeout.txt || true
+  modelflow_compose logs --no-color --tail=80 mysql-source mariadb-source postgres-source \
+    | tee artifacts/verify/logs-sources-timeout.txt || true
+  fail "verification source databases did not become healthy"
+}
+
 require_host_tools
 
 # Capture the caller's .env checksum (if any) and never rewrite or source it into
@@ -194,6 +248,8 @@ info "Verification Compose project: ${MODELFLOW_COMPOSE_PROJECT_NAME}"
 
 export POSTGRES_HOST_PORT="$VERIFY_POSTGRES_HOST_PORT"
 export SOURCE_POSTGRES_HOST_PORT="$VERIFY_SOURCE_POSTGRES_HOST_PORT"
+export SOURCE_MYSQL_HOST_PORT="$VERIFY_SOURCE_MYSQL_HOST_PORT"
+export SOURCE_MARIADB_HOST_PORT="$VERIFY_SOURCE_MARIADB_HOST_PORT"
 export MINIO_API_HOST_PORT="$VERIFY_MINIO_API_HOST_PORT"
 export MINIO_CONSOLE_HOST_PORT="$VERIFY_MINIO_CONSOLE_HOST_PORT"
 export MLFLOW_HOST_PORT="$VERIFY_MLFLOW_HOST_PORT"
@@ -279,6 +335,7 @@ info "1c) Default host-port compose config fixture"
   source "$VERIFY_ENV_FILE"
   set +a
   export POSTGRES_HOST_PORT=5432 SOURCE_POSTGRES_HOST_PORT=5433
+  export SOURCE_MYSQL_HOST_PORT=3307 SOURCE_MARIADB_HOST_PORT=3308
   export MINIO_API_HOST_PORT=9000 MINIO_CONSOLE_HOST_PORT=9001
   export MLFLOW_HOST_PORT=5000 BACKEND_HOST_PORT=8000 FRONTEND_HOST_PORT=3000
   DEFAULT_CONFIG="$(mktemp "$ROOT/artifacts/verify/default-ports.XXXXXX.yml")"
@@ -288,6 +345,8 @@ info "1c) Default host-port compose config fixture"
     -v "$ROOT/scripts/check-compose-host-ports.py:/check.py:ro" \
     -e POSTGRES_HOST_PORT=5432 \
     -e SOURCE_POSTGRES_HOST_PORT=5433 \
+    -e SOURCE_MYSQL_HOST_PORT=3307 \
+    -e SOURCE_MARIADB_HOST_PORT=3308 \
     -e MINIO_API_HOST_PORT=9000 \
     -e MINIO_CONSOLE_HOST_PORT=9001 \
     -e MLFLOW_HOST_PORT=5000 \
@@ -337,6 +396,7 @@ pass "bootstrap administrator login"
 # Give the worker heartbeat a moment after process start.
 sleep 5
 assert_services_healthy
+wait_for_source_services_healthy
 
 info "4) Alembic"
 modelflow_compose exec -T backend alembic current | tee artifacts/verify/alembic.txt
@@ -862,6 +922,14 @@ docker run --rm --network host \
   -e E2E_SOURCE_POSTGRES_DB="${SOURCE_POSTGRES_DB:-}" \
   -e E2E_SOURCE_POSTGRES_USER="${SOURCE_POSTGRES_USER:-}" \
   -e E2E_SOURCE_POSTGRES_PASSWORD="${SOURCE_POSTGRES_PASSWORD:-}" \
+  -e E2E_SOURCE_MYSQL_DB="${SOURCE_MYSQL_DB:-}" \
+  -e E2E_SOURCE_MYSQL_USER="${SOURCE_MYSQL_USER:-}" \
+  -e E2E_SOURCE_MYSQL_PASSWORD="${SOURCE_MYSQL_PASSWORD:-}" \
+  -e E2E_SOURCE_MYSQL_HOST="${E2E_SOURCE_MYSQL_HOST:-mysql-source}" \
+  -e E2E_SOURCE_MARIADB_DB="${SOURCE_MARIADB_DB:-}" \
+  -e E2E_SOURCE_MARIADB_USER="${SOURCE_MARIADB_USER:-}" \
+  -e E2E_SOURCE_MARIADB_PASSWORD="${SOURCE_MARIADB_PASSWORD:-}" \
+  -e E2E_SOURCE_MARIADB_HOST="${E2E_SOURCE_MARIADB_HOST:-mariadb-source}" \
   -e HOME=/tmp \
   -e CI=true \
   "$PLAYWRIGHT_IMAGE" \
