@@ -2,7 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 3-D — Final Hardening / Browser Regression** is the current implementation phase.
+**Enhancement Phase 3 — End-to-End Pipeline UX is complete on `main`.**
+
+**Next planned enhancement: Phase 4 — Connectors.** No Phase 4 implementation has started yet.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -105,16 +107,21 @@ Phase 3-C delivered:
 - exact DatasetVersion → Training Job → Experiment/Model → Deployment/Batch/Alert lineage from existing graph configuration and persisted node artifacts
 - no backend/API/runtime/DB/migration or retry/reuse semantic changes
 
-Phase 3-D scope (current implementation):
+Phase **3-D — Final Hardening / Browser Regression** is complete on `main` (merged via PR #50; squash commit `ff6c1f92752263c5684f4d3311d377d05b27f4e4`; post-merge CI #245 / run `35289545125` PASS).
 
-- close the remaining unsaved Pipeline navigation gap for same-origin SPA/sidebar navigation and project switching
-- preserve the existing browser `beforeunload` protection and Builder-local back-link confirmation without duplicate prompts
-- add browser regression for Viewer/read-only Pipeline Builder access
-- add drawer viewport accessibility/focus and horizontal-overflow regression for the expanded lifecycle UX
-- retain all Phase 3 exact-version, run-state, recovery, lineage, RBAC, and Pipeline runtime regressions
+Phase 3-D delivered:
+
+- shared unsaved-change protection for same-origin SPA/sidebar navigation, project switching, and sign-out while Pipeline edits are dirty
+- route-project → `ProjectContext` synchronization so direct project URLs and the global project picker stay consistent
+- existing browser `beforeunload` and Builder-local back-link confirmation preserved without duplicate prompts
+- Viewer/read-only Pipeline Builder browser regression
+- drawer viewport accessibility/focus and horizontal-overflow regression
+- exact PR HEAD full verification PASS and post-merge `main` full verification PASS
 - no backend/API/runtime/DB/migration changes
 
-The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3-D remains current until its Draft PR merges and the resulting `main` CI succeeds. Verification coverage is documented in [`phase-3d-verification.md`](./phase-3d-verification.md). Phase 3 is not complete until that post-merge CI succeeds.
+**Enhancement Phase 3 — End-to-End Pipeline UX is complete on `main`.**
+
+The completed implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md), and final verification evidence is documented in [`phase-3d-verification.md`](./phase-3d-verification.md).
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -135,7 +142,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main`
+- Branch baseline: `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`
+- Phase 3-D merge (PR #50): `ff6c1f92752263c5684f4d3311d377d05b27f4e4` (post-merge CI #245 / run `35289545125` PASS)
 - Phase 3-C merge (PR #49): `33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`
 - Phase 3-B merge (PR #47): `ffbe248a999c5fca1f26c54cd03de1d3eaebc643`
 - Phase 3-A merge (PR #46): `f30a9541c30c8722009e31839e819c30d6d69de9`
@@ -196,6 +204,14 @@ PR #31 also addressed:
 - deploy/runtime Git SHA propagation
 
 ## Latest verification baseline
+
+### Phase 3 completion baseline (PR #50)
+
+- pre-merge exact HEAD `0ed343b8df0ef491a7759b3e75279bdb0409b44a`: CI #244 / run `35202693765` **PASS**
+- squash merge to `main`: `ff6c1f92752263c5684f4d3311d377d05b27f4e4`
+- post-merge `main` CI #245 / run `35289545125`: **PASS**
+- `Full verification gate`: **PASS**
+- actual diff final review: **PASS / no blocker**
 
 ### Phase 1.5 completion baseline (PR #36)
 
@@ -299,7 +315,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 3-D — Final Hardening / Browser Regression**. After Phase 3-D merges and the merge commit CI passes, **Enhancement Phase 3 — End-to-End Pipeline UX is complete**. Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Begin **Enhancement Phase 4 — Connectors** from `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`. Phase 4 expands data-source connectivity with REST API sources and additional SQL databases while preserving the existing encrypted-credential, import, DatasetVersion, and Data Source UX contracts.
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
