@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
-Status: **Implementation plan — Phase 4-A current**  
-Baseline: `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`
+Status: **Implementation plan — Phase 4-B current**  
+Baseline: `main@09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1` (Phase 4-A complete)
 
 ## Purpose
 
@@ -35,77 +35,99 @@ A connector may provide:
 
 The API and worker own project scoping, RBAC, auditing, import-job lifecycle, dataset creation, materialization, and lineage. Connectors do not create datasets or write ModelFlow database rows directly.
 
-PostgreSQL moves behind this contract in Phase 4-A with its existing Host/Port and encrypted DSN/URL behavior preserved.
+PostgreSQL moved behind this contract in Phase 4-A with its existing Host/Port and encrypted DSN/URL behavior preserved.
 
-## Phase 4-A — Connector Foundation + REST API Source
+## Phase 4-A — Connector Foundation + REST API Source (complete)
 
-### REST configuration
+Phase 4-A is complete on `main` (PR #52 / `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`, post-merge CI #254 PASS). See [`phase-4a-verification.md`](./phase-4a-verification.md).
 
-Public configuration:
+## Phase 4-B — MySQL / MariaDB
 
-- `base_url` — absolute HTTP(S) base URL
-- `resource_path` — default relative GET resource
-- `data_path` — optional dot path selecting the tabular JSON payload
-- `timeout_seconds` — 1–60 seconds
-- `auth_type` — `none`, `bearer`, or `api_key`
-- `api_key_header` — header name for API-key authentication
-- `query_params` — optional non-secret JSON object
+### Source type
+
+One `DataSourceType` value:
+
+- `mysql` — UI label **MySQL / MariaDB**
+
+MySQL and MariaDB share the same connector, driver path (`mysql+pymysql`), and Host/Port + Connection URL semantics. Separate `mariadb` enum values are not introduced.
+
+### SQLAlchemy relational sharing
+
+Shared helpers live in `backend/app/connectors/sql_relational.py`:
+
+- identifier quoting via the engine dialect
+- table-name validation
+- read-only SELECT / WITH validation (reject mutations and multiple statements)
+- Inspector schema/table discovery
+- preview wrap + DataFrame read patterns
+- engine lifecycle
+
+Concrete connectors keep:
+
+- SQLAlchemy driver / URL construction
+- default ports (`postgres` 5432, `mysql` 3306)
+- connect args
+- dialect-specific read-only transaction setup
+  - PostgreSQL: `SET TRANSACTION READ ONLY`
+  - MySQL/MariaDB: `SET SESSION TRANSACTION READ ONLY`
+
+### Configuration
+
+Public config (Host/Port mode):
+
+- `host`
+- `port` (default 3306)
+- `database`
+- `user`
 
 Encrypted secrets:
 
-- `bearer_token`
-- `api_key`
+- `password` (Host/Port mode)
+- `dsn` / `url` (Connection URL mode)
 
-Secret values are never returned in Data Source API responses. Editing an existing REST source leaves credential fields blank; a blank field retains the saved credential only when the authentication mode is unchanged.
+`connection_mode` metadata (`host_port` | `connection_url`) is returned for both `postgres` and `mysql`. REST remains `null`. Blank password / blank URL on edit keeps the saved secret; mode switches clear stale secret keys.
 
-### REST response contract
+Vendor URLs such as `mysql://…` and `mariadb://…` are normalized to `mysql+pymysql://…` for the MySQL connector. PostgreSQL continues to store and use DSN/URL values as provided for backward compatibility.
 
-Phase 4-A accepts:
+### Import resources
 
-- one JSON object, materialized as one row; or
-- an array of JSON objects
-- wrapped responses selected with an explicit `data_path`
+- `schema.table` / `database.table` / bare table name
+- read-only `SELECT …`
+- safely validated `WITH …`
 
-Nested object fields are flattened to dotted column names through the connector. Empty arrays and scalar-only payloads are rejected as non-tabular.
+Materialization reuses the existing worker path:
 
-### Safety and scope boundary
+```text
+Connector.read_frame() → DataFrame → CSV bytes → DatasetVersion
+```
 
-Phase 4-A REST operations are intentionally limited to:
+Lineage: `source_type=mysql`, `data_source_id`, `import_job_id`.
 
-- HTTP(S) GET
-- bounded request timeout
-- maximum 20 MiB response
-- relative resource paths under the configured base URL
-- JSON responses only
+### Disposable fixtures
 
-Explicitly out of scope:
+Compose profile `source` adds:
 
-- POST / PUT / PATCH / DELETE connector execution
-- arbitrary scripts or user-provided connector code
-- automatic pagination or cursor traversal
-- streaming ingestion
-- webhook ingestion
-- OAuth authorization flows
-- REST response mutation or server-side transformation beyond JSON flattening
+- `mysql-source` — `mysql:8.4.5`
+- `mariadb-source` — `mariadb:11.4.5`
+
+Both seed `customers` via `scripts/init-mysql-source.sql`.
 
 ## Phase 4 implementation order
 
-1. **4-A — Connector Foundation + REST API Source**
-2. **4-B — MySQL / MariaDB**
-3. **4-C — Microsoft SQL Server**
+1. **4-A — Connector Foundation + REST API Source** — complete
+2. **4-B — MySQL / MariaDB** — current
+3. **4-C — Microsoft SQL Server** — next
 4. **4-D — Oracle**
 5. **4-E — Final Hardening / Connector Regression**
 
 Later SQL connectors should implement the shared contract rather than add database-specific orchestration to API or worker modules.
 
-## Phase 4-A acceptance
+## Phase 4-B acceptance
 
-- existing PostgreSQL create/edit/test/schema/table/import behavior remains unchanged
-- PostgreSQL API and worker reads are routed through the connector registry
-- REST source can be created and edited through typed UI without exposing saved credentials
-- connection test performs configured GET and returns generic failure copy on errors
-- REST resource preview returns bounded columns/rows
-- REST import creates an existing `DataImportJob` and materializes an immutable DatasetVersion with `source_type=rest_api`
-- project/RBAC/source lifecycle rules remain authoritative
-- external services are not required for the integrated verification path
-- full repository verification and exact PR HEAD CI pass before merge
+- MySQL / MariaDB create/edit/test/schema(database)/table/import through typed UI
+- credentials remain encrypted and redacted
+- read-only SQL gate rejects mutations and multi-statements
+- PostgreSQL and REST regressions remain green
+- disposable MySQL and MariaDB fixtures exercise connection → import → DatasetVersion
+- Alembic head includes additive `mysql` enum value
+- `./scripts/verify.sh` and exact PR HEAD CI pass

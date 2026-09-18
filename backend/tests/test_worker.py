@@ -596,3 +596,104 @@ def test_process_import_job_materializes_rest_connector_result(monkeypatch):
     assert captured["source_type"] == "rest_api"
     assert captured["file_format"] == "csv"
     assert b"Ada" in captured["payload"]
+
+
+def test_process_import_job_materializes_mysql_connector_result(monkeypatch):
+    with TestingSessionLocal() as db:
+        project = Project(name="mysql-import-worker")
+        db.add(project)
+        db.flush()
+        dataset = Dataset(project_id=project.id, name="customers")
+        db.add(dataset)
+        db.flush()
+        source = DataSource(
+            project_id=project.id,
+            name="mysql-warehouse",
+            source_type=DataSourceType.mysql,
+            config_json='{"host":"mysql-source","port":3306,"database":"analytics","user":"reader"}',
+            is_active=True,
+        )
+        db.add(source)
+        db.flush()
+        job = DataImportJob(
+            project_id=project.id,
+            data_source_id=source.id,
+            dataset_id=dataset.id,
+            query_or_table="analytics.customers",
+            status=JobStatus.running,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+        source_id = source.id
+
+    class FakeConnector:
+        source_label = "MySQL / MariaDB data source"
+        supports_import = True
+
+        def read_frame(self, resource):
+            assert resource == "analytics.customers"
+            return pd.DataFrame(
+                [{"id": 1, "name": "Ada", "segment": "enterprise"}]
+            )
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(runner, "connector_for_source", lambda source: FakeConnector())
+
+    captured = {}
+
+    def fake_materialize(
+        db,
+        dataset,
+        payload,
+        filename,
+        *,
+        file_format,
+        created_by,
+        source_type,
+        data_source_id,
+        import_job_id,
+    ):
+        captured.update(
+            payload=payload,
+            source_type=source_type,
+            data_source_id=data_source_id,
+            import_job_id=import_job_id,
+            file_format=file_format,
+        )
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=dataset.project_id,
+            version=1,
+            object_key="datasets/mysql-import.csv",
+            original_filename=filename,
+            format=file_format,
+            source_type=source_type,
+            data_source_id=data_source_id,
+            import_job_id=import_job_id,
+        )
+        db.add(version)
+        db.flush()
+        return version
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "create_dataset_version_from_bytes",
+        fake_materialize,
+    )
+
+    runner.process_import_job(type("Claim", (), {"id": job_id})())
+
+    with TestingSessionLocal() as db:
+        job = db.get(DataImportJob, job_id)
+        assert job.status == JobStatus.succeeded
+        version = db.get(DatasetVersion, job.dataset_version_id)
+        assert version.source_type == "mysql"
+        assert version.data_source_id == source_id
+        assert version.import_job_id == job_id
+
+    assert captured["source_type"] == "mysql"
+    assert captured["file_format"] == "csv"
+    assert b"Ada" in captured["payload"]

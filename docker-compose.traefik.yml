@@ -13,6 +13,14 @@ services:
     ports: !reset []
     restart: unless-stopped
 
+  mysql-source:
+    ports: !reset []
+    restart: unless-stopped
+
+  mariadb-source:
+    ports: !reset []
+    restart: unless-stopped
+
   minio:
     ports: !reset []
     restart: unless-stopped

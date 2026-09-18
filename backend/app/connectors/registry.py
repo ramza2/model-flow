@@ -4,6 +4,7 @@ import json
 
 from app.connectors.base import DataConnector
 from app.connectors.file import FileConnector
+from app.connectors.mysql import MySqlConnector
 from app.connectors.postgres import PostgresConnector
 from app.connectors.rest_api import RestApiConnector
 from app.core.security import decrypt_secret
@@ -21,6 +22,7 @@ def _json_dict(value: str | None) -> dict:
 _CONNECTOR_TYPES: dict[DataSourceType, type[DataConnector]] = {
     DataSourceType.file: FileConnector,
     DataSourceType.postgres: PostgresConnector,
+    DataSourceType.mysql: MySqlConnector,
     DataSourceType.rest_api: RestApiConnector,
 }
 

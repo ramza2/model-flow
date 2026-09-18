@@ -303,6 +303,113 @@ test("typed postgres form connection test shows error styling on refused connect
 });
 
 
+async function createMysqlSource(
+  page: PlaywrightPage,
+  options: {
+    name: string;
+    host?: string;
+    port?: string;
+    database: string;
+    user: string;
+    password: string;
+  },
+) {
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(options.name);
+  await page.getByTestId("data-source-type").selectOption("mysql");
+  await page.getByTestId("data-source-connection-mode").selectOption("host_port");
+  await expect(page.getByTestId("data-source-host")).toBeVisible();
+  await expect(page.getByTestId("data-source-port")).toHaveValue("3306");
+  await page.getByTestId("data-source-host").fill(options.host ?? "mysql-source");
+  await page.getByTestId("data-source-port").fill(options.port ?? "3306");
+  await page.getByTestId("data-source-database").fill(options.database);
+  await page.getByTestId("data-source-user").fill(options.user);
+  await page.getByTestId("data-source-password").fill(options.password);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: options.name })).toBeVisible();
+}
+
+async function importMysqlFamilyCustomers(
+  page: PlaywrightPage,
+  options: {
+    sourceName: string;
+    database: string;
+    host: string;
+    user: string;
+    password: string;
+  },
+) {
+  const projectName = `ds-mysql-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const datasetName = `customers-${Date.now()}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await createMysqlSource(page, {
+    name: options.sourceName,
+    host: options.host,
+    database: options.database,
+    user: options.user,
+    password: options.password,
+  });
+
+  const card = page.locator("article.source-card").filter({ hasText: options.sourceName });
+  await expect(card).toContainText("MySQL / MariaDB");
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 60_000,
+  });
+
+  await card.getByRole("button", { name: "Import data" }).click();
+  const panel = page.getByTestId(/import-panel-/);
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId("import-schema")).toBeVisible();
+  await panel.getByTestId("import-schema").selectOption(options.database);
+  await expect(panel.getByTestId("import-table")).toBeVisible();
+  await panel.getByTestId("import-table").selectOption("customers");
+  await panel.getByTestId("import-dataset-name").fill(datasetName);
+  await panel.getByTestId("import-submit").click();
+  await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
+  await panel.getByTestId("open-imported-dataset").click();
+  await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
+}
+
+test("mysql import discovery UI when source credentials are available", async ({ page }) => {
+  const sourceDb = process.env.E2E_SOURCE_MYSQL_DB;
+  const sourceUser = process.env.E2E_SOURCE_MYSQL_USER;
+  const sourcePassword = process.env.E2E_SOURCE_MYSQL_PASSWORD;
+  const sourceHost = process.env.E2E_SOURCE_MYSQL_HOST || "mysql-source";
+  test.skip(!sourceDb || !sourceUser || !sourcePassword, "Source MySQL credentials not provided");
+
+  await importMysqlFamilyCustomers(page, {
+    sourceName: `mysql-import-${Date.now()}`,
+    database: sourceDb!,
+    host: sourceHost,
+    user: sourceUser!,
+    password: sourcePassword!,
+  });
+});
+
+test("mariadb import discovery UI when source credentials are available", async ({ page }) => {
+  const sourceDb = process.env.E2E_SOURCE_MARIADB_DB;
+  const sourceUser = process.env.E2E_SOURCE_MARIADB_USER;
+  const sourcePassword = process.env.E2E_SOURCE_MARIADB_PASSWORD;
+  const sourceHost = process.env.E2E_SOURCE_MARIADB_HOST || "mariadb-source";
+  test.skip(!sourceDb || !sourceUser || !sourcePassword, "Source MariaDB credentials not provided");
+
+  await importMysqlFamilyCustomers(page, {
+    sourceName: `mariadb-import-${Date.now()}`,
+    database: sourceDb!,
+    host: sourceHost,
+    user: sourceUser!,
+    password: sourcePassword!,
+  });
+});
+
 test("REST API source test preview and import use the existing dataset lifecycle", async ({ page }) => {
   const projectName = `rest-source-${Date.now()}`;
   const sourceName = `rest-health-${Date.now()}`;

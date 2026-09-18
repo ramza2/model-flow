@@ -242,6 +242,8 @@ SUCCESS_TEMP_MANIFEST="$ARTIFACT_DIR/env-preservation-success-temps.txt"
 
 export POSTGRES_HOST_PORT=15432
 export SOURCE_POSTGRES_HOST_PORT=15433
+export SOURCE_MYSQL_HOST_PORT=13307
+export SOURCE_MARIADB_HOST_PORT=13308
 export MINIO_API_HOST_PORT=19000
 export MINIO_CONSOLE_HOST_PORT=19001
 export MLFLOW_HOST_PORT=15000
@@ -257,6 +259,10 @@ assert_user_env_unchanged "after-custom-output" || fail "project .env changed af
   || fail "POSTGRES_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" SOURCE_POSTGRES_HOST_PORT)" == "15433" ]] \
   || fail "SOURCE_POSTGRES_HOST_PORT not preserved"
+[[ "$(read_env_value "$OUT_CUSTOM" SOURCE_MYSQL_HOST_PORT)" == "13307" ]] \
+  || fail "SOURCE_MYSQL_HOST_PORT not preserved"
+[[ "$(read_env_value "$OUT_CUSTOM" SOURCE_MARIADB_HOST_PORT)" == "13308" ]] \
+  || fail "SOURCE_MARIADB_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" MINIO_API_HOST_PORT)" == "19000" ]] \
   || fail "MINIO_API_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" MINIO_CONSOLE_HOST_PORT)" == "19001" ]] \
@@ -311,6 +317,7 @@ fi
 
 # --- Unit: defaults when host ports are unset ---
 unset POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
+unset SOURCE_MYSQL_HOST_PORT SOURCE_MARIADB_HOST_PORT
 unset MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
 unset MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
 
@@ -324,6 +331,10 @@ assert_user_env_unchanged "after-default-output" || fail "project .env changed a
   || fail "default POSTGRES_HOST_PORT expected 5432"
 [[ "$(read_env_value "$OUT_DEFAULT" SOURCE_POSTGRES_HOST_PORT)" == "5433" ]] \
   || fail "default SOURCE_POSTGRES_HOST_PORT expected 5433"
+[[ "$(read_env_value "$OUT_DEFAULT" SOURCE_MYSQL_HOST_PORT)" == "3307" ]] \
+  || fail "default SOURCE_MYSQL_HOST_PORT expected 3307"
+[[ "$(read_env_value "$OUT_DEFAULT" SOURCE_MARIADB_HOST_PORT)" == "3308" ]] \
+  || fail "default SOURCE_MARIADB_HOST_PORT expected 3308"
 [[ "$(read_env_value "$OUT_DEFAULT" MINIO_API_HOST_PORT)" == "9000" ]] \
   || fail "default MINIO_API_HOST_PORT expected 9000"
 [[ "$(read_env_value "$OUT_DEFAULT" MINIO_CONSOLE_HOST_PORT)" == "9001" ]] \
@@ -400,6 +411,8 @@ fi
 # --- Forced-fail verify: never write markers into project .env ---
 export POSTGRES_HOST_PORT=15432
 export SOURCE_POSTGRES_HOST_PORT=15433
+export SOURCE_MYSQL_HOST_PORT=13307
+export SOURCE_MARIADB_HOST_PORT=13308
 export MINIO_API_HOST_PORT=19000
 export MINIO_CONSOLE_HOST_PORT=19001
 export MLFLOW_HOST_PORT=15000

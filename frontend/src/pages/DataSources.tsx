@@ -13,11 +13,13 @@ import {
   formatDate,
 } from "../components";
 import {
+  DEFAULT_MYSQL_FORM,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
   buildRestApiSavePayload,
   extraPostgresConfig,
+  mysqlFormFromConfig,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
   restApiFormFromConfig,
@@ -25,6 +27,20 @@ import {
   type RestApiAuthType,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
+
+type SqlSourceType = "postgres" | "mysql";
+type SourceTypeOption = "file" | SqlSourceType | "rest_api";
+
+function isSqlSourceType(value: string): value is SqlSourceType {
+  return value === "postgres" || value === "mysql";
+}
+
+function sqlSourceLabel(sourceType: string): string {
+  if (sourceType === "mysql") return "MySQL / MariaDB";
+  if (sourceType === "postgres") return "PostgreSQL";
+  if (sourceType === "rest_api") return "REST API";
+  return "Managed file source";
+}
 
 type ImportMode = "table" | "sql" | "resource";
 
@@ -85,7 +101,7 @@ export default function DataSources() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [name, setName] = useState("");
-  const [sourceType, setSourceType] = useState<"file" | "postgres" | "rest_api">("postgres");
+  const [sourceType, setSourceType] = useState<SourceTypeOption>("postgres");
   const [config, setConfig] = useState("{}");
   const [postgresForm, setPostgresForm] = useState(DEFAULT_POSTGRES_FORM);
   const [postgresExtraConfig, setPostgresExtraConfig] = useState<Record<string, unknown>>({});
@@ -169,7 +185,11 @@ export default function DataSources() {
     setName(source.name);
     setSourceType(source.source_type);
     setConfig(JSON.stringify(source.config, null, 2));
-    setPostgresForm(postgresFormFromConfig(source.config));
+    setPostgresForm(
+      source.source_type === "mysql"
+        ? mysqlFormFromConfig(source.config)
+        : postgresFormFromConfig(source.config),
+    );
     setPostgresExtraConfig(extraPostgresConfig(source.config));
     setPassword("");
     const mode = resolvePostgresConnectionMode(source.connection_mode);
@@ -190,7 +210,7 @@ export default function DataSources() {
     setError("");
     setSuccess("");
     try {
-      if (sourceType === "postgres") {
+      if (isSqlSourceType(sourceType)) {
         const payload = buildPostgresSavePayload({
           mode: connectionMode,
           form: postgresForm,
@@ -414,11 +434,18 @@ export default function DataSources() {
     setImportState((current) => ({ ...current, schemasLoading: true, schemasError: "" }));
     try {
       const schemas = await api<string[]>(`/projects/${projectId}/data-sources/${source.id}/schemas`);
+      const configuredDb = String(source.config.database ?? "").trim();
+      const preferred =
+        source.source_type === "mysql" && configuredDb && schemas.includes(configuredDb)
+          ? configuredDb
+          : schemas.includes("public")
+            ? "public"
+            : schemas[0] || "";
       setImportState((current) => ({
         ...current,
         schemas,
         schemasLoading: false,
-        schema: schemas.includes("public") ? "public" : schemas[0] || "",
+        schema: preferred,
       }));
     } catch (reason) {
       setImportState((current) => ({
@@ -609,17 +636,32 @@ export default function DataSources() {
             <select
               value={sourceType}
               disabled={Boolean(editing)}
-              onChange={(event) =>
-                setSourceType(event.target.value as "file" | "postgres" | "rest_api")
-              }
+              onChange={(event) => {
+                const next = event.target.value as SourceTypeOption;
+                setSourceType(next);
+                if (next === "mysql") {
+                  setPostgresForm(DEFAULT_MYSQL_FORM);
+                  setPostgresExtraConfig({});
+                  setConnectionMode("host_port");
+                  setConnectionUrl("");
+                  setPassword("");
+                } else if (next === "postgres") {
+                  setPostgresForm(DEFAULT_POSTGRES_FORM);
+                  setPostgresExtraConfig({});
+                  setConnectionMode("host_port");
+                  setConnectionUrl("");
+                  setPassword("");
+                }
+              }}
               data-testid="data-source-type"
             >
               <option value="postgres">PostgreSQL</option>
+              <option value="mysql">MySQL / MariaDB</option>
               <option value="rest_api">REST API</option>
               <option value="file">Managed file source</option>
             </select>
           </label>
-          {sourceType === "postgres" ? (
+          {isSqlSourceType(sourceType) ? (
             <>
               <label htmlFor="data-source-connection-mode">
                 Connection mode
@@ -648,7 +690,9 @@ export default function DataSources() {
                     placeholder={
                       editing && previousConnectionMode === "connection_url"
                         ? "Leave blank to keep saved connection URL"
-                        : "postgresql://user:password@host:5432/database"
+                        : sourceType === "mysql"
+                          ? "mysql://user:password@host:3306/database"
+                          : "postgresql://user:password@host:5432/database"
                     }
                     data-testid="data-source-connection-url"
                   />
@@ -921,7 +965,7 @@ export default function DataSources() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="No connected data sources"
-          description="Add PostgreSQL or a REST API source, or use direct dataset upload to bring data into ModelFlow."
+          description="Add PostgreSQL, MySQL / MariaDB, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
@@ -936,7 +980,11 @@ export default function DataSources() {
             <article className="source-card" key={source.id} data-testid={`data-source-card-${source.id}`}>
               <div className="project-card-top">
                 <span className="source-icon" aria-hidden="true">
-                  {source.source_type === "postgres" ? "▥" : source.source_type === "rest_api" ? "⇄" : "▤"}
+                  {isSqlSourceType(source.source_type)
+                    ? "▥"
+                    : source.source_type === "rest_api"
+                      ? "⇄"
+                      : "▤"}
                 </span>
                 <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
               </div>
@@ -944,9 +992,11 @@ export default function DataSources() {
               <p className="muted">
                 {source.source_type === "postgres"
                   ? "PostgreSQL database"
-                  : source.source_type === "rest_api"
-                    ? "REST API"
-                    : "Managed file source"}
+                  : source.source_type === "mysql"
+                    ? "MySQL / MariaDB database"
+                    : source.source_type === "rest_api"
+                      ? "REST API"
+                      : "Managed file source"}
                 {!source.is_active ? " · Inactive" : ""}
               </p>
               <dl className="key-values">
@@ -997,7 +1047,7 @@ export default function DataSources() {
                     </button>
                   )}
                   {source.is_active &&
-                    (source.source_type === "postgres" || source.source_type === "rest_api") && (
+                    (isSqlSourceType(source.source_type) || source.source_type === "rest_api") && (
                     <button
                       className="btn"
                       onClick={() => openImport(source)}
@@ -1044,13 +1094,17 @@ export default function DataSources() {
                   <div className="panel-title">
                     <div>
                       <span className="eyebrow">Import</span>
-                      <h3>{source.source_type === "rest_api" ? "Import from REST API" : "Import from PostgreSQL"}</h3>
+                      <h3>
+                        {source.source_type === "rest_api"
+                          ? "Import from REST API"
+                          : `Import from ${sqlSourceLabel(source.source_type)}`}
+                      </h3>
                     </div>
                     <button className="btn link" type="button" onClick={closeImport}>
                       Close
                     </button>
                   </div>
-                  {source.source_type === "postgres" && (
+                  {isSqlSourceType(source.source_type) && (
                     <div className="row-actions" role="tablist" aria-label="Import mode">
                       <button
                         type="button"
@@ -1142,7 +1196,7 @@ export default function DataSources() {
                   ) : importState.mode === "table" ? (
                     <>
                       <label>
-                        Schema
+                        {source.source_type === "mysql" ? "Database" : "Schema"}
                         <select
                           value={importState.schema}
                           onChange={(event) =>

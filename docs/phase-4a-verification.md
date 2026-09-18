@@ -1,8 +1,10 @@
 # Phase 4-A Verification — Connector Foundation + REST API Source
 
-Status: **Draft PR verification baseline**
+Status: **Complete on main**
 
-Baseline: `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`
+Completed: PR #52 merge SHA `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`; post-merge CI #254 PASS.
+
+Baseline (start): `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`
 
 ## Invariants
 
@@ -67,4 +69,4 @@ Before merge:
 - exact PR HEAD GitHub Actions PASS
 - actual diff final review finds no blocker
 
-Phase 4-A is complete only after merge and the resulting `main` CI passes.
+Phase 4-A is complete after merge and the resulting `main` CI passed (CI #254).

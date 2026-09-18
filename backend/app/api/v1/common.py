@@ -148,9 +148,12 @@ def membership_out(row: ProjectMembership) -> dict[str, Any]:
     }
 
 
+_SQL_CONNECTION_MODE_TYPES = frozenset({"postgres", "mysql"})
+
+
 def data_source_connection_mode(row: DataSource) -> str | None:
     """Non-sensitive mode hint for the UI. Never returns secret values."""
-    if enum_value(row.source_type) != "postgres":
+    if enum_value(row.source_type) not in _SQL_CONNECTION_MODE_TYPES:
         return None
     if not row.secret_encrypted:
         return "host_port"
