@@ -12,6 +12,9 @@ from app.db.models import (
     AlertSeverity,
     Base,
     BatchInferenceJob,
+    DataImportJob,
+    DataSource,
+    DataSourceType,
     Dataset,
     DatasetVersion,
     DriftRun,
@@ -489,3 +492,106 @@ def test_import_query_only_allows_table_or_read_only_query():
         runner._import_query(engine, "DELETE FROM customers")
     with pytest.raises(ValueError, match="one read-only"):
         runner._import_query(engine, "SELECT 1; DROP TABLE customers")
+
+
+
+def test_process_import_job_materializes_rest_connector_result(monkeypatch):
+    with TestingSessionLocal() as db:
+        project = Project(name="rest-import-worker")
+        db.add(project)
+        db.flush()
+        dataset = Dataset(project_id=project.id, name="customers")
+        db.add(dataset)
+        db.flush()
+        source = DataSource(
+            project_id=project.id,
+            name="customer-api",
+            source_type=DataSourceType.rest_api,
+            config_json='{"base_url":"https://api.example.com","auth_type":"none"}',
+            is_active=True,
+        )
+        db.add(source)
+        db.flush()
+        job = DataImportJob(
+            project_id=project.id,
+            data_source_id=source.id,
+            dataset_id=dataset.id,
+            query_or_table="/customers",
+            status=JobStatus.running,
+        )
+        db.add(job)
+        db.commit()
+        job_id = job.id
+
+    class FakeConnector:
+        source_label = "REST API data source"
+        supports_import = True
+
+        def read_frame(self, resource):
+            assert resource == "/customers"
+            return pd.DataFrame(
+                [{"id": 1, "name": "Ada"}, {"id": 2, "name": "Linus"}]
+            )
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(runner, "connector_for_source", lambda source: FakeConnector())
+
+    captured = {}
+
+    def fake_materialize(
+        db,
+        dataset,
+        payload,
+        filename,
+        *,
+        file_format,
+        created_by,
+        source_type,
+        data_source_id,
+        import_job_id,
+    ):
+        captured.update(
+            payload=payload,
+            filename=filename,
+            file_format=file_format,
+            source_type=source_type,
+            data_source_id=data_source_id,
+            import_job_id=import_job_id,
+        )
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=dataset.project_id,
+            version=1,
+            object_key="datasets/rest-import.csv",
+            original_filename=filename,
+            format=file_format,
+            source_type=source_type,
+            data_source_id=data_source_id,
+            import_job_id=import_job_id,
+        )
+        db.add(version)
+        db.flush()
+        return version
+
+    monkeypatch.setattr(
+        runner.datasets,
+        "create_dataset_version_from_bytes",
+        fake_materialize,
+    )
+
+    runner.process_import_job(type("Claim", (), {"id": job_id})())
+
+    with TestingSessionLocal() as db:
+        job = db.get(DataImportJob, job_id)
+        assert job.status == JobStatus.succeeded
+        assert job.dataset_version_id is not None
+        version = db.get(DatasetVersion, job.dataset_version_id)
+        assert version.source_type == "rest_api"
+        assert version.data_source_id == job.data_source_id
+        assert version.import_job_id == job.id
+
+    assert captured["source_type"] == "rest_api"
+    assert captured["file_format"] == "csv"
+    assert b"Ada" in captured["payload"]
