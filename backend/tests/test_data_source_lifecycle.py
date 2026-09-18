@@ -5,6 +5,9 @@ import secrets
 
 import pytest
 from fastapi.testclient import TestClient
+
+import app.api.v1.data_sources as data_sources_api
+from app.connectors.base import ConnectorPreview
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -384,8 +387,15 @@ def _assert_no_secret_leak(payload: object, *secret_fragments: str) -> None:
 
 
 def test_postgres_dsn_url_backward_compat(client, auth_headers):
-    from app.api.v1.data_sources import _connection_url, _secret_dict
+    from app.api.v1.data_sources import _secret_dict
+    from app.connectors import connector_for_source
+    from app.connectors.postgres import PostgresConnector
     from app.db.models import AuditLog, DataSource
+
+    def connection_url(row: DataSource) -> str:
+        connector = connector_for_source(row)
+        assert isinstance(connector, PostgresConnector)
+        return connector._connection_url()
 
     project_id = _project(client, auth_headers)
     dsn_token = secrets.token_urlsafe(12)
@@ -434,7 +444,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert row is not None
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
-        assert _connection_url(row) == original_dsn
+        assert connection_url(row) == original_dsn
 
     replaced = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -455,7 +465,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == replacement_dsn
         assert dsn_token not in json.dumps(stored)
-        assert _connection_url(row) == replacement_dsn
+        assert connection_url(row) == replacement_dsn
 
     switched = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -491,7 +501,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert "dsn" not in stored
         assert "url" not in stored
         assert stored.get("password") == "typed-secret"
-        conn = _connection_url(row)
+        conn = connection_url(row)
         assert "typed-host-after-switch" in conn
         assert "legacy-dsn-host" not in conn
         assert replacement_token not in conn
@@ -515,7 +525,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
         assert "password" not in stored
-        assert _connection_url(row) == original_dsn
+        assert connection_url(row) == original_dsn
 
         audit_rows = db.scalars(
             select(AuditLog)
@@ -578,3 +588,122 @@ def test_typed_source_reports_host_port_mode(client, auth_headers):
     source = _create_source(client, auth_headers, project_id)
     assert source["connection_mode"] == "host_port"
 
+
+
+
+def test_rest_api_source_secrets_are_encrypted_and_redacted(client, auth_headers):
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "customer-api",
+            "source_type": "rest_api",
+            "config": {
+                "base_url": "https://api.example.com",
+                "resource_path": "/customers",
+                "auth_type": "bearer",
+                "bearer_token": "config-secret-must-move",
+            },
+            "secrets": {"bearer_token": "secret-token"},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["source_type"] == "rest_api"
+    assert body["has_secrets"] is True
+    serialized = json.dumps(body)
+    assert "secret-token" not in serialized
+    assert "config-secret-must-move" not in serialized
+    assert "bearer_token" not in body["config"]
+    assert body["config"]["base_url"] == "https://api.example.com"
+
+    fetched = client.get(
+        f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
+        headers=auth_headers,
+    )
+    assert fetched.status_code == 200
+    assert "secret-token" not in json.dumps(fetched.json())
+
+
+def test_rest_api_preview_uses_connector_contract(client, auth_headers, monkeypatch):
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "preview-api",
+            "source_type": "rest_api",
+            "config": {
+                "base_url": "https://api.example.com",
+                "resource_path": "/customers",
+                "auth_type": "none",
+            },
+            "secrets": {},
+        },
+    )
+    assert created.status_code == 201
+    source_id = created.json()["id"]
+
+    class FakeConnector:
+        source_label = "REST API data source"
+        connection_failure_message = "Connection failed."
+        supports_import = True
+
+        def preview(self, resource: str, limit: int = 20):
+            assert resource == "/customers"
+            assert limit == 2
+            return ConnectorPreview(
+                columns=["id", "name"],
+                rows=[{"id": 1, "name": "Ada"}, {"id": 2, "name": "Linus"}],
+            )
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(
+        data_sources_api,
+        "connector_for_source",
+        lambda source: FakeConnector(),
+    )
+
+    preview = client.get(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}/preview",
+        headers=auth_headers,
+        params={"resource": "/customers", "limit": 2},
+    )
+    assert preview.status_code == 200
+    assert preview.json() == {
+        "columns": ["id", "name"],
+        "rows": [{"id": 1, "name": "Ada"}, {"id": 2, "name": "Linus"}],
+    }
+
+
+def test_rest_api_source_import_reuses_existing_import_job_contract(client, auth_headers):
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "import-api",
+            "source_type": "rest_api",
+            "config": {
+                "base_url": "https://api.example.com",
+                "resource_path": "/customers",
+                "auth_type": "none",
+            },
+            "secrets": {},
+        },
+    )
+    assert created.status_code == 201
+
+    queued = client.post(
+        f"/api/v1/projects/{project_id}/data-sources/{created.json()['id']}/import",
+        headers=auth_headers,
+        json={"dataset_name": "customers", "table_or_query": "/customers"},
+    )
+    assert queued.status_code == 202
+    body = queued.json()
+    assert body["status"] == "pending"
+    assert body["table_or_query"] == "/customers"
+    assert body["dataset_id"] is not None

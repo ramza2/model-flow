@@ -139,3 +139,153 @@ export function buildPostgresSavePayload(options: {
   }
   return payload;
 }
+
+
+export type RestApiAuthType = "none" | "bearer" | "api_key";
+
+export type RestApiConnectionForm = {
+  baseUrl: string;
+  resourcePath: string;
+  dataPath: string;
+  timeoutSeconds: string;
+  authType: RestApiAuthType;
+  apiKeyHeader: string;
+  queryParams: string;
+};
+
+export type RestApiSavePayload = {
+  config: Record<string, unknown>;
+  secrets: Record<string, string>;
+  clear_secrets?: string[];
+};
+
+export const DEFAULT_REST_API_FORM: RestApiConnectionForm = {
+  baseUrl: "",
+  resourcePath: "",
+  dataPath: "",
+  timeoutSeconds: "10",
+  authType: "none",
+  apiKeyHeader: "X-API-Key",
+  queryParams: "{}",
+};
+
+export function restApiFormFromConfig(
+  config: Record<string, unknown>,
+): RestApiConnectionForm {
+  const queryParams =
+    config.query_params && typeof config.query_params === "object"
+      ? JSON.stringify(config.query_params, null, 2)
+      : "{}";
+  const authType =
+    config.auth_type === "bearer" || config.auth_type === "api_key"
+      ? config.auth_type
+      : "none";
+  return {
+    baseUrl: String(config.base_url ?? ""),
+    resourcePath: String(config.resource_path ?? ""),
+    dataPath: String(config.data_path ?? ""),
+    timeoutSeconds: String(config.timeout_seconds ?? 10),
+    authType,
+    apiKeyHeader: String(config.api_key_header ?? "X-API-Key"),
+    queryParams,
+  };
+}
+
+function parseRestApiBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error("Base URL must be a valid absolute http(s) URL.");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || !parsed.host) {
+    throw new Error("Base URL must be a valid absolute http(s) URL.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Do not put credentials in the Base URL. Use Authentication fields.");
+  }
+  return trimmed.replace(/\/+$/, "");
+}
+
+function parseRestApiTimeout(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 60) {
+    throw new Error("Timeout must be between 1 and 60 seconds.");
+  }
+  return parsed;
+}
+
+function parseRestApiQueryParams(value: string): Record<string, unknown> {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+    throw new Error("Query parameters must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+export function buildRestApiSavePayload(options: {
+  form: RestApiConnectionForm;
+  bearerToken: string;
+  apiKey: string;
+  editing: boolean;
+  previousAuthType: RestApiAuthType | null;
+  hasSecrets: boolean;
+}): RestApiSavePayload {
+  const { form, bearerToken, apiKey, editing, previousAuthType, hasSecrets } = options;
+  const baseUrl = parseRestApiBaseUrl(form.baseUrl);
+  const queryParams = parseRestApiQueryParams(form.queryParams);
+  const resourcePath = form.resourcePath.trim();
+  const dataPath = form.dataPath.trim();
+  const apiKeyHeader = form.apiKeyHeader.trim();
+
+  if (resourcePath && /^https?:\/\//i.test(resourcePath)) {
+    throw new Error("Resource path must be relative to the Base URL.");
+  }
+  if (form.authType === "api_key" && !apiKeyHeader) {
+    throw new Error("API key header is required.");
+  }
+
+  const config: Record<string, unknown> = {
+    base_url: baseUrl,
+    resource_path: resourcePath,
+    auth_type: form.authType,
+    timeout_seconds: parseRestApiTimeout(form.timeoutSeconds),
+  };
+  if (dataPath) config.data_path = dataPath;
+  if (Object.keys(queryParams).length > 0) config.query_params = queryParams;
+  if (form.authType === "api_key") config.api_key_header = apiKeyHeader;
+
+  const secrets: Record<string, string> = {};
+  const clear: string[] = [];
+
+  if (form.authType === "none") {
+    if (editing) clear.push("bearer_token", "token", "api_key");
+  } else if (form.authType === "bearer") {
+    const token = bearerToken.trim();
+    const canKeepExisting =
+      editing && previousAuthType === "bearer" && hasSecrets && !token;
+    if (!token && !canKeepExisting) {
+      throw new Error("Bearer token is required.");
+    }
+    if (token) secrets.bearer_token = token;
+    if (editing) clear.push("api_key", "token");
+  } else {
+    const key = apiKey.trim();
+    const canKeepExisting =
+      editing && previousAuthType === "api_key" && hasSecrets && !key;
+    if (!key && !canKeepExisting) {
+      throw new Error("API key is required.");
+    }
+    if (key) secrets.api_key = key;
+    if (editing) clear.push("bearer_token", "token");
+  }
+
+  return {
+    config,
+    secrets,
+    ...(clear.length > 0 ? { clear_secrets: clear } : {}),
+  };
+}

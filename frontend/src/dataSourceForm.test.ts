@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_POSTGRES_FORM,
   DEFAULT_POSTGRES_PORT,
+  DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
+  buildRestApiSavePayload,
   extraPostgresConfig,
   parsePostgresPort,
   postgresConfigFromForm,
   postgresFormFromConfig,
   postgresSecretsFromPassword,
   resolvePostgresConnectionMode,
+  restApiFormFromConfig,
 } from "./dataSourceForm";
 
 describe("postgres data source form helpers", () => {
@@ -194,5 +197,120 @@ describe("postgres data source form helpers", () => {
         previousMode: "host_port",
       }),
     ).toThrow(/switching connection mode/i);
+  });
+});
+
+
+describe("REST API data source form helpers", () => {
+  it("builds public config separately from bearer credentials", () => {
+    const payload = buildRestApiSavePayload({
+      form: {
+        ...DEFAULT_REST_API_FORM,
+        baseUrl: "https://api.example.com/v1/",
+        resourcePath: "/customers",
+        dataPath: "data.items",
+        timeoutSeconds: "15",
+        authType: "bearer",
+        queryParams: '{"limit":100}',
+      },
+      bearerToken: "secret-token",
+      apiKey: "",
+      editing: false,
+      previousAuthType: null,
+      hasSecrets: false,
+    });
+    expect(payload.config).toEqual({
+      base_url: "https://api.example.com/v1",
+      resource_path: "/customers",
+      data_path: "data.items",
+      auth_type: "bearer",
+      timeout_seconds: 15,
+      query_params: { limit: 100 },
+    });
+    expect(payload.secrets).toEqual({ bearer_token: "secret-token" });
+    expect(JSON.stringify(payload.config)).not.toContain("secret-token");
+  });
+
+  it("keeps an existing bearer token on edit when the secret field is blank", () => {
+    const payload = buildRestApiSavePayload({
+      form: {
+        ...restApiFormFromConfig({
+          base_url: "https://api.example.com",
+          resource_path: "/customers",
+          auth_type: "bearer",
+        }),
+      },
+      bearerToken: "",
+      apiKey: "",
+      editing: true,
+      previousAuthType: "bearer",
+      hasSecrets: true,
+    });
+    expect(payload.secrets).toEqual({});
+    expect(payload.clear_secrets).toEqual(["api_key", "token"]);
+  });
+
+  it("requires a new credential when switching REST authentication mode", () => {
+    expect(() =>
+      buildRestApiSavePayload({
+        form: {
+          ...DEFAULT_REST_API_FORM,
+          baseUrl: "https://api.example.com",
+          authType: "api_key",
+        },
+        bearerToken: "",
+        apiKey: "",
+        editing: true,
+        previousAuthType: "bearer",
+        hasSecrets: true,
+      }),
+    ).toThrow(/API key is required/i);
+  });
+
+  it("clears saved auth secrets when switching to unauthenticated REST", () => {
+    const payload = buildRestApiSavePayload({
+      form: {
+        ...DEFAULT_REST_API_FORM,
+        baseUrl: "https://api.example.com",
+        authType: "none",
+      },
+      bearerToken: "",
+      apiKey: "",
+      editing: true,
+      previousAuthType: "bearer",
+      hasSecrets: true,
+    });
+    expect(payload.clear_secrets).toEqual(["bearer_token", "token", "api_key"]);
+  });
+
+  it("rejects credentials embedded in a REST base URL and absolute resource paths", () => {
+    expect(() =>
+      buildRestApiSavePayload({
+        form: {
+          ...DEFAULT_REST_API_FORM,
+          baseUrl: "https://user:pass@example.com",
+        },
+        bearerToken: "",
+        apiKey: "",
+        editing: false,
+        previousAuthType: null,
+        hasSecrets: false,
+      }),
+    ).toThrow(/credentials/i);
+
+    expect(() =>
+      buildRestApiSavePayload({
+        form: {
+          ...DEFAULT_REST_API_FORM,
+          baseUrl: "https://api.example.com",
+          resourcePath: "https://other.example.com/data",
+        },
+        bearerToken: "",
+        apiKey: "",
+        editing: false,
+        previousAuthType: null,
+        hasSecrets: false,
+      }),
+    ).toThrow(/relative/i);
   });
 });

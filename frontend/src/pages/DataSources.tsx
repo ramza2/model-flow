@@ -14,21 +14,26 @@ import {
 } from "../components";
 import {
   DEFAULT_POSTGRES_FORM,
+  DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
+  buildRestApiSavePayload,
   extraPostgresConfig,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
+  restApiFormFromConfig,
   type PostgresConnectionMode,
+  type RestApiAuthType,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
-type ImportMode = "table" | "sql";
+type ImportMode = "table" | "sql" | "resource";
 
 type ImportPanelState = {
   mode: ImportMode;
   schema: string;
   table: string;
   sql: string;
+  resource: string;
   datasetName: string;
   schemas: string[];
   tables: { schema: string | null; name: string }[];
@@ -36,6 +41,9 @@ type ImportPanelState = {
   tablesLoading: boolean;
   schemasError: string;
   tablesError: string;
+  preview: { columns: string[]; rows: Record<string, unknown>[] } | null;
+  previewLoading: boolean;
+  previewError: string;
   job: DataImportJob | null;
   submitting: boolean;
 };
@@ -45,6 +53,7 @@ const emptyImportState = (): ImportPanelState => ({
   schema: "",
   table: "",
   sql: "",
+  resource: "",
   datasetName: "",
   schemas: [],
   tables: [],
@@ -52,6 +61,9 @@ const emptyImportState = (): ImportPanelState => ({
   tablesLoading: false,
   schemasError: "",
   tablesError: "",
+  preview: null,
+  previewLoading: false,
+  previewError: "",
   job: null,
   submitting: false,
 });
@@ -73,7 +85,7 @@ export default function DataSources() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [name, setName] = useState("");
-  const [sourceType, setSourceType] = useState<"file" | "postgres">("postgres");
+  const [sourceType, setSourceType] = useState<"file" | "postgres" | "rest_api">("postgres");
   const [config, setConfig] = useState("{}");
   const [postgresForm, setPostgresForm] = useState(DEFAULT_POSTGRES_FORM);
   const [postgresExtraConfig, setPostgresExtraConfig] = useState<Record<string, unknown>>({});
@@ -82,6 +94,11 @@ export default function DataSources() {
   const [connectionUrl, setConnectionUrl] = useState("");
   const [previousConnectionMode, setPreviousConnectionMode] =
     useState<PostgresConnectionMode | null>(null);
+  const [restApiForm, setRestApiForm] = useState(DEFAULT_REST_API_FORM);
+  const [bearerToken, setBearerToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [previousRestAuthType, setPreviousRestAuthType] =
+    useState<RestApiAuthType | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -140,6 +157,10 @@ export default function DataSources() {
     setConnectionMode("host_port");
     setConnectionUrl("");
     setPreviousConnectionMode(null);
+    setRestApiForm(DEFAULT_REST_API_FORM);
+    setBearerToken("");
+    setApiKey("");
+    setPreviousRestAuthType(null);
     setShowForm(false);
   }
 
@@ -155,6 +176,11 @@ export default function DataSources() {
     setConnectionMode(mode);
     setPreviousConnectionMode(mode);
     setConnectionUrl("");
+    const restForm = restApiFormFromConfig(source.config);
+    setRestApiForm(restForm);
+    setBearerToken("");
+    setApiKey("");
+    setPreviousRestAuthType(source.source_type === "rest_api" ? restForm.authType : null);
     setShowForm(true);
   }
 
@@ -173,6 +199,38 @@ export default function DataSources() {
           connectionUrl,
           editing: Boolean(editing),
           previousMode: previousConnectionMode,
+        });
+        if (editing) {
+          await api(`/projects/${projectId}/data-sources/${editing.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name,
+              config: payload.config,
+              secrets: payload.secrets,
+              ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
+            }),
+          });
+          setSuccess("Data source updated.");
+        } else {
+          await api(`/projects/${projectId}/data-sources`, {
+            method: "POST",
+            body: JSON.stringify({
+              name,
+              source_type: sourceType,
+              config: payload.config,
+              secrets: payload.secrets,
+            }),
+          });
+          setSuccess("Data source created.");
+        }
+      } else if (sourceType === "rest_api") {
+        const payload = buildRestApiSavePayload({
+          form: restApiForm,
+          bearerToken,
+          apiKey,
+          editing: Boolean(editing),
+          previousAuthType: previousRestAuthType,
+          hasSecrets: Boolean(editing?.has_secrets),
         });
         if (editing) {
           await api(`/projects/${projectId}/data-sources/${editing.id}`, {
@@ -339,8 +397,20 @@ export default function DataSources() {
     setSuccess("");
     setImportingId(source.id);
     const next = emptyImportState();
-    setImportState(next);
     void loadRecentJobs(source.id);
+
+    if (source.source_type === "rest_api") {
+      const resource = String(source.config.resource_path ?? "").trim() || "/";
+      setImportState({
+        ...next,
+        mode: "resource",
+        resource,
+        datasetName: suggestDatasetName(resource.split("?")[0].split("/").filter(Boolean).pop() || "api-data"),
+      });
+      return;
+    }
+
+    setImportState(next);
     setImportState((current) => ({ ...current, schemasLoading: true, schemasError: "" }));
     try {
       const schemas = await api<string[]>(`/projects/${projectId}/data-sources/${source.id}/schemas`);
@@ -358,6 +428,33 @@ export default function DataSources() {
           reason instanceof Error
             ? reason.message
             : "Could not load schemas. Test the data source connection and try again.",
+      }));
+    }
+  }
+
+  async function previewRestResource(source: DataSource) {
+    const resource = importState.resource.trim() || "/";
+    setImportState((current) => ({
+      ...current,
+      previewLoading: true,
+      previewError: "",
+      preview: null,
+    }));
+    try {
+      const preview = await api<{ columns: string[]; rows: Record<string, unknown>[] }>(
+        `/projects/${projectId}/data-sources/${source.id}/preview?resource=${encodeURIComponent(resource)}&limit=10`,
+      );
+      setImportState((current) => ({
+        ...current,
+        preview,
+        previewLoading: false,
+      }));
+    } catch (reason) {
+      setImportState((current) => ({
+        ...current,
+        previewLoading: false,
+        previewError:
+          reason instanceof Error ? reason.message : "REST API preview could not be loaded.",
       }));
     }
   }
@@ -428,7 +525,9 @@ export default function DataSources() {
       return;
     }
     let tableOrQuery = "";
-    if (importState.mode === "table") {
+    if (source.source_type === "rest_api") {
+      tableOrQuery = importState.resource.trim() || "/";
+    } else if (importState.mode === "table") {
       if (!importState.schema || !importState.table) {
         setError("Select a schema and table to import.");
         return;
@@ -510,10 +609,13 @@ export default function DataSources() {
             <select
               value={sourceType}
               disabled={Boolean(editing)}
-              onChange={(event) => setSourceType(event.target.value as "file" | "postgres")}
+              onChange={(event) =>
+                setSourceType(event.target.value as "file" | "postgres" | "rest_api")
+              }
               data-testid="data-source-type"
             >
               <option value="postgres">PostgreSQL</option>
+              <option value="rest_api">REST API</option>
               <option value="file">Managed file source</option>
             </select>
           </label>
@@ -641,6 +743,156 @@ export default function DataSources() {
                 </>
               )}
             </>
+          ) : sourceType === "rest_api" ? (
+            <>
+              <label htmlFor="data-source-rest-base-url">
+                Base URL
+                <input
+                  id="data-source-rest-base-url"
+                  value={restApiForm.baseUrl}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, baseUrl: event.target.value }))
+                  }
+                  required
+                  placeholder="https://api.example.com/v1"
+                  autoComplete="off"
+                  data-testid="data-source-rest-base-url"
+                />
+              </label>
+              <label htmlFor="data-source-rest-resource-path">
+                Default resource path
+                <input
+                  id="data-source-rest-resource-path"
+                  value={restApiForm.resourcePath}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, resourcePath: event.target.value }))
+                  }
+                  placeholder="/customers"
+                  autoComplete="off"
+                  data-testid="data-source-rest-resource-path"
+                />
+                <small>GET only. Import can override this relative path without changing the source.</small>
+              </label>
+              <div className="form-grid">
+                <label htmlFor="data-source-rest-data-path">
+                  JSON data path
+                  <input
+                    id="data-source-rest-data-path"
+                    value={restApiForm.dataPath}
+                    onChange={(event) =>
+                      setRestApiForm((current) => ({ ...current, dataPath: event.target.value }))
+                    }
+                    placeholder="data.items"
+                    data-testid="data-source-rest-data-path"
+                  />
+                  <small>Optional dot path to the object array inside a wrapped JSON response.</small>
+                </label>
+                <label htmlFor="data-source-rest-timeout">
+                  Timeout (seconds)
+                  <input
+                    id="data-source-rest-timeout"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={restApiForm.timeoutSeconds}
+                    onChange={(event) =>
+                      setRestApiForm((current) => ({
+                        ...current,
+                        timeoutSeconds: event.target.value,
+                      }))
+                    }
+                    required
+                    data-testid="data-source-rest-timeout"
+                  />
+                </label>
+              </div>
+              <label htmlFor="data-source-rest-auth-type">
+                Authentication
+                <select
+                  id="data-source-rest-auth-type"
+                  value={restApiForm.authType}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({
+                      ...current,
+                      authType: event.target.value as RestApiAuthType,
+                    }))
+                  }
+                  data-testid="data-source-rest-auth-type"
+                >
+                  <option value="none">None</option>
+                  <option value="bearer">Bearer token</option>
+                  <option value="api_key">API key header</option>
+                </select>
+              </label>
+              {restApiForm.authType === "bearer" && (
+                <label htmlFor="data-source-rest-bearer-token">
+                  Bearer token
+                  <input
+                    id="data-source-rest-bearer-token"
+                    type="password"
+                    autoComplete="new-password"
+                    value={bearerToken}
+                    onChange={(event) => setBearerToken(event.target.value)}
+                    placeholder={
+                      editing?.has_secrets && previousRestAuthType === "bearer"
+                        ? "Leave blank to keep saved token"
+                        : "Bearer token"
+                    }
+                    data-testid="data-source-rest-bearer-token"
+                  />
+                  <small>The saved token is encrypted and never returned by the API.</small>
+                </label>
+              )}
+              {restApiForm.authType === "api_key" && (
+                <div className="form-grid">
+                  <label htmlFor="data-source-rest-api-key-header">
+                    API key header
+                    <input
+                      id="data-source-rest-api-key-header"
+                      value={restApiForm.apiKeyHeader}
+                      onChange={(event) =>
+                        setRestApiForm((current) => ({
+                          ...current,
+                          apiKeyHeader: event.target.value,
+                        }))
+                      }
+                      required
+                      data-testid="data-source-rest-api-key-header"
+                    />
+                  </label>
+                  <label htmlFor="data-source-rest-api-key">
+                    API key
+                    <input
+                      id="data-source-rest-api-key"
+                      type="password"
+                      autoComplete="new-password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder={
+                        editing?.has_secrets && previousRestAuthType === "api_key"
+                          ? "Leave blank to keep saved API key"
+                          : "API key"
+                      }
+                      data-testid="data-source-rest-api-key"
+                    />
+                  </label>
+                </div>
+              )}
+              <label htmlFor="data-source-rest-query-params">
+                Query parameters
+                <textarea
+                  id="data-source-rest-query-params"
+                  className="code-input"
+                  value={restApiForm.queryParams}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, queryParams: event.target.value }))
+                  }
+                  spellCheck={false}
+                  data-testid="data-source-rest-query-params"
+                />
+                <small>Optional non-secret JSON object appended to every REST request.</small>
+              </label>
+            </>
           ) : (
             <label>
               Configuration
@@ -669,7 +921,7 @@ export default function DataSources() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="No connected data sources"
-          description="Add PostgreSQL or use direct dataset upload to bring data into ModelFlow."
+          description="Add PostgreSQL or a REST API source, or use direct dataset upload to bring data into ModelFlow."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
@@ -684,13 +936,17 @@ export default function DataSources() {
             <article className="source-card" key={source.id} data-testid={`data-source-card-${source.id}`}>
               <div className="project-card-top">
                 <span className="source-icon" aria-hidden="true">
-                  {source.source_type === "postgres" ? "▥" : "▤"}
+                  {source.source_type === "postgres" ? "▥" : source.source_type === "rest_api" ? "⇄" : "▤"}
                 </span>
                 <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
               </div>
               <h2>{source.name}</h2>
               <p className="muted">
-                {source.source_type === "postgres" ? "PostgreSQL database" : "Managed file source"}
+                {source.source_type === "postgres"
+                  ? "PostgreSQL database"
+                  : source.source_type === "rest_api"
+                    ? "REST API"
+                    : "Managed file source"}
                 {!source.is_active ? " · Inactive" : ""}
               </p>
               <dl className="key-values">
@@ -740,7 +996,8 @@ export default function DataSources() {
                       {busy === `test-${source.id}` ? "Testing…" : "Test connection"}
                     </button>
                   )}
-                  {source.is_active && source.source_type === "postgres" && (
+                  {source.is_active &&
+                    (source.source_type === "postgres" || source.source_type === "rest_api") && (
                     <button
                       className="btn"
                       onClick={() => openImport(source)}
@@ -787,32 +1044,34 @@ export default function DataSources() {
                   <div className="panel-title">
                     <div>
                       <span className="eyebrow">Import</span>
-                      <h3>Import from PostgreSQL</h3>
+                      <h3>{source.source_type === "rest_api" ? "Import from REST API" : "Import from PostgreSQL"}</h3>
                     </div>
                     <button className="btn link" type="button" onClick={closeImport}>
                       Close
                     </button>
                   </div>
-                  <div className="row-actions" role="tablist" aria-label="Import mode">
-                    <button
-                      type="button"
-                      className={importState.mode === "table" ? "btn" : "btn secondary"}
-                      onClick={() => setImportState((current) => ({ ...current, mode: "table" }))}
-                      data-testid="import-mode-table"
-                      disabled={importBusy}
-                    >
-                      Table
-                    </button>
-                    <button
-                      type="button"
-                      className={importState.mode === "sql" ? "btn" : "btn secondary"}
-                      onClick={() => setImportState((current) => ({ ...current, mode: "sql" }))}
-                      data-testid="import-mode-sql"
-                      disabled={importBusy}
-                    >
-                      SQL Query
-                    </button>
-                  </div>
+                  {source.source_type === "postgres" && (
+                    <div className="row-actions" role="tablist" aria-label="Import mode">
+                      <button
+                        type="button"
+                        className={importState.mode === "table" ? "btn" : "btn secondary"}
+                        onClick={() => setImportState((current) => ({ ...current, mode: "table" }))}
+                        data-testid="import-mode-table"
+                        disabled={importBusy}
+                      >
+                        Table
+                      </button>
+                      <button
+                        type="button"
+                        className={importState.mode === "sql" ? "btn" : "btn secondary"}
+                        onClick={() => setImportState((current) => ({ ...current, mode: "sql" }))}
+                        data-testid="import-mode-sql"
+                        disabled={importBusy}
+                      >
+                        SQL Query
+                      </button>
+                    </div>
+                  )}
                   <label>
                     Dataset name
                     <input
@@ -825,7 +1084,62 @@ export default function DataSources() {
                       data-testid="import-dataset-name"
                     />
                   </label>
-                  {importState.mode === "table" ? (
+                  {source.source_type === "rest_api" ? (
+                    <>
+                      <label>
+                        Resource path
+                        <input
+                          value={importState.resource}
+                          onChange={(event) =>
+                            setImportState((current) => ({
+                              ...current,
+                              resource: event.target.value,
+                              preview: null,
+                              previewError: "",
+                            }))
+                          }
+                          placeholder="/customers?status=active"
+                          disabled={importBusy}
+                          data-testid="import-rest-resource"
+                        />
+                        <small>Relative GET path under the configured Base URL.</small>
+                      </label>
+                      <div className="row-actions">
+                        <button
+                          className="btn secondary"
+                          type="button"
+                          onClick={() => previewRestResource(source)}
+                          disabled={importBusy || importState.previewLoading}
+                          data-testid="import-rest-preview"
+                        >
+                          {importState.previewLoading ? "Loading preview…" : "Preview response"}
+                        </button>
+                      </div>
+                      {importState.previewError && <ErrorNotice message={importState.previewError} />}
+                      {importState.preview && (
+                        <div className="table-wrap" data-testid="import-rest-preview-table">
+                          <table>
+                            <thead>
+                              <tr>
+                                {importState.preview.columns.map((column) => (
+                                  <th key={column}>{column}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importState.preview.rows.map((row, index) => (
+                                <tr key={index}>
+                                  {importState.preview!.columns.map((column) => (
+                                    <td key={column}>{String(row[column] ?? "")}</td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
+                  ) : importState.mode === "table" ? (
                     <>
                       <label>
                         Schema

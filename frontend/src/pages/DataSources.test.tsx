@@ -72,6 +72,28 @@ const inactivePostgres = {
   last_test_status: "ok",
 };
 
+
+const activeRestApi = {
+  id: 6,
+  project_id: 7,
+  name: "customer-api",
+  source_type: "rest_api" as const,
+  config: {
+    base_url: "https://api.example.com/v1",
+    resource_path: "/customers",
+    data_path: "data.items",
+    auth_type: "bearer",
+    timeout_seconds: 10,
+  },
+  has_secrets: true,
+  connection_mode: null,
+  is_active: true,
+  last_test_status: "ok",
+  last_test_message: "Connection succeeded. JSON response received.",
+  last_tested_at: "2026-09-18T01:00:00Z",
+  created_at: "2026-09-18T00:00:00Z",
+};
+
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/projects/7/data-sources"]}>
@@ -531,4 +553,162 @@ describe("DataSources operations UX", () => {
     expect(screen.getByTestId("last-test-message-3")).toHaveClass("err");
     expect(screen.getByTestId("last-test-message-3")).toHaveTextContent(/Connection failed/i);
   });
+
+  it("shows typed REST API fields and stores bearer credentials separately", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];
+      if (path === "/projects/7/data-sources" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "customer-api",
+          source_type: "rest_api",
+          config: {
+            base_url: "https://api.example.com/v1",
+            resource_path: "/customers",
+            auth_type: "bearer",
+            timeout_seconds: 10,
+          },
+          secrets: { bearer_token: "secret-token" },
+        });
+        expect(JSON.stringify(body.config)).not.toContain("secret-token");
+        return { ...activeRestApi, config: body.config };
+      }
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-type"), {
+      target: { value: "rest_api" },
+    });
+
+    expect(screen.getByTestId("data-source-rest-base-url")).toBeInTheDocument();
+    expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("data-source-name"), {
+      target: { value: "customer-api" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-rest-base-url"), {
+      target: { value: "https://api.example.com/v1" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-rest-resource-path"), {
+      target: { value: "/customers" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-rest-auth-type"), {
+      target: { value: "bearer" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-rest-bearer-token"), {
+      target: { value: "secret-token" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
+  it("edits a REST API source without exposing the saved bearer token", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") {
+        return [activeRestApi];
+      }
+      if (path === "/projects/7/data-sources/6" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body.secrets).toEqual({});
+        expect(body.clear_secrets).toEqual(["api_key", "token"]);
+        expect(JSON.stringify(body)).not.toContain("secret-token");
+        return activeRestApi;
+      }
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("edit-6"));
+    expect(screen.getByTestId("data-source-rest-base-url")).toHaveValue(
+      "https://api.example.com/v1",
+    );
+    expect(screen.getByTestId("data-source-rest-auth-type")).toHaveValue("bearer");
+    expect(screen.getByTestId("data-source-rest-bearer-token")).toHaveValue("");
+    expect(screen.getByTestId("data-source-rest-bearer-token")).toHaveAttribute(
+      "placeholder",
+      "Leave blank to keep saved token",
+    );
+    expect(screen.queryByDisplayValue("secret-token")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources/6",
+        expect.objectContaining({ method: "PATCH" }),
+      ),
+    );
+  });
+
+  it("previews and imports a REST API resource without schema discovery", async () => {
+    const succeeded = {
+      id: 14,
+      project_id: 7,
+      data_source_id: 6,
+      dataset_id: 27,
+      dataset_version_id: 41,
+      table_or_query: "/customers",
+      status: "succeeded",
+      error_message: null,
+      created_at: "2026-09-18T01:00:00Z",
+      finished_at: "2026-09-18T01:00:01Z",
+    };
+
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/data-sources") return [activeRestApi];
+      if (path.includes("/data-import-jobs?data_source_id=6")) return [];
+      if (path.includes("/data-sources/6/preview?")) {
+        return {
+          columns: ["id", "name"],
+          rows: [
+            { id: 1, name: "Ada" },
+            { id: 2, name: "Linus" },
+          ],
+        };
+      }
+      if (path === "/projects/7/data-sources/6/import" && method === "POST") {
+        const body = JSON.parse(String(init?.body || "{}"));
+        expect(body).toEqual({
+          dataset_name: "customers",
+          table_or_query: "/customers",
+        });
+        return succeeded;
+      }
+      if (path.endsWith("/schemas")) {
+        throw new Error("REST import must not perform schema discovery");
+      }
+      return [];
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("import-data-6"));
+    expect(await screen.findByText("Import from REST API")).toBeInTheDocument();
+    expect(screen.queryByTestId("import-schema")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("import-mode-sql")).not.toBeInTheDocument();
+    expect(screen.getByTestId("import-rest-resource")).toHaveValue("/customers");
+    expect(screen.getByTestId("import-dataset-name")).toHaveValue("customers");
+
+    fireEvent.click(screen.getByTestId("import-rest-preview"));
+    const preview = await screen.findByTestId("import-rest-preview-table");
+    expect(within(preview).getByText("Ada")).toBeInTheDocument();
+    expect(within(preview).getByText("Linus")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("import-submit"));
+    await waitFor(() =>
+      expect(screen.getByTestId("open-imported-dataset")).toHaveAttribute(
+        "href",
+        "/projects/7/datasets/27",
+      ),
+    );
+  });
+
 });

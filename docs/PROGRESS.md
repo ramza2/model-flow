@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 3 — End-to-End Pipeline UX is complete on `main`.**
+**Enhancement Phase 4-A — Connector Foundation + REST API Source** is the current implementation phase.
 
-**Next planned enhancement: Phase 4 — Connectors.** No Phase 4 implementation has started yet.
+Phase 3 remains complete on `main`. Phase 4-A starts from `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -142,7 +142,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`
+- Branch baseline: `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`
+- Phase 3 closeout merge (PR #51): `b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620` (post-merge CI #247 / run `35292163693` PASS)
 - Phase 3-D merge (PR #50): `ff6c1f92752263c5684f4d3311d377d05b27f4e4` (post-merge CI #245 / run `35289545125` PASS)
 - Phase 3-C merge (PR #49): `33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`
 - Phase 3-B merge (PR #47): `ffbe248a999c5fca1f26c54cd03de1d3eaebc643`
@@ -315,7 +316,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Begin **Enhancement Phase 4 — Connectors** from `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`. Phase 4 expands data-source connectivity with REST API sources and additional SQL databases while preserving the existing encrypted-credential, import, DatasetVersion, and Data Source UX contracts.
+Complete **Phase 4-A — Connector Foundation + REST API Source** from `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`. Acceptance requires existing PostgreSQL behavior to remain green, REST credentials to stay encrypted/redacted, REST preview/import to reuse the existing DataImportJob → DatasetVersion lineage, and the full verification gate to pass.
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

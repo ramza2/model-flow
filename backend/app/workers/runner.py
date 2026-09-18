@@ -2,28 +2,24 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 import traceback
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
-from urllib.parse import quote_plus
-
 import pandas as pd
-from sqlalchemy import create_engine, or_, select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
+from app.connectors import connector_for_source
 from app.core.config import settings
-from app.core.security import decrypt_secret
 from app.db.models import (
     Alert,
     AlertSeverity,
     BatchInferenceJob,
     DataImportJob,
     DataSource,
-    DataSourceType,
     Dataset,
     DatasetPreparationRun,
     DatasetPreparationRunStatus,
@@ -55,7 +51,6 @@ from app.services.training import TrainingJobContext, get_training_runner
 logger = logging.getLogger(__name__)
 PENDING_STATUSES = (JobStatus.pending, JobStatus.queued)
 STALE_TRAINING_AGE = timedelta(hours=1)
-_TABLE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$")
 
 
 def beat() -> None:
@@ -680,54 +675,9 @@ def process_drift_run(run: DriftRun) -> None:
         db.close()
 
 
-def _json_dict(value: str | None) -> dict:
-    try:
-        result = json.loads(value or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return result if isinstance(result, dict) else {}
-
-
-def _source_url(source: DataSource) -> str:
-    config = _json_dict(source.config_json)
-    secrets = (
-        _json_dict(decrypt_secret(source.secret_encrypted))
-        if source.secret_encrypted
-        else {}
-    )
-    if secrets.get("url") or secrets.get("dsn"):
-        return str(secrets.get("url") or secrets.get("dsn"))
-    required = ("host", "database", "user")
-    missing = [key for key in required if not (config.get(key) or secrets.get(key))]
-    if missing:
-        raise ValueError(f"Data source is missing: {', '.join(missing)}.")
-    user = quote_plus(str(config.get("user") or secrets.get("user")))
-    password = quote_plus(str(secrets.get("password", "")))
-    auth = f"{user}:{password}" if password else user
-    host = str(config.get("host") or secrets.get("host"))
-    port = int(config.get("port") or secrets.get("port") or 5432)
-    database = quote_plus(str(config.get("database") or secrets.get("database")))
-    return f"postgresql+psycopg2://{auth}@{host}:{port}/{database}"
-
-
-def _import_query(engine, query_or_table: str) -> str:
-    value = query_or_table.strip()
-    if value.endswith(";"):
-        value = value[:-1].rstrip()
-    if not value or ";" in value:
-        raise ValueError("Data imports accept one read-only SELECT or table name.")
-    if _TABLE_NAME.fullmatch(value):
-        parts = value.split(".", 1)
-        quoted = [engine.dialect.identifier_preparer.quote_identifier(part) for part in parts]
-        return f"SELECT * FROM {'.'.join(quoted)}"
-    if not re.match(r"^(select|with)\b", value, flags=re.IGNORECASE):
-        raise ValueError("Data imports accept only a read-only SELECT or table name.")
-    return value
-
-
 def process_import_job(job: DataImportJob) -> None:
     db = SessionLocal()
-    engine = None
+    connector = None
     try:
         live = db.get(DataImportJob, job.id)
         if live is None:
@@ -743,17 +693,12 @@ def process_import_job(job: DataImportJob) -> None:
             raise ValueError("Import source or target dataset was not found in this project.")
         if not source.is_active:
             raise ValueError("Import source is inactive.")
-        if source.source_type != DataSourceType.postgres:
-            raise ValueError("Worker imports currently support PostgreSQL data sources.")
-        engine = create_engine(
-            _source_url(source),
-            pool_pre_ping=True,
-            connect_args={"connect_timeout": 5},
-        )
-        query = _import_query(engine, live.query_or_table)
-        with engine.connect() as connection, connection.begin():
-            connection.execute(text("SET TRANSACTION READ ONLY"))
-            frame = pd.read_sql_query(text(query), connection)
+        connector = connector_for_source(source)
+        if not connector.supports_import:
+            raise ValueError(
+                f"{connector.source_label} does not support worker imports."
+            )
+        frame = connector.read_frame(live.query_or_table)
         if frame.empty and not len(frame.columns):
             raise ValueError("Data source query returned no columns.")
         payload = frame.to_csv(index=False).encode()
@@ -764,7 +709,7 @@ def process_import_job(job: DataImportJob) -> None:
             f"{source.name}-import-{live.id}.csv",
             file_format="csv",
             created_by=live.created_by,
-            source_type="postgres",
+            source_type=source.source_type.value,
             data_source_id=source.id,
             import_job_id=live.id,
         )
@@ -782,8 +727,8 @@ def process_import_job(job: DataImportJob) -> None:
             live.finished_at = datetime.now(timezone.utc)
             db.commit()
     finally:
-        if engine is not None:
-            engine.dispose()
+        if connector is not None:
+            connector.close()
         db.close()
 
 

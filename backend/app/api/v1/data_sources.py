@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from urllib.parse import quote_plus
-
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.common import (
@@ -17,13 +15,13 @@ from app.api.v1.common import (
     import_job_out,
     loads,
 )
+from app.connectors import ConnectorOperationNotSupported, connector_for_source
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
 from app.core.security import decrypt_secret, encrypt_secret
 from app.db.models import (
     DataImportJob,
     DataSource,
-    DataSourceType,
     Dataset,
     DatasetVersion,
 )
@@ -32,7 +30,17 @@ from app.schemas.v1 import DataImportRequest, DataSourceCreate, DataSourceUpdate
 from app.services import job_factories
 
 router = APIRouter(tags=["data-sources"])
-_SECRET_KEYS = {"password", "passwd", "secret", "token", "api_key", "url", "dsn"}
+_SECRET_KEYS = {
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "bearer_token",
+    "authorization",
+    "api_key",
+    "url",
+    "dsn",
+}
 
 
 def _source_has_usage(db: Session, source_id: int) -> bool:
@@ -76,32 +84,6 @@ def _secret_dict(source: DataSource) -> dict:
     if not source.secret_encrypted:
         return {}
     return loads(decrypt_secret(source.secret_encrypted), {})
-
-
-def _connection_url(source: DataSource) -> str:
-    config = loads(source.config_json, {})
-    secrets = _secret_dict(source)
-    if secrets.get("url") or secrets.get("dsn"):
-        return str(secrets.get("url") or secrets.get("dsn"))
-    if source.source_type != DataSourceType.postgres:
-        raise friendly(400, "This data source does not support database operations.")
-    required = ["host", "database", "user"]
-    missing = [key for key in required if not (config.get(key) or secrets.get(key))]
-    if missing:
-        raise friendly(400, f"Data source is missing: {', '.join(missing)}.")
-    user = quote_plus(str(config.get("user") or secrets.get("user")))
-    password = quote_plus(str(secrets.get("password", "")))
-    auth = f"{user}:{password}" if password else user
-    host = config.get("host")
-    port = int(config.get("port", 5432))
-    database = quote_plus(str(config.get("database")))
-    return f"postgresql+psycopg2://{auth}@{host}:{port}/{database}"
-
-
-def _source_engine(source: DataSource):
-    return create_engine(
-        _connection_url(source), pool_pre_ping=True, connect_args={"connect_timeout": 5}
-    )
 
 
 @router.get("/projects/{project_id}/data-sources")
@@ -311,29 +293,27 @@ def test_data_source(
             "This data source is inactive.",
             "Activate it before testing the connection.",
         )
-    engine = None
+    connector = None
     try:
-        if source.source_type == DataSourceType.file:
-            message = "File source configuration is valid."
-        else:
-            engine = _source_engine(source)
-            with engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
-            message = "Connection succeeded."
+        connector = connector_for_source(source)
+        message = connector.test_connection()
         source.last_test_status = "ok"
         source.last_test_message = message
         success = True
+        failure = None
     except Exception as exc:
         source.last_test_status = "error"
         source.last_test_message = (
-            "Connection failed. Check the host, database, and credentials."
+            connector.connection_failure_message
+            if connector is not None
+            else "Connection failed. Check the data source configuration."
         )
         message = source.last_test_message
         success = False
         failure = exc.__class__.__name__
     finally:
-        if engine is not None:
-            engine.dispose()
+        if connector is not None:
+            connector.close()
     source.last_tested_at = datetime.now(timezone.utc)
     audit_event(
         db,
@@ -342,7 +322,7 @@ def test_data_source(
         "data_source",
         source.id,
         success=success,
-        failure_reason=failure if not success else None,
+        failure_reason=failure,
     )
     db.commit()
     return {"status": source.last_test_status, "message": message}
@@ -356,17 +336,17 @@ def list_schemas(
     db: Session = Depends(get_db),
 ):
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
-    if source.source_type == DataSourceType.file:
-        return []
-    engine = _source_engine(source)
+    connector = None
     try:
-        return inspect(engine).get_schema_names()
+        connector = connector_for_source(source)
+        return connector.list_schemas()
     except Exception as exc:
         raise friendly(
             502, "Could not list schemas.", "Test the data source connection."
         ) from exc
     finally:
-        engine.dispose()
+        if connector is not None:
+            connector.close()
 
 
 @router.get("/projects/{project_id}/data-sources/{source_id}/tables")
@@ -378,21 +358,46 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     source = get_owned(db, DataSource, source_id, project_id, "Data source")
-    if source.source_type == DataSourceType.file:
-        return []
-    engine = _source_engine(source)
+    connector = None
     try:
-        inspector = inspect(engine)
-        return [
-            {"schema": schema, "name": name}
-            for name in inspector.get_table_names(schema=schema)
-        ]
+        connector = connector_for_source(source)
+        return connector.list_tables(schema=schema)
     except Exception as exc:
         raise friendly(
             502, "Could not list tables.", "Test the data source connection."
         ) from exc
     finally:
-        engine.dispose()
+        if connector is not None:
+            connector.close()
+
+
+@router.get("/projects/{project_id}/data-sources/{source_id}/preview")
+def preview_data_source(
+    project_id: int,
+    source_id: int,
+    resource: str = Query(default="", max_length=2000),
+    limit: int = Query(default=20, ge=1, le=100),
+    _=Depends(require_project_perm(Permission.DATA_READ)),
+    db: Session = Depends(get_db),
+):
+    source = get_owned(db, DataSource, source_id, project_id, "Data source")
+    if not source.is_active:
+        raise friendly(409, "This data source is inactive.")
+    connector = None
+    try:
+        connector = connector_for_source(source)
+        return connector.preview(resource, limit=limit).as_dict()
+    except ConnectorOperationNotSupported as exc:
+        raise friendly(400, str(exc)) from exc
+    except Exception as exc:
+        raise friendly(
+            502,
+            "Could not preview data from this source.",
+            "Check the resource path, response shape, and connection settings.",
+        ) from exc
+    finally:
+        if connector is not None:
+            connector.close()
 
 
 @router.post("/projects/{project_id}/data-sources/{source_id}/import", status_code=202)
