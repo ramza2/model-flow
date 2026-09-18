@@ -1,7 +1,7 @@
 # Phase 3 — End-to-End Pipeline UX
 
-Status: **Implementation plan — Phase 3-C current**  
-Baseline: `main@ffbe248a999c5fca1f26c54cd03de1d3eaebc643`  
+Status: **Implementation plan — Phase 3-D current**  
+Baseline: `main@33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`  
 Depends on: Phase 1.5 UX architecture and completed Phase 2 Dataset Preparation
 
 ## Purpose
@@ -97,42 +97,60 @@ Acceptance confirmed:
 
 ## Phase 3-C — Unified Run-state, Error, Progress & Lineage UX
 
-**Current implementation slice.**
+**Complete on `main` via PR #49 (`33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`; merge commit CI PASS).**
 
-- use the shared lifecycle taxonomy for Builder coverage and Pipeline Run execution summaries
-- normalize pending/running/succeeded/failed/skipped/reused/cancelled status presentation without changing backend status semantics
-- show terminal-step progress and stage-level state from the persisted historical PipelineVersion graph
-- surface the first failed node as the recovery focus while retaining existing failed-node auto-selection and rerun-from-failed behavior
-- expose cross-lifecycle lineage recorded in graph configuration and persisted node artifacts: exact DatasetVersion, Training Job, Experiment Run, Model Version, Deployment, Batch Inference, and Alert
-- keep runtime retry/reuse, branch execution, artifacts, logging, and polling backend-owned
+Delivered:
 
-Implementation boundary:
+- shared lifecycle taxonomy for Builder coverage and Pipeline Run execution summaries
+- deterministic pending/running/succeeded/failed/skipped/reused/cancelled presentation without changing backend status semantics
+- terminal-step and stage-level progress from the persisted historical PipelineVersion graph
+- first-failed-node recovery focus while retaining existing failed-node auto-selection and rerun-from-failed behavior
+- cross-lifecycle lineage from existing graph configuration and persisted node artifacts: exact DatasetVersion, Training Job, Experiment Run, Model Version, Deployment, Batch Inference, and Alert
+- current Builder only borrows latest-run state when that run belongs to the same saved PipelineVersion
 
-- presentation is frontend-only and wraps the existing Pipeline Builder / Pipeline Run Detail instead of replacing execution UX
+Implementation boundary retained:
+
+- presentation wraps the existing Pipeline Builder / Pipeline Run Detail instead of replacing execution UX
 - lineage is derived only from existing Pipeline graph configuration, node state output, and persisted node artifacts
 - no new backend API, DB schema, migration, runtime state, retry rule, or artifact format
 - historical PipelineVersion remains the source of truth for run-stage mapping
 
-Acceptance:
+Acceptance confirmed:
 
-- the same lifecycle taxonomy is used in Builder and Run summaries
+- Builder and Run summaries use the same lifecycle taxonomy
 - runtime status aliases map to one deterministic UI vocabulary with targeted tests
-- stage progress is computed from the historical graph and node states, including reused/skipped states as terminal
-- failed runs identify the first failed node and provide an explicit recovery cue without changing rerun semantics
-- exact DatasetVersion → Training Job → Experiment/Model → Deployment lineage links appear when those ids exist in persisted output/artifacts
+- reused/skipped/cancelled states are terminal for progress while failed nodes still drive recovery focus
+- exact DatasetVersion → Training Job → Experiment/Model → Deployment lineage links appear when recorded ids exist
 - a run from an older PipelineVersion never borrows the current Pipeline graph for stage mapping
-
-Phase 3-C remains incomplete while its Draft PR is open. It completes only after merge and the resulting `main` CI succeeds.
 
 ## Phase 3-D — Final Hardening / Browser Regression
 
-Final Phase 3 slice.
+**Current final Phase 3 slice.**
 
-- end-to-end browser regression for representative lifecycle workflows
-- RBAC/read-only verification
-- unsaved-change/navigation regression
-- responsive/accessibility checks for the expanded Pipeline UX
-- full integrated verification gate and Phase 3 completion documentation
+- close the remaining unsaved Pipeline navigation gap beyond the existing browser `beforeunload` and Builder-local back-link confirmation
+- guard same-origin SPA/sidebar navigation and project switching while Pipeline edits are dirty
+- preserve in-page anchors, external links, modified-click behavior, and existing Builder-local back-link confirmation without duplicate prompts
+- run browser regression for lifecycle Builder read-only RBAC and responsive drawer behavior
+- confirm the expanded lifecycle UI does not introduce horizontal document overflow at the supported drawer breakpoint
+- retain all Phase 3-A/B/C unit and integration regressions plus the repository full verification gate
+
+Implementation boundary:
+
+- frontend navigation hardening only; no Pipeline execution, backend API, DB schema, migration, artifact, retry/reuse, or scheduling changes
+- existing `useBeforeUnload` remains the hard-refresh/browser-close protection
+- the shared app guard covers same-origin SPA links and project-picker navigation while the Pipeline Builder reports unsaved state
+- existing read-only role rules remain authoritative
+
+Acceptance:
+
+- dismissing the unsaved confirmation keeps the user on the dirty Pipeline and preserves the dirty state
+- accepting the confirmation allows sidebar navigation or project switching
+- Viewer can inspect lifecycle coverage and graph configuration but receives no Builder mutation controls
+- at drawer viewport width, navigation toggle state/focus behavior remains accessible and lifecycle content remains usable without page-level horizontal overflow
+- all existing Phase 3 exact-version, run-state, recovery, lineage, RBAC, and Pipeline runtime regressions remain green
+- full repository verification and exact PR HEAD CI pass
+
+Phase 3-D remains incomplete while its Draft PR is open. **Phase 3 completes only after Phase 3-D merges and the resulting `main` CI succeeds.**
 
 ## Explicitly out of scope for Phase 3
 

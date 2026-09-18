@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 3-C — Unified Run-state, Error, Progress & Lineage UX** is the current implementation phase.
+**Enhancement Phase 3-D — Final Hardening / Browser Regression** is the current implementation phase.
 
 Phase **2-A — Dataset Preparation Foundation** is complete on `main` (merged via PR #38; merge commit `4b3146a1550938ca1bc143ec88e852c422be09b4`).
 
@@ -94,16 +94,27 @@ Phase 3-B delivered:
 - existing Dataset → Training → Experiment/Registry → Deployment → Prediction/Monitoring links are reused rather than duplicated
 - no backend/API/runtime/DB/migration changes
 
-Phase 3-C scope (current implementation):
+Phase **3-C — Unified Run-state, Error, Progress & Lineage UX** is complete on `main` (merged via PR #49; merge commit `33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`; merge commit CI PASS).
 
-- unify Pipeline Builder coverage and Pipeline Run execution summaries on the shared lifecycle taxonomy
-- normalize pending/running/succeeded/failed/skipped/reused/cancelled presentation without changing backend runtime semantics
-- compute stage and overall terminal-step progress from the exact historical PipelineVersion graph and node states
-- surface first-failed-node recovery focus while retaining existing auto-focus and rerun-from-failed behavior
-- expose exact DatasetVersion → Training Job → Experiment/Model → Deployment/Batch/Alert lineage from existing graph configuration and persisted node artifacts
+Phase 3-C delivered:
+
+- unified Pipeline Builder coverage and Pipeline Run execution summaries on the shared lifecycle taxonomy
+- deterministic pending/running/succeeded/failed/skipped/reused/cancelled presentation without changing backend runtime semantics
+- stage and overall terminal-step progress from the exact historical PipelineVersion graph and node states
+- first-failed-node recovery focus while retaining existing auto-focus and rerun-from-failed behavior
+- exact DatasetVersion → Training Job → Experiment/Model → Deployment/Batch/Alert lineage from existing graph configuration and persisted node artifacts
 - no backend/API/runtime/DB/migration or retry/reuse semantic changes
 
-The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3-C remains current until this Draft PR merges and its resulting `main` CI succeeds. Verification coverage is documented in [`phase-3c-verification.md`](./phase-3c-verification.md). Phase 3 is not complete until the planned final hardening slice merges and `main` CI succeeds.
+Phase 3-D scope (current implementation):
+
+- close the remaining unsaved Pipeline navigation gap for same-origin SPA/sidebar navigation and project switching
+- preserve the existing browser `beforeunload` protection and Builder-local back-link confirmation without duplicate prompts
+- add browser regression for Viewer/read-only Pipeline Builder access
+- add drawer viewport accessibility/focus and horizontal-overflow regression for the expanded lifecycle UX
+- retain all Phase 3 exact-version, run-state, recovery, lineage, RBAC, and Pipeline runtime regressions
+- no backend/API/runtime/DB/migration changes
+
+The Phase 3 implementation plan is documented in [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md). Phase 3-D remains current until its Draft PR merges and the resulting `main` CI succeeds. Verification coverage is documented in [`phase-3d-verification.md`](./phase-3d-verification.md). Phase 3 is not complete until that post-merge CI succeeds.
 
 **Enhancement Phase 1.5 — UX Architecture & Frontend UX Refactoring** remains complete on `main`.
 
@@ -125,6 +136,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main`
+- Phase 3-C merge (PR #49): `33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`
 - Phase 3-B merge (PR #47): `ffbe248a999c5fca1f26c54cd03de1d3eaebc643`
 - Phase 3-A merge (PR #46): `f30a9541c30c8722009e31839e819c30d6d69de9`
 - Phase 2-G merge (PR #45): `b847f658f2f8bf78c9c5ad878750730da711775c`
@@ -287,12 +299,12 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 3-C — Unified Run-state, Error, Progress & Lineage UX**. After Phase 3-C merges and the merge commit CI passes, continue with **Phase 3-D — Final Hardening / Browser Regression**. Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
+Complete **Phase 3-D — Final Hardening / Browser Regression**. After Phase 3-D merges and the merge commit CI passes, **Enhancement Phase 3 — End-to-End Pipeline UX is complete**. Dataset Preparation remains responsible for multi-dataset composition; Pipeline consumes its materialized exact DatasetVersion through the existing `dataset_load` step, and TrainingJob continues to consume one pinned rectangular DatasetVersion (see D-035).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
 Known object-store atomicity limitation retained for a later hardening slice: if artifact upload succeeds but the final DB commit fails, an orphaned object may require cleanup/reconciliation.
 
-Known UX debt retained from Phase 1.5:
+Known non-blocking frontend optimization debt retained after Phase 3-C:
 
-- full SPA / sidebar / project-switch unsaved navigation guard
+- Pipeline Run lifecycle summary and the underlying historical Run Detail currently maintain independent active-run polling loops; this duplicates a read-only request while a run is active and can be consolidated in a later frontend performance cleanup.
