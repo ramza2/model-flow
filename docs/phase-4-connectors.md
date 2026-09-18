@@ -68,8 +68,8 @@ Concrete connectors keep:
 - default ports (`postgres` 5432, `mysql` 3306)
 - connect args
 - dialect-specific read-only transaction setup
-  - PostgreSQL: `SET TRANSACTION READ ONLY`
-  - MySQL/MariaDB: `SET SESSION TRANSACTION READ ONLY`
+  - PostgreSQL: begin transaction, then `SET TRANSACTION READ ONLY`
+  - MySQL/MariaDB: `START TRANSACTION READ ONLY` (session `SET` is not used after begin)
 
 ### Configuration
 

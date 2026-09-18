@@ -178,6 +178,58 @@ assert_services_healthy() {
   pass "all required services healthy"
 }
 
+# Verification-only: disposable source DBs used by connector integration/E2E.
+VERIFY_SOURCE_SERVICES=(postgres-source mysql-source mariadb-source)
+
+assert_source_services_healthy() {
+  info "Checking verification source DB health for: ${VERIFY_SOURCE_SERVICES[*]}"
+  local report
+  report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
+  echo "$report" | tee artifacts/verify/compose-ps-sources.txt
+  local svc health state line
+  for svc in "${VERIFY_SOURCE_SERVICES[@]}"; do
+    line="$(echo "$report" | grep "^${svc}=" || true)"
+    [[ -n "$line" ]] || fail "source service '$svc' not found in docker compose ps"
+    health="$(echo "$line" | cut -d= -f2)"
+    state="$(echo "$line" | cut -d= -f3)"
+    [[ "$state" == "running" ]] || fail "source service '$svc' state=$state (expected running)"
+    [[ "$health" == "healthy" ]] || fail "source service '$svc' health=$health (expected healthy)"
+  done
+  pass "verification source databases healthy"
+}
+
+wait_for_source_services_healthy() {
+  info "Waiting for verification source databases to become healthy"
+  local i report svc health state line ready
+  for i in $(seq 1 90); do
+    report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
+    echo "$report" | tee artifacts/verify/compose-ps-sources-wait.txt >/dev/null
+    ready=1
+    for svc in "${VERIFY_SOURCE_SERVICES[@]}"; do
+      line="$(echo "$report" | grep "^${svc}=" || true)"
+      if [[ -z "$line" ]]; then
+        ready=0
+        break
+      fi
+      health="$(echo "$line" | cut -d= -f2)"
+      state="$(echo "$line" | cut -d= -f3)"
+      if [[ "$state" != "running" || "$health" != "healthy" ]]; then
+        ready=0
+        break
+      fi
+    done
+    if [[ "$ready" -eq 1 ]]; then
+      assert_source_services_healthy
+      return 0
+    fi
+    sleep 2
+  done
+  modelflow_compose ps -a | tee artifacts/verify/compose-ps-sources-timeout.txt || true
+  modelflow_compose logs --no-color --tail=80 mysql-source mariadb-source postgres-source \
+    | tee artifacts/verify/logs-sources-timeout.txt || true
+  fail "verification source databases did not become healthy"
+}
+
 require_host_tools
 
 # Capture the caller's .env checksum (if any) and never rewrite or source it into
@@ -344,6 +396,7 @@ pass "bootstrap administrator login"
 # Give the worker heartbeat a moment after process start.
 sleep 5
 assert_services_healthy
+wait_for_source_services_healthy
 
 info "4) Alembic"
 modelflow_compose exec -T backend alembic current | tee artifacts/verify/alembic.txt

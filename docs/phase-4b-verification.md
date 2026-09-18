@@ -25,10 +25,18 @@ Phase 4-B adds regression for:
 - schema/database and table discovery through SQLAlchemy Inspector
 - table import, SELECT import, read-only WITH
 - mutation and multiple-statement rejection
+- SELECT side-effect rejection (`INTO OUTFILE` / `INTO DUMPFILE` / `FOR UPDATE` / `LOCK IN SHARE MODE`) without blocking matching string literals
 - DatasetVersion lineage `source_type=mysql`
 - live disposable MySQL and MariaDB fixtures when Compose source credentials are present
+- **DB-level read-only transaction enforcement** on both `mysql:8.4.5` and `mariadb:11.4.5`:
+  - import/preview transactions start with `START TRANSACTION READ ONLY` (not in-transaction `SET SESSION TRANSACTION READ ONLY`)
+  - validator-accepted `WITH … UPDATE` / `WITH … DELETE` fail at the engine
+  - seeded `customers` rows remain unchanged after rejected write attempts
+  - normal `SELECT` / `WITH … SELECT` continue to succeed
 
 Existing PostgreSQL and REST connector tests remain authoritative for their paths.
+
+Verification waits for `postgres-source`, `mysql-source`, and `mariadb-source` to be healthy before backend integration tests and Playwright run.
 
 ## Frontend coverage
 

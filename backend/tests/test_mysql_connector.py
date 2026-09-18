@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import os
 
+import pandas as pd
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
 from app.connectors.mysql import MySqlConnector
 from app.connectors.sql_relational import (
+    build_import_query,
     host_port_sqlalchemy_url,
     normalize_sqlalchemy_url,
+    reject_select_side_effects,
+    strip_sql_literals_and_comments,
 )
 
 
@@ -90,6 +94,30 @@ def test_mysql_import_query_allows_table_select_and_with_rejects_mutations():
         MySqlConnector._import_query(engine, "CALL refresh_customers()")
 
 
+def test_import_query_rejects_select_side_effects_without_blocking_literals():
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers INTO OUTFILE '/tmp/customers.csv'"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers INTO DUMPFILE '/tmp/customers.bin'"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(engine, "SELECT id FROM customers FOR UPDATE")
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(engine, "SELECT id FROM customers LOCK IN SHARE MODE")
+    # String literals containing forbidden phrases must still be allowed.
+    allowed = (
+        "SELECT 'FOR UPDATE' AS note, 'INTO OUTFILE /tmp/x' AS path "
+        "FROM customers WHERE name = 'LOCK IN SHARE MODE'"
+    )
+    assert build_import_query(engine, allowed) == allowed
+    cleaned = strip_sql_literals_and_comments(allowed)
+    assert "FOR UPDATE" not in cleaned.upper()
+    reject_select_side_effects(allowed)
+
+
 def _live_source(prefix: str) -> dict[str, str] | None:
     user = os.environ.get(f"{prefix}_USER", "").strip()
     password = os.environ.get(f"{prefix}_PASSWORD", "").strip()
@@ -107,6 +135,43 @@ def _live_source(prefix: str) -> dict[str, str] | None:
     }
 
 
+def _connector_for(creds: dict[str, str]) -> MySqlConnector:
+    return MySqlConnector(
+        {
+            "host": creds["host"],
+            "port": int(creds["port"]),
+            "database": creds["database"],
+            "user": creds["user"],
+        },
+        {"password": creds["password"]},
+    )
+
+
+def _customer_fingerprint(creds: dict[str, str]) -> list[tuple]:
+    engine = create_engine(
+        host_port_sqlalchemy_url(
+            drivername="mysql+pymysql",
+            host=creds["host"],
+            port=int(creds["port"]),
+            database=creds["database"],
+            user=creds["user"],
+            password=creds["password"],
+        ),
+        pool_pre_ping=True,
+    )
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT id, name, email, segment, lifetime_value "
+                    "FROM customers ORDER BY id"
+                )
+            ).fetchall()
+            return [tuple(row) for row in rows]
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize(
     "prefix,label",
     [
@@ -119,15 +184,7 @@ def test_live_mysql_family_connection_discovery_and_read(prefix: str, label: str
     if creds is None:
         pytest.skip(f"{label} disposable source credentials are not configured")
 
-    connector = MySqlConnector(
-        {
-            "host": creds["host"],
-            "port": int(creds["port"]),
-            "database": creds["database"],
-            "user": creds["user"],
-        },
-        {"password": creds["password"]},
-    )
+    connector = _connector_for(creds)
     assert connector.test_connection() == "Connection succeeded."
     schemas = connector.list_schemas()
     assert creds["database"] in schemas
@@ -151,3 +208,52 @@ def test_live_mysql_family_connection_discovery_and_read(prefix: str, label: str
         "SELECT name FROM top"
     )
     assert with_frame.iloc[0]["name"] == "Grace Hopper"
+
+
+@pytest.mark.parametrize(
+    "prefix,label",
+    [
+        ("SOURCE_MYSQL", "MySQL"),
+        ("SOURCE_MARIADB", "MariaDB"),
+    ],
+)
+def test_live_mysql_family_read_only_transaction_rejects_writes(
+    prefix: str, label: str
+):
+    creds = _live_source(prefix)
+    if creds is None:
+        pytest.skip(f"{label} disposable source credentials are not configured")
+
+    connector = _connector_for(creds)
+    before = _customer_fingerprint(creds)
+    assert len(before) >= 3
+
+    # Validator allows WITH …; DB-level READ ONLY must still reject mutation.
+    with_update = (
+        "WITH target AS (SELECT id FROM customers WHERE segment = 'starter') "
+        "UPDATE customers SET segment = 'mutated' "
+        "WHERE id IN (SELECT id FROM target)"
+    )
+    assert MySqlConnector._import_query(engine, with_update) == with_update
+    with pytest.raises(Exception):
+        connector.read_frame(with_update)
+
+    with_delete = (
+        "WITH target AS (SELECT id FROM customers WHERE segment = 'growth') "
+        "DELETE FROM customers WHERE id IN (SELECT id FROM target)"
+    )
+    assert MySqlConnector._import_query(engine, with_delete) == with_delete
+    with pytest.raises(Exception):
+        connector.read_frame(with_delete)
+
+    # Locking SELECT is rejected by the import validator before execution.
+    with pytest.raises(ValueError, match="read-only"):
+        connector.read_frame("SELECT id FROM customers FOR UPDATE")
+
+    after = _customer_fingerprint(creds)
+    assert after == before
+
+    # Normal SELECT still works after rejected write attempts.
+    ok = connector.read_frame("SELECT name FROM customers WHERE segment = 'enterprise'")
+    assert isinstance(ok, pd.DataFrame)
+    assert ok.iloc[0]["name"] == "Ada Lovelace"

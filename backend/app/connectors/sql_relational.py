@@ -8,17 +8,26 @@ concrete connector. Only truly shared read-path behavior lives here.
 from __future__ import annotations
 
 import re
-from typing import Any
+from contextlib import contextmanager
+from typing import Any, Iterator
 from urllib.parse import quote_plus, urlparse, urlunparse
 
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Connection, Engine
 
 from app.connectors.base import ConnectorPreview, DataConnector, frame_preview
 
 _TABLE_NAME = re.compile(
     r"^[A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)?$"
+)
+
+# Side-effect / locking forms that look like SELECT/WITH but must not import.
+_FORBIDDEN_SELECT_FORMS = (
+    re.compile(r"\binto\s+outfile\b", re.IGNORECASE),
+    re.compile(r"\binto\s+dumpfile\b", re.IGNORECASE),
+    re.compile(r"\bfor\s+update\b", re.IGNORECASE),
+    re.compile(r"\block\s+in\s+share\s+mode\b", re.IGNORECASE),
 )
 
 
@@ -28,6 +37,59 @@ def quote_identifier(engine: Engine, name: str) -> str:
 
 def validate_table_name(value: str) -> bool:
     return bool(_TABLE_NAME.fullmatch(value))
+
+
+def strip_sql_literals_and_comments(sql: str) -> str:
+    """Remove comments and quoted literals so keyword checks ignore string content."""
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if ch == "-" and nxt == "-":
+            while i < n and sql[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        if ch == "#":
+            while i < n and sql[i] not in "\r\n":
+                i += 1
+            continue
+        if ch in {"'", '"', "`"}:
+            quote = ch
+            out.append(" ")
+            i += 1
+            while i < n:
+                if sql[i] == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if sql[i] == quote:
+                    # SQL '' escape inside single quotes
+                    if quote == "'" and i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def reject_select_side_effects(sql: str) -> None:
+    cleaned = strip_sql_literals_and_comments(sql)
+    for pattern in _FORBIDDEN_SELECT_FORMS:
+        if pattern.search(cleaned):
+            raise ValueError(
+                "Data imports accept only a read-only SELECT or table name."
+            )
 
 
 def build_import_query(engine: Engine, resource: str) -> str:
@@ -45,6 +107,7 @@ def build_import_query(engine: Engine, resource: str) -> str:
         raise ValueError(
             "Data imports accept only a read-only SELECT or table name."
         )
+    reject_select_side_effects(value)
     return value
 
 
@@ -148,9 +211,12 @@ class SqlAlchemyRelationalConnector(DataConnector):
     def _import_query(cls, engine: Engine, resource: str) -> str:
         return build_import_query(engine, resource)
 
-    def _apply_read_only(self, connection) -> None:
-        """Dialect-specific read-only transaction setup. Override per engine."""
-        connection.execute(text("SET TRANSACTION READ ONLY"))
+    @contextmanager
+    def _read_only_transaction(self, connection: Connection) -> Iterator[Connection]:
+        """PostgreSQL: begin, then SET TRANSACTION READ ONLY for this txn."""
+        with connection.begin():
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            yield connection
 
     def test_connection(self) -> str:
         engine = self._engine()
@@ -185,9 +251,9 @@ class SqlAlchemyRelationalConnector(DataConnector):
             query = self._import_query(engine, resource)
             if limit is not None:
                 query = wrap_preview_query(query, limit)
-            with engine.connect() as connection, connection.begin():
-                self._apply_read_only(connection)
-                return pd.read_sql_query(text(query), connection)
+            with engine.connect() as connection:
+                with self._read_only_transaction(connection):
+                    return pd.read_sql_query(text(query), connection)
         finally:
             engine.dispose()
 
