@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -33,6 +34,10 @@ class RestApiConnector(DataConnector):
         parsed = urlparse(self.base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("REST API base_url must be an absolute http(s) URL.")
+        if parsed.username or parsed.password:
+            raise ValueError(
+                "REST API credentials must not be embedded in base_url."
+            )
 
         self.resource_path = str(config.get("resource_path") or "").strip()
         self.data_path = str(config.get("data_path") or "").strip()
@@ -87,28 +92,46 @@ class RestApiConnector(DataConnector):
                 "REST API resource must be a relative path under the configured base URL."
             )
         base = self.base_url.rstrip("/") + "/"
-        return urljoin(base, selected.lstrip("/"))
+        target = urljoin(base, selected.lstrip("/"))
+        base_parsed = urlparse(base)
+        target_parsed = urlparse(target)
+        base_path = base_parsed.path.rstrip("/") + "/"
+        if (
+            target_parsed.scheme != base_parsed.scheme
+            or target_parsed.netloc != base_parsed.netloc
+            or not target_parsed.path.startswith(base_path)
+        ):
+            raise ValueError(
+                "REST API resource must remain under the configured base URL."
+            )
+        return target
 
     def _request_json(self, resource: str) -> Any:
         with httpx.Client(
             timeout=self.timeout_seconds,
-            follow_redirects=True,
+            follow_redirects=False,
             transport=self.transport,
         ) as client:
-            response = client.get(
+            with client.stream(
+                "GET",
                 self._resource_url(resource),
                 headers=self._headers(),
                 params=self.query_params or None,
-            )
-            response.raise_for_status()
-            if len(response.content) > _MAX_RESPONSE_BYTES:
-                raise ValueError(
-                    "REST API response exceeds the 20 MiB connector safety limit."
-                )
-            try:
-                return response.json()
-            except ValueError as exc:
-                raise ValueError("REST API response is not valid JSON.") from exc
+            ) as response:
+                response.raise_for_status()
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in response.iter_bytes():
+                    size += len(chunk)
+                    if size > _MAX_RESPONSE_BYTES:
+                        raise ValueError(
+                            "REST API response exceeds the 20 MiB connector safety limit."
+                        )
+                    chunks.append(chunk)
+        try:
+            return json.loads(b"".join(chunks))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("REST API response is not valid JSON.") from exc
 
     def _extract_data(self, payload: Any) -> Any:
         current = payload
