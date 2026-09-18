@@ -143,7 +143,7 @@ Phase 2-G (Final Hardening / End-to-End Regression) is complete on `main` (PR #4
 
 ## Phase 3 — End-to-End Pipeline UX
 
-**Status:** current — Phase 3-A
+**Status:** complete (Phase 3-D merged via PR #50; `main@ff6c1f92752263c5684f4d3311d377d05b27f4e4`; post-merge CI #245 PASS)
 
 Expand the stabilized Pipeline Canvas across the full lifecycle and the new Phase 2 data-preparation capabilities:
 
@@ -156,21 +156,22 @@ Expand the stabilized Pipeline Canvas across the full lifecycle and the new Phas
 
 Implementation slices:
 
-1. **Phase 3-A — Lifecycle Pipeline UX Foundation** — current
+1. **Phase 3-A — Lifecycle Pipeline UX Foundation** — complete (PR #46)
    - lifecycle-aligned Node Library taxonomy
    - shared lifecycle-stage helpers
    - existing `dataset_load` explicitly represents exact DatasetVersion input, including materialized Dataset Preparation output
-2. **Phase 3-B — Prepared-data Handoff & Lifecycle Navigation** — planned
+2. **Phase 3-B — Prepared-data Handoff & Lifecycle Navigation** — complete (PR #47)
    - explicit Preparation-result → Pipeline authoring handoff
    - exact historical DatasetVersion preservation
    - lifecycle next-action navigation across related screens
-3. **Phase 3-C — Unified Run-state, Error, Progress & Lineage UX** — planned
+3. **Phase 3-C — Unified Run-state, Error, Progress & Lineage UX** — complete (PR #49)
    - lifecycle-oriented run summaries and node-state presentation
    - node-aware error/recovery cues
    - cross-lifecycle lineage visibility using existing relationships
-4. **Phase 3-D — Final Hardening / Browser Regression** — planned
+4. **Phase 3-D — Final Hardening / Browser Regression** — complete (PR #50)
    - representative browser regression, RBAC/read-only, navigation guard, responsive/accessibility verification
-   - full integrated verification before Phase 3 completion
+   - route-project / project-picker consistency hardening
+   - exact PR HEAD and post-merge `main` full verification PASS
 
 See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation boundary and acceptance rules.
 
@@ -179,6 +180,8 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 ---
 
 ## Phase 4 — Connectors
+
+**Status:** next
 
 - REST API data source
 - SQL connector abstraction layer
