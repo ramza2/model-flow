@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.connectors.postgres import PostgresConnector
 from app.db.models import (
     Alert,
     AlertSeverity,
@@ -481,17 +482,17 @@ def test_pipeline_claim_respects_schedule_and_limit():
     assert [run.id for run in runner.claim_pipeline_runs(1)] == [future_id]
 
 
-def test_import_query_only_allows_table_or_read_only_query():
-    assert runner._import_query(engine, "public.customers") == (
+def test_postgres_connector_import_query_only_allows_table_or_read_only_query():
+    assert PostgresConnector._import_query(engine, "public.customers") == (
         'SELECT * FROM "public"."customers"'
     )
-    assert runner._import_query(engine, "SELECT id FROM customers;") == (
+    assert PostgresConnector._import_query(engine, "SELECT id FROM customers;") == (
         "SELECT id FROM customers"
     )
     with pytest.raises(ValueError, match="read-only"):
-        runner._import_query(engine, "DELETE FROM customers")
+        PostgresConnector._import_query(engine, "DELETE FROM customers")
     with pytest.raises(ValueError, match="one read-only"):
-        runner._import_query(engine, "SELECT 1; DROP TABLE customers")
+        PostgresConnector._import_query(engine, "SELECT 1; DROP TABLE customers")
 
 
 
