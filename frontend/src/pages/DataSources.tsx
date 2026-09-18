@@ -14,21 +14,26 @@ import {
 } from "../components";
 import {
   DEFAULT_POSTGRES_FORM,
+  DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
+  buildRestApiSavePayload,
   extraPostgresConfig,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
+  restApiFormFromConfig,
   type PostgresConnectionMode,
+  type RestApiAuthType,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
-type ImportMode = "table" | "sql";
+type ImportMode = "table" | "sql" | "resource";
 
 type ImportPanelState = {
   mode: ImportMode;
   schema: string;
   table: string;
   sql: string;
+  resource: string;
   datasetName: string;
   schemas: string[];
   tables: { schema: string | null; name: string }[];
@@ -36,6 +41,9 @@ type ImportPanelState = {
   tablesLoading: boolean;
   schemasError: string;
   tablesError: string;
+  preview: { columns: string[]; rows: Record<string, unknown>[] } | null;
+  previewLoading: boolean;
+  previewError: string;
   job: DataImportJob | null;
   submitting: boolean;
 };
@@ -45,6 +53,7 @@ const emptyImportState = (): ImportPanelState => ({
   schema: "",
   table: "",
   sql: "",
+  resource: "",
   datasetName: "",
   schemas: [],
   tables: [],
@@ -52,6 +61,9 @@ const emptyImportState = (): ImportPanelState => ({
   tablesLoading: false,
   schemasError: "",
   tablesError: "",
+  preview: null,
+  previewLoading: false,
+  previewError: "",
   job: null,
   submitting: false,
 });
@@ -73,7 +85,7 @@ export default function DataSources() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<DataSource | null>(null);
   const [name, setName] = useState("");
-  const [sourceType, setSourceType] = useState<"file" | "postgres">("postgres");
+  const [sourceType, setSourceType] = useState<"file" | "postgres" | "rest_api">("postgres");
   const [config, setConfig] = useState("{}");
   const [postgresForm, setPostgresForm] = useState(DEFAULT_POSTGRES_FORM);
   const [postgresExtraConfig, setPostgresExtraConfig] = useState<Record<string, unknown>>({});
@@ -82,6 +94,11 @@ export default function DataSources() {
   const [connectionUrl, setConnectionUrl] = useState("");
   const [previousConnectionMode, setPreviousConnectionMode] =
     useState<PostgresConnectionMode | null>(null);
+  const [restApiForm, setRestApiForm] = useState(DEFAULT_REST_API_FORM);
+  const [bearerToken, setBearerToken] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [previousRestAuthType, setPreviousRestAuthType] =
+    useState<RestApiAuthType | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -140,6 +157,10 @@ export default function DataSources() {
     setConnectionMode("host_port");
     setConnectionUrl("");
     setPreviousConnectionMode(null);
+    setRestApiForm(DEFAULT_REST_API_FORM);
+    setBearerToken("");
+    setApiKey("");
+    setPreviousRestAuthType(null);
     setShowForm(false);
   }
 
@@ -155,6 +176,11 @@ export default function DataSources() {
     setConnectionMode(mode);
     setPreviousConnectionMode(mode);
     setConnectionUrl("");
+    const restForm = restApiFormFromConfig(source.config);
+    setRestApiForm(restForm);
+    setBearerToken("");
+    setApiKey("");
+    setPreviousRestAuthType(source.source_type === "rest_api" ? restForm.authType : null);
     setShowForm(true);
   }
 
