@@ -40,7 +40,12 @@ def validate_table_name(value: str) -> bool:
 
 
 def strip_sql_literals_and_comments(sql: str) -> str:
-    """Remove comments and quoted literals so keyword checks ignore string content."""
+    """Strip comments/literals for keyword checks.
+
+    Ordinary comments are replaced with a space so ``INTO/**/OUTFILE`` cannot
+    glue into a bypass. MySQL ``/*! ... */`` executable comments are rejected
+    fail-closed rather than treated as inert comments.
+    """
     out: list[str] = []
     i = 0
     n = len(sql)
@@ -50,16 +55,24 @@ def strip_sql_literals_and_comments(sql: str) -> str:
         if ch == "-" and nxt == "-":
             while i < n and sql[i] not in "\r\n":
                 i += 1
+            out.append(" ")
             continue
         if ch == "/" and nxt == "*":
+            # MySQL executable comments are not inert; refuse them.
+            if i + 2 < n and sql[i + 2] == "!":
+                raise ValueError(
+                    "Data imports accept only a read-only SELECT or table name."
+                )
             i += 2
             while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
                 i += 1
             i = min(i + 2, n)
+            out.append(" ")
             continue
         if ch == "#":
             while i < n and sql[i] not in "\r\n":
                 i += 1
+            out.append(" ")
             continue
         if ch in {"'", '"', "`"}:
             quote = ch

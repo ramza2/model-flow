@@ -7,11 +7,10 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import StaticPool
 
-from app.connectors.mysql import MySqlConnector
+from app.connectors.mysql import MySqlConnector, normalize_mysql_sqlalchemy_url
 from app.connectors.sql_relational import (
     build_import_query,
     host_port_sqlalchemy_url,
-    normalize_sqlalchemy_url,
     reject_select_side_effects,
     strip_sql_literals_and_comments,
 )
@@ -36,15 +35,11 @@ def test_mysql_host_port_url_encodes_password_and_defaults_port():
 
 def test_mysql_connection_url_mode_normalizes_vendor_schemes():
     assert (
-        normalize_sqlalchemy_url(
-            "mysql://u:p@h:3306/db", default_drivername="mysql+pymysql"
-        )
+        normalize_mysql_sqlalchemy_url("mysql://u:p@h:3306/db")
         == "mysql+pymysql://u:p@h:3306/db"
     )
     assert (
-        normalize_sqlalchemy_url(
-            "mariadb://u:p@h:3306/db", default_drivername="mysql+pymysql"
-        )
+        normalize_mysql_sqlalchemy_url("mariadb://u:p@h:3306/db")
         == "mysql+pymysql://u:p@h:3306/db"
     )
     connector = MySqlConnector({}, {"dsn": "mysql://u:p@h:3306/db"})
@@ -54,6 +49,24 @@ def test_mysql_connection_url_mode_normalizes_vendor_schemes():
         MySqlConnector({}, {"url": "mysql+pymysql://u:p@h:3306/db"})._connection_url()
         == "mysql+pymysql://u:p@h:3306/db"
     )
+
+
+def test_mysql_connection_url_rejects_cross_dialect_schemes():
+    for raw in (
+        "postgresql://u:secret@h:5432/db",
+        "postgresql+psycopg2://u:secret@h:5432/db",
+        "sqlite+pysqlite:///:memory:",
+        "mssql+pyodbc://u:secret@h/db",
+        "oracle+oracledb://u:secret@h/db",
+        "arbitrary+driver://u:secret@h/db",
+    ):
+        with pytest.raises(ValueError, match="mysql or mariadb scheme"):
+            normalize_mysql_sqlalchemy_url(raw)
+        with pytest.raises(ValueError, match="mysql or mariadb scheme") as raised:
+            MySqlConnector({}, {"dsn": raw})._connection_url()
+        message = str(raised.value)
+        assert "secret" not in message
+        assert raw not in message
 
 
 def test_mysql_host_port_helper_matches_connector():
@@ -107,7 +120,33 @@ def test_import_query_rejects_select_side_effects_without_blocking_literals():
         build_import_query(engine, "SELECT id FROM customers FOR UPDATE")
     with pytest.raises(ValueError, match="read-only"):
         build_import_query(engine, "SELECT id FROM customers LOCK IN SHARE MODE")
+    # Comment-glued keywords must still be rejected (space separator after strip).
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers INTO/**/OUTFILE '/tmp/x'"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers INTO/*x*/DUMPFILE '/tmp/x'"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(engine, "SELECT id FROM customers FOR/**/UPDATE")
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers LOCK/**/IN SHARE MODE"
+        )
+    # MySQL executable comments are fail-closed.
+    with pytest.raises(ValueError, match="read-only"):
+        build_import_query(
+            engine, "SELECT id FROM customers /*! INTO OUTFILE '/tmp/x' */"
+        )
     # String literals containing forbidden phrases must still be allowed.
+    assert build_import_query(engine, "SELECT 'FOR UPDATE' AS note") == (
+        "SELECT 'FOR UPDATE' AS note"
+    )
+    assert build_import_query(engine, "SELECT 'INTO OUTFILE /tmp/x' AS note") == (
+        "SELECT 'INTO OUTFILE /tmp/x' AS note"
+    )
     allowed = (
         "SELECT 'FOR UPDATE' AS note, 'INTO OUTFILE /tmp/x' AS path "
         "FROM customers WHERE name = 'LOCK IN SHARE MODE'"

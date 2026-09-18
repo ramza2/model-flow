@@ -2,14 +2,32 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Iterator
+from urllib.parse import urlparse, urlunparse
 
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.connectors.sql_relational import (
-    SqlAlchemyRelationalConnector,
-    normalize_sqlalchemy_url,
-)
+from app.connectors.sql_relational import SqlAlchemyRelationalConnector
+
+_ALLOWED_MYSQL_URL_SCHEMES = frozenset({"mysql", "mariadb", "mysql+pymysql"})
+
+
+def normalize_mysql_sqlalchemy_url(raw: str) -> str:
+    """Accept only mysql/mariadb URLs; never echo credentials in errors."""
+    value = raw.strip()
+    if not value:
+        raise ValueError("Connection URL / DSN is required.")
+    parsed = urlparse(value)
+    scheme = (parsed.scheme or "").lower()
+    if not scheme:
+        raise ValueError("Connection URL / DSN must include a scheme.")
+    if scheme not in _ALLOWED_MYSQL_URL_SCHEMES:
+        raise ValueError(
+            "MySQL / MariaDB connection URL must use a mysql or mariadb scheme."
+        )
+    if scheme in {"mysql", "mariadb"}:
+        return urlunparse(parsed._replace(scheme="mysql+pymysql"))
+    return value
 
 
 class MySqlConnector(SqlAlchemyRelationalConnector):
@@ -28,9 +46,7 @@ class MySqlConnector(SqlAlchemyRelationalConnector):
         raw = self.secrets.get("url") or self.secrets.get("dsn")
         if not raw:
             return None
-        return normalize_sqlalchemy_url(
-            str(raw), default_drivername=self.sqlalchemy_drivername
-        )
+        return normalize_mysql_sqlalchemy_url(str(raw))
 
     @contextmanager
     def _read_only_transaction(self, connection: Connection) -> Iterator[Connection]:
