@@ -743,6 +743,156 @@ export default function DataSources() {
                 </>
               )}
             </>
+          ) : sourceType === "rest_api" ? (
+            <>
+              <label htmlFor="data-source-rest-base-url">
+                Base URL
+                <input
+                  id="data-source-rest-base-url"
+                  value={restApiForm.baseUrl}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, baseUrl: event.target.value }))
+                  }
+                  required
+                  placeholder="https://api.example.com/v1"
+                  autoComplete="off"
+                  data-testid="data-source-rest-base-url"
+                />
+              </label>
+              <label htmlFor="data-source-rest-resource-path">
+                Default resource path
+                <input
+                  id="data-source-rest-resource-path"
+                  value={restApiForm.resourcePath}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, resourcePath: event.target.value }))
+                  }
+                  placeholder="/customers"
+                  autoComplete="off"
+                  data-testid="data-source-rest-resource-path"
+                />
+                <small>GET only. Import can override this relative path without changing the source.</small>
+              </label>
+              <div className="form-grid">
+                <label htmlFor="data-source-rest-data-path">
+                  JSON data path
+                  <input
+                    id="data-source-rest-data-path"
+                    value={restApiForm.dataPath}
+                    onChange={(event) =>
+                      setRestApiForm((current) => ({ ...current, dataPath: event.target.value }))
+                    }
+                    placeholder="data.items"
+                    data-testid="data-source-rest-data-path"
+                  />
+                  <small>Optional dot path to the object array inside a wrapped JSON response.</small>
+                </label>
+                <label htmlFor="data-source-rest-timeout">
+                  Timeout (seconds)
+                  <input
+                    id="data-source-rest-timeout"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={restApiForm.timeoutSeconds}
+                    onChange={(event) =>
+                      setRestApiForm((current) => ({
+                        ...current,
+                        timeoutSeconds: event.target.value,
+                      }))
+                    }
+                    required
+                    data-testid="data-source-rest-timeout"
+                  />
+                </label>
+              </div>
+              <label htmlFor="data-source-rest-auth-type">
+                Authentication
+                <select
+                  id="data-source-rest-auth-type"
+                  value={restApiForm.authType}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({
+                      ...current,
+                      authType: event.target.value as RestApiAuthType,
+                    }))
+                  }
+                  data-testid="data-source-rest-auth-type"
+                >
+                  <option value="none">None</option>
+                  <option value="bearer">Bearer token</option>
+                  <option value="api_key">API key header</option>
+                </select>
+              </label>
+              {restApiForm.authType === "bearer" && (
+                <label htmlFor="data-source-rest-bearer-token">
+                  Bearer token
+                  <input
+                    id="data-source-rest-bearer-token"
+                    type="password"
+                    autoComplete="new-password"
+                    value={bearerToken}
+                    onChange={(event) => setBearerToken(event.target.value)}
+                    placeholder={
+                      editing?.has_secrets && previousRestAuthType === "bearer"
+                        ? "Leave blank to keep saved token"
+                        : "Bearer token"
+                    }
+                    data-testid="data-source-rest-bearer-token"
+                  />
+                  <small>The saved token is encrypted and never returned by the API.</small>
+                </label>
+              )}
+              {restApiForm.authType === "api_key" && (
+                <div className="form-grid">
+                  <label htmlFor="data-source-rest-api-key-header">
+                    API key header
+                    <input
+                      id="data-source-rest-api-key-header"
+                      value={restApiForm.apiKeyHeader}
+                      onChange={(event) =>
+                        setRestApiForm((current) => ({
+                          ...current,
+                          apiKeyHeader: event.target.value,
+                        }))
+                      }
+                      required
+                      data-testid="data-source-rest-api-key-header"
+                    />
+                  </label>
+                  <label htmlFor="data-source-rest-api-key">
+                    API key
+                    <input
+                      id="data-source-rest-api-key"
+                      type="password"
+                      autoComplete="new-password"
+                      value={apiKey}
+                      onChange={(event) => setApiKey(event.target.value)}
+                      placeholder={
+                        editing?.has_secrets && previousRestAuthType === "api_key"
+                          ? "Leave blank to keep saved API key"
+                          : "API key"
+                      }
+                      data-testid="data-source-rest-api-key"
+                    />
+                  </label>
+                </div>
+              )}
+              <label htmlFor="data-source-rest-query-params">
+                Query parameters
+                <textarea
+                  id="data-source-rest-query-params"
+                  className="code-input"
+                  value={restApiForm.queryParams}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({ ...current, queryParams: event.target.value }))
+                  }
+                  spellCheck={false}
+                  data-testid="data-source-rest-query-params"
+                />
+                <small>Optional non-secret JSON object appended to every REST request.</small>
+              </label>
+            </>
           ) : (
             <label>
               Configuration
@@ -771,7 +921,7 @@ export default function DataSources() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="No connected data sources"
-          description="Add PostgreSQL or use direct dataset upload to bring data into ModelFlow."
+          description="Add PostgreSQL or a REST API source, or use direct dataset upload to bring data into ModelFlow."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
@@ -786,13 +936,17 @@ export default function DataSources() {
             <article className="source-card" key={source.id} data-testid={`data-source-card-${source.id}`}>
               <div className="project-card-top">
                 <span className="source-icon" aria-hidden="true">
-                  {source.source_type === "postgres" ? "▥" : "▤"}
+                  {source.source_type === "postgres" ? "▥" : source.source_type === "rest_api" ? "⇄" : "▤"}
                 </span>
                 <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
               </div>
               <h2>{source.name}</h2>
               <p className="muted">
-                {source.source_type === "postgres" ? "PostgreSQL database" : "Managed file source"}
+                {source.source_type === "postgres"
+                  ? "PostgreSQL database"
+                  : source.source_type === "rest_api"
+                    ? "REST API"
+                    : "Managed file source"}
                 {!source.is_active ? " · Inactive" : ""}
               </p>
               <dl className="key-values">
