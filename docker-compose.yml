@@ -80,6 +80,48 @@ services:
       timeout: 5s
       retries: 30
 
+  # Exact tag pull-verified (2026-09-18): mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+  # digest sha256:4402d880dd4c34bfa7d8705e56a86cd6c88da80a1f6bbbe741f999e76264a090
+  mssql-source:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    profiles: ["source"]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${SOURCE_MSSQL_SA_PASSWORD:?SOURCE_MSSQL_SA_PASSWORD is required}
+      MSSQL_PID: Developer
+    ports:
+      - "${SOURCE_MSSQL_HOST_PORT:-14333}:1433"
+    volumes:
+      - mssql_source_data:/var/opt/mssql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" || exit 1",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 40s
+
+  mssql-source-init:
+    image: mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04
+    profiles: ["source"]
+    depends_on:
+      mssql-source:
+        condition: service_healthy
+    environment:
+      ACCEPT_EULA: "Y"
+      SOURCE_MSSQL_HOST: mssql-source
+      SOURCE_MSSQL_SA_PASSWORD: ${SOURCE_MSSQL_SA_PASSWORD:?SOURCE_MSSQL_SA_PASSWORD is required}
+      SOURCE_MSSQL_DB: ${SOURCE_MSSQL_DB:?SOURCE_MSSQL_DB is required}
+      SOURCE_MSSQL_USER: ${SOURCE_MSSQL_USER:?SOURCE_MSSQL_USER is required}
+      SOURCE_MSSQL_PASSWORD: ${SOURCE_MSSQL_PASSWORD:?SOURCE_MSSQL_PASSWORD is required}
+    volumes:
+      - ./scripts/init-mssql-source.sh:/init-mssql-source.sh:ro
+    entrypoint: ["/bin/bash", "/init-mssql-source.sh"]
+    restart: "no"
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
@@ -187,6 +229,12 @@ services:
       SOURCE_MARIADB_USER: ${SOURCE_MARIADB_USER:-}
       SOURCE_MARIADB_PASSWORD: ${SOURCE_MARIADB_PASSWORD:-}
       SOURCE_MARIADB_DB: ${SOURCE_MARIADB_DB:-}
+      SOURCE_MSSQL_HOST: mssql-source
+      SOURCE_MSSQL_PORT: "1433"
+      SOURCE_MSSQL_USER: ${SOURCE_MSSQL_USER:-}
+      SOURCE_MSSQL_PASSWORD: ${SOURCE_MSSQL_PASSWORD:-}
+      SOURCE_MSSQL_DB: ${SOURCE_MSSQL_DB:-}
+      SOURCE_MSSQL_SA_PASSWORD: ${SOURCE_MSSQL_SA_PASSWORD:-}
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     command: >
@@ -251,4 +299,5 @@ volumes:
   postgres_source_data:
   mysql_source_data:
   mariadb_source_data:
+  mssql_source_data:
   minio_data:

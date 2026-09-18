@@ -14,11 +14,13 @@ import {
 } from "../components";
 import {
   DEFAULT_MYSQL_FORM,
+  DEFAULT_MSSQL_FORM,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_REST_API_FORM,
   buildPostgresSavePayload,
   buildRestApiSavePayload,
   extraPostgresConfig,
+  mssqlFormFromConfig,
   mysqlFormFromConfig,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
@@ -28,18 +30,31 @@ import {
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
-type SqlSourceType = "postgres" | "mysql";
+type SqlSourceType = "postgres" | "mysql" | "mssql";
 type SourceTypeOption = "file" | SqlSourceType | "rest_api";
 
 function isSqlSourceType(value: string): value is SqlSourceType {
-  return value === "postgres" || value === "mysql";
+  return value === "postgres" || value === "mysql" || value === "mssql";
 }
 
 function sqlSourceLabel(sourceType: string): string {
   if (sourceType === "mysql") return "MySQL / MariaDB";
+  if (sourceType === "mssql") return "Microsoft SQL Server";
   if (sourceType === "postgres") return "PostgreSQL";
   if (sourceType === "rest_api") return "REST API";
   return "Managed file source";
+}
+
+function defaultSqlForm(sourceType: SqlSourceType) {
+  if (sourceType === "mysql") return DEFAULT_MYSQL_FORM;
+  if (sourceType === "mssql") return DEFAULT_MSSQL_FORM;
+  return DEFAULT_POSTGRES_FORM;
+}
+
+function sqlFormFromConfig(sourceType: SqlSourceType, config: Record<string, unknown>) {
+  if (sourceType === "mysql") return mysqlFormFromConfig(config);
+  if (sourceType === "mssql") return mssqlFormFromConfig(config);
+  return postgresFormFromConfig(config);
 }
 
 type ImportMode = "table" | "sql" | "resource";
@@ -186,9 +201,9 @@ export default function DataSources() {
     setSourceType(source.source_type);
     setConfig(JSON.stringify(source.config, null, 2));
     setPostgresForm(
-      source.source_type === "mysql"
-        ? mysqlFormFromConfig(source.config)
-        : postgresFormFromConfig(source.config),
+      isSqlSourceType(source.source_type)
+        ? sqlFormFromConfig(source.source_type, source.config)
+        : DEFAULT_POSTGRES_FORM,
     );
     setPostgresExtraConfig(extraPostgresConfig(source.config));
     setPassword("");
@@ -438,9 +453,11 @@ export default function DataSources() {
       const preferred =
         source.source_type === "mysql" && configuredDb && schemas.includes(configuredDb)
           ? configuredDb
-          : schemas.includes("public")
-            ? "public"
-            : schemas[0] || "";
+          : schemas.includes("dbo")
+            ? "dbo"
+            : schemas.includes("public")
+              ? "public"
+              : schemas[0] || "";
       setImportState((current) => ({
         ...current,
         schemas,
@@ -639,14 +656,8 @@ export default function DataSources() {
               onChange={(event) => {
                 const next = event.target.value as SourceTypeOption;
                 setSourceType(next);
-                if (next === "mysql") {
-                  setPostgresForm(DEFAULT_MYSQL_FORM);
-                  setPostgresExtraConfig({});
-                  setConnectionMode("host_port");
-                  setConnectionUrl("");
-                  setPassword("");
-                } else if (next === "postgres") {
-                  setPostgresForm(DEFAULT_POSTGRES_FORM);
+                if (next === "mysql" || next === "mssql" || next === "postgres") {
+                  setPostgresForm(defaultSqlForm(next));
                   setPostgresExtraConfig({});
                   setConnectionMode("host_port");
                   setConnectionUrl("");
@@ -657,6 +668,7 @@ export default function DataSources() {
             >
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL / MariaDB</option>
+              <option value="mssql">Microsoft SQL Server</option>
               <option value="rest_api">REST API</option>
               <option value="file">Managed file source</option>
             </select>
@@ -692,7 +704,9 @@ export default function DataSources() {
                         ? "Leave blank to keep saved connection URL"
                         : sourceType === "mysql"
                           ? "mysql://user:password@host:3306/database"
-                          : "postgresql://user:password@host:5432/database"
+                          : sourceType === "mssql"
+                            ? "mssql://user:password@host:1433/database"
+                            : "postgresql://user:password@host:5432/database"
                     }
                     data-testid="data-source-connection-url"
                   />
@@ -784,6 +798,28 @@ export default function DataSources() {
                         : "Stored separately from connection metadata. Project members cannot read this value."}
                     </small>
                   </label>
+                  {sourceType === "mssql" && (
+                    <label className="checkbox-row" htmlFor="data-source-trust-server-certificate">
+                      <input
+                        id="data-source-trust-server-certificate"
+                        type="checkbox"
+                        checked={Boolean(postgresExtraConfig.trust_server_certificate)}
+                        onChange={(event) =>
+                          setPostgresExtraConfig((current) => {
+                            const next = { ...current };
+                            if (event.target.checked) {
+                              next.trust_server_certificate = true;
+                            } else {
+                              delete next.trust_server_certificate;
+                            }
+                            return next;
+                          })
+                        }
+                        data-testid="data-source-trust-server-certificate"
+                      />
+                      Trust server certificate (lab / self-signed only)
+                    </label>
+                  )}
                 </>
               )}
             </>
@@ -965,7 +1001,7 @@ export default function DataSources() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="No connected data sources"
-          description="Add PostgreSQL, MySQL / MariaDB, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
+          description="Add PostgreSQL, MySQL / MariaDB, Microsoft SQL Server, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
@@ -994,9 +1030,11 @@ export default function DataSources() {
                   ? "PostgreSQL database"
                   : source.source_type === "mysql"
                     ? "MySQL / MariaDB database"
-                    : source.source_type === "rest_api"
-                      ? "REST API"
-                      : "Managed file source"}
+                    : source.source_type === "mssql"
+                      ? "Microsoft SQL Server database"
+                      : source.source_type === "rest_api"
+                        ? "REST API"
+                        : "Managed file source"}
                 {!source.is_active ? " · Inactive" : ""}
               </p>
               <dl className="key-values">

@@ -148,7 +148,7 @@ def membership_out(row: ProjectMembership) -> dict[str, Any]:
     }
 
 
-_SQL_CONNECTION_MODE_TYPES = frozenset({"postgres", "mysql"})
+_SQL_CONNECTION_MODE_TYPES = frozenset({"postgres", "mysql", "mssql"})
 
 
 def data_source_connection_mode(row: DataSource) -> str | None:

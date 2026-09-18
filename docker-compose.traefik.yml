@@ -21,6 +21,13 @@ services:
     ports: !reset []
     restart: unless-stopped
 
+  mssql-source:
+    ports: !reset []
+    restart: unless-stopped
+
+  mssql-source-init:
+    restart: "no"
+
   minio:
     ports: !reset []
     restart: unless-stopped

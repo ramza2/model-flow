@@ -715,6 +715,103 @@ def test_mysql_source_connection_mode_blank_secret_and_mode_switch(client, auth_
     assert "secret-token" not in json.dumps(fetched.json())
 
 
+def test_mssql_source_connection_mode_blank_secret_and_mode_switch(client, auth_headers):
+    from app.connectors.mssql import MssqlConnector
+    from app.core.security import decrypt_secret
+    from app.db.models import DataSource
+    from sqlalchemy import select
+
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "mssql-warehouse",
+            "source_type": "mssql",
+            "config": {
+                "host": "mssql-source",
+                "port": 1433,
+                "database": "analytics",
+                "user": "reader",
+                "trust_server_certificate": True,
+            },
+            "secrets": {"password": "mssql-secret-pass"},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["source_type"] == "mssql"
+    assert body["connection_mode"] == "host_port"
+    assert "mssql-secret-pass" not in json.dumps(body)
+
+    source_id = body["id"]
+    renamed = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={"name": "mssql-warehouse-renamed", "config": body["config"], "secrets": {}},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "mssql-warehouse-renamed"
+    assert renamed.json()["connection_mode"] == "host_port"
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        assert row is not None
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "mssql-secret-pass"
+        connector = MssqlConnector(json.loads(row.config_json), stored)
+        url = connector._connection_url()
+        assert "mssql+pyodbc://" in url
+        assert "TrustServerCertificate=yes" in url
+
+    dsn = "mssql://reader:mssql-secret-pass@mssql-source:1433/analytics"
+    switched = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {"trust_server_certificate": True},
+            "secrets": {"dsn": dsn},
+            "clear_secrets": ["password", "url"],
+        },
+    )
+    assert switched.status_code == 200
+    assert switched.json()["connection_mode"] == "connection_url"
+    assert "mssql-secret-pass" not in json.dumps(switched.json())
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("dsn") == dsn
+        assert "password" not in stored
+        connector = MssqlConnector(json.loads(row.config_json), stored)
+        assert connector._connection_url().startswith(
+            "mssql+pyodbc://reader:mssql-secret-pass@mssql-source:1433/analytics?"
+        )
+
+    back = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {
+                "host": "mssql-source",
+                "port": 1433,
+                "database": "analytics",
+                "user": "reader",
+                "trust_server_certificate": True,
+            },
+            "secrets": {"password": "new-mssql-pass"},
+            "clear_secrets": ["dsn", "url"],
+        },
+    )
+    assert back.status_code == 200
+    assert back.json()["connection_mode"] == "host_port"
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "new-mssql-pass"
+        assert "dsn" not in stored
+
+
 def test_rest_api_preview_uses_connector_contract(client, auth_headers, monkeypatch):
     project_id = _project(client, auth_headers)
     created = client.post(
