@@ -387,8 +387,15 @@ def _assert_no_secret_leak(payload: object, *secret_fragments: str) -> None:
 
 
 def test_postgres_dsn_url_backward_compat(client, auth_headers):
-    from app.api.v1.data_sources import _connection_url, _secret_dict
+    from app.api.v1.data_sources import _secret_dict
+    from app.connectors import connector_for_source
+    from app.connectors.postgres import PostgresConnector
     from app.db.models import AuditLog, DataSource
+
+    def connection_url(row: DataSource) -> str:
+        connector = connector_for_source(row)
+        assert isinstance(connector, PostgresConnector)
+        return connector._connection_url()
 
     project_id = _project(client, auth_headers)
     dsn_token = secrets.token_urlsafe(12)
@@ -437,7 +444,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert row is not None
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
-        assert _connection_url(row) == original_dsn
+        assert connection_url(row) == original_dsn
 
     replaced = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -458,7 +465,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == replacement_dsn
         assert dsn_token not in json.dumps(stored)
-        assert _connection_url(row) == replacement_dsn
+        assert connection_url(row) == replacement_dsn
 
     switched = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -494,7 +501,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert "dsn" not in stored
         assert "url" not in stored
         assert stored.get("password") == "typed-secret"
-        conn = _connection_url(row)
+        conn = connection_url(row)
         assert "typed-host-after-switch" in conn
         assert "legacy-dsn-host" not in conn
         assert replacement_token not in conn
@@ -518,7 +525,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
         assert "password" not in stored
-        assert _connection_url(row) == original_dsn
+        assert connection_url(row) == original_dsn
 
         audit_rows = db.scalars(
             select(AuditLog)
