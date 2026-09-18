@@ -18,7 +18,7 @@ from app.api.v1.common import (
 from app.connectors import ConnectorOperationNotSupported, connector_for_source
 from app.core.deps import require_project_perm
 from app.core.rbac import Permission
-from app.core.security import encrypt_secret
+from app.core.security import decrypt_secret, encrypt_secret
 from app.db.models import (
     DataImportJob,
     DataSource,
@@ -78,6 +78,12 @@ def _separate_secrets(
         else:
             public[key] = value
     return public, private
+
+
+def _secret_dict(source: DataSource) -> dict:
+    if not source.secret_encrypted:
+        return {}
+    return loads(decrypt_secret(source.secret_encrypted), {})
 
 
 @router.get("/projects/{project_id}/data-sources")
