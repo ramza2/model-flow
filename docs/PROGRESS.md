@@ -8,9 +8,9 @@ Phase **4-A — Connector Foundation + REST API Source** is complete on `main` (
 
 Phase **4-B — MySQL / MariaDB Connector** is complete on `main` (merged via PR #54; merge commit `aa6bae2428390f3c49ff39693abeb3bf169faab4`; post-merge CI #259 PASS).
 
-AGENTS.md connector-architecture update is on `main` (PR #53; `9c92a4d8e806ef93188e3a880ae21da206a8b573`; post-merge CI #262 PASS).
+AGENTS.md connector-architecture update is on `main` (PR #53; `9c92a4d8e692ef93188e3a880ae21da206a8b573`; post-merge CI #262 PASS).
 
-Phase 4-C starts from `main@9c92a4d8e806ef93188e3a880ae21da206a8b573`.
+Phase 4-C starts from `main@9c92a4d8e692ef93188e3a880ae21da206a8b573`.
 
 Phase 3 remains complete on `main`.
 
@@ -324,7 +324,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 4-C — Microsoft SQL Server Connector** from `main@9c92a4d8e806ef93188e3a880ae21da206a8b573`. Acceptance requires a disposable SQL Server 2022 fixture, ODBC Driver 18 + `mssql+pyodbc`, Host/Port and allowlisted Connection URL modes, strict read-only SQL validation (including `SELECT INTO` and `WITH … UPDATE/DELETE/INSERT/MERGE`), bounded preview without `LIMIT`, and the full verification gate to pass. Phase 4-C is not complete until this Draft PR merges and `main` CI passes.
+Complete **Phase 4-C — Microsoft SQL Server Connector** from `main@9c92a4d8e692ef93188e3a880ae21da206a8b573`. Acceptance requires a disposable SQL Server 2022 fixture, ODBC Driver 18 + `mssql+pyodbc`, Host/Port and allowlisted Connection URL modes, strict read-only SQL validation (including `SELECT INTO` and `WITH … UPDATE/DELETE/INSERT/MERGE`), bounded preview without `LIMIT`, and the full verification gate to pass. Phase 4-C is not complete until this Draft PR merges and `main` CI passes.
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
