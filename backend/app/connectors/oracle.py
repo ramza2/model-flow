@@ -180,6 +180,35 @@ def normalize_oracle_sqlalchemy_url(raw: str) -> str:
     raise ValueError("Connection URL / DSN must include a scheme.")
 
 
+def _skip_oracle_sql_trivia(sql: str, start: int) -> int:
+    """Skip whitespace and non-nested ``--`` / ``/* */`` comments after a token.
+
+    Used after a closing double-quoted identifier so comment-glue forms such as
+    ``"SIDE_EFFECT_PROBE"/*x*/()`` cannot bypass the quoted-call check.
+    """
+    i = start
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if ch.isspace():
+            i += 1
+            continue
+        if ch == "-" and nxt == "-":
+            i += 2
+            while i < n and sql[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        break
+    return i
+
+
 def reject_oracle_quoted_function_calls(sql: str) -> None:
     """Reject double-quoted identifiers used as function calls.
 
@@ -187,7 +216,8 @@ def reject_oracle_quoted_function_calls(sql: str) -> None:
     literal and removes it. In Oracle, double quotes denote identifiers, so
     ``SELECT "SIDE_EFFECT_PROBE"() FROM dual`` would otherwise bypass the
     unquoted UDF allowlist after stripping. Scan the original SQL while still
-    ignoring comments and single-quoted string literals.
+    ignoring comments and single-quoted string literals. After a closing
+    quote, skip trivia (whitespace / comments) before testing for ``(``.
     """
     i = 0
     n = len(sql)
@@ -226,8 +256,7 @@ def reject_oracle_quoted_function_calls(sql: str) -> None:
                     i += 1
                     break
                 i += 1
-            while i < n and sql[i].isspace():
-                i += 1
+            i = _skip_oracle_sql_trivia(sql, i)
             if i < n and sql[i] == "(":
                 raise ValueError(
                     "Data imports accept only a read-only SELECT or table name."

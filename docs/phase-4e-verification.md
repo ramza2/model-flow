@@ -23,7 +23,7 @@ Out of scope: new connectors, CDC / incremental sync, SSH tunnels, write-back, I
 
 | Debt | Resolution |
 | --- | --- |
-| Autonomous SELECT / UDF | Package-qualified and non-allowlisted bare calls rejected; double-quoted function identifiers such as `"SIDE_EFFECT_PROBE"()` / `APP."SIDE_EFFECT_PROBE"()` also fail-closed (scanned on original SQL before the shared stripper removes `"` tokens). COUNT/SUM/AVG/NVL/COALESCE/CAST/TO_CHAR/… allowed; quoted column/table identifiers remain allowed. Fixture seeds `side_effect_probe` (autonomous INSERT); live test proves RO bypass for unquoted and `"SIDE_EFFECT_PROBE"()` plus validator block. |
+| Autonomous SELECT / UDF | Package-qualified and non-allowlisted bare calls rejected; double-quoted function identifiers such as `"SIDE_EFFECT_PROBE"()` / `APP."SIDE_EFFECT_PROBE"()` also fail-closed (scanned on original SQL before the shared stripper removes `"` tokens), including comment/trivia glue such as `"SIDE_EFFECT_PROBE"/*x*/()`. COUNT/SUM/AVG/NVL/COALESCE/CAST/TO_CHAR/… allowed; quoted column/table identifiers remain allowed. Fixture seeds `side_effect_probe` (autonomous INSERT); live test proves RO bypass for unquoted, `"SIDE_EFFECT_PROBE"()`, and `"SIDE_EFFECT_PROBE"/*probe*/()` plus validator block. |
 | Duplicate `service_name` | Fail-closed (case-insensitive), including `SERVICE_NAME` |
 | URL-mode stale config | `oracleExtraConfigForUrlMode` strips `host`/`port`/`service_name`/`user`/`database` |
 | Import schema default | Prefer username match, else first non-system schema; system schemas remain listed |

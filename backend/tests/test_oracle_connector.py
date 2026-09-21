@@ -191,9 +191,12 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         # Quoted column / table identifiers are not function calls.
         'SELECT "NAME" FROM customers',
         'SELECT "ID", "NAME" FROM "CUSTOMERS"',
+        'SELECT "NAME" /* comment */ FROM customers',
         # Quoted-call text inside literals / comments must not false-positive.
         "SELECT '\"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
         "SELECT 'call \"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
+        "SELECT '\"SIDE_EFFECT_PROBE\"/*x*/()' AS note FROM dual",
+        "SELECT 'call \"SIDE_EFFECT_PROBE\" --x' AS note FROM dual",
         "SELECT id FROM customers -- \"SIDE_EFFECT_PROBE\"()\n",
         "SELECT /* \"SIDE_EFFECT_PROBE\"() */ id FROM customers",
     ):
@@ -224,6 +227,14 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         'SELECT APP."SIDE_EFFECT_PROBE"() FROM dual',
         'SELECT "APP"."SIDE_EFFECT_PROBE"() FROM dual',
         'SELECT "PKG"."EVIL_FN"() FROM dual',
+        # Comment / trivia glue between quoted name and '(' must still reject.
+        'SELECT "SIDE_EFFECT_PROBE"/*comment*/() FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE" /* comment */ () FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE"-- comment\n() FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE" /*a*/ /*b*/   () FROM dual',
+        'SELECT APP."SIDE_EFFECT_PROBE"/*x*/() FROM dual',
+        'SELECT "APP"."SIDE_EFFECT_PROBE"/*x*/() FROM dual',
+        'SELECT "PKG"."EVIL_FN"/*x*/() FROM dual',
     ):
         with pytest.raises(ValueError, match="read-only"):
             OracleConnector._import_query(engine, bad)
@@ -515,6 +526,27 @@ def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
                 )
             )
             connection.commit()
+
+            # Comment-glue between quoted name and '(' is still a live call.
+            before = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            connection.commit()
+            with app_connector._read_only_transaction(connection):
+                result = connection.execute(
+                    text('SELECT "SIDE_EFFECT_PROBE"/*probe*/() FROM dual')
+                ).scalar()
+                assert int(result) == 1
+            after = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            assert int(after) == int(before) + 1
+            connection.execute(
+                text(
+                    "DELETE FROM customers WHERE email = 'probe@example.com'"
+                )
+            )
+            connection.commit()
     finally:
         engine.dispose()
 
@@ -534,6 +566,10 @@ def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
     with pytest.raises(ValueError, match="read-only"):
         app_connector.read_frame(
             f'SELECT "{app_user.upper()}"."SIDE_EFFECT_PROBE"() FROM dual'
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            'SELECT "SIDE_EFFECT_PROBE"/*probe*/() FROM dual'
         )
 
     # Built-in aggregates remain allowed through the connector path.
