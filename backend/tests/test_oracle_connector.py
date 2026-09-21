@@ -460,6 +460,7 @@ def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
             before = connection.execute(
                 text("SELECT COUNT(*) FROM customers")
             ).scalar()
+            connection.commit()
             with app_connector._read_only_transaction(connection):
                 # Under READ ONLY, autonomous function can still INSERT.
                 result = connection.execute(
