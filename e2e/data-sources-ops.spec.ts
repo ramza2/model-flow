@@ -566,7 +566,7 @@ test("oracle import discovery UI when source credentials are available", async (
   await expect(tableSelect.locator("option", { hasText: /customers/i })).toBeAttached({
     timeout: 60_000,
   });
-  await tableSelect.selectOption({ label: /customers/i });
+  await tableSelect.selectOption("customers");
   await panel.getByTestId("import-dataset-name").fill(datasetName);
   await panel.getByTestId("import-submit").click();
   await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
