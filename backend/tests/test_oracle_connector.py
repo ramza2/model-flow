@@ -180,13 +180,24 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         "SELECT COUNT(*) AS n FROM customers",
         "SELECT SUM(lifetime_value) FROM customers",
         "SELECT AVG(lifetime_value) FROM customers",
+        "SELECT MIN(lifetime_value) FROM customers",
+        "SELECT MAX(lifetime_value) FROM customers",
         "SELECT NVL(segment, 'x') FROM customers",
         "SELECT COALESCE(segment, 'x') FROM customers",
         "SELECT CAST(id AS VARCHAR2(32)) FROM customers",
         "SELECT TO_CHAR(id) FROM customers",
+        "SELECT UPPER(name), LOWER(name) FROM customers",
         "SELECT UPPER(name) FROM customers WHERE EXISTS (SELECT 1 FROM dual)",
+        # Quoted column / table identifiers are not function calls.
+        'SELECT "NAME" FROM customers',
+        'SELECT "ID", "NAME" FROM "CUSTOMERS"',
+        # Quoted-call text inside literals / comments must not false-positive.
+        "SELECT '\"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
+        "SELECT 'call \"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
+        "SELECT id FROM customers -- \"SIDE_EFFECT_PROBE\"()\n",
+        "SELECT /* \"SIDE_EFFECT_PROBE\"() */ id FROM customers",
     ):
-        assert OracleConnector._import_query(engine, ok) == ok
+        assert OracleConnector._import_query(engine, ok) == ok.strip()
 
     for bad in (
         "DELETE FROM customers",
@@ -207,6 +218,12 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         "SELECT app.side_effect_probe() FROM dual",
         "SELECT pkg.evil_fn(1) FROM dual",
         "SELECT my_udf(id) FROM customers",
+        # Quoted identifier function calls must not bypass the UDF gate.
+        'SELECT "SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "side_effect_probe"() FROM dual',
+        'SELECT APP."SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "APP"."SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "PKG"."EVIL_FN"() FROM dual',
     ):
         with pytest.raises(ValueError, match="read-only"):
             OracleConnector._import_query(engine, bad)
@@ -477,6 +494,27 @@ def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
                 )
             )
             connection.commit()
+
+            # Quoted uppercase identifier resolves to the same unquoted UDF.
+            before = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            connection.commit()
+            with app_connector._read_only_transaction(connection):
+                result = connection.execute(
+                    text('SELECT "SIDE_EFFECT_PROBE"() FROM dual')
+                ).scalar()
+                assert int(result) == 1
+            after = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            assert int(after) == int(before) + 1
+            connection.execute(
+                text(
+                    "DELETE FROM customers WHERE email = 'probe@example.com'"
+                )
+            )
+            connection.commit()
     finally:
         engine.dispose()
 
@@ -486,6 +524,16 @@ def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
     with pytest.raises(ValueError, match="read-only"):
         app_connector.read_frame(
             f"SELECT {app_user}.side_effect_probe() FROM dual"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame('SELECT "SIDE_EFFECT_PROBE"() FROM dual')
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            f'SELECT {app_user}."SIDE_EFFECT_PROBE"() FROM dual'
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            f'SELECT "{app_user.upper()}"."SIDE_EFFECT_PROBE"() FROM dual'
         )
 
     # Built-in aggregates remain allowed through the connector path.

@@ -180,6 +180,62 @@ def normalize_oracle_sqlalchemy_url(raw: str) -> str:
     raise ValueError("Connection URL / DSN must include a scheme.")
 
 
+def reject_oracle_quoted_function_calls(sql: str) -> None:
+    """Reject double-quoted identifiers used as function calls.
+
+    Shared ``strip_sql_literals_and_comments`` treats ``"..."`` as a string
+    literal and removes it. In Oracle, double quotes denote identifiers, so
+    ``SELECT "SIDE_EFFECT_PROBE"() FROM dual`` would otherwise bypass the
+    unquoted UDF allowlist after stripping. Scan the original SQL while still
+    ignoring comments and single-quoted string literals.
+    """
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if ch == "-" and nxt == "-":
+            while i < n and sql[i] not in "\r\n":
+                i += 1
+            continue
+        if ch == "/" and nxt == "*":
+            i += 2
+            while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        if ch == "'":
+            i += 1
+            while i < n:
+                if sql[i] == "'" and i + 1 < n and sql[i + 1] == "'":
+                    i += 2
+                    continue
+                if sql[i] == "'":
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch == '"':
+            i += 1
+            while i < n:
+                if sql[i] == '"' and i + 1 < n and sql[i + 1] == '"':
+                    # Oracle doubled quote inside a quoted identifier.
+                    i += 2
+                    continue
+                if sql[i] == '"':
+                    i += 1
+                    break
+                i += 1
+            while i < n and sql[i].isspace():
+                i += 1
+            if i < n and sql[i] == "(":
+                raise ValueError(
+                    "Data imports accept only a read-only SELECT or table name."
+                )
+            continue
+        i += 1
+
+
 def reject_oracle_function_calls(cleaned: str) -> None:
     """Fail closed on package/UDF calls; allow common read-only SQL builtins.
 
@@ -203,6 +259,9 @@ def reject_oracle_function_calls(cleaned: str) -> None:
 
 def reject_oracle_side_effects(sql: str) -> None:
     """Shared SELECT checks plus Oracle PL/SQL / procedure / NEXTVAL / UDF guards."""
+    # Quoted-identifier calls must be checked on the original SQL before the
+    # shared stripper removes double-quoted tokens as if they were literals.
+    reject_oracle_quoted_function_calls(sql)
     reject_select_side_effects(sql)
     cleaned = strip_sql_literals_and_comments(sql)
     if _ORACLE_FORBIDDEN_KEYWORDS.search(cleaned):
