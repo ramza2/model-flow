@@ -43,6 +43,7 @@ class DataSourceType(str, enum.Enum):
     postgres = "postgres"
     mysql = "mysql"
     mssql = "mssql"
+    oracle = "oracle"
     rest_api = "rest_api"
 
 

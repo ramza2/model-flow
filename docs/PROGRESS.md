@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 4-C — Microsoft SQL Server Connector** is the current implementation phase.
+**Enhancement Phase 4-D — Oracle Connector** is the current implementation phase.
 
 Phase **4-A — Connector Foundation + REST API Source** is complete on `main` (merged via PR #52; merge commit `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`; post-merge CI #254 PASS).
 
@@ -10,7 +10,9 @@ Phase **4-B — MySQL / MariaDB Connector** is complete on `main` (merged via PR
 
 AGENTS.md connector-architecture update is on `main` (PR #53; `9c92a4d8e692ef93188e3a880ae21da206a8b573`; post-merge CI #262 PASS).
 
-Phase 4-C starts from `main@9c92a4d8e692ef93188e3a880ae21da206a8b573`.
+Phase **4-C — Microsoft SQL Server Connector** is complete on `main` (merged via PR #55; merge commit `e8c5af7db26affd29c312f3739fb4b76db366ad6`; post-merge CI #268 PASS).
+
+Phase 4-D starts from `main@e8c5af7db26affd29c312f3739fb4b76db366ad6`.
 
 Phase 3 remains complete on `main`.
 
@@ -324,7 +326,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 4-C — Microsoft SQL Server Connector** from `main@9c92a4d8e692ef93188e3a880ae21da206a8b573`. Acceptance requires a disposable SQL Server 2022 fixture, ODBC Driver 18 + `mssql+pyodbc`, Host/Port and allowlisted Connection URL modes, strict read-only SQL validation (including `SELECT INTO` and `WITH … UPDATE/DELETE/INSERT/MERGE`), bounded preview without `LIMIT`, and the full verification gate to pass. Phase 4-C is not complete until this Draft PR merges and `main` CI passes.
+Complete **Phase 4-D — Oracle Connector** from `main@e8c5af7db26affd29c312f3739fb4b76db366ad6`. Acceptance requires a disposable Oracle Free fixture, SQLAlchemy + `python-oracledb` Thin mode (`oracle+oracledb`), Host/Port with `service_name` (default 1521) and allowlisted Connection URL modes, `SET TRANSACTION READ ONLY` defense-in-depth, bounded preview without `LIMIT`, and the full verification gate to pass. Phase 4-D is not complete until this Draft PR merges and `main` CI passes.
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

@@ -122,6 +122,45 @@ services:
     entrypoint: ["/bin/bash", "/init-mssql-source.sh"]
     restart: "no"
 
+  # Exact tag pull-verified (2026-09-21): gvenzl/oracle-free:23.26.3-slim-faststart
+  # digest sha256:f5ff19033860d662c821cb04eb10483fa94f14f78eae252d054291ea07028093
+  oracle-source:
+    image: gvenzl/oracle-free:23.26.3-slim-faststart
+    profiles: ["source"]
+    environment:
+      ORACLE_PASSWORD: ${SOURCE_ORACLE_SYSTEM_PASSWORD:?SOURCE_ORACLE_SYSTEM_PASSWORD is required}
+      APP_USER: ${SOURCE_ORACLE_APP_USER:?SOURCE_ORACLE_APP_USER is required}
+      APP_USER_PASSWORD: ${SOURCE_ORACLE_APP_PASSWORD:?SOURCE_ORACLE_APP_PASSWORD is required}
+    ports:
+      - "${SOURCE_ORACLE_HOST_PORT:-15211}:1521"
+    volumes:
+      - oracle_source_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 40s
+
+  oracle-source-init:
+    image: gvenzl/oracle-free:23.26.3-slim-faststart
+    profiles: ["source"]
+    depends_on:
+      oracle-source:
+        condition: service_healthy
+    environment:
+      SOURCE_ORACLE_HOST: oracle-source
+      SOURCE_ORACLE_SYSTEM_PASSWORD: ${SOURCE_ORACLE_SYSTEM_PASSWORD:?SOURCE_ORACLE_SYSTEM_PASSWORD is required}
+      SOURCE_ORACLE_SERVICE_NAME: ${SOURCE_ORACLE_SERVICE_NAME:?SOURCE_ORACLE_SERVICE_NAME is required}
+      SOURCE_ORACLE_APP_USER: ${SOURCE_ORACLE_APP_USER:?SOURCE_ORACLE_APP_USER is required}
+      SOURCE_ORACLE_APP_PASSWORD: ${SOURCE_ORACLE_APP_PASSWORD:?SOURCE_ORACLE_APP_PASSWORD is required}
+      SOURCE_ORACLE_USER: ${SOURCE_ORACLE_USER:?SOURCE_ORACLE_USER is required}
+      SOURCE_ORACLE_PASSWORD: ${SOURCE_ORACLE_PASSWORD:?SOURCE_ORACLE_PASSWORD is required}
+    volumes:
+      - ./scripts/init-oracle-source.sh:/init-oracle-source.sh:ro
+    entrypoint: ["/bin/bash", "/init-oracle-source.sh"]
+    restart: "no"
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
     command: server /data --console-address ":9001"
@@ -235,6 +274,14 @@ services:
       SOURCE_MSSQL_PASSWORD: ${SOURCE_MSSQL_PASSWORD:-}
       SOURCE_MSSQL_DB: ${SOURCE_MSSQL_DB:-}
       SOURCE_MSSQL_SA_PASSWORD: ${SOURCE_MSSQL_SA_PASSWORD:-}
+      SOURCE_ORACLE_HOST: oracle-source
+      SOURCE_ORACLE_PORT: "1521"
+      SOURCE_ORACLE_USER: ${SOURCE_ORACLE_USER:-}
+      SOURCE_ORACLE_PASSWORD: ${SOURCE_ORACLE_PASSWORD:-}
+      SOURCE_ORACLE_SERVICE_NAME: ${SOURCE_ORACLE_SERVICE_NAME:-}
+      SOURCE_ORACLE_APP_USER: ${SOURCE_ORACLE_APP_USER:-}
+      SOURCE_ORACLE_APP_PASSWORD: ${SOURCE_ORACLE_APP_PASSWORD:-}
+      SOURCE_ORACLE_SYSTEM_PASSWORD: ${SOURCE_ORACLE_SYSTEM_PASSWORD:-}
     ports:
       - "${BACKEND_HOST_PORT:-8000}:8000"
     command: >
@@ -300,4 +347,5 @@ volumes:
   mysql_source_data:
   mariadb_source_data:
   mssql_source_data:
+  oracle_source_data:
   minio_data:

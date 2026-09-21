@@ -6,6 +6,7 @@ from app.connectors.base import DataConnector
 from app.connectors.file import FileConnector
 from app.connectors.mssql import MssqlConnector
 from app.connectors.mysql import MySqlConnector
+from app.connectors.oracle import OracleConnector
 from app.connectors.postgres import PostgresConnector
 from app.connectors.rest_api import RestApiConnector
 from app.core.security import decrypt_secret
@@ -25,6 +26,7 @@ _CONNECTOR_TYPES: dict[DataSourceType, type[DataConnector]] = {
     DataSourceType.postgres: PostgresConnector,
     DataSourceType.mysql: MySqlConnector,
     DataSourceType.mssql: MssqlConnector,
+    DataSourceType.oracle: OracleConnector,
     DataSourceType.rest_api: RestApiConnector,
 }
 

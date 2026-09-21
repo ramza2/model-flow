@@ -812,6 +812,101 @@ def test_mssql_source_connection_mode_blank_secret_and_mode_switch(client, auth_
         assert "dsn" not in stored
 
 
+def test_oracle_source_connection_mode_blank_secret_and_mode_switch(client, auth_headers):
+    from app.connectors.oracle import OracleConnector
+    from app.core.security import decrypt_secret
+    from app.db.models import DataSource
+    from sqlalchemy import select
+
+    project_id = _project(client, auth_headers)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/data-sources",
+        headers=auth_headers,
+        json={
+            "name": "oracle-warehouse",
+            "source_type": "oracle",
+            "config": {
+                "host": "oracle-source",
+                "port": 1521,
+                "service_name": "FREEPDB1",
+                "user": "reader",
+            },
+            "secrets": {"password": "oracle-secret-pass"},
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["source_type"] == "oracle"
+    assert body["connection_mode"] == "host_port"
+    assert "oracle-secret-pass" not in json.dumps(body)
+
+    source_id = body["id"]
+    renamed = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={"name": "oracle-warehouse-renamed", "config": body["config"], "secrets": {}},
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "oracle-warehouse-renamed"
+    assert renamed.json()["connection_mode"] == "host_port"
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        assert row is not None
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "oracle-secret-pass"
+        connector = OracleConnector(json.loads(row.config_json), stored)
+        url = connector._connection_url()
+        assert url.startswith("oracle+oracledb://")
+        assert "service_name=FREEPDB1" in url
+
+    dsn = "oracle://reader:oracle-secret-pass@oracle-source:1521/?service_name=FREEPDB1"
+    switched = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {},
+            "secrets": {"dsn": dsn},
+            "clear_secrets": ["password", "url"],
+        },
+    )
+    assert switched.status_code == 200
+    assert switched.json()["connection_mode"] == "connection_url"
+    assert "oracle-secret-pass" not in json.dumps(switched.json())
+
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("dsn") == dsn
+        assert "password" not in stored
+        connector = OracleConnector(json.loads(row.config_json), stored)
+        assert connector._connection_url().startswith(
+            "oracle+oracledb://reader:oracle-secret-pass@oracle-source:1521/"
+        )
+
+    back = client.patch(
+        f"/api/v1/projects/{project_id}/data-sources/{source_id}",
+        headers=auth_headers,
+        json={
+            "config": {
+                "host": "oracle-source",
+                "port": 1521,
+                "service_name": "FREEPDB1",
+                "user": "reader",
+            },
+            "secrets": {"password": "new-oracle-pass"},
+            "clear_secrets": ["dsn", "url"],
+        },
+    )
+    assert back.status_code == 200
+    assert back.json()["connection_mode"] == "host_port"
+    with TestingSessionLocal() as db:
+        row = db.scalar(select(DataSource).where(DataSource.id == source_id))
+        stored = json.loads(decrypt_secret(row.secret_encrypted))
+        assert stored.get("password") == "new-oracle-pass"
+        assert "dsn" not in stored
+
+
 def test_rest_api_preview_uses_connector_contract(client, auth_headers, monkeypatch):
     project_id = _project(client, auth_headers)
     created = client.post(

@@ -181,7 +181,7 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 
 ## Phase 4 — Connectors
 
-**Status:** current — Phase 4-C
+**Status:** current — Phase 4-D
 
 Expand the existing Data Source lifecycle behind reusable connector contracts while preserving encrypted credentials, project scoping, import jobs, immutable DatasetVersions, and lineage.
 
@@ -197,19 +197,24 @@ Implementation slices:
    - SQLAlchemy relational helper shared with PostgreSQL (quoting, read-only query gate, inspector discovery, preview/read)
    - Host/Port (default 3306) and encrypted Connection URL / DSN modes
    - disposable `mysql-source` + `mariadb-source` Compose fixtures
-3. **Phase 4-C — Microsoft SQL Server** — current
+3. **Phase 4-C — Microsoft SQL Server** — complete on `main` (PR #55 / `e8c5af7db26affd29c312f3739fb4b76db366ad6`, CI #268 PASS)
    - `mssql` source type with UI label **Microsoft SQL Server**
    - SQLAlchemy + `mssql+pyodbc` + Microsoft ODBC Driver 18
    - Host/Port (default 1433) and encrypted Connection URL modes (`mssql://` / `mssql+pyodbc://`)
    - explicit ODBC 18 `Encrypt` / `TrustServerCertificate` defaults
    - strict read-only SQL validation (no DB-level READ ONLY transaction)
    - disposable `mssql-source` Compose fixture (SQL Server 2022 exact tag)
-4. **Phase 4-D — Oracle** — planned (next after 4-C)
+4. **Phase 4-D — Oracle** — current
+   - `oracle` source type with UI label **Oracle Database**
+   - SQLAlchemy + `python-oracledb` Thin mode (`oracle+oracledb`)
+   - Host/Port (default 1521) with `service_name` (no SID UI) and encrypted Connection URL modes
+   - `SET TRANSACTION READ ONLY` on import/preview transactions
+   - disposable `oracle-source` Compose fixture (`gvenzl/oracle-free` exact tag)
 5. **Phase 4-E — Final Hardening / Connector Regression** — planned
 
-Phase 4-C intentionally excludes Oracle, CDC / Change Tracking, incremental sync, streaming, SSH tunnels, Windows Authentication / AD / Kerberos, stored procedure execution, write-back, and certificate management systems.
+Phase 4-D intentionally excludes Instant Client / Thick mode, Oracle Wallet / Autonomous mTLS, TNS_ADMIN ops configs, SID typed mode, RAC/FAN, Kerberos/external auth, CDC, incremental sync, SSH tunnels, stored procedure execution, and write-back.
 
-See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-C boundary.
+See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-D boundary.
 
 **Depends on:** existing encrypted credential and import patterns plus stable data-source UX.
 
