@@ -515,7 +515,6 @@ test("oracle import discovery UI when source credentials are available", async (
   const sourceUser = process.env.E2E_SOURCE_ORACLE_USER;
   const sourcePassword = process.env.E2E_SOURCE_ORACLE_PASSWORD;
   const sourceHost = process.env.E2E_SOURCE_ORACLE_HOST || "oracle-source";
-  const appUser = (process.env.E2E_SOURCE_ORACLE_APP_USER || "").toUpperCase();
   test.skip(
     !serviceName || !sourceUser || !sourcePassword,
     "Source Oracle credentials not provided",
@@ -550,14 +549,24 @@ test("oracle import discovery UI when source credentials are available", async (
   await card.getByRole("button", { name: "Import data" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
-  await expect(panel.getByTestId("import-schema")).toBeVisible();
-  const schema = appUser || sourceUser!.toUpperCase();
-  // SQLAlchemy Oracle inspector returns normalized (typically lowercase) names.
-  const schemaOption = (await panel.getByTestId("import-schema").locator("option").allTextContents())
-    .find((label) => label.toLowerCase() === schema.toLowerCase());
-  expect(schemaOption).toBeTruthy();
-  await panel.getByTestId("import-schema").selectOption({ label: schemaOption! });
+  const schemaSelect = panel.getByTestId("import-schema");
+  await expect(schemaSelect).toBeVisible();
+  // Wait until real schemas are loaded (not the empty/loading placeholder).
+  await expect(schemaSelect.locator("option").nth(1)).toBeAttached({ timeout: 60_000 });
+  const preferredApp = (process.env.E2E_SOURCE_ORACLE_APP_USER || "").trim().toLowerCase();
+  const labels = (await schemaSelect.locator("option").allTextContents()).map((s) => s.trim());
+  const schemaOption =
+    labels.find((label) => preferredApp && label.toLowerCase() === preferredApp) ||
+    labels.find((label) => /^oraapp_/i.test(label)) ||
+    labels.find((label) => label.toLowerCase() === (sourceUser || "").toLowerCase());
+  expect(schemaOption, `available schemas: ${JSON.stringify(labels)}`).toBeTruthy();
+  await schemaSelect.selectOption(schemaOption!);
   await expect(panel.getByTestId("import-table")).toBeVisible();
+  await expect
+    .poll(async () => panel.getByTestId("import-table").locator("option").count(), {
+      timeout: 60_000,
+    })
+    .toBeGreaterThan(1);
   await panel.getByTestId("import-table").selectOption({ label: /customers/i });
   await panel.getByTestId("import-dataset-name").fill(datasetName);
   await panel.getByTestId("import-submit").click();
