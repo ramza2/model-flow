@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from typing import Iterator
-from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlparse, urlunparse
 
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -23,6 +23,10 @@ _ODBC_DRIVER_18 = "ODBC Driver 18 for SQL Server"
 # Explicit allowlist only — blocks odbc_connect, Windows/AD/Kerberos bypasses.
 _ALLOWED_MSSQL_ODBC_QUERY_KEYS = frozenset(
     {"driver", "encrypt", "trustservercertificate"}
+)
+_ALLOWED_ODBC_YES_NO = frozenset({"yes", "no"})
+_MSSQL_URL_USERNAME_REQUIRED = (
+    "MSSQL Connection URL requires an explicit username."
 )
 
 # SQL Server has no transaction-level READ ONLY; validation must be strict.
@@ -95,6 +99,28 @@ def _odbc_yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
 
+def _require_mssql_url_username(url: str) -> None:
+    """Reject URLs that would let SQLAlchemy inject Trusted_Connection=Yes."""
+    parsed = urlparse(url)
+    raw_user = parsed.username
+    if raw_user is None:
+        raise ValueError(_MSSQL_URL_USERNAME_REQUIRED)
+    # Percent-decoded empty / whitespace usernames are fail-closed.
+    if not unquote(raw_user).strip():
+        raise ValueError(_MSSQL_URL_USERNAME_REQUIRED)
+
+
+def _normalize_odbc_yes_no_value(value: str) -> str:
+    """Allow only yes/no (case-insensitive); reject injection-style values."""
+    normalized = value.strip().lower()
+    if normalized not in _ALLOWED_ODBC_YES_NO:
+        raise ValueError(
+            "Microsoft SQL Server connection URL Encrypt and "
+            "TrustServerCertificate must be yes or no."
+        )
+    return normalized
+
+
 def _sanitize_mssql_odbc_query_params(
     params: dict[str, str],
 ) -> dict[str, str]:
@@ -116,9 +142,11 @@ def _sanitize_mssql_odbc_query_params(
                 )
             sanitized["driver"] = _ODBC_DRIVER_18
         elif canonical == "encrypt":
-            sanitized["Encrypt"] = value
+            sanitized["Encrypt"] = _normalize_odbc_yes_no_value(value)
         else:
-            sanitized["TrustServerCertificate"] = value
+            sanitized["TrustServerCertificate"] = _normalize_odbc_yes_no_value(
+                value
+            )
     return sanitized
 
 
@@ -129,6 +157,7 @@ def ensure_mssql_odbc_query(
     trust_server_certificate: bool = False,
 ) -> str:
     """Allowlist ODBC query params and ensure Driver 18 + TLS defaults."""
+    _require_mssql_url_username(url)
     parsed = urlparse(url)
     raw_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
     params = _sanitize_mssql_odbc_query_params(raw_params)

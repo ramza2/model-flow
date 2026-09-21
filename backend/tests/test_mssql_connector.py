@@ -105,6 +105,10 @@ def test_mssql_connection_url_query_parameter_allowlist():
         f"{base}?IntegratedSecurity=true",
         f"{base}?driver=ODBC+Driver+17+for+SQL+Server",
         f"{base}?driver=ODBC+Driver+18+for+SQL+Server&MARS_Connection=yes",
+        f"{base}?Encrypt=true",
+        f"{base}?TrustServerCertificate=true",
+        f"{base}?TrustServerCertificate=yes%3BTrusted_Connection%3Dyes",
+        f"{base}?Encrypt=required",
     )
     for raw in rejected:
         with pytest.raises(ValueError) as raised:
@@ -125,6 +129,51 @@ def test_mssql_connection_url_query_parameter_allowlist():
     assert params["Encrypt"] == ["yes"]
     assert params["TrustServerCertificate"] == ["no"]
     assert "secret-pass" not in str(params)
+
+    # Case-insensitive yes/no normalize to lowercase.
+    cased = (
+        f"{base}?Encrypt=YES&TrustServerCertificate=No"
+        "&driver=ODBC+Driver+18+for+SQL+Server"
+    )
+    cased_params = parse_qs(
+        urlparse(MssqlConnector({}, {"dsn": cased})._connection_url()).query
+    )
+    assert cased_params["Encrypt"] == ["yes"]
+    assert cased_params["TrustServerCertificate"] == ["no"]
+
+
+def test_mssql_connection_url_requires_explicit_username():
+    rejected = (
+        "mssql+pyodbc://mssql-source:1433/analytics",
+        "mssql://mssql-source:1433/analytics",
+        "mssql+pyodbc://:secret-pass@mssql-source:1433/analytics",
+        "mssql://:secret-pass@mssql-source:1433/analytics",
+        "mssql+pyodbc://%20@mssql-source:1433/analytics",
+    )
+    for raw in rejected:
+        with pytest.raises(
+            ValueError, match="MSSQL Connection URL requires an explicit username"
+        ) as raised:
+            MssqlConnector({}, {"dsn": raw})._connection_url()
+        message = str(raised.value)
+        assert "secret-pass" not in message
+        assert raw not in message
+        assert "Trusted_Connection" not in message
+
+    ok = MssqlConnector(
+        {}, {"dsn": "mssql+pyodbc://user:secret-pass@mssql-source:1433/analytics"}
+    )._connection_url()
+    assert ok.startswith(
+        "mssql+pyodbc://user:secret-pass@mssql-source:1433/analytics?"
+    )
+    assert "Trusted_Connection" not in ok
+    # bare mssql:// with username still normalizes and connects path stays SQL auth.
+    bare = MssqlConnector(
+        {}, {"dsn": "mssql://user:secret-pass@mssql-source:1433/analytics"}
+    )._connection_url()
+    assert bare.startswith(
+        "mssql+pyodbc://user:secret-pass@mssql-source:1433/analytics?"
+    )
 
 
 def test_mssql_import_query_allows_select_with_rejects_mutations_and_select_into():
@@ -162,6 +211,9 @@ def test_mssql_import_query_allows_select_with_rejects_mutations_and_select_into
         "SELECT * INTO #tmp FROM customers",
         "SELECT NEXT VALUE FOR dbo.seq",
         "WITH x AS (SELECT 1 AS id) SELECT NEXT VALUE FOR dbo.seq FROM x",
+        "SELECT NEXT\nVALUE FOR dbo.seq",
+        "SELECT NEXT /* comment */\nVALUE FOR dbo.seq",
+        "select next value for dbo.seq",
     ):
         with pytest.raises(ValueError, match="read-only"):
             MssqlConnector._import_query(engine, bad)

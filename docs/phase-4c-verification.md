@@ -18,6 +18,8 @@ Out of scope: Oracle, CDC / Change Tracking, incremental sync, streaming, SSH tu
 - `mssql+pyodbc` + pinned `pyodbc`
 - Microsoft ODBC Driver 18 installed in the backend image
 - Defaults: `Encrypt=yes`, `TrustServerCertificate=no`
+- Connection URL mode requires a non-empty username so SQLAlchemy cannot inject `Trusted_Connection=Yes`
+- Connection URL query allowlist: `driver` / `Encrypt` / `TrustServerCertificate` only; Encrypt and TrustServerCertificate values must be `yes` or `no`
 - Disposable fixture may set `trust_server_certificate=true` for the self-signed container certificate
 
 ## Read-only boundary
