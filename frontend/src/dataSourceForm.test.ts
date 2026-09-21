@@ -19,6 +19,7 @@ import {
   oracleConfigFromForm,
   oracleFormFromConfig,
   parsePostgresPort,
+  preferredOracleImportSchema,
   postgresConfigFromForm,
   postgresFormFromConfig,
   postgresSecretsFromPassword,
@@ -219,6 +220,45 @@ describe("postgres data source form helpers", () => {
     });
     expect(created.secrets).toEqual({ password: "secret" });
     expect(JSON.stringify(created.config)).not.toContain("secret");
+  });
+
+  it("clears Oracle Host/Port fields when switching to Connection URL mode", () => {
+    const switched = buildOracleSavePayload({
+      mode: "connection_url",
+      form: {
+        host: "oracle-source",
+        port: "1521",
+        database: "FREEPDB1",
+        user: "reader",
+      },
+      extra: {
+        host: "oracle-source",
+        port: 1521,
+        service_name: "FREEPDB1",
+        user: "reader",
+        database: "legacy",
+        note: "keep-me",
+      },
+      password: "",
+      connectionUrl: "oracle://reader:x@oracle-source:1521/?service_name=OTHER",
+      editing: true,
+      previousMode: "host_port",
+    });
+    expect(switched.config).toEqual({ note: "keep-me" });
+    expect(switched.secrets).toEqual({
+      dsn: "oracle://reader:x@oracle-source:1521/?service_name=OTHER",
+    });
+    expect(switched.clear_secrets).toEqual(["password", "url"]);
+    for (const stale of ["host", "port", "service_name", "user", "database"]) {
+      expect(switched.config).not.toHaveProperty(stale);
+    }
+  });
+
+  it("prefers Oracle username / non-system schemas for import defaults", () => {
+    const schemas = ["SYS", "SYSTEM", "oraapp_demo", "oraro_reader"];
+    expect(preferredOracleImportSchema(schemas, "ORAAPP_DEMO")).toBe("oraapp_demo");
+    expect(preferredOracleImportSchema(schemas, "missing")).toBe("oraapp_demo");
+    expect(preferredOracleImportSchema(["SYS", "SYSTEM"], "x")).toBe("SYS");
   });
 
   it("resolves connection mode metadata without exposing secrets", () => {

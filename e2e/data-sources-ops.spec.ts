@@ -512,9 +512,15 @@ async function createOracleSource(
 
 test("oracle import discovery UI when source credentials are available", async ({ page }) => {
   const serviceName = process.env.E2E_SOURCE_ORACLE_SERVICE_NAME;
-  const sourceUser = process.env.E2E_SOURCE_ORACLE_USER;
-  const sourcePassword = process.env.E2E_SOURCE_ORACLE_PASSWORD;
+  const readerUser = process.env.E2E_SOURCE_ORACLE_USER;
+  const readerPassword = process.env.E2E_SOURCE_ORACLE_PASSWORD;
+  const appUser = (process.env.E2E_SOURCE_ORACLE_APP_USER || "").trim();
+  const appPassword = (process.env.E2E_SOURCE_ORACLE_APP_PASSWORD || "").trim();
   const sourceHost = process.env.E2E_SOURCE_ORACLE_HOST || "oracle-source";
+  // Prefer APP credentials so default schema selection matches the seeded owner.
+  const useApp = Boolean(appUser && appPassword);
+  const sourceUser = useApp ? appUser : readerUser;
+  const sourcePassword = useApp ? appPassword : readerPassword;
   test.skip(
     !serviceName || !sourceUser || !sourcePassword,
     "Source Oracle credentials not provided",
@@ -553,14 +559,10 @@ test("oracle import discovery UI when source credentials are available", async (
   await expect(schemaSelect).toBeVisible();
   // Wait until real schemas are loaded (not the empty/loading placeholder).
   await expect(schemaSelect.locator("option").nth(1)).toBeAttached({ timeout: 60_000 });
-  const preferredApp = (process.env.E2E_SOURCE_ORACLE_APP_USER || "").trim().toLowerCase();
-  const labels = (await schemaSelect.locator("option").allTextContents()).map((s) => s.trim());
-  const schemaOption =
-    labels.find((label) => preferredApp && label.toLowerCase() === preferredApp) ||
-    labels.find((label) => /^oraapp_/i.test(label)) ||
-    labels.find((label) => label.toLowerCase() === (sourceUser || "").toLowerCase());
-  expect(schemaOption, `available schemas: ${JSON.stringify(labels)}`).toBeTruthy();
-  await schemaSelect.selectOption(schemaOption!);
+  // Default selection prefers username match (APP) over Oracle system schemas.
+  await expect
+    .poll(async () => (await schemaSelect.inputValue()).toLowerCase(), { timeout: 60_000 })
+    .toBe(sourceUser!.toLowerCase());
   const tableSelect = panel.getByTestId("import-table");
   await expect(tableSelect).toBeVisible();
   await expect(tableSelect.locator("option", { hasText: /customers/i })).toBeAttached({

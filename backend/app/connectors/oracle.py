@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from typing import Iterator
-from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlparse, urlunparse
+from urllib.parse import quote_plus, unquote, urlencode, urlparse, urlunparse
 
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -12,6 +12,7 @@ from sqlalchemy.engine import Connection, Engine
 from app.connectors.base import ConnectorPreview, frame_preview
 from app.connectors.sql_relational import (
     SqlAlchemyRelationalConnector,
+    parse_unique_query_params,
     reject_select_side_effects,
     strip_sql_literals_and_comments,
     validate_table_name,
@@ -26,6 +27,9 @@ _ORACLE_URL_USERNAME_REQUIRED = (
 _ORACLE_SERVICE_NAME_REQUIRED = (
     "Oracle data source requires a non-empty service_name."
 )
+_ORACLE_DUPLICATE_QUERY = (
+    "Oracle connection URL includes duplicate query parameters."
+)
 
 # Application-level defense in depth (DB also uses SET TRANSACTION READ ONLY).
 _ORACLE_FORBIDDEN_KEYWORDS = re.compile(
@@ -39,6 +43,121 @@ _ORACLE_FORBIDDEN_KEYWORDS = re.compile(
 _ORACLE_SEQUENCE_NEXTVAL = re.compile(
     r"\.\s*nextval\b",
     re.IGNORECASE,
+)
+# identifier( or schema.pkg.fn( — used to gate UDF / package calls.
+_ORACLE_CALL_PATTERN = re.compile(
+    r"(?P<qual>(?:[A-Za-z_][\w$#]*\s*\.\s*)+)?(?P<name>[A-Za-z_][\w$#]*)\s*\(",
+    re.IGNORECASE,
+)
+# Allowlisted SQL / Oracle built-ins + type names used as TYPE(n) in CAST.
+# Package-qualified calls are always rejected (autonomous UDF / package risk).
+_ORACLE_ALLOWED_CALL_NAMES = frozenset(
+    {
+        # aggregates / numeric
+        "count",
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "round",
+        "trunc",
+        "abs",
+        "floor",
+        "ceil",
+        "mod",
+        "greatest",
+        "least",
+        "sign",
+        "power",
+        "sqrt",
+        # null / conditional
+        "nvl",
+        "nvl2",
+        "coalesce",
+        "nullif",
+        "decode",
+        # conversion
+        "cast",
+        "to_char",
+        "to_number",
+        "to_date",
+        "to_timestamp",
+        "to_timestamp_tz",
+        "convert",
+        "ascii",
+        "chr",
+        # string
+        "upper",
+        "lower",
+        "initcap",
+        "trim",
+        "ltrim",
+        "rtrim",
+        "substr",
+        "substring",
+        "length",
+        "replace",
+        "instr",
+        "lpad",
+        "rpad",
+        "concat",
+        "regexp_replace",
+        "regexp_substr",
+        "regexp_like",
+        "regexp_count",
+        "regexp_instr",
+        # datetime
+        "extract",
+        "sysdate",
+        "current_date",
+        "current_timestamp",
+        "systimestamp",
+        "localtimestamp",
+        "numtodsinterval",
+        "numtoyminterval",
+        # session / context (read-only)
+        "sys_context",
+        "userenv",
+        # SQL constructs that use parentheses
+        "exists",
+        "in",
+        "any",
+        "all",
+        "some",
+        "as",
+        # window / analytic
+        "over",
+        "rank",
+        "dense_rank",
+        "row_number",
+        "lag",
+        "lead",
+        "first_value",
+        "last_value",
+        "ntile",
+        # datatype names appearing as TYPE(precision) in CAST / columns
+        "varchar2",
+        "nvarchar2",
+        "varchar",
+        "char",
+        "nchar",
+        "number",
+        "numeric",
+        "decimal",
+        "float",
+        "binary_float",
+        "binary_double",
+        "raw",
+        "timestamp",
+        "interval",
+        "clob",
+        "nclob",
+        "blob",
+        "date",
+        "integer",
+        "int",
+        "smallint",
+    }
 )
 
 
@@ -61,8 +180,29 @@ def normalize_oracle_sqlalchemy_url(raw: str) -> str:
     raise ValueError("Connection URL / DSN must include a scheme.")
 
 
+def reject_oracle_function_calls(cleaned: str) -> None:
+    """Fail closed on package/UDF calls; allow common read-only SQL builtins.
+
+    Oracle READ ONLY applies to the caller transaction only. A SELECT that
+    invokes a stored function with PRAGMA AUTONOMOUS_TRANSACTION can still
+    commit side effects. Package-qualified calls are always rejected.
+    Bare calls must be in the built-in allowlist (COUNT, NVL, CAST, …).
+    """
+    for match in _ORACLE_CALL_PATTERN.finditer(cleaned):
+        qual = (match.group("qual") or "").strip()
+        name = match.group("name").lower()
+        if qual:
+            raise ValueError(
+                "Data imports accept only a read-only SELECT or table name."
+            )
+        if name not in _ORACLE_ALLOWED_CALL_NAMES:
+            raise ValueError(
+                "Data imports accept only a read-only SELECT or table name."
+            )
+
+
 def reject_oracle_side_effects(sql: str) -> None:
-    """Shared SELECT checks plus Oracle PL/SQL / procedure / NEXTVAL guards."""
+    """Shared SELECT checks plus Oracle PL/SQL / procedure / NEXTVAL / UDF guards."""
     reject_select_side_effects(sql)
     cleaned = strip_sql_literals_and_comments(sql)
     if _ORACLE_FORBIDDEN_KEYWORDS.search(cleaned):
@@ -73,6 +213,7 @@ def reject_oracle_side_effects(sql: str) -> None:
         raise ValueError(
             "Data imports accept only a read-only SELECT or table name."
         )
+    reject_oracle_function_calls(cleaned)
 
 
 def quote_oracle_identifier(engine: Engine, name: str) -> str:
@@ -133,7 +274,12 @@ def ensure_oracle_service_name_query(url: str) -> str:
     """Require username + allowlisted service_name query; never echo secrets."""
     _require_oracle_url_username(url)
     parsed = urlparse(url)
-    raw_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    try:
+        raw_params = parse_unique_query_params(parsed.query)
+    except ValueError as exc:
+        if "duplicate" in str(exc).lower():
+            raise ValueError(_ORACLE_DUPLICATE_QUERY) from None
+        raise
     params = _sanitize_oracle_query_params(raw_params)
     if "service_name" not in params:
         raise ValueError(_ORACLE_SERVICE_NAME_REQUIRED)

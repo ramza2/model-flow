@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from typing import Iterator
-from urllib.parse import parse_qsl, quote_plus, unquote, urlencode, urlparse, urlunparse
+from urllib.parse import quote_plus, unquote, urlencode, urlparse, urlunparse
 
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -13,6 +13,7 @@ from app.connectors.base import ConnectorPreview, frame_preview
 from app.connectors.sql_relational import (
     SqlAlchemyRelationalConnector,
     build_import_query,
+    parse_unique_query_params,
     reject_select_side_effects,
     strip_sql_literals_and_comments,
     validate_table_name,
@@ -159,7 +160,15 @@ def ensure_mssql_odbc_query(
     """Allowlist ODBC query params and ensure Driver 18 + TLS defaults."""
     _require_mssql_url_username(url)
     parsed = urlparse(url)
-    raw_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    try:
+        raw_params = parse_unique_query_params(parsed.query)
+    except ValueError as exc:
+        if "duplicate" in str(exc).lower():
+            raise ValueError(
+                "Microsoft SQL Server connection URL includes duplicate "
+                "query parameters."
+            ) from None
+        raise
     params = _sanitize_mssql_odbc_query_params(raw_params)
 
     if "driver" not in params:

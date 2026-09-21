@@ -130,6 +130,19 @@ def test_mssql_connection_url_query_parameter_allowlist():
     assert params["TrustServerCertificate"] == ["no"]
     assert "secret-pass" not in str(params)
 
+    for raw in (
+        f"{base}?Encrypt=yes&encrypt=no&driver=ODBC+Driver+18+for+SQL+Server",
+        f"{base}?TrustServerCertificate=yes&trustservercertificate=no"
+        "&driver=ODBC+Driver+18+for+SQL+Server",
+        f"{base}?driver=ODBC+Driver+18+for+SQL+Server"
+        "&Driver=ODBC+Driver+18+for+SQL+Server",
+    ):
+        with pytest.raises(ValueError, match="duplicate") as raised:
+            MssqlConnector({}, {"dsn": raw})._connection_url()
+        message = str(raised.value)
+        assert "secret-pass" not in message
+        assert raw not in message
+
     # Case-insensitive yes/no normalize to lowercase.
     cased = (
         f"{base}?Encrypt=YES&TrustServerCertificate=No"

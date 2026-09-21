@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from typing import Any, Iterator
-from urllib.parse import quote_plus, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote_plus, urlparse, urlunparse
 
 import pandas as pd
 from sqlalchemy import create_engine, inspect, text
@@ -103,6 +103,27 @@ def reject_select_side_effects(sql: str) -> None:
             raise ValueError(
                 "Data imports accept only a read-only SELECT or table name."
             )
+
+
+def parse_unique_query_params(query: str) -> dict[str, str]:
+    """Parse query string; reject duplicate keys (case-insensitive).
+
+    ``dict(parse_qsl(...))`` silently keeps the last duplicate value, which is
+    ambiguous for allowlisted connection URL parameters. Callers must fail closed.
+    Never echo the raw query or credentials.
+    """
+    pairs = parse_qsl(query, keep_blank_values=True)
+    unique: dict[str, str] = {}
+    seen_canonical: set[str] = set()
+    for key, value in pairs:
+        canonical = key.lower()
+        if canonical in seen_canonical:
+            raise ValueError(
+                "Connection URL includes duplicate query parameters."
+            )
+        seen_canonical.add(canonical)
+        unique[key] = value
+    return unique
 
 
 def build_import_query(engine: Engine, resource: str) -> str:
