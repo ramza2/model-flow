@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
-Status: **Implementation plan — Phase 4-C current**  
-Baseline: `main@9c92a4d8e692ef93188e3a880ae21da206a8b573` (Phase 4-B complete; AGENTS connector rules on main)
+Status: **Implementation plan — Phase 4-D current**  
+Baseline: `main@e8c5af7db26affd29c312f3739fb4b76db366ad6` (Phase 4-C complete)
 
 ## Purpose
 
@@ -47,7 +47,9 @@ Phase 4-B is complete on `main` (PR #54 / `aa6bae2428390f3c49ff39693abeb3bf169fa
 
 One `DataSourceType` value `mysql` (UI label **MySQL / MariaDB**) covers MySQL and MariaDB through `mysql+pymysql`, Host/Port (3306) + Connection URL modes, and disposable `mysql:8.4.5` / `mariadb:11.4.5` fixtures.
 
-## Phase 4-C — Microsoft SQL Server
+## Phase 4-C — Microsoft SQL Server (complete)
+
+Phase 4-C is complete on `main` (PR #55 / `e8c5af7db26affd29c312f3739fb4b76db366ad6`, post-merge CI #268 PASS). See [`phase-4c-verification.md`](./phase-4c-verification.md).
 
 ### Source type
 
@@ -85,7 +87,7 @@ Encrypted secrets:
 - `password` (Host/Port mode)
 - `dsn` / `url` (Connection URL mode)
 
-`connection_mode` metadata is returned for `postgres`, `mysql`, and `mssql`. Cross-dialect URLs are rejected without echoing credentials.
+`connection_mode` metadata is returned for `postgres`, `mysql`, `mssql`, and `oracle`. Cross-dialect URLs are rejected without echoing credentials.
 
 ### Import resources
 
@@ -98,6 +100,7 @@ Rejected (application validation):
 - `INSERT` / `UPDATE` / `DELETE` / `MERGE` / `EXEC` / `EXECUTE` / DDL / `TRUNCATE`
 - `WITH … UPDATE|DELETE|INSERT|MERGE`
 - `SELECT … INTO …` (creates a table on SQL Server)
+- `NEXT VALUE FOR` (sequence mutation)
 - multiple statements
 
 Fixture SELECT-only logins are an additional disposable defense, not a substitute for validation and not a claim that every production MSSQL account is read-only.
@@ -111,24 +114,89 @@ Compose profile `source` adds:
 - `mssql-source` — `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` (exact tag; not `latest`)
 - `mssql-source-init` — one-shot seed of database, `dbo.customers`, and a SELECT-only login
 
+## Phase 4-D — Oracle Database
+
+### Source type
+
+- `oracle` — UI label **Oracle Database**
+- default port **1521**
+
+### Driver stack
+
+- SQLAlchemy dialect: `oracle+oracledb`
+- Python package: pinned `oracledb` in `backend/requirements.txt` (Thin mode default)
+- No Oracle Instant Client / Thick mode in the backend image
+
+### SQLAlchemy relational sharing
+
+Shared helpers remain in `backend/app/connectors/sql_relational.py`. Concrete `OracleConnector` owns:
+
+- URL construction and allowlist (`oracle://`, `oracle+oracledb://` only; bare `oracle://` normalizes to `oracle+oracledb://`)
+- Host/Port uses `service_name` query parameter (not database path / SID)
+- Connection URL query allowlist: `service_name` only
+- `SET TRANSACTION READ ONLY` as the first statement of each import/preview transaction
+- bounded preview via `fetchmany` (no `LIMIT` rewrite)
+
+### Configuration
+
+Public config (Host/Port mode):
+
+- `host`
+- `port` (default 1521)
+- `service_name`
+- `user`
+
+Encrypted secrets:
+
+- `password` (Host/Port mode)
+- `dsn` / `url` (Connection URL mode)
+
+SID typed mode, wallet / thick / TNS_ADMIN query parameters are out of scope and rejected.
+
+### Import resources
+
+- `MODELFLOW.CUSTOMERS` / schema.table / bare table name
+- read-only `SELECT …`
+- safely validated `WITH … SELECT …`
+
+Rejected (application validation):
+
+- `INSERT` / `UPDATE` / `DELETE` / `MERGE` / DDL / `TRUNCATE`
+- `BEGIN` / `DECLARE` PL/SQL blocks
+- `CALL` / `EXEC` / `EXECUTE`
+- `SELECT … FOR UPDATE`
+- sequence `.NEXTVAL`
+- multiple statements
+
+DB-level `SET TRANSACTION READ ONLY` is defense-in-depth alongside validation. Fixture SELECT-only readers are an additional disposable defense.
+
+Materialization reuses the existing worker path. Lineage: `source_type=oracle`.
+
+### Disposable fixtures
+
+Compose profile `source` adds:
+
+- `oracle-source` — `gvenzl/oracle-free:23.26.3-slim-faststart` (exact tag; not `latest`)
+- `oracle-source-init` — one-shot seed of `CUSTOMERS` and a SELECT-only reader
+
 ## Phase 4 implementation order
 
 1. **4-A — Connector Foundation + REST API Source** — complete
 2. **4-B — MySQL / MariaDB** — complete
-3. **4-C — Microsoft SQL Server** — current
-4. **4-D — Oracle** — next
+3. **4-C — Microsoft SQL Server** — complete
+4. **4-D — Oracle** — current
 5. **4-E — Final Hardening / Connector Regression**
 
-## Phase 4-C acceptance
+## Phase 4-D acceptance
 
-- Microsoft SQL Server create/edit/test/schema/table/import through typed UI
+- Oracle Database create/edit/test/schema/table/import through typed UI
 - credentials remain encrypted and redacted
-- ODBC 18 Encrypt / TrustServerCertificate defaults are explicit
-- preview never emits SQL Server-invalid `LIMIT`
-- read-only SQL gate rejects mutations, `SELECT INTO`, and multi-statements
-- PostgreSQL, MySQL/MariaDB, and REST regressions remain green
-- disposable SQL Server fixture exercises connection → import → DatasetVersion
-- Alembic head includes additive `mssql` enum value (`016_mssql_data_source`)
+- Connection URL requires username + `service_name` only
+- preview never emits Oracle-invalid `LIMIT`
+- `SET TRANSACTION READ ONLY` rejects mutations on the live fixture
+- PostgreSQL, MySQL/MariaDB, MSSQL, and REST regressions remain green
+- disposable Oracle fixture exercises connection → import → DatasetVersion
+- Alembic head includes additive `oracle` enum value (`017_oracle_data_source`)
 - `./scripts/verify.sh` and exact PR HEAD CI pass
 
-Phase 4-C is not marked complete until this Draft PR merges and `main` CI passes.
+Phase 4-D is not marked complete until this Draft PR merges and `main` CI passes.

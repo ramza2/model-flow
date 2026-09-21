@@ -399,6 +399,65 @@ describe("DataSources operations UX", () => {
     );
   });
 
+  it("shows typed Oracle fields with default port 1521 and service name", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];
+      if (path === "/projects/7/data-sources" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "oracle-warehouse",
+          source_type: "oracle",
+          config: {
+            host: "oracle-source",
+            port: 1521,
+            service_name: "FREEPDB1",
+            user: "reader",
+          },
+          secrets: { password: "oracle-secret" },
+        });
+        expect(JSON.stringify(body.config)).not.toContain("oracle-secret");
+        return {
+          id: 12,
+          project_id: 7,
+          name: "oracle-warehouse",
+          source_type: "oracle",
+          config: body.config,
+          has_secrets: true,
+          connection_mode: "host_port",
+          is_active: true,
+          last_test_status: null,
+          last_test_message: null,
+          last_tested_at: null,
+          created_by: 1,
+          created_at: "2026-01-01T00:00:00Z",
+        };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-type"), { target: { value: "oracle" } });
+    expect(screen.getByTestId("data-source-port")).toHaveValue(1521);
+    expect(screen.getByTestId("data-source-host")).toHaveValue("oracle-source");
+    fireEvent.change(screen.getByTestId("data-source-name"), {
+      target: { value: "oracle-warehouse" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-service-name"), {
+      target: { value: "FREEPDB1" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-user"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("data-source-password"), {
+      target: { value: "oracle-secret" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
   it("shows typed MySQL / MariaDB fields with default port 3306", async () => {
     apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];

@@ -33,6 +33,7 @@ VERIFY_SOURCE_POSTGRES_HOST_PORT=15433
 VERIFY_SOURCE_MYSQL_HOST_PORT=13307
 VERIFY_SOURCE_MARIADB_HOST_PORT=13308
 VERIFY_SOURCE_MSSQL_HOST_PORT=11433
+VERIFY_SOURCE_ORACLE_HOST_PORT=11521
 VERIFY_MINIO_API_HOST_PORT=19000
 VERIFY_MINIO_CONSOLE_HOST_PORT=19001
 VERIFY_MLFLOW_HOST_PORT=15000
@@ -180,7 +181,7 @@ assert_services_healthy() {
 }
 
 # Verification-only: disposable source DBs used by connector integration/E2E.
-VERIFY_SOURCE_SERVICES=(postgres-source mysql-source mariadb-source mssql-source)
+VERIFY_SOURCE_SERVICES=(postgres-source mysql-source mariadb-source mssql-source oracle-source)
 
 assert_source_services_healthy() {
   info "Checking verification source DB health for: ${VERIFY_SOURCE_SERVICES[*]}"
@@ -225,10 +226,36 @@ wait_for_mssql_source_init() {
   fail "mssql-source-init did not complete"
 }
 
+wait_for_oracle_source_init() {
+  info "Waiting for oracle-source-init to seed Oracle"
+  local i line state exit_code
+  for i in $(seq 1 120); do
+    line="$(modelflow_compose ps -a --format '{{.Service}}={{.State}}={{.ExitCode}}' \
+      | grep '^oracle-source-init=' || true)"
+    if [[ -n "$line" ]]; then
+      state="$(echo "$line" | cut -d= -f2)"
+      exit_code="$(echo "$line" | cut -d= -f3)"
+      if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
+        pass "oracle-source-init completed"
+        return 0
+      fi
+      if [[ "$state" == "exited" ]]; then
+        modelflow_compose logs --no-color --tail=160 oracle-source-init \
+          | tee artifacts/verify/logs-oracle-init-failed.txt || true
+        fail "oracle-source-init exited with code ${exit_code}"
+      fi
+    fi
+    sleep 2
+  done
+  modelflow_compose logs --no-color --tail=160 oracle-source-init oracle-source \
+    | tee artifacts/verify/logs-oracle-init-timeout.txt || true
+  fail "oracle-source-init did not complete"
+}
+
 wait_for_source_services_healthy() {
   info "Waiting for verification source databases to become healthy"
   local i report svc health state line ready
-  for i in $(seq 1 120); do
+  for i in $(seq 1 180); do
     report="$(modelflow_compose ps --format '{{.Service}}={{.Health}}={{.State}}')"
     echo "$report" | tee artifacts/verify/compose-ps-sources-wait.txt >/dev/null
     ready=1
@@ -248,13 +275,15 @@ wait_for_source_services_healthy() {
     if [[ "$ready" -eq 1 ]]; then
       assert_source_services_healthy
       wait_for_mssql_source_init
+      wait_for_oracle_source_init
       return 0
     fi
     sleep 2
   done
   modelflow_compose ps -a | tee artifacts/verify/compose-ps-sources-timeout.txt || true
-  modelflow_compose logs --no-color --tail=80 \
+  modelflow_compose logs --no-color --tail=100 \
     mysql-source mariadb-source postgres-source mssql-source mssql-source-init \
+    oracle-source oracle-source-init \
     | tee artifacts/verify/logs-sources-timeout.txt || true
   fail "verification source databases did not become healthy"
 }
@@ -280,6 +309,7 @@ export SOURCE_POSTGRES_HOST_PORT="$VERIFY_SOURCE_POSTGRES_HOST_PORT"
 export SOURCE_MYSQL_HOST_PORT="$VERIFY_SOURCE_MYSQL_HOST_PORT"
 export SOURCE_MARIADB_HOST_PORT="$VERIFY_SOURCE_MARIADB_HOST_PORT"
 export SOURCE_MSSQL_HOST_PORT="$VERIFY_SOURCE_MSSQL_HOST_PORT"
+export SOURCE_ORACLE_HOST_PORT="$VERIFY_SOURCE_ORACLE_HOST_PORT"
 export MINIO_API_HOST_PORT="$VERIFY_MINIO_API_HOST_PORT"
 export MINIO_CONSOLE_HOST_PORT="$VERIFY_MINIO_CONSOLE_HOST_PORT"
 export MLFLOW_HOST_PORT="$VERIFY_MLFLOW_HOST_PORT"
@@ -367,6 +397,7 @@ info "1c) Default host-port compose config fixture"
   export POSTGRES_HOST_PORT=5432 SOURCE_POSTGRES_HOST_PORT=5433
   export SOURCE_MYSQL_HOST_PORT=3307 SOURCE_MARIADB_HOST_PORT=3308
   export SOURCE_MSSQL_HOST_PORT=14333
+  export SOURCE_ORACLE_HOST_PORT=15211
   export MINIO_API_HOST_PORT=9000 MINIO_CONSOLE_HOST_PORT=9001
   export MLFLOW_HOST_PORT=5000 BACKEND_HOST_PORT=8000 FRONTEND_HOST_PORT=3000
   DEFAULT_CONFIG="$(mktemp "$ROOT/artifacts/verify/default-ports.XXXXXX.yml")"
@@ -379,6 +410,7 @@ info "1c) Default host-port compose config fixture"
     -e SOURCE_MYSQL_HOST_PORT=3307 \
     -e SOURCE_MARIADB_HOST_PORT=3308 \
     -e SOURCE_MSSQL_HOST_PORT=14333 \
+    -e SOURCE_ORACLE_HOST_PORT=15211 \
     -e MINIO_API_HOST_PORT=9000 \
     -e MINIO_CONSOLE_HOST_PORT=9001 \
     -e MLFLOW_HOST_PORT=5000 \
@@ -966,6 +998,11 @@ docker run --rm --network host \
   -e E2E_SOURCE_MSSQL_USER="${SOURCE_MSSQL_USER:-}" \
   -e E2E_SOURCE_MSSQL_PASSWORD="${SOURCE_MSSQL_PASSWORD:-}" \
   -e E2E_SOURCE_MSSQL_HOST="${E2E_SOURCE_MSSQL_HOST:-mssql-source}" \
+  -e E2E_SOURCE_ORACLE_SERVICE_NAME="${SOURCE_ORACLE_SERVICE_NAME:-}" \
+  -e E2E_SOURCE_ORACLE_USER="${SOURCE_ORACLE_USER:-}" \
+  -e E2E_SOURCE_ORACLE_PASSWORD="${SOURCE_ORACLE_PASSWORD:-}" \
+  -e E2E_SOURCE_ORACLE_HOST="${E2E_SOURCE_ORACLE_HOST:-oracle-source}" \
+  -e E2E_SOURCE_ORACLE_APP_USER="${SOURCE_ORACLE_APP_USER:-}" \
   -e HOME=/tmp \
   -e CI=true \
   "$PLAYWRIGHT_IMAGE" \

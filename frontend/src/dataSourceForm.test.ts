@@ -4,15 +4,20 @@ import {
   DEFAULT_MYSQL_PORT,
   DEFAULT_MSSQL_FORM,
   DEFAULT_MSSQL_PORT,
+  DEFAULT_ORACLE_FORM,
+  DEFAULT_ORACLE_PORT,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_POSTGRES_PORT,
   DEFAULT_REST_API_FORM,
+  buildOracleSavePayload,
   buildPostgresSavePayload,
   buildRestApiSavePayload,
   buildSqlSavePayload,
   extraPostgresConfig,
   mssqlFormFromConfig,
   mysqlFormFromConfig,
+  oracleConfigFromForm,
+  oracleFormFromConfig,
   parsePostgresPort,
   postgresConfigFromForm,
   postgresFormFromConfig,
@@ -164,6 +169,52 @@ describe("postgres data source form helpers", () => {
       host: "mssql-source",
       port: 1433,
       database: "analytics",
+      user: "reader",
+    });
+    expect(created.secrets).toEqual({ password: "secret" });
+    expect(JSON.stringify(created.config)).not.toContain("secret");
+  });
+
+  it("builds Oracle host/port payloads with service_name and default port 1521", () => {
+    expect(DEFAULT_ORACLE_FORM.port).toBe(String(DEFAULT_ORACLE_PORT));
+    expect(DEFAULT_ORACLE_PORT).toBe(1521);
+    expect(oracleFormFromConfig({ service_name: "FREEPDB1" })).toEqual({
+      host: "",
+      port: "1521",
+      database: "FREEPDB1",
+      user: "",
+    });
+    expect(
+      oracleConfigFromForm({
+        host: "oracle-source",
+        port: "1521",
+        database: "FREEPDB1",
+        user: "reader",
+      }),
+    ).toEqual({
+      host: "oracle-source",
+      port: 1521,
+      service_name: "FREEPDB1",
+      user: "reader",
+    });
+    const created = buildOracleSavePayload({
+      mode: "host_port",
+      form: {
+        host: "oracle-source",
+        port: "1521",
+        database: "FREEPDB1",
+        user: "reader",
+      },
+      extra: {},
+      password: "secret",
+      connectionUrl: "",
+      editing: false,
+      previousMode: null,
+    });
+    expect(created.config).toEqual({
+      host: "oracle-source",
+      port: 1521,
+      service_name: "FREEPDB1",
       user: "reader",
     });
     expect(created.secrets).toEqual({ password: "secret" });

@@ -484,6 +484,96 @@ test("mssql import discovery UI when source credentials are available", async ({
   await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
 });
 
+async function createOracleSource(
+  page: PlaywrightPage,
+  options: {
+    name: string;
+    host?: string;
+    port?: string;
+    serviceName: string;
+    user: string;
+    password: string;
+  },
+) {
+  await page.getByTestId("add-data-source").click();
+  await page.getByTestId("data-source-name").fill(options.name);
+  await page.getByTestId("data-source-type").selectOption("oracle");
+  await page.getByTestId("data-source-connection-mode").selectOption("host_port");
+  await expect(page.getByTestId("data-source-host")).toBeVisible();
+  await expect(page.getByTestId("data-source-port")).toHaveValue("1521");
+  await page.getByTestId("data-source-host").fill(options.host ?? "oracle-source");
+  await page.getByTestId("data-source-port").fill(options.port ?? "1521");
+  await page.getByTestId("data-source-service-name").fill(options.serviceName);
+  await page.getByTestId("data-source-user").fill(options.user);
+  await page.getByTestId("data-source-password").fill(options.password);
+  await page.getByTestId("data-source-save").click();
+  await expect(page.getByRole("heading", { name: options.name })).toBeVisible();
+}
+
+test("oracle import discovery UI when source credentials are available", async ({ page }) => {
+  const serviceName = process.env.E2E_SOURCE_ORACLE_SERVICE_NAME;
+  const sourceUser = process.env.E2E_SOURCE_ORACLE_USER;
+  const sourcePassword = process.env.E2E_SOURCE_ORACLE_PASSWORD;
+  const sourceHost = process.env.E2E_SOURCE_ORACLE_HOST || "oracle-source";
+  test.skip(
+    !serviceName || !sourceUser || !sourcePassword,
+    "Source Oracle credentials not provided",
+  );
+
+  const projectName = `ds-oracle-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const sourceName = `oracle-import-${Date.now()}`;
+  const datasetName = `customers-${Date.now()}`;
+
+  await login(page);
+  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByTestId("project-name").fill(projectName);
+  await page.getByTestId("project-submit").click();
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await createOracleSource(page, {
+    name: sourceName,
+    host: sourceHost,
+    serviceName: serviceName!,
+    user: sourceUser!,
+    password: sourcePassword!,
+  });
+
+  const card = page.locator("article.source-card").filter({ hasText: sourceName });
+  await expect(card).toContainText("Oracle Database");
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
+    timeout: 60_000,
+  });
+
+  await card.getByRole("button", { name: "Import data" }).click();
+  const panel = page.getByTestId(/import-panel-/);
+  await expect(panel).toBeVisible();
+  const schemaSelect = panel.getByTestId("import-schema");
+  await expect(schemaSelect).toBeVisible();
+  // Wait until real schemas are loaded (not the empty/loading placeholder).
+  await expect(schemaSelect.locator("option").nth(1)).toBeAttached({ timeout: 60_000 });
+  const preferredApp = (process.env.E2E_SOURCE_ORACLE_APP_USER || "").trim().toLowerCase();
+  const labels = (await schemaSelect.locator("option").allTextContents()).map((s) => s.trim());
+  const schemaOption =
+    labels.find((label) => preferredApp && label.toLowerCase() === preferredApp) ||
+    labels.find((label) => /^oraapp_/i.test(label)) ||
+    labels.find((label) => label.toLowerCase() === (sourceUser || "").toLowerCase());
+  expect(schemaOption, `available schemas: ${JSON.stringify(labels)}`).toBeTruthy();
+  await schemaSelect.selectOption(schemaOption!);
+  const tableSelect = panel.getByTestId("import-table");
+  await expect(tableSelect).toBeVisible();
+  await expect(tableSelect.locator("option", { hasText: /customers/i })).toBeAttached({
+    timeout: 60_000,
+  });
+  await tableSelect.selectOption("customers");
+  await panel.getByTestId("import-dataset-name").fill(datasetName);
+  await panel.getByTestId("import-submit").click();
+  await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
+  await panel.getByTestId("open-imported-dataset").click();
+  await expect(page.getByRole("heading", { name: datasetName })).toBeVisible({ timeout: 30_000 });
+});
+
 test("REST API source test preview and import use the existing dataset lifecycle", async ({ page }) => {
   const projectName = `rest-source-${Date.now()}`;
   const sourceName = `rest-health-${Date.now()}`;

@@ -25,7 +25,17 @@ export const DEFAULT_MSSQL_FORM = {
   user: "modelflow",
 };
 
+export const DEFAULT_ORACLE_PORT = 1521;
+
+export const DEFAULT_ORACLE_FORM = {
+  host: "oracle-source",
+  port: String(DEFAULT_ORACLE_PORT),
+  database: "FREEPDB1",
+  user: "modelflow",
+};
+
 const POSTGRES_FIELD_KEYS = new Set(["host", "port", "database", "user"]);
+const ORACLE_FIELD_KEYS = new Set(["host", "port", "service_name", "user"]);
 
 export type PostgresConnectionMode = "host_port" | "connection_url";
 
@@ -83,6 +93,78 @@ export function mysqlFormFromConfig(config: Record<string, unknown>): PostgresCo
 
 export function mssqlFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
   return postgresFormFromConfig(config, DEFAULT_MSSQL_PORT);
+}
+
+export function oracleFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
+  const base = postgresFormFromConfig(config, DEFAULT_ORACLE_PORT);
+  return {
+    ...base,
+    database: String(config.service_name ?? config.database ?? ""),
+  };
+}
+
+export function oracleConfigFromForm(
+  form: PostgresConnectionForm,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const cleanedExtra: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (!ORACLE_FIELD_KEYS.has(key) && key !== "database") {
+      cleanedExtra[key] = value;
+    }
+  }
+  return {
+    ...cleanedExtra,
+    host: form.host.trim(),
+    port: parsePostgresPort(form.port),
+    service_name: form.database.trim(),
+    user: form.user.trim(),
+  };
+}
+
+export function buildOracleSavePayload(options: {
+  mode: PostgresConnectionMode;
+  form: PostgresConnectionForm;
+  extra: Record<string, unknown>;
+  password: string;
+  connectionUrl: string;
+  editing: boolean;
+  previousMode: PostgresConnectionMode | null;
+}): PostgresSavePayload {
+  const { mode, form, extra, password, connectionUrl, editing, previousMode } = options;
+  const trimmedUrl = connectionUrl.trim();
+
+  if (mode === "connection_url") {
+    if (!trimmedUrl) {
+      if (!editing) {
+        throw new Error("Connection URL / DSN is required.");
+      }
+      if (previousMode === "host_port") {
+        throw new Error("Enter a connection URL or DSN when switching connection mode.");
+      }
+      return {
+        config: postgresExtraConfigForUrlMode(extra),
+        secrets: {},
+      };
+    }
+    const payload: PostgresSavePayload = {
+      config: postgresExtraConfigForUrlMode(extra),
+      secrets: { dsn: trimmedUrl },
+    };
+    if (editing) {
+      payload.clear_secrets = ["password", "url"];
+    }
+    return payload;
+  }
+
+  const payload: PostgresSavePayload = {
+    config: oracleConfigFromForm(form, extra),
+    secrets: postgresSecretsFromPassword(password),
+  };
+  if (editing) {
+    payload.clear_secrets = ["dsn", "url"];
+  }
+  return payload;
 }
 
 export function parsePostgresPort(port: string): number {

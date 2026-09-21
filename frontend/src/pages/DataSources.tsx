@@ -15,13 +15,16 @@ import {
 import {
   DEFAULT_MYSQL_FORM,
   DEFAULT_MSSQL_FORM,
+  DEFAULT_ORACLE_FORM,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_REST_API_FORM,
+  buildOracleSavePayload,
   buildPostgresSavePayload,
   buildRestApiSavePayload,
   extraPostgresConfig,
   mssqlFormFromConfig,
   mysqlFormFromConfig,
+  oracleFormFromConfig,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
   restApiFormFromConfig,
@@ -30,16 +33,22 @@ import {
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
-type SqlSourceType = "postgres" | "mysql" | "mssql";
+type SqlSourceType = "postgres" | "mysql" | "mssql" | "oracle";
 type SourceTypeOption = "file" | SqlSourceType | "rest_api";
 
 function isSqlSourceType(value: string): value is SqlSourceType {
-  return value === "postgres" || value === "mysql" || value === "mssql";
+  return (
+    value === "postgres" ||
+    value === "mysql" ||
+    value === "mssql" ||
+    value === "oracle"
+  );
 }
 
 function sqlSourceLabel(sourceType: string): string {
   if (sourceType === "mysql") return "MySQL / MariaDB";
   if (sourceType === "mssql") return "Microsoft SQL Server";
+  if (sourceType === "oracle") return "Oracle Database";
   if (sourceType === "postgres") return "PostgreSQL";
   if (sourceType === "rest_api") return "REST API";
   return "Managed file source";
@@ -48,12 +57,14 @@ function sqlSourceLabel(sourceType: string): string {
 function defaultSqlForm(sourceType: SqlSourceType) {
   if (sourceType === "mysql") return DEFAULT_MYSQL_FORM;
   if (sourceType === "mssql") return DEFAULT_MSSQL_FORM;
+  if (sourceType === "oracle") return DEFAULT_ORACLE_FORM;
   return DEFAULT_POSTGRES_FORM;
 }
 
 function sqlFormFromConfig(sourceType: SqlSourceType, config: Record<string, unknown>) {
   if (sourceType === "mysql") return mysqlFormFromConfig(config);
   if (sourceType === "mssql") return mssqlFormFromConfig(config);
+  if (sourceType === "oracle") return oracleFormFromConfig(config);
   return postgresFormFromConfig(config);
 }
 
@@ -226,15 +237,26 @@ export default function DataSources() {
     setSuccess("");
     try {
       if (isSqlSourceType(sourceType)) {
-        const payload = buildPostgresSavePayload({
-          mode: connectionMode,
-          form: postgresForm,
-          extra: postgresExtraConfig,
-          password,
-          connectionUrl,
-          editing: Boolean(editing),
-          previousMode: previousConnectionMode,
-        });
+        const payload =
+          sourceType === "oracle"
+            ? buildOracleSavePayload({
+                mode: connectionMode,
+                form: postgresForm,
+                extra: postgresExtraConfig,
+                password,
+                connectionUrl,
+                editing: Boolean(editing),
+                previousMode: previousConnectionMode,
+              })
+            : buildPostgresSavePayload({
+                mode: connectionMode,
+                form: postgresForm,
+                extra: postgresExtraConfig,
+                password,
+                connectionUrl,
+                editing: Boolean(editing),
+                previousMode: previousConnectionMode,
+              });
         if (editing) {
           await api(`/projects/${projectId}/data-sources/${editing.id}`, {
             method: "PATCH",
@@ -656,7 +678,12 @@ export default function DataSources() {
               onChange={(event) => {
                 const next = event.target.value as SourceTypeOption;
                 setSourceType(next);
-                if (next === "mysql" || next === "mssql" || next === "postgres") {
+                if (
+                  next === "mysql" ||
+                  next === "mssql" ||
+                  next === "oracle" ||
+                  next === "postgres"
+                ) {
                   setPostgresForm(defaultSqlForm(next));
                   setPostgresExtraConfig({});
                   setConnectionMode("host_port");
@@ -669,6 +696,7 @@ export default function DataSources() {
               <option value="postgres">PostgreSQL</option>
               <option value="mysql">MySQL / MariaDB</option>
               <option value="mssql">Microsoft SQL Server</option>
+              <option value="oracle">Oracle Database</option>
               <option value="rest_api">REST API</option>
               <option value="file">Managed file source</option>
             </select>
@@ -706,7 +734,9 @@ export default function DataSources() {
                           ? "mysql://user:password@host:3306/database"
                           : sourceType === "mssql"
                             ? "mssql://user:password@host:1433/database"
-                            : "postgresql://user:password@host:5432/database"
+                            : sourceType === "oracle"
+                              ? "oracle://user:password@host:1521/?service_name=FREEPDB1"
+                              : "postgresql://user:password@host:5432/database"
                     }
                     data-testid="data-source-connection-url"
                   />
@@ -747,10 +777,20 @@ export default function DataSources() {
                         data-testid="data-source-port"
                       />
                     </label>
-                    <label htmlFor="data-source-database">
-                      Database
+                    <label
+                      htmlFor={
+                        sourceType === "oracle"
+                          ? "data-source-service-name"
+                          : "data-source-database"
+                      }
+                    >
+                      {sourceType === "oracle" ? "Service name" : "Database"}
                       <input
-                        id="data-source-database"
+                        id={
+                          sourceType === "oracle"
+                            ? "data-source-service-name"
+                            : "data-source-database"
+                        }
                         value={postgresForm.database}
                         onChange={(event) =>
                           setPostgresForm((current) => ({
@@ -760,7 +800,11 @@ export default function DataSources() {
                         }
                         required
                         autoComplete="off"
-                        data-testid="data-source-database"
+                        data-testid={
+                          sourceType === "oracle"
+                            ? "data-source-service-name"
+                            : "data-source-database"
+                        }
                       />
                     </label>
                     <label htmlFor="data-source-user">
@@ -1001,7 +1045,7 @@ export default function DataSources() {
       ) : sources.length === 0 ? (
         <EmptyState
           title="No connected data sources"
-          description="Add PostgreSQL, MySQL / MariaDB, Microsoft SQL Server, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
+          description="Add PostgreSQL, MySQL / MariaDB, Microsoft SQL Server, Oracle Database, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
@@ -1032,9 +1076,11 @@ export default function DataSources() {
                     ? "MySQL / MariaDB database"
                     : source.source_type === "mssql"
                       ? "Microsoft SQL Server database"
-                      : source.source_type === "rest_api"
-                        ? "REST API"
-                        : "Managed file source"}
+                      : source.source_type === "oracle"
+                        ? "Oracle Database"
+                        : source.source_type === "rest_api"
+                          ? "REST API"
+                          : "Managed file source"}
                 {!source.is_active ? " · Inactive" : ""}
               </p>
               <dl className="key-values">

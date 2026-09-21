@@ -245,6 +245,7 @@ export SOURCE_POSTGRES_HOST_PORT=15433
 export SOURCE_MYSQL_HOST_PORT=13307
 export SOURCE_MARIADB_HOST_PORT=13308
 export SOURCE_MSSQL_HOST_PORT=11433
+export SOURCE_ORACLE_HOST_PORT=11521
 export MINIO_API_HOST_PORT=19000
 export MINIO_CONSOLE_HOST_PORT=19001
 export MLFLOW_HOST_PORT=15000
@@ -266,6 +267,8 @@ assert_user_env_unchanged "after-custom-output" || fail "project .env changed af
   || fail "SOURCE_MARIADB_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" SOURCE_MSSQL_HOST_PORT)" == "11433" ]] \
   || fail "SOURCE_MSSQL_HOST_PORT not preserved"
+[[ "$(read_env_value "$OUT_CUSTOM" SOURCE_ORACLE_HOST_PORT)" == "11521" ]] \
+  || fail "SOURCE_ORACLE_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" MINIO_API_HOST_PORT)" == "19000" ]] \
   || fail "MINIO_API_HOST_PORT not preserved"
 [[ "$(read_env_value "$OUT_CUSTOM" MINIO_CONSOLE_HOST_PORT)" == "19001" ]] \
@@ -321,6 +324,7 @@ fi
 # --- Unit: defaults when host ports are unset ---
 unset POSTGRES_HOST_PORT SOURCE_POSTGRES_HOST_PORT
 unset SOURCE_MYSQL_HOST_PORT SOURCE_MARIADB_HOST_PORT SOURCE_MSSQL_HOST_PORT
+unset SOURCE_ORACLE_HOST_PORT
 unset MINIO_API_HOST_PORT MINIO_CONSOLE_HOST_PORT
 unset MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
 
@@ -340,6 +344,8 @@ assert_user_env_unchanged "after-default-output" || fail "project .env changed a
   || fail "default SOURCE_MARIADB_HOST_PORT expected 3308"
 [[ "$(read_env_value "$OUT_DEFAULT" SOURCE_MSSQL_HOST_PORT)" == "14333" ]] \
   || fail "default SOURCE_MSSQL_HOST_PORT expected 14333"
+[[ "$(read_env_value "$OUT_DEFAULT" SOURCE_ORACLE_HOST_PORT)" == "15211" ]] \
+  || fail "default SOURCE_ORACLE_HOST_PORT expected 15211"
 [[ "$(read_env_value "$OUT_DEFAULT" MINIO_API_HOST_PORT)" == "9000" ]] \
   || fail "default MINIO_API_HOST_PORT expected 9000"
 [[ "$(read_env_value "$OUT_DEFAULT" MINIO_CONSOLE_HOST_PORT)" == "9001" ]] \
@@ -419,6 +425,7 @@ export SOURCE_POSTGRES_HOST_PORT=15433
 export SOURCE_MYSQL_HOST_PORT=13307
 export SOURCE_MARIADB_HOST_PORT=13308
 export SOURCE_MSSQL_HOST_PORT=11433
+export SOURCE_ORACLE_HOST_PORT=11521
 export MINIO_API_HOST_PORT=19000
 export MINIO_CONSOLE_HOST_PORT=19001
 export MLFLOW_HOST_PORT=15000
