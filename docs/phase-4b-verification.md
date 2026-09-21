@@ -71,4 +71,4 @@ Before merge:
 - exact PR HEAD GitHub Actions PASS
 - actual diff final review finds no blocker
 
-Phase 4-B is complete only after merge and the resulting `main` CI passes.
+Phase 4-B is complete on `main` after merge (PR #54 / `aa6bae2428390f3c49ff39693abeb3bf169faab4`) and post-merge CI #259 PASS.

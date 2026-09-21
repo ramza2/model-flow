@@ -181,7 +181,7 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 
 ## Phase 4 — Connectors
 
-**Status:** current — Phase 4-B
+**Status:** current — Phase 4-C
 
 Expand the existing Data Source lifecycle behind reusable connector contracts while preserving encrypted credentials, project scoping, import jobs, immutable DatasetVersions, and lineage.
 
@@ -192,18 +192,24 @@ Implementation slices:
    - move existing PostgreSQL operations behind the connector contract without changing PostgreSQL UX/runtime behavior
    - REST API source with typed configuration and encrypted Bearer/API-key credentials
    - GET-only JSON response preview and import through the existing DataImportJob → DatasetVersion path
-2. **Phase 4-B — MySQL / MariaDB** — current
+2. **Phase 4-B — MySQL / MariaDB** — complete on `main` (PR #54 / `aa6bae2428390f3c49ff39693abeb3bf169faab4`, CI #259 PASS)
    - single `mysql` source type covering MySQL and MariaDB
    - SQLAlchemy relational helper shared with PostgreSQL (quoting, read-only query gate, inspector discovery, preview/read)
    - Host/Port (default 3306) and encrypted Connection URL / DSN modes
    - disposable `mysql-source` + `mariadb-source` Compose fixtures
-3. **Phase 4-C — Microsoft SQL Server** — planned (next after 4-B)
-4. **Phase 4-D — Oracle** — planned
+3. **Phase 4-C — Microsoft SQL Server** — current
+   - `mssql` source type with UI label **Microsoft SQL Server**
+   - SQLAlchemy + `mssql+pyodbc` + Microsoft ODBC Driver 18
+   - Host/Port (default 1433) and encrypted Connection URL modes (`mssql://` / `mssql+pyodbc://`)
+   - explicit ODBC 18 `Encrypt` / `TrustServerCertificate` defaults
+   - strict read-only SQL validation (no DB-level READ ONLY transaction)
+   - disposable `mssql-source` Compose fixture (SQL Server 2022 exact tag)
+4. **Phase 4-D — Oracle** — planned (next after 4-C)
 5. **Phase 4-E — Final Hardening / Connector Regression** — planned
 
-Phase 4-B intentionally excludes SQL Server, Oracle, CDC/binlog, incremental sync, SSH tunnels, stored procedures, and write-back.
+Phase 4-C intentionally excludes Oracle, CDC / Change Tracking, incremental sync, streaming, SSH tunnels, Windows Authentication / AD / Kerberos, stored procedure execution, write-back, and certificate management systems.
 
-See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-B boundary.
+See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-C boundary.
 
 **Depends on:** existing encrypted credential and import patterns plus stable data-source UX.
 

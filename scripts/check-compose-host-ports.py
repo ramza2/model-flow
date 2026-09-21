@@ -17,6 +17,7 @@ def main() -> int:
         ("postgres-source", os.environ["SOURCE_POSTGRES_HOST_PORT"], "5432"),
         ("mysql-source", os.environ["SOURCE_MYSQL_HOST_PORT"], "3306"),
         ("mariadb-source", os.environ["SOURCE_MARIADB_HOST_PORT"], "3306"),
+        ("mssql-source", os.environ["SOURCE_MSSQL_HOST_PORT"], "1433"),
         ("minio", os.environ["MINIO_API_HOST_PORT"], "9000"),
         ("minio", os.environ["MINIO_CONSOLE_HOST_PORT"], "9001"),
         ("mlflow", os.environ["MLFLOW_HOST_PORT"], "5000"),

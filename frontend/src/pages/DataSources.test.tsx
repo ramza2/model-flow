@@ -338,6 +338,67 @@ describe("DataSources operations UX", () => {
     expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
   });
 
+  it("shows typed Microsoft SQL Server fields with default port 1433", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];
+      if (path === "/projects/7/data-sources" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body || "{}"));
+        expect(body).toEqual({
+          name: "mssql-warehouse",
+          source_type: "mssql",
+          config: {
+            trust_server_certificate: true,
+            host: "mssql-source",
+            port: 1433,
+            database: "analytics",
+            user: "reader",
+          },
+          secrets: { password: "mssql-secret" },
+        });
+        expect(JSON.stringify(body.config)).not.toContain("mssql-secret");
+        return {
+          id: 11,
+          project_id: 7,
+          name: "mssql-warehouse",
+          source_type: "mssql",
+          config: body.config,
+          has_secrets: true,
+          connection_mode: "host_port",
+          is_active: true,
+          last_test_status: null,
+          last_test_message: null,
+          last_tested_at: null,
+          created_by: 1,
+          created_at: "2026-01-01T00:00:00Z",
+        };
+      }
+      return [];
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("add-data-source"));
+    fireEvent.change(screen.getByTestId("data-source-type"), { target: { value: "mssql" } });
+    expect(screen.getByTestId("data-source-port")).toHaveValue(1433);
+    expect(screen.getByTestId("data-source-host")).toHaveValue("mssql-source");
+    fireEvent.change(screen.getByTestId("data-source-name"), {
+      target: { value: "mssql-warehouse" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-database"), {
+      target: { value: "analytics" },
+    });
+    fireEvent.change(screen.getByTestId("data-source-user"), { target: { value: "reader" } });
+    fireEvent.change(screen.getByTestId("data-source-password"), {
+      target: { value: "mssql-secret" },
+    });
+    fireEvent.click(screen.getByTestId("data-source-trust-server-certificate"));
+    fireEvent.click(screen.getByTestId("data-source-save"));
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/data-sources",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+  });
+
   it("shows typed MySQL / MariaDB fields with default port 3306", async () => {
     apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === "/projects/7/data-sources" && (init?.method || "GET") === "GET") return [];

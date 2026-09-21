@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
-Status: **Implementation plan — Phase 4-B current**  
-Baseline: `main@09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1` (Phase 4-A complete)
+Status: **Implementation plan — Phase 4-C current**  
+Baseline: `main@9c92a4d8e692ef93188e3a880ae21da206a8b573` (Phase 4-B complete; AGENTS connector rules on main)
 
 ## Purpose
 
@@ -41,93 +41,94 @@ PostgreSQL moved behind this contract in Phase 4-A with its existing Host/Port a
 
 Phase 4-A is complete on `main` (PR #52 / `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`, post-merge CI #254 PASS). See [`phase-4a-verification.md`](./phase-4a-verification.md).
 
-## Phase 4-B — MySQL / MariaDB
+## Phase 4-B — MySQL / MariaDB (complete)
+
+Phase 4-B is complete on `main` (PR #54 / `aa6bae2428390f3c49ff39693abeb3bf169faab4`, post-merge CI #259 PASS). See [`phase-4b-verification.md`](./phase-4b-verification.md).
+
+One `DataSourceType` value `mysql` (UI label **MySQL / MariaDB**) covers MySQL and MariaDB through `mysql+pymysql`, Host/Port (3306) + Connection URL modes, and disposable `mysql:8.4.5` / `mariadb:11.4.5` fixtures.
+
+## Phase 4-C — Microsoft SQL Server
 
 ### Source type
 
-One `DataSourceType` value:
+- `mssql` — UI label **Microsoft SQL Server**
+- default port **1433**
 
-- `mysql` — UI label **MySQL / MariaDB**
+### Driver stack
 
-MySQL and MariaDB share the same connector, driver path (`mysql+pymysql`), and Host/Port + Connection URL semantics. Separate `mariadb` enum values are not introduced.
+- SQLAlchemy dialect: `mssql+pyodbc`
+- Python package: pinned `pyodbc` in `backend/requirements.txt`
+- OS: Microsoft ODBC Driver 18 for SQL Server + unixODBC in the backend Dockerfile (Debian 12 / bookworm Microsoft prod repo)
 
 ### SQLAlchemy relational sharing
 
-Shared helpers live in `backend/app/connectors/sql_relational.py`:
+Shared helpers remain in `backend/app/connectors/sql_relational.py`. Concrete `MssqlConnector` owns:
 
-- identifier quoting via the engine dialect
-- table-name validation
-- read-only SELECT / WITH validation (reject mutations and multiple statements)
-- Inspector schema/table discovery
-- preview wrap + DataFrame read patterns
-- engine lifecycle
-
-Concrete connectors keep:
-
-- SQLAlchemy driver / URL construction
-- default ports (`postgres` 5432, `mysql` 3306)
-- connect args
-- dialect-specific read-only transaction setup
-  - PostgreSQL: begin transaction, then `SET TRANSACTION READ ONLY`
-  - MySQL/MariaDB: `START TRANSACTION READ ONLY` (session `SET` is not used after begin)
+- URL construction and allowlist (`mssql://`, `mssql+pyodbc://` only; bare `mssql://` normalizes to `mssql+pyodbc://`)
+- ODBC 18 TLS options (`Encrypt` default yes, `TrustServerCertificate` default no)
+- strict read-only validation (SQL Server has no transaction-level READ ONLY equivalent)
+- bounded preview via `fetchmany` (no `LIMIT` rewrite)
 
 ### Configuration
 
 Public config (Host/Port mode):
 
 - `host`
-- `port` (default 3306)
+- `port` (default 1433)
 - `database`
 - `user`
+- optional `encrypt` (default true)
+- optional `trust_server_certificate` (default false; lab checkbox for self-signed fixtures)
 
 Encrypted secrets:
 
 - `password` (Host/Port mode)
 - `dsn` / `url` (Connection URL mode)
 
-`connection_mode` metadata (`host_port` | `connection_url`) is returned for both `postgres` and `mysql`. REST remains `null`. Blank password / blank URL on edit keeps the saved secret; mode switches clear stale secret keys.
-
-Vendor URLs such as `mysql://…` and `mariadb://…` are normalized to `mysql+pymysql://…` for the MySQL connector. PostgreSQL continues to store and use DSN/URL values as provided for backward compatibility.
+`connection_mode` metadata is returned for `postgres`, `mysql`, and `mssql`. Cross-dialect URLs are rejected without echoing credentials.
 
 ### Import resources
 
-- `schema.table` / `database.table` / bare table name
+- `dbo.customers` / schema.table / bare table name
 - read-only `SELECT …`
-- safely validated `WITH …`
+- safely validated `WITH … SELECT …`
 
-Materialization reuses the existing worker path:
+Rejected (application validation):
 
-```text
-Connector.read_frame() → DataFrame → CSV bytes → DatasetVersion
-```
+- `INSERT` / `UPDATE` / `DELETE` / `MERGE` / `EXEC` / `EXECUTE` / DDL / `TRUNCATE`
+- `WITH … UPDATE|DELETE|INSERT|MERGE`
+- `SELECT … INTO …` (creates a table on SQL Server)
+- multiple statements
 
-Lineage: `source_type=mysql`, `data_source_id`, `import_job_id`.
+Fixture SELECT-only logins are an additional disposable defense, not a substitute for validation and not a claim that every production MSSQL account is read-only.
+
+Materialization reuses the existing worker path. Lineage: `source_type=mssql`.
 
 ### Disposable fixtures
 
 Compose profile `source` adds:
 
-- `mysql-source` — `mysql:8.4.5`
-- `mariadb-source` — `mariadb:11.4.5`
-
-Both seed `customers` via `scripts/init-mysql-source.sql`.
+- `mssql-source` — `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` (exact tag; not `latest`)
+- `mssql-source-init` — one-shot seed of database, `dbo.customers`, and a SELECT-only login
 
 ## Phase 4 implementation order
 
 1. **4-A — Connector Foundation + REST API Source** — complete
-2. **4-B — MySQL / MariaDB** — current
-3. **4-C — Microsoft SQL Server** — next
-4. **4-D — Oracle**
+2. **4-B — MySQL / MariaDB** — complete
+3. **4-C — Microsoft SQL Server** — current
+4. **4-D — Oracle** — next
 5. **4-E — Final Hardening / Connector Regression**
 
-Later SQL connectors should implement the shared contract rather than add database-specific orchestration to API or worker modules.
+## Phase 4-C acceptance
 
-## Phase 4-B acceptance
-
-- MySQL / MariaDB create/edit/test/schema(database)/table/import through typed UI
+- Microsoft SQL Server create/edit/test/schema/table/import through typed UI
 - credentials remain encrypted and redacted
-- read-only SQL gate rejects mutations and multi-statements
-- PostgreSQL and REST regressions remain green
-- disposable MySQL and MariaDB fixtures exercise connection → import → DatasetVersion
-- Alembic head includes additive `mysql` enum value
+- ODBC 18 Encrypt / TrustServerCertificate defaults are explicit
+- preview never emits SQL Server-invalid `LIMIT`
+- read-only SQL gate rejects mutations, `SELECT INTO`, and multi-statements
+- PostgreSQL, MySQL/MariaDB, and REST regressions remain green
+- disposable SQL Server fixture exercises connection → import → DatasetVersion
+- Alembic head includes additive `mssql` enum value (`016_mssql_data_source`)
 - `./scripts/verify.sh` and exact PR HEAD CI pass
+
+Phase 4-C is not marked complete until this Draft PR merges and `main` CI passes.

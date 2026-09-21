@@ -16,6 +16,15 @@ export const DEFAULT_MYSQL_FORM = {
   user: "modelflow",
 };
 
+export const DEFAULT_MSSQL_PORT = 1433;
+
+export const DEFAULT_MSSQL_FORM = {
+  host: "mssql-source",
+  port: String(DEFAULT_MSSQL_PORT),
+  database: "modelflow",
+  user: "modelflow",
+};
+
 const POSTGRES_FIELD_KEYS = new Set(["host", "port", "database", "user"]);
 
 export type PostgresConnectionMode = "host_port" | "connection_url";
@@ -70,6 +79,10 @@ export function postgresFormFromConfig(
 
 export function mysqlFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
   return postgresFormFromConfig(config, DEFAULT_MYSQL_PORT);
+}
+
+export function mssqlFormFromConfig(config: Record<string, unknown>): PostgresConnectionForm {
+  return postgresFormFromConfig(config, DEFAULT_MSSQL_PORT);
 }
 
 export function parsePostgresPort(port: string): number {

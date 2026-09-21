@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_MYSQL_FORM,
   DEFAULT_MYSQL_PORT,
+  DEFAULT_MSSQL_FORM,
+  DEFAULT_MSSQL_PORT,
   DEFAULT_POSTGRES_FORM,
   DEFAULT_POSTGRES_PORT,
   DEFAULT_REST_API_FORM,
@@ -9,6 +11,7 @@ import {
   buildRestApiSavePayload,
   buildSqlSavePayload,
   extraPostgresConfig,
+  mssqlFormFromConfig,
   mysqlFormFromConfig,
   parsePostgresPort,
   postgresConfigFromForm,
@@ -131,6 +134,40 @@ describe("postgres data source form helpers", () => {
     });
     expect(blankEdit.secrets).toEqual({});
     expect(blankEdit.clear_secrets).toEqual(["dsn", "url"]);
+  });
+
+  it("builds Microsoft SQL Server host/port payloads with default port 1433", () => {
+    expect(DEFAULT_MSSQL_FORM.port).toBe(String(DEFAULT_MSSQL_PORT));
+    expect(DEFAULT_MSSQL_PORT).toBe(1433);
+    expect(mssqlFormFromConfig({})).toEqual({
+      host: "",
+      port: "1433",
+      database: "",
+      user: "",
+    });
+    const created = buildSqlSavePayload({
+      mode: "host_port",
+      form: {
+        host: "mssql-source",
+        port: "1433",
+        database: "analytics",
+        user: "reader",
+      },
+      extra: { trust_server_certificate: true },
+      password: "secret",
+      connectionUrl: "",
+      editing: false,
+      previousMode: null,
+    });
+    expect(created.config).toEqual({
+      trust_server_certificate: true,
+      host: "mssql-source",
+      port: 1433,
+      database: "analytics",
+      user: "reader",
+    });
+    expect(created.secrets).toEqual({ password: "secret" });
+    expect(JSON.stringify(created.config)).not.toContain("secret");
   });
 
   it("resolves connection mode metadata without exposing secrets", () => {
