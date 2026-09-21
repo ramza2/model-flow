@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     -o Acquire::Retries=5 \
     -o Acquire::http::Pipeline-Depth=0 \
     -o Acquire::http::No-Cache=true \
-    unixodbc unixodbc-dev msodbcsql18 \
+    unixodbc unixodbc-dev msodbcsql18=18.7.1.1-1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

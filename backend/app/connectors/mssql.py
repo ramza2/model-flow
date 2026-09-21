@@ -20,6 +20,10 @@ from app.connectors.sql_relational import (
 
 _ALLOWED_MSSQL_URL_SCHEMES = frozenset({"mssql", "mssql+pyodbc"})
 _ODBC_DRIVER_18 = "ODBC Driver 18 for SQL Server"
+# Explicit allowlist only — blocks odbc_connect, Windows/AD/Kerberos bypasses.
+_ALLOWED_MSSQL_ODBC_QUERY_KEYS = frozenset(
+    {"driver", "encrypt", "trustservercertificate"}
+)
 
 # SQL Server has no transaction-level READ ONLY; validation must be strict.
 _MSSQL_FORBIDDEN_KEYWORDS = re.compile(
@@ -29,6 +33,11 @@ _MSSQL_FORBIDDEN_KEYWORDS = re.compile(
 # SELECT INTO creates a table on SQL Server (distinct from MySQL INTO OUTFILE).
 _MSSQL_SELECT_INTO = re.compile(
     r"\binto\s+(?!outfile\b|dumpfile\b)",
+    re.IGNORECASE,
+)
+# NEXT VALUE FOR mutates sequence state even though it looks like SELECT.
+_MSSQL_NEXT_VALUE_FOR = re.compile(
+    r"\bnext\s+value\s+for\b",
     re.IGNORECASE,
 )
 
@@ -63,6 +72,10 @@ def reject_mssql_side_effects(sql: str) -> None:
         raise ValueError(
             "Data imports accept only a read-only SELECT or table name."
         )
+    if _MSSQL_NEXT_VALUE_FOR.search(cleaned):
+        raise ValueError(
+            "Data imports accept only a read-only SELECT or table name."
+        )
 
 
 def build_mssql_import_query(engine: Engine, resource: str) -> str:
@@ -82,22 +95,49 @@ def _odbc_yes_no(value: bool) -> str:
     return "yes" if value else "no"
 
 
+def _sanitize_mssql_odbc_query_params(
+    params: dict[str, str],
+) -> dict[str, str]:
+    """Keep only allowlisted ODBC query keys; never echo URL/credentials."""
+    sanitized: dict[str, str] = {}
+    for key, value in params.items():
+        canonical = key.lower()
+        if canonical not in _ALLOWED_MSSQL_ODBC_QUERY_KEYS:
+            raise ValueError(
+                "Microsoft SQL Server connection URL includes an unsupported "
+                "query parameter."
+            )
+        if canonical == "driver":
+            # parse_qsl already percent-decodes (+ → space).
+            if value.strip() != _ODBC_DRIVER_18:
+                raise ValueError(
+                    "Microsoft SQL Server connection URL must use "
+                    "ODBC Driver 18 for SQL Server."
+                )
+            sanitized["driver"] = _ODBC_DRIVER_18
+        elif canonical == "encrypt":
+            sanitized["Encrypt"] = value
+        else:
+            sanitized["TrustServerCertificate"] = value
+    return sanitized
+
+
 def ensure_mssql_odbc_query(
     url: str,
     *,
     encrypt: bool = True,
     trust_server_certificate: bool = False,
 ) -> str:
-    """Ensure Driver 18 + explicit Encrypt / TrustServerCertificate defaults."""
+    """Allowlist ODBC query params and ensure Driver 18 + TLS defaults."""
     parsed = urlparse(url)
-    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
-    lower_keys = {key.lower(): key for key in params}
+    raw_params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params = _sanitize_mssql_odbc_query_params(raw_params)
 
-    if "driver" not in lower_keys:
+    if "driver" not in params:
         params["driver"] = _ODBC_DRIVER_18
-    if "encrypt" not in lower_keys:
+    if "Encrypt" not in params:
         params["Encrypt"] = _odbc_yes_no(encrypt)
-    if "trustservercertificate" not in lower_keys:
+    if "TrustServerCertificate" not in params:
         params["TrustServerCertificate"] = _odbc_yes_no(trust_server_certificate)
 
     return urlunparse(parsed._replace(query=urlencode(params)))

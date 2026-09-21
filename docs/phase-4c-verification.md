@@ -1,11 +1,11 @@
 # Phase 4-C Verification — Microsoft SQL Server Connector
 
-Baseline: `main@9c92a4d8e805ef93188e3a880ae21da206a8b573`
+Baseline: `main@9c92a4d8e806ef93188e3a880ae21da206a8b573`
 
 Evidence already on `main` before this phase:
 
 - Phase 4-B PR #54 merged at `aa6bae2428390f3c49ff39693abeb3bf169faab4` (CI #259 PASS)
-- AGENTS.md connector rules PR #53 at `9c92a4d8e805ef93188e3a880ae21da206a8b573` (CI #262 PASS)
+- AGENTS.md connector rules PR #53 at `9c92a4d8e806ef93188e3a880ae21da206a8b573` (CI #262 PASS)
 
 ## Scope
 

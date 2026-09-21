@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
 Status: **Implementation plan — Phase 4-C current**  
-Baseline: `main@9c92a4d8e805ef93188e3a880ae21da206a8b573` (Phase 4-B complete; AGENTS connector rules on main)
+Baseline: `main@9c92a4d8e806ef93188e3a880ae21da206a8b573` (Phase 4-B complete; AGENTS connector rules on main)
 
 ## Purpose
 

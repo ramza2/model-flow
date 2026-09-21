@@ -95,6 +95,38 @@ def test_mssql_connection_url_rejects_cross_dialect_schemes():
         assert raw not in message
 
 
+def test_mssql_connection_url_query_parameter_allowlist():
+    base = "mssql+pyodbc://reader:secret-pass@mssql-source:1433/analytics"
+    rejected = (
+        f"{base}?odbc_connect=DRIVER%3D%7BODBC%20Driver%2018%20for%20SQL%20Server%7D",
+        f"{base}?authentication=ActiveDirectoryIntegrated",
+        f"{base}?Trusted_Connection=yes",
+        f"{base}?trusted_connection=yes",
+        f"{base}?IntegratedSecurity=true",
+        f"{base}?driver=ODBC+Driver+17+for+SQL+Server",
+        f"{base}?driver=ODBC+Driver+18+for+SQL+Server&MARS_Connection=yes",
+    )
+    for raw in rejected:
+        with pytest.raises(ValueError) as raised:
+            MssqlConnector({}, {"dsn": raw})._connection_url()
+        message = str(raised.value)
+        assert "secret-pass" not in message
+        assert raw not in message
+        assert "ActiveDirectory" not in message
+        assert "odbc_connect=" not in message.lower()
+
+    allowed = (
+        f"{base}?driver=ODBC+Driver+18+for+SQL+Server"
+        "&Encrypt=yes&TrustServerCertificate=no"
+    )
+    url = MssqlConnector({}, {"dsn": allowed})._connection_url()
+    params = parse_qs(urlparse(url).query)
+    assert params["driver"] == ["ODBC Driver 18 for SQL Server"]
+    assert params["Encrypt"] == ["yes"]
+    assert params["TrustServerCertificate"] == ["no"]
+    assert "secret-pass" not in str(params)
+
+
 def test_mssql_import_query_allows_select_with_rejects_mutations_and_select_into():
     assert MssqlConnector._import_query(engine, "customers") == (
         'SELECT * FROM "customers"'
@@ -128,9 +160,16 @@ def test_mssql_import_query_allows_select_with_rejects_mutations_and_select_into
         "ON t.id = s.id WHEN MATCHED THEN UPDATE SET name='x';",
         "SELECT id, name INTO new_customers FROM customers",
         "SELECT * INTO #tmp FROM customers",
+        "SELECT NEXT VALUE FOR dbo.seq",
+        "WITH x AS (SELECT 1 AS id) SELECT NEXT VALUE FOR dbo.seq FROM x",
     ):
         with pytest.raises(ValueError, match="read-only"):
             MssqlConnector._import_query(engine, bad)
+
+    # String literals containing the phrase must still be allowed.
+    assert MssqlConnector._import_query(
+        engine, "SELECT 'NEXT VALUE FOR dbo.seq' AS note"
+    ) == ("SELECT 'NEXT VALUE FOR dbo.seq' AS note")
 
     with pytest.raises(ValueError, match="one read-only"):
         MssqlConnector._import_query(engine, "SELECT 1; DROP TABLE customers")
