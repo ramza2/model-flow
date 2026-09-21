@@ -561,13 +561,12 @@ test("oracle import discovery UI when source credentials are available", async (
     labels.find((label) => label.toLowerCase() === (sourceUser || "").toLowerCase());
   expect(schemaOption, `available schemas: ${JSON.stringify(labels)}`).toBeTruthy();
   await schemaSelect.selectOption(schemaOption!);
-  await expect(panel.getByTestId("import-table")).toBeVisible();
-  await expect
-    .poll(async () => panel.getByTestId("import-table").locator("option").count(), {
-      timeout: 60_000,
-    })
-    .toBeGreaterThan(1);
-  await panel.getByTestId("import-table").selectOption({ label: /customers/i });
+  const tableSelect = panel.getByTestId("import-table");
+  await expect(tableSelect).toBeVisible();
+  await expect(tableSelect.locator("option", { hasText: /customers/i })).toBeAttached({
+    timeout: 60_000,
+  });
+  await tableSelect.selectOption({ label: /customers/i });
   await panel.getByTestId("import-dataset-name").fill(datasetName);
   await panel.getByTestId("import-submit").click();
   await expect(panel.getByTestId("open-imported-dataset")).toBeVisible({ timeout: 120_000 });
