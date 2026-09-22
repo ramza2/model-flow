@@ -27,16 +27,23 @@ Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 - `tests/test_closed_loop_phase5a.py`
 - Frontend Monitoring Production Quality unit coverage
 
+## Review blocker fixes (post `ec8ff81`)
+
+- Flush quality run before closed-loop consecutive-breach SELECT (`autoflush=False` safe)
+- Closed-loop candidate `ModelVersion.name` matches source PRODUCTION logical name; MLflow name stays `project-{id}-{logical}`
+- Cooldown + closed-loop state scoped via `RetrainTrigger` ⋈ `ModelQualityRun.endpoint_id`
+- Policy `primary_metric` allowlist + direction-aware threshold ordering + non-finite reject (create/PATCH)
+- Scheduled `ModelQualityRun.schedule_run_id` provenance from parent `AutomationScheduleRun`
+- Candidate registration failure keeps `TrainingJob.status == succeeded` (no duplicate failure alerts)
+
 ## Full gate
 
-`./scripts/verify.sh` on Draft PR HEAD `af50de52d89d78e466fe6bb65b970f1933fb529b`:
+`./scripts/verify.sh` on verified PR HEAD — see PR verification evidence:
 
 - Alembic head: `018_closed_loop_mlops`
-- Backend pytest: **405 passed**
-- Frontend Vitest: **315 passed**
-- Playwright: **30 passed**
-- Result: **PASS**
+- Result recorded on the Draft PR after each push
 
 ## Acceptance reminder
 
 Gate PASS after automatic registration does **not** change lifecycle away from `CANDIDATE`.
+Phase 5-A remains incomplete until merge + post-merge `main` CI PASS.

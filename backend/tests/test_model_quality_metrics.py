@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
+import pytest
+
 from app.services import model_quality as mq
 
 
@@ -16,16 +20,28 @@ def test_classification_metrics_and_thresholds():
     assert metrics["accuracy"] == 0.75
     primary = mq.extract_primary_metric_value(metrics, "f1_macro")
     assert primary is not None
+    # higher-is-better: critical <= warning (critical=0.7, warning=0.8)
     assert (
         mq.evaluate_thresholds(
-            primary_value=primary,
+            primary_value=0.65,
             primary_metric="f1_macro",
-            warning_threshold=0.9,
-            critical_threshold=0.95,
+            warning_threshold=0.8,
+            critical_threshold=0.7,
             matched_count=4,
             minimum_matched_samples=2,
         )
         == "critical"
+    )
+    assert (
+        mq.evaluate_thresholds(
+            primary_value=primary,
+            primary_metric="f1_macro",
+            warning_threshold=0.8,
+            critical_threshold=0.7,
+            matched_count=4,
+            minimum_matched_samples=2,
+        )
+        == "warning"
     )
 
 
@@ -51,6 +67,7 @@ def test_regression_and_multi_output_metrics():
     )
     assert "aggregate" in multi and "targets" in multi
     assert set(multi["targets"]["target_a"]) == {"mae", "rmse", "r2"}
+    # lower-is-better: critical >= warning
     assert (
         mq.evaluate_thresholds(
             primary_value=mq.extract_primary_metric_value(multi, "rmse"),
@@ -86,8 +103,59 @@ def test_normalize_actual_validation():
         problem_type="regression",
     )
     assert multi == {"target_a": 1.0, "target_b": 2.0}
-    try:
-        mq.normalize_actual({"target_a": 1}, target_columns=["target_a", "target_b"], problem_type="regression")
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
+    with pytest.raises(ValueError):
+        mq.normalize_actual(
+            {"target_a": 1},
+            target_columns=["target_a", "target_b"],
+            problem_type="regression",
+        )
+
+
+def test_validate_policy_f1_valid_and_inverted():
+    assert (
+        mq.validate_policy_metric_thresholds(
+            primary_metric="f1_macro",
+            warning_threshold=0.8,
+            critical_threshold=0.7,
+        )
+        == "f1_macro"
+    )
+    with pytest.raises(ValueError, match="higher-is-better"):
+        mq.validate_policy_metric_thresholds(
+            primary_metric="f1_macro",
+            warning_threshold=0.7,
+            critical_threshold=0.8,
+        )
+
+
+def test_validate_policy_rmse_valid_and_inverted():
+    assert (
+        mq.validate_policy_metric_thresholds(
+            primary_metric="rmse",
+            warning_threshold=0.1,
+            critical_threshold=0.2,
+        )
+        == "rmse"
+    )
+    with pytest.raises(ValueError, match="lower-is-better"):
+        mq.validate_policy_metric_thresholds(
+            primary_metric="rmse",
+            warning_threshold=0.2,
+            critical_threshold=0.1,
+        )
+
+
+def test_validate_policy_unsupported_and_non_finite():
+    with pytest.raises(ValueError, match="Unsupported primary_metric"):
+        mq.validate_policy_metric_thresholds(
+            primary_metric="auc",
+            warning_threshold=0.8,
+            critical_threshold=0.7,
+        )
+    for bad in (math.nan, math.inf, -math.inf):
+        with pytest.raises(ValueError, match="finite"):
+            mq.validate_policy_metric_thresholds(
+                primary_metric="accuracy",
+                warning_threshold=0.8,
+                critical_threshold=bad,
+            )

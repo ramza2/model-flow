@@ -169,23 +169,19 @@ def _cooldown_active(
     now: datetime,
 ) -> bool:
     since = now - timedelta(hours=max(0, int(policy.cooldown_hours)))
-    recent = db.scalar(
-        select(RetrainTrigger)
+    recent_id = db.scalar(
+        select(RetrainTrigger.id)
+        .join(ModelQualityRun, ModelQualityRun.id == RetrainTrigger.quality_run_id)
         .where(
             RetrainTrigger.project_id == policy.project_id,
             RetrainTrigger.trigger_type == "quality_degradation",
+            ModelQualityRun.endpoint_id == endpoint_id,
             RetrainTrigger.last_triggered_at.is_not(None),
             RetrainTrigger.last_triggered_at >= since,
         )
-        .order_by(RetrainTrigger.id.desc())
+        .limit(1)
     )
-    if recent is None:
-        return False
-    # Prefer endpoint-scoped cooldown when config records endpoint_id.
-    config = _loads(recent.config_json, {})
-    if config.get("endpoint_id") not in (None, endpoint_id):
-        return False
-    return True
+    return recent_id is not None
 
 
 def _create_training_job_from_validated(
@@ -507,7 +503,9 @@ def register_candidate_idempotently(
         if trigger.source_model_version_id
         else None
     )
-    model_name = logical_model_name(source_model) if source_model else training_job.name
+    # MLflow naming uses a logical stem; ModelVersion.name must match source PRODUCTION.
+    mlflow_stem = logical_model_name(source_model) if source_model else training_job.name
+    registry_name = source_model.name if source_model is not None else None
 
     closed_loop = {
         "quality_run_id": trigger.quality_run_id,
@@ -528,6 +526,8 @@ def register_candidate_idempotently(
         .order_by(ModelVersion.id.desc())
     )
     if existing is not None:
+        if registry_name is not None and existing.name != registry_name:
+            existing.name = registry_name
         trigger.candidate_model_version_id = existing.id
         metadata = _loads(existing.metadata_json, {})
         if isinstance(metadata, dict):
@@ -540,11 +540,12 @@ def register_candidate_idempotently(
             db,
             project_id=training_job.project_id,
             run_id=str(training_job.mlflow_run_id),
-            model_name=model_name,
+            model_name=mlflow_stem,
             artifact_path="model",
             dataset_version_id=training_job.dataset_version_id,
             training_job_id=training_job.id,
             created_by=None,
+            registry_model_name=registry_name,
         )
     except Exception as exc:
         create_alert(
@@ -566,7 +567,8 @@ def register_candidate_idempotently(
             success=False,
             failure_reason=str(exc),
         )
-        raise
+        # Keep TrainingJob succeeded; do not raise (avoids duplicate worker failure alerts).
+        return None
 
     metadata = _loads(row.metadata_json, {})
     if not isinstance(metadata, dict):
@@ -631,33 +633,33 @@ def compute_closed_loop_state(
     )
     latest_trigger = db.scalar(
         select(RetrainTrigger)
+        .join(ModelQualityRun, ModelQualityRun.id == RetrainTrigger.quality_run_id)
         .where(
             RetrainTrigger.project_id == project_id,
             RetrainTrigger.trigger_type == "quality_degradation",
+            ModelQualityRun.endpoint_id == endpoint_id,
         )
         .order_by(RetrainTrigger.id.desc())
     )
     if latest_trigger is not None:
-        config = _loads(latest_trigger.config_json, {})
-        if config.get("endpoint_id") in (None, endpoint_id):
-            if latest_trigger.candidate_model_version_id:
-                candidate = db.get(ModelVersion, latest_trigger.candidate_model_version_id)
-                if candidate and candidate.lifecycle == ModelLifecycle.CANDIDATE:
+        if latest_trigger.candidate_model_version_id:
+            candidate = db.get(ModelVersion, latest_trigger.candidate_model_version_id)
+            if candidate and candidate.lifecycle == ModelLifecycle.CANDIDATE:
+                return "Candidate ready"
+            if candidate and candidate.lifecycle == ModelLifecycle.PENDING_APPROVAL:
+                return "Awaiting human review"
+        if latest_trigger.created_training_job_id:
+            job = db.get(TrainingJob, latest_trigger.created_training_job_id)
+            if job is not None:
+                if job.status in {JobStatus.pending, JobStatus.queued}:
+                    return "Retraining queued"
+                if job.status == JobStatus.running:
+                    return "Retraining running"
+                if (
+                    job.status == JobStatus.succeeded
+                    and not latest_trigger.candidate_model_version_id
+                ):
                     return "Candidate ready"
-                if candidate and candidate.lifecycle == ModelLifecycle.PENDING_APPROVAL:
-                    return "Awaiting human review"
-            if latest_trigger.created_training_job_id:
-                job = db.get(TrainingJob, latest_trigger.created_training_job_id)
-                if job is not None:
-                    if job.status in {JobStatus.pending, JobStatus.queued}:
-                        return "Retraining queued"
-                    if job.status == JobStatus.running:
-                        return "Retraining running"
-                    if (
-                        job.status == JobStatus.succeeded
-                        and not latest_trigger.candidate_model_version_id
-                    ):
-                        return "Candidate ready"
 
     if latest_run and latest_run.quality_status in {"warning", "critical"}:
         return "Degraded"

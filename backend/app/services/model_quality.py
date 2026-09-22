@@ -34,6 +34,7 @@ HIGHER_IS_BETTER = frozenset(
 LOWER_IS_BETTER = frozenset({"mae", "rmse"})
 CLASSIFICATION_METRICS = ("accuracy", "precision_macro", "recall_macro", "f1_macro")
 REGRESSION_METRICS = ("mae", "rmse", "r2")
+SUPPORTED_PRIMARY_METRICS = frozenset(CLASSIFICATION_METRICS + REGRESSION_METRICS)
 
 
 def _loads(value: str | None, default: Any = None) -> Any:
@@ -62,6 +63,49 @@ def metric_is_higher_better(metric: str) -> bool:
     if name in LOWER_IS_BETTER:
         return False
     return True
+
+
+def validate_policy_metric_thresholds(
+    *,
+    primary_metric: str,
+    warning_threshold: float,
+    critical_threshold: float,
+) -> str:
+    """Validate primary metric allowlist and direction-aware threshold ordering.
+
+    Returns the canonical (lowercased) metric name.
+    """
+
+    metric = str(primary_metric or "").strip().lower()
+    if metric not in SUPPORTED_PRIMARY_METRICS:
+        raise ValueError(
+            "Unsupported primary_metric. "
+            f"Allowed: {', '.join(sorted(SUPPORTED_PRIMARY_METRICS))}."
+        )
+    for label, value in (
+        ("warning_threshold", warning_threshold),
+        ("critical_threshold", critical_threshold),
+    ):
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{label} must be a finite number.") from exc
+        if not math.isfinite(number):
+            raise ValueError(f"{label} must be a finite number.")
+    warning = float(warning_threshold)
+    critical = float(critical_threshold)
+    if metric_is_higher_better(metric):
+        if critical > warning:
+            raise ValueError(
+                "For higher-is-better metrics, critical_threshold must be "
+                "<= warning_threshold."
+            )
+    elif critical < warning:
+        raise ValueError(
+            "For lower-is-better metrics, critical_threshold must be "
+            ">= warning_threshold."
+        )
+    return metric
 
 
 def resolve_problem_type(db: Session, model: ModelVersion | None) -> str:

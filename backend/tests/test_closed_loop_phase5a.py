@@ -447,34 +447,29 @@ def test_closed_loop_retrain_to_candidate_without_auto_promote(client, auth_head
         assert job_b.dataset_version_id == v2_id
         assert job_b.status == JobStatus.pending
 
-        # Simulate training success + candidate registration.
+        # Simulate training success + candidate registration via real register_from_run.
         job_b.status = JobStatus.succeeded
         job_b.mlflow_run_id = "run-candidate"
         job_b.model_uri = "models:/demo/2"
         job_b.metrics_json = json.dumps({"accuracy": 0.95, "f1_macro": 0.95})
         db.commit()
 
-        def fake_register_from_run(db_session, **kwargs):
-            row = ModelVersion(
-                project_id=kwargs["project_id"],
-                name="iris",
-                version="2",
-                lifecycle=ModelLifecycle.CANDIDATE,
-                mlflow_model_name=f"project-{kwargs['project_id']}-iris",
-                mlflow_version="2",
-                mlflow_run_id=kwargs["run_id"],
-                model_uri="models:/demo/2",
-                metrics_json=job_b.metrics_json,
-                metadata_json=json.dumps({"problem_type": "classification"}),
-                dataset_version_id=kwargs.get("dataset_version_id"),
-                training_job_id=kwargs.get("training_job_id"),
-                gates_passed=True,
-            )
-            db_session.add(row)
-            db_session.flush()
-            return row
-
-        monkeypatch.setattr(registry_service, "register_from_run", fake_register_from_run)
+        monkeypatch.setattr(
+            mlflow_service,
+            "register_model",
+            lambda run_id, name, artifact_path: {"name": name, "version": "2"},
+        )
+        monkeypatch.setattr(
+            mlflow_service,
+            "get_run",
+            lambda run_id: {
+                "run_id": run_id,
+                "experiment_id": "exp-1",
+                "params": {"features": "a,b", "problem_type": "classification"},
+                "metrics": {"accuracy": 0.95, "f1_macro": 0.95},
+                "tags": {},
+            },
+        )
         monkeypatch.setattr(
             registry_service,
             "evaluate_gates",
@@ -487,6 +482,8 @@ def test_closed_loop_retrain_to_candidate_without_auto_promote(client, auth_head
         db.commit()
         assert candidate is not None
         assert candidate.lifecycle == ModelLifecycle.CANDIDATE
+        assert candidate.name == "iris"
+        assert candidate.mlflow_model_name == f"project-{project_id}-iris"
         assert candidate.id != model_a_id
         model_a = db.get(ModelVersion, model_a_id)
         assert model_a.lifecycle == ModelLifecycle.PRODUCTION
@@ -624,3 +621,741 @@ def test_insufficient_samples_skips_alerts_and_retrain(client, auth_headers, pro
             )
             is None
         )
+
+
+def _queue_and_process_quality(client, auth_headers, project_id, policy_id):
+    run_id = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies/{policy_id}/evaluate",
+        headers=auth_headers,
+    ).json()["id"]
+    with TestingSessionLocal() as db:
+        db.get(ModelQualityRun, run_id).status = JobStatus.pending
+        db.commit()
+    claimed = runner.claim_next_model_quality_run()
+    assert claimed is not None
+    runner.process_model_quality_run(claimed)
+    return run_id
+
+
+def _seed_critical_predictions(client, auth_headers, project_id, endpoint_id, monkeypatch, n=4):
+    monkeypatch.setattr(
+        "app.services.inference.predict",
+        lambda *args, **kwargs: [1] * n,
+    )
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *args, **kwargs: None)
+    predicted = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": i, "b": i + 1} for i in range(n)]},
+    ).json()
+    assert (
+        client.post(
+            f"/api/v1/projects/{project_id}/ground-truth",
+            headers=auth_headers,
+            json={
+                "items": [
+                    {"prediction_id": pid, "actual": 0}
+                    for pid in predicted["prediction_ids"]
+                ]
+            },
+        ).status_code
+        == 200
+    )
+
+
+def test_consecutive_breaches_two_triggers_exactly_once(client, auth_headers, project_id, monkeypatch):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id, with_v2=True)
+        endpoint_id = seeded["endpoint"].id
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=endpoint_id,
+            name="breach-2",
+            is_active=True,
+            window_hours=24,
+            minimum_matched_samples=3,
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=2,
+            cooldown_hours=0,
+            auto_retrain=True,
+        )
+        db.add(policy)
+        db.commit()
+        policy_id = policy.id
+
+    _seed_critical_predictions(client, auth_headers, project_id, endpoint_id, monkeypatch)
+    run1 = _queue_and_process_quality(client, auth_headers, project_id, policy_id)
+    with TestingSessionLocal() as db:
+        decision1 = json.loads(db.get(ModelQualityRun, run1).trigger_decision_json)
+        assert decision1["action"] == "skipped"
+        assert decision1["reason"] == "consecutive_breaches_not_met"
+        assert db.scalar(select(RetrainTrigger)) is None
+
+    run2 = _queue_and_process_quality(client, auth_headers, project_id, policy_id)
+    with TestingSessionLocal() as db:
+        decision2 = json.loads(db.get(ModelQualityRun, run2).trigger_decision_json)
+        assert decision2["action"] == "retrain_triggered"
+        triggers = db.scalars(select(RetrainTrigger)).all()
+        assert len(triggers) == 1
+        assert triggers[0].quality_run_id == run2
+
+
+def test_logical_name_preserved_and_manual_promote_single_production(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id, with_v2=True)
+        source = seeded["model"]
+        assert source.name == "iris"
+        job_b = TrainingJob(
+            project_id=project_id,
+            dataset_id=seeded["dataset"].id,
+            dataset_version_id=seeded["v2"].id,
+            name="closed-loop-retrain",
+            target_column="target",
+            target_columns_json=json.dumps(["target"]),
+            problem_type="classification",
+            algorithm="logistic_regression",
+            feature_columns_json=json.dumps(["a", "b"]),
+            status=JobStatus.succeeded,
+            mlflow_run_id="run-cand-name",
+            model_uri="models:/demo/2",
+            metrics_json=json.dumps({"accuracy": 0.99}),
+            retrain_source_job_id=seeded["job"].id,
+        )
+        db.add(job_b)
+        db.flush()
+        quality_run = ModelQualityRun(
+            project_id=project_id,
+            policy_id=1,
+            endpoint_id=seeded["endpoint"].id,
+            model_version_id=source.id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        # Need a real policy for FK — create one.
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=seeded["endpoint"].id,
+            name="name-check",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=True,
+            minimum_matched_samples=1,
+            window_hours=24,
+        )
+        db.add(policy)
+        db.flush()
+        quality_run.policy_id = policy.id
+        db.add(quality_run)
+        db.flush()
+        trigger = RetrainTrigger(
+            project_id=project_id,
+            trigger_type="quality_degradation",
+            config_json=json.dumps({"endpoint_id": seeded["endpoint"].id}),
+            created_training_job_id=job_b.id,
+            quality_run_id=quality_run.id,
+            source_model_version_id=source.id,
+            target_dataset_version_id=seeded["v2"].id,
+        )
+        db.add(trigger)
+        db.commit()
+        source_id = source.id
+        job_b_id = job_b.id
+
+    monkeypatch.setattr(
+        mlflow_service,
+        "register_model",
+        lambda run_id, name, artifact_path: {"name": name, "version": "2"},
+    )
+    monkeypatch.setattr(
+        mlflow_service,
+        "get_run",
+        lambda run_id: {
+            "run_id": run_id,
+            "experiment_id": "exp-1",
+            "params": {"features": "a,b", "problem_type": "classification"},
+            "metrics": {"accuracy": 0.99},
+            "tags": {},
+        },
+    )
+    monkeypatch.setattr(
+        registry_service,
+        "evaluate_gates",
+        lambda db_session, row, actor_id=None: {"passed": True, "results": []},
+    )
+
+    with TestingSessionLocal() as db:
+        job_b = db.get(TrainingJob, job_b_id)
+        candidate = closed_loop.register_candidate_idempotently(db, training_job=job_b)
+        db.commit()
+        assert candidate is not None
+        assert candidate.name == "iris"
+        assert candidate.mlflow_model_name.startswith(f"project-{project_id}-")
+        candidate_id = candidate.id
+
+        # Human lifecycle: request → approve → promote
+        cand = db.get(ModelVersion, candidate_id)
+        cand.gates_passed = True
+        cand.gate_results_json = json.dumps(
+            {"passed": True, "computed_by": "server", "gate_version": "1", "results": []}
+        )
+        db.commit()
+        registry_service.request_approval(db, cand, actor_id=1)
+        db.commit()
+        registry_service.approve_model(db, cand, approved_by=1, comment="ok")
+        db.commit()
+        registry_service.promote_model(db, cand, promoted_by=1)
+        db.commit()
+
+        old = db.get(ModelVersion, source_id)
+        new = db.get(ModelVersion, candidate_id)
+        assert old.lifecycle == ModelLifecycle.APPROVED
+        assert new.lifecycle == ModelLifecycle.PRODUCTION
+        assert new.name == "iris"
+        productions = db.scalars(
+            select(ModelVersion).where(
+                ModelVersion.project_id == project_id,
+                ModelVersion.name == "iris",
+                ModelVersion.lifecycle == ModelLifecycle.PRODUCTION,
+            )
+        ).all()
+        assert len(productions) == 1
+        assert productions[0].id == candidate_id
+
+
+def test_endpoint_scoped_cooldown_isolation(client, auth_headers, project_id, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    with TestingSessionLocal() as db:
+        seeded_a = _seed_production_endpoint(db, project_id, with_v2=True)
+        endpoint_a = seeded_a["endpoint"].id
+        # Second endpoint + policy sharing same project/model lineage.
+        endpoint_b = Endpoint(
+            project_id=project_id,
+            name="endpoint-b",
+            model_name=seeded_a["model"].name,
+            model_version=seeded_a["model"].version,
+            model_version_id=seeded_a["model"].id,
+            model_uri=seeded_a["model"].model_uri,
+            status="ready",
+            feature_schema_json=seeded_a["endpoint"].feature_schema_json,
+        )
+        db.add(endpoint_b)
+        db.flush()
+        policy_a = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=endpoint_a,
+            name="policy-a",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=24,
+            auto_retrain=True,
+            minimum_matched_samples=2,
+            window_hours=24,
+            is_active=True,
+        )
+        policy_b = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=endpoint_b.id,
+            name="policy-b",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=24,
+            auto_retrain=True,
+            minimum_matched_samples=2,
+            window_hours=24,
+            is_active=True,
+        )
+        db.add_all([policy_a, policy_b])
+        db.flush()
+        now = datetime.now(timezone.utc)
+        run_a = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy_a.id,
+            endpoint_id=endpoint_a,
+            model_version_id=seeded_a["model"].id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        run_b = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy_b.id,
+            endpoint_id=endpoint_b.id,
+            model_version_id=seeded_a["model"].id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        db.add_all([run_a, run_b])
+        db.flush()
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                trigger_type="quality_degradation",
+                config_json=json.dumps({"endpoint_id": endpoint_a}),
+                quality_run_id=run_a.id,
+                last_triggered_at=now - timedelta(hours=1),
+                source_model_version_id=seeded_a["model"].id,
+                target_dataset_version_id=seeded_a["v2"].id,
+                candidate_model_version_id=None,
+            )
+        )
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                trigger_type="quality_degradation",
+                config_json=json.dumps({"endpoint_id": endpoint_b.id}),
+                quality_run_id=run_b.id,
+                last_triggered_at=now - timedelta(minutes=5),
+                source_model_version_id=seeded_a["model"].id,
+                target_dataset_version_id=seeded_a["v2"].id,
+            )
+        )
+        db.commit()
+        assert closed_loop._cooldown_active(
+            db, policy=policy_a, endpoint_id=endpoint_a, now=now
+        )
+        # Endpoint B recent trigger must not clear A's cooldown.
+        assert closed_loop._cooldown_active(
+            db, policy=policy_a, endpoint_id=endpoint_a, now=now
+        )
+
+
+def test_multi_endpoint_closed_loop_state_isolation(project_id):
+    from datetime import datetime, timezone
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id, with_v2=True)
+        endpoint_a = seeded["endpoint"].id
+        endpoint_b = Endpoint(
+            project_id=project_id,
+            name="endpoint-b-state",
+            model_name=seeded["model"].name,
+            model_version=seeded["model"].version,
+            model_version_id=seeded["model"].id,
+            model_uri=seeded["model"].model_uri,
+            status="ready",
+            feature_schema_json=seeded["endpoint"].feature_schema_json,
+        )
+        db.add(endpoint_b)
+        db.flush()
+        policy_a = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=endpoint_a,
+            name="state-a",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=True,
+            minimum_matched_samples=1,
+            window_hours=24,
+        )
+        policy_b = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=endpoint_b.id,
+            name="state-b",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=True,
+            minimum_matched_samples=1,
+            window_hours=24,
+        )
+        db.add_all([policy_a, policy_b])
+        db.flush()
+        run_a = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy_a.id,
+            endpoint_id=endpoint_a,
+            model_version_id=seeded["model"].id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        run_b = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy_b.id,
+            endpoint_id=endpoint_b.id,
+            model_version_id=seeded["model"].id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        db.add_all([run_a, run_b])
+        db.flush()
+        candidate = ModelVersion(
+            project_id=project_id,
+            name="iris",
+            version="9",
+            lifecycle=ModelLifecycle.CANDIDATE,
+            mlflow_model_name=f"project-{project_id}-iris",
+            mlflow_version="9",
+            mlflow_run_id="run-state",
+            model_uri="models:/demo/9",
+            metrics_json="{}",
+            metadata_json="{}",
+            training_job_id=seeded["job"].id,
+            dataset_version_id=seeded["v2"].id,
+        )
+        db.add(candidate)
+        db.flush()
+        job_b = TrainingJob(
+            project_id=project_id,
+            dataset_id=seeded["dataset"].id,
+            dataset_version_id=seeded["v2"].id,
+            name="b-retrain",
+            target_column="target",
+            target_columns_json="[]",
+            problem_type="classification",
+            algorithm="logistic_regression",
+            status=JobStatus.running,
+            retrain_source_job_id=seeded["job"].id,
+        )
+        db.add(job_b)
+        db.flush()
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                trigger_type="quality_degradation",
+                config_json="{}",
+                quality_run_id=run_a.id,
+                created_training_job_id=seeded["job"].id,
+                candidate_model_version_id=candidate.id,
+                last_triggered_at=datetime.now(timezone.utc),
+                source_model_version_id=seeded["model"].id,
+            )
+        )
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                trigger_type="quality_degradation",
+                config_json="{}",
+                quality_run_id=run_b.id,
+                created_training_job_id=job_b.id,
+                last_triggered_at=datetime.now(timezone.utc),
+                source_model_version_id=seeded["model"].id,
+            )
+        )
+        db.commit()
+        assert (
+            closed_loop.compute_closed_loop_state(
+                db, project_id=project_id, endpoint_id=endpoint_a
+            )
+            == "Candidate ready"
+        )
+        assert (
+            closed_loop.compute_closed_loop_state(
+                db, project_id=project_id, endpoint_id=endpoint_b.id
+            )
+            == "Retraining running"
+        )
+
+
+def test_policy_validation_api_create_and_patch(client, auth_headers, project_id):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+
+    bad_metric = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "bad-metric",
+            "primary_metric": "auc",
+            "warning_threshold": 0.8,
+            "critical_threshold": 0.7,
+        },
+    )
+    assert bad_metric.status_code == 422
+
+    inverted = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "inverted-f1",
+            "primary_metric": "f1_macro",
+            "warning_threshold": 0.7,
+            "critical_threshold": 0.8,
+        },
+    )
+    assert inverted.status_code == 422
+
+    created = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "valid-f1",
+            "primary_metric": "f1_macro",
+            "warning_threshold": 0.8,
+            "critical_threshold": 0.7,
+        },
+    )
+    assert created.status_code == 201, created.text
+    policy_id = created.json()["id"]
+
+    patched = client.patch(
+        f"/api/v1/projects/{project_id}/model-quality/policies/{policy_id}",
+        headers=auth_headers,
+        json={"warning_threshold": 0.6},
+    )
+    assert patched.status_code == 422
+
+    ok_patch = client.patch(
+        f"/api/v1/projects/{project_id}/model-quality/policies/{policy_id}",
+        headers=auth_headers,
+        json={"warning_threshold": 0.85},
+    )
+    assert ok_patch.status_code == 200
+
+
+def test_scheduled_model_quality_sets_schedule_run_id(project_id):
+    from app.db.models import (
+        AutomationSchedule,
+        AutomationScheduleRun,
+        ConcurrencyPolicy,
+        ScheduleRunStatus,
+        ScheduleTargetType,
+        ScheduleTriggerSource,
+    )
+    from app.services import scheduler as scheduler_service
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id)
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=seeded["endpoint"].id,
+            name="scheduled",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=False,
+            minimum_matched_samples=1,
+            window_hours=24,
+            is_active=True,
+        )
+        db.add(policy)
+        db.flush()
+        schedule = AutomationSchedule(
+            project_id=project_id,
+            name="quality-cron",
+            description="",
+            target_type=ScheduleTargetType.model_quality,
+            target_config_json=json.dumps({"quality_policy_id": policy.id}),
+            cron_expression="0 * * * *",
+            timezone="UTC",
+            is_enabled=True,
+            concurrency_policy=ConcurrencyPolicy.skip,
+            max_concurrent_runs=1,
+            max_retries=0,
+            retry_delay_seconds=60,
+        )
+        db.add(schedule)
+        db.flush()
+        schedule_run = AutomationScheduleRun(
+            schedule_id=schedule.id,
+            project_id=project_id,
+            scheduled_for=schedule.created_at,
+            attempt=1,
+            trigger_source=ScheduleTriggerSource.manual,
+            status=ScheduleRunStatus.pending,
+            target_type=ScheduleTargetType.model_quality,
+            ready_at=schedule.created_at,
+        )
+        # Fix scheduled_for / ready_at with timezone-aware now
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        schedule_run.scheduled_for = now
+        schedule_run.ready_at = now
+        db.add(schedule_run)
+        db.commit()
+        schedule_id = schedule.id
+        schedule_run_id = schedule_run.id
+
+    with TestingSessionLocal() as db:
+        schedule = db.get(AutomationSchedule, schedule_id)
+        dispatched = scheduler_service.dispatch_pending_runs(db, now=datetime.now(timezone.utc))
+        db.commit()
+        assert dispatched >= 1
+        schedule_run = db.get(AutomationScheduleRun, schedule_run_id)
+        assert schedule_run.status == ScheduleRunStatus.dispatched
+        assert schedule_run.target_resource_id is not None
+        quality_run = db.get(ModelQualityRun, schedule_run.target_resource_id)
+        assert quality_run is not None
+        assert quality_run.schedule_run_id == schedule_run_id
+        assert quality_run.id == schedule_run.target_resource_id
+
+
+def test_ground_truth_service_key_and_cross_project_isolation(
+    client, auth_headers, project_id, monkeypatch
+):
+    from app.db.models import ServiceApiKey
+    from app.services import service_api_keys
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        other = Project(name="other-project", created_by=1)
+        db.add(other)
+        db.flush()
+        other_id = other.id
+        raw_key, prefix, key_hash = service_api_keys.generate_service_api_key(db)
+        sak = ServiceApiKey(
+            project_id=project_id,
+            endpoint_id=endpoint_id,
+            name="gt-key",
+            key_prefix=prefix,
+            key_hash=key_hash,
+            created_by=1,
+            is_active=True,
+        )
+        db.add(sak)
+        db.commit()
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *args, **kwargs: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *args, **kwargs: None)
+    predicted = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    )
+    assert predicted.status_code == 200, predicted.text
+    prediction_id = predicted.json()["prediction_ids"][0]
+
+    # Cross-project JWT: prediction belongs to project_id, not other_id
+    cross = client.post(
+        f"/api/v1/projects/{other_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    assert cross.status_code in {403, 404, 422}
+
+    # Wrong endpoint service key path
+    other_ep = client.post(
+        f"/api/v1/inference/endpoints/{endpoint_id + 999}/ground-truth",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    assert other_ep.status_code in {401, 403, 404}
+
+    ok = client.post(
+        f"/api/v1/inference/endpoints/{endpoint_id}/ground-truth",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    assert ok.status_code == 200, ok.text
+
+
+def test_candidate_registration_failure_keeps_training_succeeded(project_id, monkeypatch):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production_endpoint(db, project_id, with_v2=True)
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=seeded["endpoint"].id,
+            name="reg-fail",
+            primary_metric="accuracy",
+            warning_threshold=0.9,
+            critical_threshold=0.8,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=True,
+            minimum_matched_samples=1,
+            window_hours=24,
+        )
+        db.add(policy)
+        db.flush()
+        run = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy.id,
+            endpoint_id=seeded["endpoint"].id,
+            model_version_id=seeded["model"].id,
+            status=JobStatus.succeeded,
+            quality_status="critical",
+            metrics_json="{}",
+            thresholds_json="{}",
+            trigger_decision_json="{}",
+        )
+        db.add(run)
+        db.flush()
+        job = TrainingJob(
+            project_id=project_id,
+            dataset_id=seeded["dataset"].id,
+            dataset_version_id=seeded["v2"].id,
+            name="fail-reg",
+            target_column="target",
+            target_columns_json=json.dumps(["target"]),
+            problem_type="classification",
+            algorithm="logistic_regression",
+            feature_columns_json=json.dumps(["a", "b"]),
+            status=JobStatus.succeeded,
+            mlflow_run_id="run-fail-reg",
+            model_uri="models:/x/1",
+            metrics_json="{}",
+            retrain_source_job_id=seeded["job"].id,
+        )
+        db.add(job)
+        db.flush()
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                trigger_type="quality_degradation",
+                config_json="{}",
+                quality_run_id=run.id,
+                created_training_job_id=job.id,
+                source_model_version_id=seeded["model"].id,
+                target_dataset_version_id=seeded["v2"].id,
+            )
+        )
+        db.commit()
+        job_id = job.id
+
+    monkeypatch.setattr(
+        mlflow_service,
+        "get_run",
+        lambda run_id: (_ for _ in ()).throw(RuntimeError("mlflow down")),
+    )
+
+    with TestingSessionLocal() as db:
+        job = db.get(TrainingJob, job_id)
+        result = closed_loop.register_candidate_idempotently(db, training_job=job)
+        db.commit()
+        assert result is None
+        job = db.get(TrainingJob, job_id)
+        assert job.status == JobStatus.succeeded
+        alerts = db.scalars(
+            select(Alert).where(
+                Alert.alert_type == "closed_loop_candidate_registration_failed"
+            )
+        ).all()
+        assert len(alerts) == 1

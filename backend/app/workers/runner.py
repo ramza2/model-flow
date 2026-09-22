@@ -187,6 +187,8 @@ def process_model_quality_run(run: ModelQualityRun) -> None:
             return
         quality_service.evaluate_quality_run(db, live)
         if live.status == JobStatus.succeeded:
+            # Flush so consecutive-breach SELECTs include this run under autoflush=False.
+            db.flush()
             closed_loop.process_completed_quality_run(db, live)
         db.commit()
     except Exception as exc:

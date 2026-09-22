@@ -231,6 +231,14 @@ def create_quality_policy(
 ):
     auth, _, _ = access
     endpoint = get_owned(db, Endpoint, body.endpoint_id, project_id, "Endpoint")
+    try:
+        primary_metric = quality_service.validate_policy_metric_thresholds(
+            primary_metric=body.primary_metric,
+            warning_threshold=body.warning_threshold,
+            critical_threshold=body.critical_threshold,
+        )
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
     policy = ModelQualityPolicy(
         project_id=project_id,
         endpoint_id=endpoint.id,
@@ -238,7 +246,7 @@ def create_quality_policy(
         is_active=body.is_active,
         window_hours=body.window_hours,
         minimum_matched_samples=body.minimum_matched_samples,
-        primary_metric=body.primary_metric.strip(),
+        primary_metric=primary_metric,
         warning_threshold=body.warning_threshold,
         critical_threshold=body.critical_threshold,
         consecutive_breaches=body.consecutive_breaches,
@@ -300,6 +308,14 @@ def update_quality_policy(
     ):
         if field in data and data[field] is not None:
             setattr(policy, field, data[field])
+    try:
+        policy.primary_metric = quality_service.validate_policy_metric_thresholds(
+            primary_metric=policy.primary_metric,
+            warning_threshold=policy.warning_threshold,
+            critical_threshold=policy.critical_threshold,
+        )
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
     policy.updated_at = datetime.now(timezone.utc)
     action = "model_quality_policy.update"
     if "is_active" in data and data["is_active"] is not None:
