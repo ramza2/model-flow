@@ -29,7 +29,13 @@ Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 
 ## Full gate
 
-Run `./scripts/verify.sh` on the Draft PR HEAD before merge.
+`./scripts/verify.sh` on Draft PR HEAD `af50de52d89d78e466fe6bb65b970f1933fb529b`:
+
+- Alembic head: `018_closed_loop_mlops`
+- Backend pytest: **405 passed**
+- Frontend Vitest: **315 passed**
+- Playwright: **30 passed**
+- Result: **PASS**
 
 ## Acceptance reminder
 
