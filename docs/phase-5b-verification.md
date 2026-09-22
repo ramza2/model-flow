@@ -28,7 +28,7 @@ Baseline: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`
 | Item | Value |
 |------|--------|
 | Local full verify HEAD | `e2cef04a0e4707b963343a3845282df17e87840d` |
-| PR exact HEAD | _docs evidence tip after verify; see git log_ |
+| PR exact HEAD | 918e74632ea26d791b91d36e7fa1376e9d25cd21 |
 | `./scripts/verify.sh` | PASS (`artifacts/verify/RESULT.txt=OK`) |
 | Backend | 433 passed (verify suite) |
 | Frontend | 41 files / 318 tests |
