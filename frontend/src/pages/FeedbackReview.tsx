@@ -157,7 +157,6 @@ export default function FeedbackReview() {
   return (
     <div className="page-stack" data-testid="feedback-review-page">
       <PageHeader
-        eyebrow="Data"
         title="Feedback Review"
         description="Approve ground truth before it can become an immutable training DatasetVersion. Closed-loop automation still stops at CANDIDATE."
       />
