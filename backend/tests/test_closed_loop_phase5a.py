@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,7 +18,6 @@ from app.db.models import (
     Dataset,
     DatasetVersion,
     Endpoint,
-    GroundTruthFeedback,
     JobStatus,
     ModelLifecycle,
     ModelQualityPolicy,
@@ -36,7 +34,6 @@ from app.db.models import (
 from app.db.session import get_db
 from app.main import _rate_windows, app
 from app.services import closed_loop, mlflow_service, registry_service, storage
-from app.services import model_quality as quality_service
 from app.workers import runner
 
 engine = create_engine(
