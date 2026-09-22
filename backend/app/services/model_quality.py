@@ -259,14 +259,31 @@ def compute_quality_metrics(
     return _classification_metrics(actuals, predictions)
 
 
-def extract_primary_metric_value(metrics: dict[str, Any], primary_metric: str) -> float | None:
-    name = str(primary_metric)
+def extract_metric_value(
+    metrics: dict[str, Any],
+    metric: str,
+    target: str | None = None,
+) -> float | None:
+    """Resolve a metric value from flat, aggregate, or per-target metrics."""
+
+    name = str(metric)
+    if target is not None:
+        targets = metrics.get("targets")
+        if isinstance(targets, dict):
+            bucket = targets.get(target)
+            if isinstance(bucket, dict) and isinstance(bucket.get(name), (int, float)):
+                return float(bucket[name])
+        return None
     if name in metrics and isinstance(metrics[name], (int, float)):
         return float(metrics[name])
     aggregate = metrics.get("aggregate")
     if isinstance(aggregate, dict) and isinstance(aggregate.get(name), (int, float)):
         return float(aggregate[name])
     return None
+
+
+def extract_primary_metric_value(metrics: dict[str, Any], primary_metric: str) -> float | None:
+    return extract_metric_value(metrics, primary_metric, target=None)
 
 
 def evaluate_thresholds(
@@ -294,7 +311,67 @@ def evaluate_thresholds(
     return "ok"
 
 
-def policy_out(row: ModelQualityPolicy) -> dict[str, Any]:
+def evaluate_absolute_value(
+    *,
+    value: float,
+    metric: str,
+    warning_threshold: float,
+    critical_threshold: float,
+) -> str:
+    if metric_is_higher_better(metric):
+        if value <= critical_threshold:
+            return "critical"
+        if value <= warning_threshold:
+            return "warning"
+        return "ok"
+    if value >= critical_threshold:
+        return "critical"
+    if value >= warning_threshold:
+        return "warning"
+    return "ok"
+
+
+def evaluate_baseline_delta(
+    *,
+    degradation_delta: float,
+    warning_threshold: float,
+    critical_threshold: float,
+) -> str:
+    if degradation_delta >= critical_threshold:
+        return "critical"
+    if degradation_delta >= warning_threshold:
+        return "warning"
+    return "ok"
+
+
+def combine_rule_statuses(statuses: list[str], rule_logic: str) -> str:
+    logic = str(rule_logic or "any").lower()
+    if not statuses:
+        return "insufficient_data"
+    if any(status == "insufficient_data" for status in statuses):
+        return "insufficient_data"
+    if logic == "all":
+        if all(status == "critical" for status in statuses):
+            return "critical"
+        if all(status in {"warning", "critical"} for status in statuses):
+            return "warning"
+        return "ok"
+    if any(status == "critical" for status in statuses):
+        return "critical"
+    if any(status == "warning" for status in statuses):
+        return "warning"
+    return "ok"
+
+
+def policy_out(row: ModelQualityPolicy, db: Session | None = None) -> dict[str, Any]:
+    from app.services import quality_policy as policy_service
+
+    rules = policy_service.effective_quality_rules(row)
+    baseline = None
+    if db is not None:
+        baseline = policy_service.baseline_out(
+            policy_service.get_baseline_for_policy(db, row.id)
+        )
     return {
         "id": row.id,
         "project_id": row.project_id,
@@ -302,13 +379,21 @@ def policy_out(row: ModelQualityPolicy) -> dict[str, Any]:
         "name": row.name,
         "is_active": row.is_active,
         "window_hours": row.window_hours,
+        "evaluation_delay_hours": int(getattr(row, "evaluation_delay_hours", 0) or 0),
         "minimum_matched_samples": row.minimum_matched_samples,
+        "minimum_match_rate": getattr(row, "minimum_match_rate", None),
         "primary_metric": row.primary_metric,
         "warning_threshold": row.warning_threshold,
         "critical_threshold": row.critical_threshold,
         "consecutive_breaches": row.consecutive_breaches,
         "cooldown_hours": row.cooldown_hours,
         "auto_retrain": row.auto_retrain,
+        "revision": int(getattr(row, "revision", 1) or 1),
+        "rule_logic": str(getattr(row, "rule_logic", "any") or "any"),
+        "rules": rules if policy_service.policy_mode(row) == "advanced" else [],
+        "mode": policy_service.policy_mode(row),
+        "effective_rules": rules,
+        "baseline": baseline,
         "created_by": row.created_by,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
@@ -330,6 +415,9 @@ def quality_run_out(row: ModelQualityRun) -> dict[str, Any]:
         "match_rate": row.match_rate,
         "metrics": _loads(row.metrics_json, {}),
         "thresholds": _loads(row.thresholds_json, {}),
+        "policy_revision": row.policy_revision,
+        "policy_snapshot": _loads(row.policy_snapshot_json, {}),
+        "evaluation": _loads(row.evaluation_json, {}),
         "quality_status": row.quality_status,
         "trigger_decision": _loads(row.trigger_decision_json, {}),
         "error_message": row.error_message,
@@ -348,11 +436,19 @@ def enqueue_quality_run(
     created_by: int | None = None,
     schedule_run_id: int | None = None,
 ) -> ModelQualityRun:
+    from app.services import quality_policy as policy_service
+
+    endpoint = db.get(Endpoint, policy.endpoint_id)
+    snapshot = policy_service.build_policy_snapshot(db, policy)
     run = ModelQualityRun(
         project_id=policy.project_id,
         policy_id=policy.id,
         endpoint_id=policy.endpoint_id,
+        model_version_id=endpoint.model_version_id if endpoint else None,
         status=JobStatus.pending,
+        policy_revision=int(snapshot.get("revision") or getattr(policy, "revision", 1) or 1),
+        policy_snapshot_json=dumps(snapshot),
+        evaluation_json="{}",
         created_by=created_by,
         schedule_run_id=schedule_run_id,
     )
@@ -364,7 +460,12 @@ def enqueue_quality_run(
         resource_type="model_quality_run",
         resource_id=run.id,
         user_id=created_by,
-        after={"policy_id": policy.id, "endpoint_id": policy.endpoint_id},
+        after={
+            "policy_id": policy.id,
+            "endpoint_id": policy.endpoint_id,
+            "policy_revision": run.policy_revision,
+            "model_version_id": run.model_version_id,
+        },
     )
     return run
 
@@ -415,8 +516,130 @@ def collect_matched_pairs(
     return predictions, actuals, len(observations), len(predictions)
 
 
+def _resolve_run_snapshot(
+    db: Session, run: ModelQualityRun, policy: ModelQualityPolicy
+) -> dict[str, Any]:
+    from app.services import quality_policy as policy_service
+
+    snapshot = _loads(run.policy_snapshot_json, {})
+    if not isinstance(snapshot, dict) or not snapshot:
+        snapshot = policy_service.legacy_compatible_snapshot(policy)
+        run.policy_snapshot_json = dumps(snapshot)
+        run.policy_revision = int(snapshot.get("revision") or 1)
+    elif run.policy_revision is None:
+        run.policy_revision = int(snapshot.get("revision") or getattr(policy, "revision", 1) or 1)
+    return snapshot
+
+
+def evaluate_rules(
+    *,
+    metrics: dict[str, Any],
+    rules: list[dict[str, Any]],
+    rule_logic: str,
+    baseline_metrics: dict[str, Any] | None,
+    problem_type: str,
+    target_columns: list[str],
+) -> tuple[str, list[dict[str, Any]], str | None]:
+    """Evaluate configured rules. Returns (status, rule_evidence, fail_reason)."""
+
+    from app.services.quality_policy import (
+        COMPARISON_ABSOLUTE,
+        COMPARISON_BASELINE_DELTA,
+    )
+
+    allowed = REGRESSION_METRICS if problem_type == "regression" else CLASSIFICATION_METRICS
+    evidence: list[dict[str, Any]] = []
+    statuses: list[str] = []
+
+    for index, rule in enumerate(rules):
+        metric = rule["metric"]
+        target = rule.get("target")
+        comparison = rule.get("comparison") or COMPARISON_ABSOLUTE
+        entry: dict[str, Any] = {
+            "index": index,
+            "metric": metric,
+            "target": target,
+            "comparison": comparison,
+            "warning_threshold": rule["warning_threshold"],
+            "critical_threshold": rule["critical_threshold"],
+        }
+        if metric not in allowed:
+            entry["status"] = "insufficient_data"
+            entry["reason"] = "policy_metric_incompatible_with_model"
+            evidence.append(entry)
+            return "insufficient_data", evidence, "policy_metric_incompatible_with_model"
+        if target is not None:
+            if problem_type != "regression" or len(target_columns) <= 1:
+                entry["status"] = "insufficient_data"
+                entry["reason"] = "invalid_target_for_model"
+                evidence.append(entry)
+                return "insufficient_data", evidence, "invalid_target_for_model"
+            if target not in target_columns:
+                entry["status"] = "insufficient_data"
+                entry["reason"] = "target_missing"
+                evidence.append(entry)
+                return "insufficient_data", evidence, "target_missing"
+
+        current_value = extract_metric_value(metrics, metric, target=target)
+        if current_value is None:
+            entry["status"] = "insufficient_data"
+            entry["reason"] = "metric_missing"
+            evidence.append(entry)
+            return "insufficient_data", evidence, "metric_missing"
+        entry["current_value"] = current_value
+
+        if comparison == COMPARISON_ABSOLUTE:
+            status = evaluate_absolute_value(
+                value=current_value,
+                metric=metric,
+                warning_threshold=float(rule["warning_threshold"]),
+                critical_threshold=float(rule["critical_threshold"]),
+            )
+            entry["status"] = status
+            evidence.append(entry)
+            statuses.append(status)
+            continue
+
+        if comparison == COMPARISON_BASELINE_DELTA:
+            if baseline_metrics is None:
+                entry["status"] = "insufficient_data"
+                entry["reason"] = "baseline_not_set"
+                evidence.append(entry)
+                return "insufficient_data", evidence, "baseline_not_set"
+            baseline_value = extract_metric_value(baseline_metrics, metric, target=target)
+            if baseline_value is None:
+                entry["status"] = "insufficient_data"
+                entry["reason"] = "baseline_metric_missing"
+                evidence.append(entry)
+                return "insufficient_data", evidence, "baseline_metric_missing"
+            if metric_is_higher_better(metric):
+                degradation = float(baseline_value) - float(current_value)
+            else:
+                degradation = float(current_value) - float(baseline_value)
+            entry["baseline_value"] = baseline_value
+            entry["degradation_delta"] = degradation
+            status = evaluate_baseline_delta(
+                degradation_delta=degradation,
+                warning_threshold=float(rule["warning_threshold"]),
+                critical_threshold=float(rule["critical_threshold"]),
+            )
+            entry["status"] = status
+            evidence.append(entry)
+            statuses.append(status)
+            continue
+
+        entry["status"] = "insufficient_data"
+        entry["reason"] = "unsupported_comparison"
+        evidence.append(entry)
+        return "insufficient_data", evidence, "unsupported_comparison"
+
+    return combine_rule_statuses(statuses, rule_logic), evidence, None
+
+
 def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
     """Compute metrics and thresholds for a claimed ModelQualityRun."""
+
+    from app.services import quality_policy as policy_service
 
     now = datetime.now(timezone.utc)
     run.started_at = run.started_at or now
@@ -434,16 +657,28 @@ def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
         run.finished_at = now
         return run
 
-    # Snapshot the model version at evaluation start for immutable lineage.
+    # Legacy pending runs may lack enqueue-time model pin; resolve at start.
     if run.model_version_id is None:
         run.model_version_id = endpoint.model_version_id
+
+    snapshot = _resolve_run_snapshot(db, run, policy)
+    rules = policy_service.effective_quality_rules(snapshot)
+    rule_logic = str(snapshot.get("rule_logic") or "any").lower()
+    window_hours = max(1, int(snapshot.get("window_hours") or policy.window_hours or 1))
+    delay_hours = max(0, int(snapshot.get("evaluation_delay_hours") or 0))
+    minimum_matched = int(
+        snapshot.get("minimum_matched_samples") or policy.minimum_matched_samples or 1
+    )
+    minimum_match_rate = snapshot.get("minimum_match_rate")
+    if minimum_match_rate is not None:
+        minimum_match_rate = float(minimum_match_rate)
 
     model = db.get(ModelVersion, run.model_version_id) if run.model_version_id else None
     problem_type = resolve_problem_type(db, model)
     target_columns = resolve_target_columns(db, model)
 
-    window_end = now
-    window_start = window_end - timedelta(hours=max(1, int(policy.window_hours)))
+    window_end = now - timedelta(hours=delay_hours)
+    window_start = window_end - timedelta(hours=window_hours)
     run.window_start = window_start
     run.window_end = window_end
 
@@ -457,21 +692,84 @@ def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
     )
     run.prediction_count = prediction_count
     run.matched_ground_truth_count = matched_count
-    run.match_rate = (
+    match_rate = (
         float(matched_count) / float(prediction_count) if prediction_count else 0.0
     )
+    run.match_rate = match_rate
+
     run.thresholds_json = dumps(
         {
-            "primary_metric": policy.primary_metric,
-            "warning_threshold": policy.warning_threshold,
-            "critical_threshold": policy.critical_threshold,
-            "minimum_matched_samples": policy.minimum_matched_samples,
-            "consecutive_breaches": policy.consecutive_breaches,
-            "cooldown_hours": policy.cooldown_hours,
+            "mode": "advanced" if snapshot.get("effective_rules") else "legacy",
+            "rule_logic": rule_logic,
+            "rules": rules,
+            "primary_metric": snapshot.get("primary_metric", policy.primary_metric),
+            "warning_threshold": snapshot.get(
+                "warning_threshold", policy.warning_threshold
+            ),
+            "critical_threshold": snapshot.get(
+                "critical_threshold", policy.critical_threshold
+            ),
+            "minimum_matched_samples": minimum_matched,
+            "minimum_match_rate": minimum_match_rate,
+            "evaluation_delay_hours": delay_hours,
+            "consecutive_breaches": snapshot.get(
+                "consecutive_breaches", policy.consecutive_breaches
+            ),
+            "cooldown_hours": snapshot.get("cooldown_hours", policy.cooldown_hours),
+            "policy_revision": run.policy_revision,
         }
     )
 
+    sufficiency = {
+        "status": "sufficient",
+        "prediction_count": prediction_count,
+        "matched_count": matched_count,
+        "match_rate": match_rate,
+        "minimum_matched_samples": minimum_matched,
+        "minimum_match_rate": minimum_match_rate,
+    }
+    baseline_snap = snapshot.get("baseline") if isinstance(snapshot.get("baseline"), dict) else None
+    evaluation: dict[str, Any] = {
+        "sufficiency": sufficiency,
+        "baseline": (
+            {
+                "quality_run_id": baseline_snap.get("quality_run_id"),
+                "model_version_id": baseline_snap.get("model_version_id"),
+            }
+            if baseline_snap
+            else None
+        ),
+        "rules": [],
+        "rule_logic": rule_logic,
+        "quality_status": "insufficient_data",
+        "reason": None,
+    }
+
     metrics: dict[str, Any] = {}
+    if matched_count < minimum_matched:
+        sufficiency["status"] = "insufficient"
+        evaluation["reason"] = "minimum_matched_samples"
+        run.metrics_json = dumps(metrics)
+        run.evaluation_json = dumps(evaluation)
+        run.quality_status = "insufficient_data"
+        run.status = JobStatus.succeeded
+        run.error_message = None
+        run.finished_at = now
+        _audit_quality_complete(db, run, evaluation)
+        return run
+
+    if minimum_match_rate is not None and match_rate < minimum_match_rate:
+        sufficiency["status"] = "insufficient"
+        evaluation["reason"] = "minimum_match_rate"
+        run.metrics_json = dumps(metrics)
+        run.evaluation_json = dumps(evaluation)
+        run.quality_status = "insufficient_data"
+        run.status = JobStatus.succeeded
+        run.error_message = None
+        run.finished_at = now
+        _audit_quality_complete(db, run, evaluation)
+        return run
+
     if matched_count > 0:
         try:
             metrics = compute_quality_metrics(
@@ -487,18 +785,93 @@ def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
             return run
 
     run.metrics_json = dumps(metrics)
-    primary_value = extract_primary_metric_value(metrics, policy.primary_metric)
-    run.quality_status = evaluate_thresholds(
-        primary_value=primary_value,
-        primary_metric=policy.primary_metric,
-        warning_threshold=policy.warning_threshold,
-        critical_threshold=policy.critical_threshold,
-        matched_count=matched_count,
-        minimum_matched_samples=policy.minimum_matched_samples,
+
+    needs_baseline = any(
+        rule.get("comparison") == "baseline_delta" for rule in rules
     )
+    baseline_metrics: dict[str, Any] | None = None
+    if needs_baseline:
+        if not baseline_snap:
+            evaluation["reason"] = "baseline_not_set"
+            evaluation["rules"] = [
+                {
+                    "index": i,
+                    "metric": r["metric"],
+                    "target": r.get("target"),
+                    "comparison": r.get("comparison"),
+                    "status": "insufficient_data",
+                    "reason": "baseline_not_set",
+                }
+                for i, r in enumerate(rules)
+            ]
+            run.evaluation_json = dumps(evaluation)
+            run.quality_status = "insufficient_data"
+            run.status = JobStatus.succeeded
+            run.error_message = None
+            run.finished_at = now
+            _audit_quality_complete(db, run, evaluation)
+            return run
+        if baseline_snap.get("model_version_id") != run.model_version_id:
+            evaluation["reason"] = "baseline_model_mismatch"
+            evaluation["rules"] = [
+                {
+                    "index": i,
+                    "metric": r["metric"],
+                    "target": r.get("target"),
+                    "comparison": r.get("comparison"),
+                    "status": "insufficient_data",
+                    "reason": "baseline_model_mismatch",
+                }
+                for i, r in enumerate(rules)
+            ]
+            run.evaluation_json = dumps(evaluation)
+            run.quality_status = "insufficient_data"
+            run.status = JobStatus.succeeded
+            run.error_message = None
+            run.finished_at = now
+            _audit_quality_complete(db, run, evaluation)
+            return run
+        baseline_metrics = baseline_snap.get("metrics") or {}
+        if not isinstance(baseline_metrics, dict):
+            baseline_metrics = {}
+
+    # Fail-safe when any configured metric is incompatible with the model.
+    for rule in rules:
+        allowed = REGRESSION_METRICS if problem_type == "regression" else CLASSIFICATION_METRICS
+        if rule["metric"] not in allowed:
+            evaluation["reason"] = "policy_metric_incompatible_with_model"
+            run.evaluation_json = dumps(evaluation)
+            run.quality_status = "insufficient_data"
+            run.status = JobStatus.succeeded
+            run.error_message = None
+            run.finished_at = now
+            _audit_quality_complete(db, run, evaluation)
+            return run
+
+    quality_status, rule_evidence, fail_reason = evaluate_rules(
+        metrics=metrics,
+        rules=rules,
+        rule_logic=rule_logic,
+        baseline_metrics=baseline_metrics,
+        problem_type=problem_type,
+        target_columns=target_columns or ["target"],
+    )
+    evaluation["rules"] = rule_evidence
+    evaluation["quality_status"] = quality_status
+    evaluation["reason"] = fail_reason
+    run.evaluation_json = dumps(evaluation)
+    run.quality_status = quality_status
     run.status = JobStatus.succeeded
     run.error_message = None
     run.finished_at = now
+    _audit_quality_complete(db, run, evaluation)
+    return run
+
+
+def _audit_quality_complete(
+    db: Session, run: ModelQualityRun, evaluation: dict[str, Any]
+) -> None:
+    rules = evaluation.get("rules") or []
     write_audit(
         db,
         action="model_quality_run.complete",
@@ -507,12 +880,18 @@ def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
         user_id=run.created_by,
         after={
             "quality_status": run.quality_status,
-            "matched_ground_truth_count": matched_count,
-            "primary_metric": policy.primary_metric,
-            "primary_value": primary_value,
+            "matched_ground_truth_count": run.matched_ground_truth_count,
+            "policy_revision": run.policy_revision,
+            "rule_logic": evaluation.get("rule_logic"),
+            "critical_rule_count": sum(
+                1 for row in rules if row.get("status") == "critical"
+            ),
+            "warning_rule_count": sum(
+                1 for row in rules if row.get("status") == "warning"
+            ),
+            "reason": evaluation.get("reason"),
         },
     )
-    return run
 
 
 def count_consecutive_breaches(
@@ -520,6 +899,7 @@ def count_consecutive_breaches(
     *,
     policy_id: int,
     model_version_id: int | None,
+    policy_revision: int | None = None,
     required_status: str = "critical",
 ) -> int:
     rows = list(
@@ -537,6 +917,14 @@ def count_consecutive_breaches(
     for row in rows:
         if model_version_id is not None and row.model_version_id != model_version_id:
             break
+        if policy_revision is not None:
+            row_revision = row.policy_revision
+            if row_revision is None:
+                snap = _loads(row.policy_snapshot_json, {})
+                if isinstance(snap, dict) and snap.get("revision") is not None:
+                    row_revision = int(snap["revision"])
+            if row_revision != policy_revision:
+                break
         if row.quality_status == required_status:
             count += 1
             continue

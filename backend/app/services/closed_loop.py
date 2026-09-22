@@ -68,6 +68,90 @@ def _existing_alert(
     )
 
 
+def _snapshot_decision_config(run: ModelQualityRun, policy: ModelQualityPolicy) -> dict[str, Any]:
+    snapshot = _loads(run.policy_snapshot_json, {})
+    if not isinstance(snapshot, dict) or not snapshot:
+        return {
+            "auto_retrain": bool(policy.auto_retrain),
+            "consecutive_breaches": int(policy.consecutive_breaches),
+            "cooldown_hours": int(policy.cooldown_hours),
+            "policy_revision": int(getattr(policy, "revision", 1) or 1),
+            "rule_logic": str(getattr(policy, "rule_logic", "any") or "any"),
+        }
+    return {
+        "auto_retrain": bool(snapshot.get("auto_retrain", policy.auto_retrain)),
+        "consecutive_breaches": int(
+            snapshot.get("consecutive_breaches", policy.consecutive_breaches)
+        ),
+        "cooldown_hours": int(snapshot.get("cooldown_hours", policy.cooldown_hours)),
+        "policy_revision": int(
+            snapshot.get("revision")
+            or run.policy_revision
+            or getattr(policy, "revision", 1)
+            or 1
+        ),
+        "rule_logic": str(snapshot.get("rule_logic") or "any"),
+        "baseline": snapshot.get("baseline"),
+    }
+
+
+def _format_degradation_alert_message(
+    *,
+    run: ModelQualityRun,
+    endpoint: Endpoint,
+) -> str:
+    evaluation = _loads(run.evaluation_json, {})
+    rules = evaluation.get("rules") if isinstance(evaluation, dict) else None
+    if not isinstance(rules, list):
+        rules = []
+    breached = [
+        row
+        for row in rules
+        if isinstance(row, dict) and row.get("status") in {"warning", "critical"}
+    ]
+    total = len(rules)
+    lines = [
+        f"Endpoint '{endpoint.name}' quality {str(run.quality_status or '').upper()}.",
+        f"{len(breached)} of {total} rules breached." if total else "Quality degraded.",
+        "",
+    ]
+    for row in breached[:3]:
+        metric = row.get("metric")
+        comparison = row.get("comparison")
+        status = str(row.get("status") or "").upper()
+        if comparison == "baseline_delta":
+            delta = row.get("degradation_delta")
+            critical = row.get("critical_threshold")
+            warning = row.get("warning_threshold")
+            threshold = critical if row.get("status") == "critical" else warning
+            target = row.get("target")
+            label = f"{metric}" + (f"[{target}]" if target else "")
+            lines.append(
+                f"- {label} baseline delta: {delta} >= {row.get('status')} {threshold}"
+            )
+        else:
+            value = row.get("current_value")
+            critical = row.get("critical_threshold")
+            warning = row.get("warning_threshold")
+            threshold = critical if row.get("status") == "critical" else warning
+            target = row.get("target")
+            label = f"{metric}" + (f"[{target}]" if target else "")
+            higher = quality_service.metric_is_higher_better(str(metric))
+            op = "<=" if higher else ">="
+            lines.append(f"- {label}: {value} {op} {status.lower()} {threshold}")
+    matched = run.matched_ground_truth_count
+    predictions = run.prediction_count
+    lines.extend(
+        [
+            "",
+            f"Matched ground truth: {matched} / {predictions}",
+            f"Quality Run #{run.id}",
+            f"Policy revision: {run.policy_revision}",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def maybe_create_degradation_alert(
     db: Session,
     *,
@@ -88,15 +172,30 @@ def maybe_create_degradation_alert(
     if existing is not None:
         return existing
 
-    metrics = _loads(run.metrics_json, {})
-    primary_value = quality_service.extract_primary_metric_value(
-        metrics, policy.primary_metric
-    )
-    threshold = (
-        policy.critical_threshold
-        if run.quality_status == "critical"
-        else policy.warning_threshold
-    )
+    evaluation = _loads(run.evaluation_json, {})
+    has_rule_evidence = isinstance(evaluation, dict) and isinstance(
+        evaluation.get("rules"), list
+    ) and evaluation.get("rules")
+    if has_rule_evidence:
+        message = _format_degradation_alert_message(run=run, endpoint=endpoint)
+    else:
+        # Legacy fallback for historical runs without evaluation_json.
+        metrics = _loads(run.metrics_json, {})
+        primary_value = quality_service.extract_primary_metric_value(
+            metrics, policy.primary_metric
+        )
+        threshold = (
+            policy.critical_threshold
+            if run.quality_status == "critical"
+            else policy.warning_threshold
+        )
+        message = (
+            f"Endpoint '{endpoint.name}' model version #{run.model_version_id}: "
+            f"{policy.primary_metric}={primary_value} crossed {run.quality_status} "
+            f"threshold {threshold} with {run.matched_ground_truth_count} matched samples "
+            f"(quality run #{run.id})."
+        )
+
     severity = (
         AlertSeverity.critical
         if run.quality_status == "critical"
@@ -108,12 +207,7 @@ def maybe_create_degradation_alert(
         title=f"Model quality {run.quality_status} on {endpoint.name}",
         project_id=run.project_id,
         severity=severity,
-        message=(
-            f"Endpoint '{endpoint.name}' model version #{run.model_version_id}: "
-            f"{policy.primary_metric}={primary_value} crossed {run.quality_status} "
-            f"threshold {threshold} with {run.matched_ground_truth_count} matched samples "
-            f"(quality run #{run.id})."
-        ),
+        message=message,
         resource_type="model_quality_run",
         resource_id=resource_id,
         link_path=f"/projects/{run.project_id}/monitoring",
@@ -164,16 +258,17 @@ def find_newer_compatible_dataset_version(
 def _cooldown_active(
     db: Session,
     *,
-    policy: ModelQualityPolicy,
+    project_id: int,
     endpoint_id: int,
+    cooldown_hours: int,
     now: datetime,
 ) -> bool:
-    since = now - timedelta(hours=max(0, int(policy.cooldown_hours)))
+    since = now - timedelta(hours=max(0, int(cooldown_hours)))
     recent_id = db.scalar(
         select(RetrainTrigger.id)
         .join(ModelQualityRun, ModelQualityRun.id == RetrainTrigger.quality_run_id)
         .where(
-            RetrainTrigger.project_id == policy.project_id,
+            RetrainTrigger.project_id == project_id,
             RetrainTrigger.trigger_type == "quality_degradation",
             ModelQualityRun.endpoint_id == endpoint_id,
             RetrainTrigger.last_triggered_at.is_not(None),
@@ -236,10 +331,12 @@ def decide_and_maybe_retrain(
 ) -> dict[str, Any]:
     """Apply consecutive-breach / cooldown / dataset rules and optionally enqueue retrain."""
 
+    snap = _snapshot_decision_config(run, policy)
     decision: dict[str, Any] = {
         "action": "none",
         "reason": None,
         "quality_status": run.quality_status,
+        "policy_revision": snap["policy_revision"],
     }
     if run.quality_status == "insufficient_data":
         decision["reason"] = "insufficient_data"
@@ -249,7 +346,7 @@ def decide_and_maybe_retrain(
         decision["reason"] = f"quality_status_{run.quality_status}"
         run.trigger_decision_json = _dumps(decision)
         return decision
-    if not policy.auto_retrain:
+    if not snap["auto_retrain"]:
         decision["reason"] = "auto_retrain_disabled"
         run.trigger_decision_json = _dumps(decision)
         return decision
@@ -273,10 +370,11 @@ def decide_and_maybe_retrain(
         db,
         policy_id=policy.id,
         model_version_id=run.model_version_id,
+        policy_revision=int(snap["policy_revision"]),
         required_status="critical",
     )
     decision["consecutive_breaches_observed"] = breach_count
-    if breach_count < max(1, int(policy.consecutive_breaches)):
+    if breach_count < max(1, int(snap["consecutive_breaches"])):
         decision.update(
             {
                 "action": "skipped",
@@ -294,7 +392,13 @@ def decide_and_maybe_retrain(
         return decision
 
     now = datetime.now(timezone.utc)
-    if _cooldown_active(db, policy=policy, endpoint_id=endpoint.id, now=now):
+    if _cooldown_active(
+        db,
+        project_id=policy.project_id,
+        endpoint_id=endpoint.id,
+        cooldown_hours=int(snap["cooldown_hours"]),
+        now=now,
+    ):
         decision.update({"action": "skipped", "reason": "cooldown_active"})
         run.trigger_decision_json = _dumps(decision)
         write_audit(
@@ -396,6 +500,14 @@ def decide_and_maybe_retrain(
         )
         return decision
 
+    evaluation = _loads(run.evaluation_json, {})
+    rules = evaluation.get("rules") if isinstance(evaluation, dict) else []
+    if not isinstance(rules, list):
+        rules = []
+    critical_rules = [
+        row for row in rules if isinstance(row, dict) and row.get("status") == "critical"
+    ]
+    baseline = snap.get("baseline") if isinstance(snap.get("baseline"), dict) else None
     trigger = RetrainTrigger(
         project_id=run.project_id,
         trigger_type="quality_degradation",
@@ -407,6 +519,22 @@ def decide_and_maybe_retrain(
                 "source_model_version_id": run.model_version_id,
                 "source_training_job_id": source_job.id,
                 "target_dataset_version_id": target_version.id,
+                "policy_revision": snap["policy_revision"],
+                "rule_logic": snap["rule_logic"],
+                "critical_rule_count": len(critical_rules),
+                "baseline_quality_run_id": (
+                    baseline.get("quality_run_id") if baseline else None
+                ),
+                "critical_rules": [
+                    {
+                        "metric": row.get("metric"),
+                        "target": row.get("target"),
+                        "comparison": row.get("comparison"),
+                        "current_value": row.get("current_value"),
+                        "degradation_delta": row.get("degradation_delta"),
+                    }
+                    for row in critical_rules[:5]
+                ],
             }
         ),
         last_triggered_at=now,

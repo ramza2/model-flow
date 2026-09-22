@@ -286,6 +286,16 @@ class GroundTruthBatchRequest(BaseModel):
     items: list[GroundTruthItem] = Field(min_length=1)
 
 
+class ModelQualityRuleSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    metric: str = Field(min_length=1, max_length=50)
+    target: str | None = Field(default=None, max_length=200)
+    comparison: str = Field(default="absolute", min_length=1, max_length=40)
+    warning_threshold: float
+    critical_threshold: float
+
+
 class ModelQualityPolicyCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -293,13 +303,17 @@ class ModelQualityPolicyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     is_active: bool = True
     window_hours: int = Field(default=24, ge=1, le=24 * 90)
+    evaluation_delay_hours: int = Field(default=0, ge=0, le=24 * 30)
     minimum_matched_samples: int = Field(default=20, ge=1, le=1_000_000)
-    primary_metric: str = Field(min_length=1, max_length=50)
-    warning_threshold: float
-    critical_threshold: float
+    minimum_match_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    primary_metric: str | None = Field(default=None, min_length=1, max_length=50)
+    warning_threshold: float | None = None
+    critical_threshold: float | None = None
     consecutive_breaches: int = Field(default=2, ge=1, le=20)
     cooldown_hours: int = Field(default=24, ge=0, le=24 * 90)
     auto_retrain: bool = True
+    rule_logic: str = Field(default="any", min_length=1, max_length=20)
+    rules: list[ModelQualityRuleSpec] | None = None
 
 
 class ModelQualityPolicyUpdate(BaseModel):
@@ -308,13 +322,23 @@ class ModelQualityPolicyUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     is_active: bool | None = None
     window_hours: int | None = Field(default=None, ge=1, le=24 * 90)
+    evaluation_delay_hours: int | None = Field(default=None, ge=0, le=24 * 30)
     minimum_matched_samples: int | None = Field(default=None, ge=1, le=1_000_000)
+    minimum_match_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     primary_metric: str | None = Field(default=None, min_length=1, max_length=50)
     warning_threshold: float | None = None
     critical_threshold: float | None = None
     consecutive_breaches: int | None = Field(default=None, ge=1, le=20)
     cooldown_hours: int | None = Field(default=None, ge=0, le=24 * 90)
     auto_retrain: bool | None = None
+    rule_logic: str | None = Field(default=None, min_length=1, max_length=20)
+    rules: list[ModelQualityRuleSpec] | None = None
+
+
+class ModelQualityBaselineSetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    quality_run_id: int
 
 
 class ServiceApiKeyCreate(BaseModel):

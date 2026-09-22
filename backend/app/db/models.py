@@ -987,13 +987,46 @@ class ModelQualityPolicy(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     window_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+    evaluation_delay_hours: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     minimum_matched_samples: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    minimum_match_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     primary_metric: Mapped[str] = mapped_column(String(50), nullable=False)
     warning_threshold: Mapped[float] = mapped_column(Float, nullable=False)
     critical_threshold: Mapped[float] = mapped_column(Float, nullable=False)
     consecutive_breaches: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     cooldown_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
     auto_retrain: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    rule_logic: Mapped[str] = mapped_column(String(20), default="any", nullable=False)
+    rules_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ModelQualityBaseline(Base):
+    __tablename__ = "model_quality_baselines"
+    __table_args__ = (
+        UniqueConstraint("policy_id", name="uq_model_quality_baselines_policy_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    policy_id: Mapped[int] = mapped_column(
+        ForeignKey("model_quality_policies.id"), nullable=False
+    )
+    quality_run_id: Mapped[int] = mapped_column(
+        ForeignKey("model_quality_runs.id"), nullable=False, index=True
+    )
+    endpoint_id: Mapped[int] = mapped_column(ForeignKey("endpoints.id"), nullable=False)
+    model_version_id: Mapped[int] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=False
+    )
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    matched_ground_truth_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    match_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -1021,6 +1054,9 @@ class ModelQualityRun(Base):
     match_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     metrics_json: Mapped[str] = mapped_column(Text, default="{}")
     thresholds_json: Mapped[str] = mapped_column(Text, default="{}")
+    policy_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    policy_snapshot_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    evaluation_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     quality_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
     trigger_decision_json: Mapped[str] = mapped_column(Text, default="{}")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
