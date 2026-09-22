@@ -5,7 +5,7 @@ Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 ## Provenance
 
 - Phase 4 complete on `main` (PR #58 closeout at `364c0d8…`)
-- Phase 5-A Draft implementation (not complete until merge + post-merge `main` CI PASS)
+- Phase 5-A **complete** on `main` (PR #59 squash `1bb13bc2e527951e1a580787c35cd530fed45e7a`; post-merge CI #285 PASS)
 
 ## Delivered
 
@@ -21,12 +21,6 @@ Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 - Monitoring Production Quality UI + Registry closed-loop lineage
 - No automatic approval / PRODUCTION / endpoint swap
 
-## Targeted tests
-
-- `tests/test_model_quality_metrics.py`
-- `tests/test_closed_loop_phase5a.py`
-- Frontend Monitoring Production Quality unit coverage
-
 ## Review blocker fixes (post `ec8ff81`)
 
 - Flush quality run before closed-loop consecutive-breach SELECT (`autoflush=False` safe)
@@ -38,12 +32,12 @@ Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 
 ## Full gate
 
-`./scripts/verify.sh` on verified PR HEAD — see PR verification evidence:
+Verified on merge HEAD `1bb13bc2e527951e1a580787c35cd530fed45e7a` / CI #285 PASS:
 
 - Alembic head: `018_closed_loop_mlops`
-- Result recorded on the Draft PR after each push
+- Result: **PASS**
 
 ## Acceptance reminder
 
 Gate PASS after automatic registration does **not** change lifecycle away from `CANDIDATE`.
-Phase 5-A remains incomplete until merge + post-merge `main` CI PASS.
+Phase 5-A is complete on `main`.

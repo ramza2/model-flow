@@ -104,6 +104,10 @@ describe("Monitoring", () => {
     expect(screen.getByTestId("monitoring-data")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-models")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-production-quality")).toBeInTheDocument();
+    expect(screen.getByTestId("review-feedback-9")).toHaveAttribute(
+      "href",
+      "/projects/7/feedback?endpoint_id=9",
+    );
     expect(screen.getByTestId("matched-gt-1")).toHaveTextContent("25");
     expect(screen.getByTestId("closed-loop-state-9")).toHaveTextContent("Candidate ready");
     expect(screen.getByText("No prediction traffic")).toBeInTheDocument();

@@ -136,6 +136,7 @@ def _record_prediction(
         prediction_ids: list[str] = []
         for index, prediction in enumerate(predictions):
             observation_id = str(uuid.uuid4())
+            instance = body.instances[index] if index < len(body.instances) else None
             db.add(
                 PredictionObservation(
                     id=observation_id,
@@ -145,6 +146,7 @@ def _record_prediction(
                     request_id=request_id,
                     instance_index=index,
                     prediction_json=dumps(prediction),
+                    input_json=dumps(instance) if instance is not None else None,
                     predicted_at=predicted_at,
                 )
             )
