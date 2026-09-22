@@ -373,7 +373,7 @@ export default function QualityPolicies() {
       is_active: form.is_active,
       rule_logic: form.rule_logic,
     };
-    const payload = useLegacy
+    const payload: Record<string, unknown> = useLegacy
       ? {
           ...basePayload,
           primary_metric: firstRule?.metric || form.rules[0]?.metric || "f1_macro",
@@ -399,7 +399,8 @@ export default function QualityPolicies() {
         setEditingId(created.id);
         setForm(formFromPolicy(created));
       } else {
-        const { endpoint_id: _endpointId, ...updateBody } = payload;
+        const updateBody = { ...payload };
+        delete updateBody.endpoint_id;
         // Explicitly clear advanced rules when returning to legacy via PATCH.
         const patchBody = useLegacy ? { ...updateBody, rules: [] } : updateBody;
         const updated = await api<QualityPolicy>(
