@@ -136,6 +136,25 @@ def test_oracle_ensure_service_name_query_helper():
     assert ensured.endswith("service_name=X") or "service_name=X" in ensured
 
 
+def test_oracle_connection_url_rejects_duplicate_service_name():
+    base = "oracle+oracledb://reader:secret-pass@oracle-source:1521/"
+    for raw in (
+        f"{base}?service_name=A&service_name=B",
+        f"{base}?service_name=A&SERVICE_NAME=B",
+        f"{base}?Service_Name=A&service_name=B",
+    ):
+        with pytest.raises(ValueError, match="duplicate") as raised:
+            OracleConnector({}, {"dsn": raw})._connection_url()
+        message = str(raised.value)
+        assert "secret-pass" not in message
+        assert raw not in message
+
+    ok = OracleConnector(
+        {}, {"dsn": f"{base}?service_name=FREEPDB1"}
+    )._connection_url()
+    assert "service_name=FREEPDB1" in ok
+
+
 def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
     assert OracleConnector._import_query(engine, "CUSTOMERS") == (
         'SELECT * FROM "CUSTOMERS"'
@@ -156,6 +175,33 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         engine, "WITH cte AS (SELECT 1 AS id FROM dual) SELECT * FROM cte"
     ).lower().startswith("with ")
 
+    # Built-in / SQL constructs with parentheses remain allowed.
+    for ok in (
+        "SELECT COUNT(*) AS n FROM customers",
+        "SELECT SUM(lifetime_value) FROM customers",
+        "SELECT AVG(lifetime_value) FROM customers",
+        "SELECT MIN(lifetime_value) FROM customers",
+        "SELECT MAX(lifetime_value) FROM customers",
+        "SELECT NVL(segment, 'x') FROM customers",
+        "SELECT COALESCE(segment, 'x') FROM customers",
+        "SELECT CAST(id AS VARCHAR2(32)) FROM customers",
+        "SELECT TO_CHAR(id) FROM customers",
+        "SELECT UPPER(name), LOWER(name) FROM customers",
+        "SELECT UPPER(name) FROM customers WHERE EXISTS (SELECT 1 FROM dual)",
+        # Quoted column / table identifiers are not function calls.
+        'SELECT "NAME" FROM customers',
+        'SELECT "ID", "NAME" FROM "CUSTOMERS"',
+        'SELECT "NAME" /* comment */ FROM customers',
+        # Quoted-call text inside literals / comments must not false-positive.
+        "SELECT '\"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
+        "SELECT 'call \"SIDE_EFFECT_PROBE\"()' AS note FROM dual",
+        "SELECT '\"SIDE_EFFECT_PROBE\"/*x*/()' AS note FROM dual",
+        "SELECT 'call \"SIDE_EFFECT_PROBE\" --x' AS note FROM dual",
+        "SELECT id FROM customers -- \"SIDE_EFFECT_PROBE\"()\n",
+        "SELECT /* \"SIDE_EFFECT_PROBE\"() */ id FROM customers",
+    ):
+        assert OracleConnector._import_query(engine, ok) == ok.strip()
+
     for bad in (
         "DELETE FROM customers",
         "INSERT INTO customers VALUES (1)",
@@ -171,6 +217,24 @@ def test_oracle_import_query_allows_select_with_rejects_mutations_and_plsql():
         "SELECT id FROM customers FOR UPDATE",
         "SELECT seq.NEXTVAL FROM dual",
         "select my_seq.nextval from dual",
+        "SELECT side_effect_probe() FROM dual",
+        "SELECT app.side_effect_probe() FROM dual",
+        "SELECT pkg.evil_fn(1) FROM dual",
+        "SELECT my_udf(id) FROM customers",
+        # Quoted identifier function calls must not bypass the UDF gate.
+        'SELECT "SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "side_effect_probe"() FROM dual',
+        'SELECT APP."SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "APP"."SIDE_EFFECT_PROBE"() FROM dual',
+        'SELECT "PKG"."EVIL_FN"() FROM dual',
+        # Comment / trivia glue between quoted name and '(' must still reject.
+        'SELECT "SIDE_EFFECT_PROBE"/*comment*/() FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE" /* comment */ () FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE"-- comment\n() FROM dual',
+        'SELECT "SIDE_EFFECT_PROBE" /*a*/ /*b*/   () FROM dual',
+        'SELECT APP."SIDE_EFFECT_PROBE"/*x*/() FROM dual',
+        'SELECT "APP"."SIDE_EFFECT_PROBE"/*x*/() FROM dual',
+        'SELECT "PKG"."EVIL_FN"/*x*/() FROM dual',
     ):
         with pytest.raises(ValueError, match="read-only"):
             OracleConnector._import_query(engine, bad)
@@ -396,3 +460,118 @@ def test_live_oracle_read_only_user_rejects_writes_at_permission_layer():
             assert "ORA-" in str(raised.value)
     finally:
         engine.dispose()
+
+
+def test_live_oracle_autonomous_function_bypass_is_blocked_by_validator():
+    """Prove autonomous UDF can side-effect under READ ONLY; connector rejects it."""
+    creds = _live_source()
+    if creds is None:
+        pytest.skip("Oracle disposable source credentials are not configured")
+
+    app_user = creds["app_user"]
+    app_password = os.environ.get("SOURCE_ORACLE_APP_PASSWORD", "").strip()
+    if not app_password:
+        pytest.skip("Oracle APP password not configured for autonomous probe")
+
+    app_connector = OracleConnector(
+        {
+            "host": creds["host"],
+            "port": int(creds["port"]),
+            "service_name": creds["service_name"],
+            "user": app_user,
+        },
+        {"password": app_password},
+    )
+    engine = app_connector._engine()
+    try:
+        with engine.connect() as connection:
+            before = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            connection.commit()
+            with app_connector._read_only_transaction(connection):
+                # Under READ ONLY, autonomous function can still INSERT.
+                result = connection.execute(
+                    text("SELECT side_effect_probe() FROM dual")
+                ).scalar()
+                assert int(result) == 1
+            after = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            assert int(after) == int(before) + 1
+            connection.execute(
+                text(
+                    "DELETE FROM customers WHERE email = 'probe@example.com'"
+                )
+            )
+            connection.commit()
+
+            # Quoted uppercase identifier resolves to the same unquoted UDF.
+            before = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            connection.commit()
+            with app_connector._read_only_transaction(connection):
+                result = connection.execute(
+                    text('SELECT "SIDE_EFFECT_PROBE"() FROM dual')
+                ).scalar()
+                assert int(result) == 1
+            after = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            assert int(after) == int(before) + 1
+            connection.execute(
+                text(
+                    "DELETE FROM customers WHERE email = 'probe@example.com'"
+                )
+            )
+            connection.commit()
+
+            # Comment-glue between quoted name and '(' is still a live call.
+            before = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            connection.commit()
+            with app_connector._read_only_transaction(connection):
+                result = connection.execute(
+                    text('SELECT "SIDE_EFFECT_PROBE"/*probe*/() FROM dual')
+                ).scalar()
+                assert int(result) == 1
+            after = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar()
+            assert int(after) == int(before) + 1
+            connection.execute(
+                text(
+                    "DELETE FROM customers WHERE email = 'probe@example.com'"
+                )
+            )
+            connection.commit()
+    finally:
+        engine.dispose()
+
+    # Application validator must reject before the DB is reached.
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame("SELECT side_effect_probe() FROM dual")
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            f"SELECT {app_user}.side_effect_probe() FROM dual"
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame('SELECT "SIDE_EFFECT_PROBE"() FROM dual')
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            f'SELECT {app_user}."SIDE_EFFECT_PROBE"() FROM dual'
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            f'SELECT "{app_user.upper()}"."SIDE_EFFECT_PROBE"() FROM dual'
+        )
+    with pytest.raises(ValueError, match="read-only"):
+        app_connector.read_frame(
+            'SELECT "SIDE_EFFECT_PROBE"/*probe*/() FROM dual'
+        )
+
+    # Built-in aggregates remain allowed through the connector path.
+    frame = app_connector.read_frame("SELECT COUNT(*) AS n FROM customers")
+    assert len(frame) == 1

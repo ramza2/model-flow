@@ -55,4 +55,4 @@ Out of scope: Instant Client / Thick mode, Oracle Wallet / Autonomous mTLS, TNS_
 - Frontend typed form + Playwright E2E against disposable fixture
 - `./scripts/verify.sh` full gate
 
-Phase 4-D is complete only after merge and the resulting `main` CI passes.
+Phase 4-D is complete on `main` (PR #56 squash `18576e6e54b751f416b87e110c39918fe7dc2045`, CI #273 PASS).

@@ -36,6 +36,65 @@ export const DEFAULT_ORACLE_FORM = {
 
 const POSTGRES_FIELD_KEYS = new Set(["host", "port", "database", "user"]);
 const ORACLE_FIELD_KEYS = new Set(["host", "port", "service_name", "user"]);
+/** Host/Port connection fields cleared when Oracle switches to Connection URL mode. */
+const ORACLE_CONNECTION_FIELD_KEYS = new Set([
+  "host",
+  "port",
+  "service_name",
+  "user",
+  "database",
+]);
+
+/** Common Oracle catalog / system schemas — kept visible in discovery; not preferred defaults. */
+export const ORACLE_SYSTEM_SCHEMAS = new Set([
+  "anonymous",
+  "appqossys",
+  "audsys",
+  "ctxsys",
+  "dbsnmp",
+  "dip",
+  "dvf",
+  "dvsys",
+  "ggsys",
+  "gsmadmin_internal",
+  "gsmcatuser",
+  "gsmuser",
+  "lbacsys",
+  "mdsys",
+  "ojvmsys",
+  "olapsys",
+  "oracle_ocm",
+  "orddata",
+  "ordplugins",
+  "ordsys",
+  "outln",
+  "remote_scheduler_agent",
+  "si_informtn_schema",
+  "sys",
+  "sysbackup",
+  "sysdg",
+  "syskm",
+  "sys$umf",
+  "system",
+  "wmsys",
+  "xdb",
+  "xs$null",
+]);
+
+export function preferredOracleImportSchema(
+  schemas: string[],
+  username: string | null | undefined,
+): string {
+  if (!schemas.length) return "";
+  const user = String(username ?? "").trim().toLowerCase();
+  const nonSystem = schemas.filter((schema) => !ORACLE_SYSTEM_SCHEMAS.has(schema.toLowerCase()));
+  const pool = nonSystem.length > 0 ? nonSystem : schemas;
+  if (user) {
+    const matched = pool.find((schema) => schema.toLowerCase() === user);
+    if (matched) return matched;
+  }
+  return pool[0] || "";
+}
 
 export type PostgresConnectionMode = "host_port" | "connection_url";
 
@@ -122,6 +181,17 @@ export function oracleConfigFromForm(
   };
 }
 
+/** Strip Oracle Host/Port connection fields when switching to URL/DSN mode. */
+export function oracleExtraConfigForUrlMode(extra: Record<string, unknown>): Record<string, unknown> {
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(extra)) {
+    if (!ORACLE_CONNECTION_FIELD_KEYS.has(key)) {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+}
+
 export function buildOracleSavePayload(options: {
   mode: PostgresConnectionMode;
   form: PostgresConnectionForm;
@@ -143,12 +213,12 @@ export function buildOracleSavePayload(options: {
         throw new Error("Enter a connection URL or DSN when switching connection mode.");
       }
       return {
-        config: postgresExtraConfigForUrlMode(extra),
+        config: oracleExtraConfigForUrlMode(extra),
         secrets: {},
       };
     }
     const payload: PostgresSavePayload = {
-      config: postgresExtraConfigForUrlMode(extra),
+      config: oracleExtraConfigForUrlMode(extra),
       secrets: { dsn: trimmedUrl },
     };
     if (editing) {

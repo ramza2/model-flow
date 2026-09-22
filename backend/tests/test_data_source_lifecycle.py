@@ -397,6 +397,11 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert isinstance(connector, PostgresConnector)
         return connector._connection_url()
 
+    def normalized_dsn(dsn: str) -> str:
+        return dsn.replace("postgresql://", "postgresql+psycopg2://", 1).replace(
+            "postgres://", "postgresql+psycopg2://", 1
+        )
+
     project_id = _project(client, auth_headers)
     dsn_token = secrets.token_urlsafe(12)
     original_dsn = f"postgresql://compat_user:{dsn_token}@legacy-dsn-host:5432/compat_db"
@@ -444,7 +449,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         assert row is not None
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
-        assert connection_url(row) == original_dsn
+        assert connection_url(row) == normalized_dsn(original_dsn)
 
     replaced = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -465,7 +470,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == replacement_dsn
         assert dsn_token not in json.dumps(stored)
-        assert connection_url(row) == replacement_dsn
+        assert connection_url(row) == normalized_dsn(replacement_dsn)
 
     switched = client.patch(
         f"/api/v1/projects/{project_id}/data-sources/{body['id']}",
@@ -525,7 +530,7 @@ def test_postgres_dsn_url_backward_compat(client, auth_headers):
         stored = _secret_dict(row)
         assert stored.get("dsn") == original_dsn
         assert "password" not in stored
-        assert connection_url(row) == original_dsn
+        assert connection_url(row) == normalized_dsn(original_dsn)
 
         audit_rows = db.scalars(
             select(AuditLog)
@@ -879,7 +884,10 @@ def test_oracle_source_connection_mode_blank_secret_and_mode_switch(client, auth
         stored = json.loads(decrypt_secret(row.secret_encrypted))
         assert stored.get("dsn") == dsn
         assert "password" not in stored
-        connector = OracleConnector(json.loads(row.config_json), stored)
+        config = json.loads(row.config_json)
+        for stale in ("host", "port", "service_name", "user", "database"):
+            assert stale not in config
+        connector = OracleConnector(config, stored)
         assert connector._connection_url().startswith(
             "oracle+oracledb://reader:oracle-secret-pass@oracle-source:1521/"
         )

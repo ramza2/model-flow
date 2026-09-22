@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
-Status: **Implementation plan — Phase 4-D current**  
-Baseline: `main@e8c5af7db26affd29c312f3739fb4b76db366ad6` (Phase 4-C complete)
+Status: **Implementation plan — Phase 4-E current / Phase 4 completion pending merge**  
+Baseline: `main@18576e6e54b751f416b87e110c39918fe7dc2045` (Phase 4-D complete)
 
 ## Purpose
 
@@ -114,7 +114,7 @@ Compose profile `source` adds:
 - `mssql-source` — `mcr.microsoft.com/mssql/server:2022-CU27-ubuntu-22.04` (exact tag; not `latest`)
 - `mssql-source-init` — one-shot seed of database, `dbo.customers`, and a SELECT-only login
 
-## Phase 4-D — Oracle Database
+## Phase 4-D — Oracle Database (complete)
 
 ### Source type
 
@@ -166,6 +166,7 @@ Rejected (application validation):
 - `CALL` / `EXEC` / `EXECUTE`
 - `SELECT … FOR UPDATE`
 - sequence `.NEXTVAL`
+- package / non-allowlisted function calls (autonomous UDF defense)
 - multiple statements
 
 DB-level `SET TRANSACTION READ ONLY` is defense-in-depth alongside validation. Fixture SELECT-only readers are an additional disposable defense.
@@ -184,19 +185,39 @@ Compose profile `source` adds:
 1. **4-A — Connector Foundation + REST API Source** — complete
 2. **4-B — MySQL / MariaDB** — complete
 3. **4-C — Microsoft SQL Server** — complete
-4. **4-D — Oracle** — current
-5. **4-E — Final Hardening / Connector Regression**
+4. **4-D — Oracle** — complete on `main` (PR #56 / `18576e6e54b751f416b87e110c39918fe7dc2045`, CI #273 PASS)
+5. **4-E — Final Hardening / Connector Regression** — current
 
-## Phase 4-D acceptance
+## Phase 4-D (complete)
 
-- Oracle Database create/edit/test/schema/table/import through typed UI
-- credentials remain encrypted and redacted
-- Connection URL requires username + `service_name` only
-- preview never emits Oracle-invalid `LIMIT`
-- `SET TRANSACTION READ ONLY` rejects mutations on the live fixture
-- PostgreSQL, MySQL/MariaDB, MSSQL, and REST regressions remain green
-- disposable Oracle fixture exercises connection → import → DatasetVersion
-- Alembic head includes additive `oracle` enum value (`017_oracle_data_source`)
+Phase 4-D is complete on `main` (PR #56 / `18576e6e54b751f416b87e110c39918fe7dc2045`, post-merge CI #273 PASS). See [`phase-4d-verification.md`](./phase-4d-verification.md).
+
+## Phase 4-E — Final Hardening / Connector Regression
+
+Phase 4-E closes Phase 4-D non-blocking debt and runs a cross-connector security/regression pass without adding new connector types.
+
+### Oracle debt closure
+
+- **Autonomous SELECT / UDF boundary:** reject package-qualified calls and non-allowlisted bare function calls in free-form SELECT/WITH (COUNT/SUM/AVG/NVL/COALESCE/CAST/TO_CHAR and other read-only builtins remain allowed). Disposable fixture seeds `side_effect_probe` with `PRAGMA AUTONOMOUS_TRANSACTION` to prove the risk and the validator block.
+- **Duplicate `service_name`:** fail-closed (case-insensitive), including `service_name` + `SERVICE_NAME`.
+- **URL-mode stale config:** Host/Port fields (`host`/`port`/`service_name`/`user`/`database`) are stripped on Connection URL save.
+- **Import schema default UX:** prefer connection username (case-insensitive), else first non-system schema; discovery list still includes system schemas.
+
+### Cross-connector hardening
+
+- Shared `parse_unique_query_params` rejects duplicate query keys; applied to Oracle and MSSQL allowlisted URL modes.
+- PostgreSQL Connection URL schemes allowlisted (`postgresql` / `postgres` / `postgresql+psycopg2`); cross-dialect DSNs rejected without echoing secrets.
+
+### Regression matrix
+
+See [`phase-4e-verification.md`](./phase-4e-verification.md) for the PG / MySQL / MariaDB / MSSQL / Oracle / REST matrix covering connection, discovery, preview, import, mutation reject, read-only defense, secret redaction, mode-switch cleanup, DatasetVersion, and lineage.
+
+## Phase 4-E acceptance
+
+- Phase 4-D Oracle debt items closed with tests (including live autonomous probe where fixture is available)
+- Cross-connector URL / read-only / lifecycle / lineage regressions green
+- Frontend Oracle schema default + URL-mode cleanup covered
+- Playwright connector flows remain green (Oracle default schema without manual APP workaround when APP credentials are used)
 - `./scripts/verify.sh` and exact PR HEAD CI pass
 
-Phase 4-D is not marked complete until this Draft PR merges and `main` CI passes.
+Phase 4 is not marked complete until this Draft PR merges and `main` CI passes.

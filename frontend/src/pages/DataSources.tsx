@@ -25,6 +25,7 @@ import {
   mssqlFormFromConfig,
   mysqlFormFromConfig,
   oracleFormFromConfig,
+  preferredOracleImportSchema,
   postgresFormFromConfig,
   resolvePostgresConnectionMode,
   restApiFormFromConfig,
@@ -473,13 +474,15 @@ export default function DataSources() {
       const schemas = await api<string[]>(`/projects/${projectId}/data-sources/${source.id}/schemas`);
       const configuredDb = String(source.config.database ?? "").trim();
       const preferred =
-        source.source_type === "mysql" && configuredDb && schemas.includes(configuredDb)
-          ? configuredDb
-          : schemas.includes("dbo")
-            ? "dbo"
-            : schemas.includes("public")
-              ? "public"
-              : schemas[0] || "";
+        source.source_type === "oracle"
+          ? preferredOracleImportSchema(schemas, String(source.config.user ?? ""))
+          : source.source_type === "mysql" && configuredDb && schemas.includes(configuredDb)
+            ? configuredDb
+            : schemas.includes("dbo")
+              ? "dbo"
+              : schemas.includes("public")
+                ? "public"
+                : schemas[0] || "";
       setImportState((current) => ({
         ...current,
         schemas,

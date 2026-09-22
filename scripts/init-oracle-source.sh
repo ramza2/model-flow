@@ -83,4 +83,23 @@ GRANT SELECT ON ${APP_USER}.customers TO ${READER_USER};
 EXIT;
 SQL
 
+echo "Creating autonomous-transaction probe function for Phase 4-E hardening..."
+# APP-owned function that would bypass SET TRANSACTION READ ONLY via autonomous txn.
+# EXECUTE is granted to the reader so privilege alone does not hide the risk.
+run_sqlplus "$CONNECT_APP" <<SQL
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+CREATE OR REPLACE FUNCTION side_effect_probe RETURN NUMBER
+AS
+  PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+  INSERT INTO customers (name, email, segment, lifetime_value)
+  VALUES ('probe', 'probe@example.com', 'x', 1);
+  COMMIT;
+  RETURN 1;
+END;
+/
+GRANT EXECUTE ON side_effect_probe TO ${READER_USER};
+EXIT;
+SQL
+
 echo "oracle-source init complete."

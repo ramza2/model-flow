@@ -181,7 +181,7 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 
 ## Phase 4 — Connectors
 
-**Status:** current — Phase 4-D
+**Status:** current — Phase 4-E
 
 Expand the existing Data Source lifecycle behind reusable connector contracts while preserving encrypted credentials, project scoping, import jobs, immutable DatasetVersions, and lineage.
 
@@ -204,17 +204,22 @@ Implementation slices:
    - explicit ODBC 18 `Encrypt` / `TrustServerCertificate` defaults
    - strict read-only SQL validation (no DB-level READ ONLY transaction)
    - disposable `mssql-source` Compose fixture (SQL Server 2022 exact tag)
-4. **Phase 4-D — Oracle** — current
+4. **Phase 4-D — Oracle** — complete on `main` (PR #56 / `18576e6e54b751f416b87e110c39918fe7dc2045`, CI #273 PASS)
    - `oracle` source type with UI label **Oracle Database**
    - SQLAlchemy + `python-oracledb` Thin mode (`oracle+oracledb`)
    - Host/Port (default 1521) with `service_name` (no SID UI) and encrypted Connection URL modes
    - `SET TRANSACTION READ ONLY` on import/preview transactions
    - disposable `oracle-source` Compose fixture (`gvenzl/oracle-free` exact tag)
-5. **Phase 4-E — Final Hardening / Connector Regression** — planned
+5. **Phase 4-E — Final Hardening / Connector Regression** — current
+   - Oracle autonomous SELECT / UDF boundary hardening
+   - duplicate allowlisted query parameter fail-closed (Oracle + MSSQL)
+   - Oracle URL-mode stale Host/Port config cleanup + import schema default UX
+   - PostgreSQL Connection URL scheme allowlist (cross-dialect reject)
+   - cross-connector read-only / lifecycle / lineage / E2E regression
 
-Phase 4-D intentionally excludes Instant Client / Thick mode, Oracle Wallet / Autonomous mTLS, TNS_ADMIN ops configs, SID typed mode, RAC/FAN, Kerberos/external auth, CDC, incremental sync, SSH tunnels, stored procedure execution, and write-back.
+Phase 4-E intentionally excludes new connector types, CDC, incremental sync, SSH tunnels, write-back, Instant Client / Thick mode, wallets, and architecture rewrites.
 
-See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-D boundary.
+See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contract and Phase 4-E boundary.
 
 **Depends on:** existing encrypted credential and import patterns plus stable data-source UX.
 
