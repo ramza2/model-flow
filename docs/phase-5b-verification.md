@@ -25,16 +25,16 @@ Baseline: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`
 
 ## Full gate evidence
 
-Record exact SHAs after each verification pass. Do not claim GitHub CI PASS for a
-different HEAD than the PR tip.
-
 | Item | Value |
 |------|--------|
-| Local full verify (implementation HEAD) | _pending after blocker fix — see PR body_ |
-| PR exact HEAD | _pending after blocker fix push_ |
-| PR exact HEAD GitHub CI | _pending_ |
-| Backend targeted | `tests/test_feedback_materialization.py` |
+| Local full verify HEAD | `e2cef04a0e4707b963343a3845282df17e87840d` |
+| PR exact HEAD | _docs evidence tip after verify; see git log_ |
+| `./scripts/verify.sh` | PASS (`artifacts/verify/RESULT.txt=OK`) |
+| Backend | 433 passed (verify suite) |
+| Frontend | 41 files / 318 tests |
+| Playwright | 31 passed (incl. `e2e/feedback-materialization.spec.ts`) |
 | Alembic head | `019_feedback_materialization` |
+| PR exact HEAD GitHub CI | in progress / see PR #60 checks |
 
 Phase 5-B remains **not complete** until merge + post-merge `main` CI PASS.
 
