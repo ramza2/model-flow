@@ -29,4 +29,7 @@ def external_predict(
 ):
     endpoint = authorize_service_key_for_endpoint(db, ctx, endpoint_id)
     result = _record_prediction(db, endpoint, body)
-    return {"predictions": result["predictions"]}
+    return {
+        "predictions": result["predictions"],
+        "prediction_ids": result["prediction_ids"],
+    }

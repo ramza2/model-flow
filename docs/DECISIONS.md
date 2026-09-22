@@ -251,3 +251,9 @@ Historical; see D-016.
 - **Choice:** Reject package-qualified and non-allowlisted bare function calls in Oracle free-form SELECT while allowing common read-only builtins (COUNT/SUM/AVG/NVL/COALESCE/CAST/TO_CHAR/…). Fail closed on case-insensitive duplicate allowlisted URL query keys (Oracle + MSSQL via shared helper). Strip Oracle Host/Port connection fields on URL-mode save. Prefer username / non-system schema for Oracle import defaults without hiding system schemas. Add PostgreSQL scheme allowlist mirroring MySQL/MSSQL/Oracle.
 - **Consequences:** Legitimate SELECT with allowlisted builtins still works. User-defined / package functions require a later explicit capability if ever needed. Case-sensitive quoted identifiers remain out of scope.
 
+## D-044: Closed-loop automation terminates at CANDIDATE
+
+- **Context:** Phase 5-A connects prediction observation, ground truth, quality evaluation, alerts, and full retraining. Automatic PRODUCTION promotion would bypass Registry governance.
+- **Choice:** Closed-loop may create PredictionObservation / GroundTruthFeedback / ModelQualityRun / degradation Alerts, trigger full retraining onto a newer compatible DatasetVersion, and register the result as ModelVersion lifecycle **CANDIDATE** (optional server gate evaluation). It must not call request-approval, approve, promote, endpoint swap, or rollback. Ground truth is evaluation evidence only in 5-A (no auto DatasetVersion materialisation). Same-DatasetVersion retrain is forbidden (`no_new_dataset_version`).
+- **Consequences:** Human REGISTRY_APPROVE actions remain the only path to APPROVED/PRODUCTION. Phase 5-B can add feedback materialisation without changing this boundary.
+

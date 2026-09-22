@@ -26,6 +26,7 @@ from app.db.models import (
     DataSource,
     Dataset,
     Endpoint,
+    ModelQualityPolicy,
     ModelVersion,
     Pipeline,
     PipelineStatus,
@@ -52,6 +53,8 @@ def _require_target_perm(role: ProjectRole, target_type: ScheduleTargetType) -> 
         raise friendly(403, "DEPLOY_WRITE permission is required for batch prediction schedules.")
     if target_type == ScheduleTargetType.pipeline_run and not role_has(role, Permission.PIPELINE_WRITE):
         raise friendly(403, "PIPELINE_WRITE permission is required for pipeline schedules.")
+    if target_type == ScheduleTargetType.model_quality and not role_has(role, Permission.MONITOR_WRITE):
+        raise friendly(403, "MONITOR_WRITE permission is required for model quality schedules.")
 
 
 def _validate_cron_timezone(cron_expression: str, timezone_name: str) -> tuple[str, str]:
@@ -192,6 +195,14 @@ def _resolve_target_config(
             refresh_pinned_version=refresh_pinned_version,
             existing=existing,
         )
+    if target_type == ScheduleTargetType.model_quality:
+        policy_id = raw.get("quality_policy_id")
+        if policy_id is None:
+            raise friendly(422, "quality_policy_id is required for model quality schedules.")
+        policy = get_owned(
+            db, ModelQualityPolicy, int(policy_id), project_id, "Quality policy"
+        )
+        return {"quality_policy_id": policy.id}
     raise friendly(400, "Unsupported schedule target type.")
 
 

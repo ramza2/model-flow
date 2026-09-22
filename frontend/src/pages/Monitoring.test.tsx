@@ -48,6 +48,43 @@ describe("Monitoring", () => {
           latest_drift_status: null,
         };
       }
+      if (path.endsWith("/model-quality/summary")) {
+        return {
+          items: [
+            {
+              policy_id: 1,
+              policy_name: "Endpoint quality",
+              endpoint_id: 9,
+              endpoint_name: "prod-iris",
+              current_model_version_id: 3,
+              current_model_name: "iris",
+              current_model_version: "1",
+              latest_quality_status: "critical",
+              primary_metric: "f1_macro",
+              primary_metric_value: 0.4,
+              matched_ground_truth_count: 25,
+              prediction_count: 30,
+              match_rate: 25 / 30,
+              window_start: null,
+              window_end: null,
+              last_evaluated_at: "2026-01-01T00:00:00Z",
+              closed_loop_state: "Candidate ready",
+              latest_run_id: 11,
+            },
+          ],
+        };
+      }
+      if (path.includes("/model-quality/runs")) {
+        return [
+          {
+            id: 11,
+            quality_status: "critical",
+            status: "succeeded",
+            matched_ground_truth_count: 25,
+            finished_at: "2026-01-01T00:00:00Z",
+          },
+        ];
+      }
       throw new Error(`unexpected ${path}`);
     });
   });
@@ -66,6 +103,9 @@ describe("Monitoring", () => {
     expect(screen.getByTestId("monitoring-service")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-data")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-models")).toBeInTheDocument();
+    expect(screen.getByTestId("monitoring-production-quality")).toBeInTheDocument();
+    expect(screen.getByTestId("matched-gt-1")).toHaveTextContent("25");
+    expect(screen.getByTestId("closed-loop-state-9")).toHaveTextContent("Candidate ready");
     expect(screen.getByText("No prediction traffic")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("monitoring-window"), { target: { value: "168" } });
     expect(apiMock).toHaveBeenCalledWith(expect.stringContaining("hours=168"));

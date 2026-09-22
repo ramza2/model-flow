@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +26,7 @@ from app.db.models import (
     InferenceStat,
     ModelLifecycle,
     ModelVersion,
+    PredictionObservation,
     TrainingJob,
 )
 from app.db.session import get_db
@@ -129,7 +131,29 @@ def _record_prediction(
             prediction_summary=dumps(predictions[:20]),
         )
         db.add(stat)
-        result = {"predictions": predictions, "model_uri": endpoint.model_uri}
+        predicted_at = datetime.now(timezone.utc)
+        request_id = str(uuid.uuid4())
+        prediction_ids: list[str] = []
+        for index, prediction in enumerate(predictions):
+            observation_id = str(uuid.uuid4())
+            db.add(
+                PredictionObservation(
+                    id=observation_id,
+                    project_id=endpoint.project_id,
+                    endpoint_id=endpoint.id,
+                    model_version_id=endpoint.model_version_id,
+                    request_id=request_id,
+                    instance_index=index,
+                    prediction_json=dumps(prediction),
+                    predicted_at=predicted_at,
+                )
+            )
+            prediction_ids.append(observation_id)
+        result = {
+            "predictions": predictions,
+            "prediction_ids": prediction_ids,
+            "model_uri": endpoint.model_uri,
+        }
     except inference.PredictionInputError as exc:
         raise friendly(
             422,

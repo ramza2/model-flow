@@ -28,13 +28,15 @@ from app.db.models import (
     DriftRun,
     Endpoint,
     JobStatus,
+    ModelQualityRun,
     ModelVersion,
     PipelineRun,
     TrainingJob,
     WorkerHeartbeat,
 )
 from app.db.session import SessionLocal
-from app.services import datasets, drift, inference, pipeline_engine, scheduler, storage
+from app.services import closed_loop, datasets, drift, inference, pipeline_engine, scheduler, storage
+from app.services import model_quality as quality_service
 from app.services.alerts import create_alert
 from app.services.dataset_preparation_materialization import execute_claimed_preparation_run
 from app.services.dataset_splits import content_sha256
@@ -169,6 +171,40 @@ def claim_next_preparation_run() -> DatasetPreparationRun | None:
         db.refresh(run)
         db.expunge(run)
         return run
+    finally:
+        db.close()
+
+
+def claim_next_model_quality_run() -> ModelQualityRun | None:
+    return _claim_next(ModelQualityRun)
+
+
+def process_model_quality_run(run: ModelQualityRun) -> None:
+    db = SessionLocal()
+    try:
+        live = db.get(ModelQualityRun, run.id)
+        if live is None:
+            return
+        quality_service.evaluate_quality_run(db, live)
+        if live.status == JobStatus.succeeded:
+            closed_loop.process_completed_quality_run(db, live)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        live = db.get(ModelQualityRun, run.id)
+        if live is not None:
+            live.status = JobStatus.failed
+            live.error_message = str(exc)
+            live.finished_at = datetime.now(timezone.utc)
+            _failure_alert(
+                db,
+                project_id=live.project_id,
+                job_id=live.id,
+                job_kind="model_quality_run",
+                message=str(exc),
+            )
+            db.commit()
+        logger.exception("Model quality run failed id=%s", run.id)
     finally:
         db.close()
 
@@ -431,6 +467,30 @@ def process_job(job: TrainingJob) -> None:
         live.finished_at = datetime.now(timezone.utc)
         live.error_message = None
         db.commit()
+        # Closed-loop: auto-register CANDIDATE for quality_degradation retrains only.
+        live = db.get(TrainingJob, job.id)
+        if live is not None:
+            try:
+                closed_loop.register_candidate_idempotently(db, training_job=live)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception(
+                    "Closed-loop candidate registration failed for training job id=%s",
+                    live.id,
+                )
+                create_alert(
+                    db,
+                    alert_type="closed_loop_candidate_registration_failed",
+                    title=f"Closed-loop candidate registration failed for job #{live.id}",
+                    project_id=live.project_id,
+                    severity=AlertSeverity.error,
+                    message="Training succeeded but automatic CANDIDATE registration failed.",
+                    resource_type="training_job",
+                    resource_id=str(live.id),
+                    link_path=f"/projects/{live.project_id}/jobs/{live.id}",
+                )
+                db.commit()
     except Exception as exc:
         db.rollback()
         live = db.get(TrainingJob, job.id)
@@ -839,6 +899,11 @@ def run_forever() -> None:
                     "dataset preparation run",
                     claim_next_preparation_run,
                     process_preparation_run,
+                ),
+                (
+                    "model quality run",
+                    claim_next_model_quality_run,
+                    process_model_quality_run,
                 ),
             )
             for label, claim, process in work:
