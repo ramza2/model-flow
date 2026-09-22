@@ -118,42 +118,6 @@ def _record_prediction(
             endpoint.feature_schema_json,
             target_columns=target_columns or None,
         )
-        latency_ms = (time.perf_counter() - started) * 1000
-        endpoint.success_count = (endpoint.success_count or 0) + 1
-        stat = InferenceStat(
-            endpoint_id=endpoint.id,
-            project_id=endpoint.project_id,
-            success=True,
-            latency_ms=latency_ms,
-            payload_json=dumps(body.instances)
-            if settings.store_inference_payloads
-            else None,
-            prediction_summary=dumps(predictions[:20]),
-        )
-        db.add(stat)
-        predicted_at = datetime.now(timezone.utc)
-        request_id = str(uuid.uuid4())
-        prediction_ids: list[str] = []
-        for index, prediction in enumerate(predictions):
-            observation_id = str(uuid.uuid4())
-            db.add(
-                PredictionObservation(
-                    id=observation_id,
-                    project_id=endpoint.project_id,
-                    endpoint_id=endpoint.id,
-                    model_version_id=endpoint.model_version_id,
-                    request_id=request_id,
-                    instance_index=index,
-                    prediction_json=dumps(prediction),
-                    predicted_at=predicted_at,
-                )
-            )
-            prediction_ids.append(observation_id)
-        result = {
-            "predictions": predictions,
-            "prediction_ids": prediction_ids,
-            "model_uri": endpoint.model_uri,
-        }
     except inference.PredictionInputError as exc:
         raise friendly(
             422,
@@ -197,6 +161,52 @@ def _record_prediction(
             "Prediction failed.",
             "Verify feature names and values match the deployed model.",
         ) from exc
+
+    if len(predictions) != len(body.instances):
+        raise friendly(
+            422,
+            "Prediction count does not match input instance count.",
+            f"Expected {len(body.instances)} predictions, got {len(predictions)}.",
+        )
+
+    latency_ms = (time.perf_counter() - started) * 1000
+    endpoint.success_count = (endpoint.success_count or 0) + 1
+    stat = InferenceStat(
+        endpoint_id=endpoint.id,
+        project_id=endpoint.project_id,
+        success=True,
+        latency_ms=latency_ms,
+        payload_json=dumps(body.instances)
+        if settings.store_inference_payloads
+        else None,
+        prediction_summary=dumps(predictions[:20]),
+    )
+    db.add(stat)
+    predicted_at = datetime.now(timezone.utc)
+    request_id = str(uuid.uuid4())
+    prediction_ids: list[str] = []
+    for index, prediction in enumerate(predictions):
+        observation_id = str(uuid.uuid4())
+        instance = body.instances[index]
+        db.add(
+            PredictionObservation(
+                id=observation_id,
+                project_id=endpoint.project_id,
+                endpoint_id=endpoint.id,
+                model_version_id=endpoint.model_version_id,
+                request_id=request_id,
+                instance_index=index,
+                prediction_json=dumps(prediction),
+                input_json=dumps(instance),
+                predicted_at=predicted_at,
+            )
+        )
+        prediction_ids.append(observation_id)
+    result = {
+        "predictions": predictions,
+        "prediction_ids": prediction_ids,
+        "model_uri": endpoint.model_uri,
+    }
     endpoint.request_count = (endpoint.request_count or 0) + 1
     endpoint.latency_sum_ms = (endpoint.latency_sum_ms or 0) + latency_ms
     # SessionLocal uses autoflush=False; flush so the current InferenceStat is

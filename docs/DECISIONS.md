@@ -257,3 +257,9 @@ Historical; see D-016.
 - **Choice:** Closed-loop may create PredictionObservation / GroundTruthFeedback / ModelQualityRun / degradation Alerts, trigger full retraining onto a newer compatible DatasetVersion, and register the result as ModelVersion lifecycle **CANDIDATE** (optional server gate evaluation). It must not call request-approval, approve, promote, endpoint swap, or rollback. Ground truth is evaluation evidence only in 5-A (no auto DatasetVersion materialisation). Same-DatasetVersion retrain is forbidden (`no_new_dataset_version`).
 - **Consequences:** Human REGISTRY_APPROVE actions remain the only path to APPROVED/PRODUCTION. Phase 5-B can add feedback materialisation without changing this boundary.
 
+## D-045: Feedback materialization requires explicit APPROVED review
+
+- **Context:** Phase 5-B must turn reviewed ground truth into training DatasetVersions without weakening CANDIDATE-only automation or mutating historical artifacts.
+- **Choice:** Store validated per-instance `PredictionObservation.input_json` for new predictions only (legacy rows remain non-materializable). GroundTruthFeedback starts `PENDING` and only `APPROVED` rows with an input snapshot may be reserved into a `FeedbackMaterializationRun`. Materialization appends onto the latest compatible base DatasetVersion to create a new immutable version (`source_type=feedback_materialization`); existing versions are never overwritten. Materialization does not enqueue TrainingJobs; Phase 5-A newer-version discovery remains the retrain path. Automation still stops at CANDIDATE.
+- **Consequences:** Operators explicitly curate training evidence. Cumulative materializations preserve prior feedback rows. Failed runs release reservations; successful links are immutable.
+

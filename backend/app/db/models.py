@@ -870,6 +870,12 @@ class DatasetPreparationRunInput(Base):
     run: Mapped[DatasetPreparationRun] = relationship(back_populates="inputs")
 
 
+class FeedbackReviewStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class PredictionObservation(Base):
     __tablename__ = "prediction_observations"
     __table_args__ = (
@@ -885,8 +891,49 @@ class PredictionObservation(Base):
     request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     instance_index: Mapped[int] = mapped_column(Integer, nullable=False)
     prediction_json: Mapped[str] = mapped_column(Text, nullable=False)
+    # Phase 5-B: validated feature object for the instance. Legacy rows may be null.
+    input_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     predicted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class FeedbackMaterializationRun(Base):
+    """Async job that appends approved feedback into a new immutable DatasetVersion."""
+
+    __tablename__ = "feedback_materialization_runs"
+    __table_args__ = (
+        Index("ix_feedback_materialization_runs_project_id", "project_id"),
+        Index("ix_feedback_materialization_runs_status", "status"),
+        Index("ix_feedback_materialization_runs_endpoint_id", "endpoint_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    endpoint_id: Mapped[int] = mapped_column(ForeignKey("endpoints.id"), nullable=False)
+    source_model_version_id: Mapped[int] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=False
+    )
+    source_training_job_id: Mapped[int] = mapped_column(
+        ForeignKey("training_jobs.id"), nullable=False
+    )
+    dataset_id: Mapped[int] = mapped_column(ForeignKey("datasets.id"), nullable=False)
+    base_dataset_version_id: Mapped[int] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=False
+    )
+    output_dataset_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=True
+    )
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
+    feedback_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    feedback_ids_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    row_count_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    row_count_added: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    row_count_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class GroundTruthFeedback(Base):
@@ -895,6 +942,12 @@ class GroundTruthFeedback(Base):
         UniqueConstraint(
             "prediction_observation_id",
             name="uq_ground_truth_prediction_observation",
+        ),
+        Index("ix_ground_truth_feedback_review_status", "review_status"),
+        Index("ix_ground_truth_feedback_materialization_run_id", "materialization_run_id"),
+        Index(
+            "ix_ground_truth_feedback_materialized_dataset_version_id",
+            "materialized_dataset_version_id",
         ),
     )
 
@@ -909,6 +962,18 @@ class GroundTruthFeedback(Base):
     submitted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     service_api_key_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_api_keys.id"), nullable=True
+    )
+    review_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=FeedbackReviewStatus.PENDING.value
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    materialization_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("feedback_materialization_runs.id"), nullable=True
+    )
+    materialized_dataset_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

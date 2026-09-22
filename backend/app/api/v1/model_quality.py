@@ -123,6 +123,7 @@ def _submit_ground_truth_items(
             source=source,
             submitted_by=submitted_by,
             service_api_key_id=service_api_key_id,
+            review_status="PENDING",
         )
         db.add(row)
         try:

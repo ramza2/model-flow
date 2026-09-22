@@ -2,7 +2,16 @@
 
 ## Current phase
 
-**Enhancement Phase 5-A — Closed-loop MLOps Foundation** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+**Enhancement Phase 5-B — Feedback Dataset Materialization** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+
+**Enhancement Phase 5-A — Closed-loop MLOps Foundation is complete on `main`.**
+
+Phase 5-A complete evidence:
+
+- PR #59 squash merge commit `1bb13bc2e527951e1a580787c35cd530fed45e7a`
+- post-merge `main` CI #285 PASS
+- Alembic head at merge: `018_closed_loop_mlops`
+- Current baseline for Phase 5-B: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`
 
 **Enhancement Phase 4 — Connectors is complete on `main`.**
 
@@ -346,16 +355,17 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 5-A — Closed-loop MLOps Foundation** on a feature branch from `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-A must not be marked complete until that merge evidence exists.
+Complete **Phase 5-B — Feedback Dataset Materialization** on a feature branch from `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-B must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 
 ```text
 Closed-loop automation terminates at CANDIDATE.
 PRODUCTION always requires explicit authorized human action.
+Only explicitly APPROVED feedback can become training data.
 ```
 
-See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md) and [`phase-5a-verification.md`](./phase-5a-verification.md).
+See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md), [`phase-5a-verification.md`](./phase-5a-verification.md), and [`phase-5b-verification.md`](./phase-5b-verification.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

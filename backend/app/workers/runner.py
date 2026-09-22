@@ -27,6 +27,7 @@ from app.db.models import (
     DatasetVersion,
     DriftRun,
     Endpoint,
+    FeedbackMaterializationRun,
     JobStatus,
     ModelQualityRun,
     ModelVersion,
@@ -35,7 +36,8 @@ from app.db.models import (
     WorkerHeartbeat,
 )
 from app.db.session import SessionLocal
-from app.services import closed_loop, datasets, drift, inference, pipeline_engine, scheduler, storage
+from app.core.audit import write_audit
+from app.services import closed_loop, datasets, drift, feedback_materialization, inference, pipeline_engine, scheduler, storage
 from app.services import model_quality as quality_service
 from app.services.alerts import create_alert
 from app.services.dataset_preparation_materialization import execute_claimed_preparation_run
@@ -207,6 +209,65 @@ def process_model_quality_run(run: ModelQualityRun) -> None:
             )
             db.commit()
         logger.exception("Model quality run failed id=%s", run.id)
+    finally:
+        db.close()
+
+
+def claim_next_feedback_materialization_run() -> FeedbackMaterializationRun | None:
+    return _claim_next(FeedbackMaterializationRun)
+
+
+def process_feedback_materialization_run(run: FeedbackMaterializationRun) -> None:
+    db = SessionLocal()
+    created_object_key: str | None = None
+    try:
+        live = db.get(FeedbackMaterializationRun, run.id)
+        if live is None:
+            return
+        if live.status == JobStatus.succeeded and live.output_dataset_version_id:
+            return
+        _live, created_object_key = feedback_materialization.execute_materialization_run(
+            db, live
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        # If commit failed after a successful execute, delete the newly uploaded
+        # object. execute() already cleans up on its own failures.
+        if created_object_key:
+            try:
+                from app.core.config import settings
+                from app.services import storage
+
+                storage.delete_object(settings.minio_datasets_bucket, created_object_key)
+            except Exception:
+                pass
+        live = db.get(FeedbackMaterializationRun, run.id)
+        if live is not None and not (
+            live.status == JobStatus.succeeded and live.output_dataset_version_id
+        ):
+            live.status = JobStatus.failed
+            live.error_message = str(exc)
+            live.finished_at = datetime.now(timezone.utc)
+            live.output_dataset_version_id = None
+            feedback_materialization.release_reservation(db, live)
+            write_audit(
+                db,
+                action="feedback_materialization.fail",
+                resource_type="feedback_materialization_run",
+                resource_id=live.id,
+                success=False,
+                failure_reason=str(exc),
+            )
+            _failure_alert(
+                db,
+                project_id=live.project_id,
+                job_id=live.id,
+                job_kind="feedback_materialization_run",
+                message=str(exc),
+            )
+            db.commit()
+        logger.exception("Feedback materialization run failed id=%s", run.id)
     finally:
         db.close()
 
@@ -906,6 +967,11 @@ def run_forever() -> None:
                     "model quality run",
                     claim_next_model_quality_run,
                     process_model_quality_run,
+                ),
+                (
+                    "feedback materialization run",
+                    claim_next_feedback_materialization_run,
+                    process_feedback_materialization_run,
                 ),
             )
             for label, claim, process in work:

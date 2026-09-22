@@ -227,13 +227,14 @@ See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contrac
 
 ## Phase 5 — Closed-loop MLOps
 
-**Status:** current — Phase 5-A
+**Status:** current — Phase 5-B
 
 Closed-loop production quality evaluation and full retraining that always terminates at **CANDIDATE**. Explicit human approval remains required for PRODUCTION.
 
 Implementation slices:
 
-1. **Phase 5-A — Closed-loop MLOps Foundation** — current
+1. **Phase 5-A — Closed-loop MLOps Foundation** — complete
+   - PR #59 merged; squash `1bb13bc2e527951e1a580787c35cd530fed45e7a`; post-merge CI #285 PASS
    - PredictionObservation + prediction_ids
    - GroundTruthFeedback (JWT + Service API Key)
    - ModelQualityPolicy / ModelQualityRun
@@ -241,7 +242,7 @@ Implementation slices:
    - degradation Alert + AutomationSchedule `model_quality`
    - automatic full retrain only with newer compatible DatasetVersion
    - automatic Registry registration as **CANDIDATE** only (no auto approve / promote / endpoint swap)
-2. **Phase 5-B — Feedback Dataset Materialization** — planned
+2. **Phase 5-B — Feedback Dataset Materialization** — current
 3. **Phase 5-C — Advanced Quality Policies** — planned
 4. **Phase 5-D — Closed-loop UX / Final Hardening** — planned
 

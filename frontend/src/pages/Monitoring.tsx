@@ -236,6 +236,12 @@ export default function Monitoring() {
                         <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
                           Open current model
                         </Link>
+                        <Link
+                          to={`/projects/${projectId}/feedback?endpoint_id=${card.endpoint_id}`}
+                          data-testid={`review-feedback-${card.endpoint_id}`}
+                        >
+                          Review feedback
+                        </Link>
                         <Link to={`/projects/${projectId}/alerts`}>Open alerts</Link>
                       </div>
                     ) : null}

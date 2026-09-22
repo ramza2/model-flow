@@ -1,70 +1,62 @@
 # Phase 5 — Closed-loop MLOps
 
-Status: **Phase 5-A current (foundation)**  
-Baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
-
-## Purpose
-
-Connect production predictions, ground-truth feedback, model quality evaluation, degradation alerts, and full retraining so ModelFlow can propose improved **CANDIDATE** models without ever auto-promoting to PRODUCTION.
+Status: **Phase 5-B current (feedback materialization)**  
+Baseline: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a` (Phase 5-A complete)
 
 ## Non-negotiable boundary
 
 ```text
 Closed-loop automation terminates at CANDIDATE.
-
-PRODUCTION always requires explicit authorized human action.
+PRODUCTION requires explicit authorized human action.
 ```
 
-Automation may:
+## Phase 5-A (complete)
 
-- store PredictionObservation rows and return `prediction_ids`
-- accept GroundTruthFeedback
-- evaluate ModelQualityPolicy windows
-- create degradation Alert rows
-- trigger full retraining onto a **newer** compatible DatasetVersion
-- register the succeeded retrain as ModelVersion lifecycle **CANDIDATE**
-- run server-owned gate evaluation while remaining **CANDIDATE**
+PR #59 · squash `1bb13bc2e527951e1a580787c35cd530fed45e7a` · CI #285 PASS · Alembic `018_closed_loop_mlops`
 
-Automation must never:
+Delivered:
 
-- request approval
-- approve / reject
-- promote to PRODUCTION
-- swap endpoints
-- roll back production deployments
+- PredictionObservation + `prediction_ids`
+- GroundTruthFeedback (JWT + Service API Key)
+- ModelQualityPolicy / ModelQualityRun + metrics
+- degradation Alert + schedule target `model_quality`
+- full retrain onto newer compatible DatasetVersion
+- automatic Registry registration as **CANDIDATE** only
 
-## Evaluation data vs training data
+Ground truth in 5-A was **evaluation evidence only** (no automatic DatasetVersion materialisation).
 
-Ground truth is **evaluation evidence** in Phase 5-A. It is not automatically materialised into a training DatasetVersion.
+## Phase 5-B (current)
+
+Feedback Dataset Materialization turns **explicitly APPROVED** ground truth into a new immutable DatasetVersion:
 
 ```text
-Prediction + Ground Truth → Production Quality Evaluation
-Logical Dataset → newer immutable DatasetVersion → Full Retraining
+Production Prediction
+  → PredictionObservation (+ input_json snapshot)
+  → GroundTruthFeedback (PENDING)
+  → Human Review (APPROVED | REJECTED)
+  → FeedbackMaterializationRun
+  → base DatasetVersion + approved rows
+  → new immutable DatasetVersion (source_type=feedback_materialization)
+  → Phase 5-A closed-loop retrain discovery
+  → CANDIDATE
+  → Human Approval → PRODUCTION
 ```
 
-If quality is critical but no newer DatasetVersion exists, retraining is skipped (`no_new_dataset_version`) and a warning Alert may be raised. Retraining on the same DatasetVersion is forbidden.
+Rules:
 
-Phase 5-B will add reviewed-feedback → DatasetVersion materialisation.
+- Ground Truth submission ≠ training inclusion
+- Only `APPROVED` + `input_json IS NOT NULL` feedback may materialize
+- Existing DatasetVersions are never modified (cumulative v1→v2→v3)
+- Materialization does not auto-create TrainingJobs; Phase 5-A discovery path remains the retrain trigger
+- Automation still stops at CANDIDATE
 
-## Core entities
+See [`phase-5b-verification.md`](./phase-5b-verification.md).
 
-| Entity | Role |
-| --- | --- |
-| `PredictionObservation` | Stable per-instance prediction id + model_version snapshot |
-| `GroundTruthFeedback` | One accepted actual per observation (unique) |
-| `ModelQualityPolicy` | Endpoint quality window / thresholds / auto_retrain |
-| `ModelQualityRun` | Immutable evaluation lineage for a policy window |
-| `RetrainTrigger` | `quality_degradation` provenance (`quality_run_id` unique) |
+## Slice order
 
-## Scheduler
-
-`ScheduleTargetType.model_quality` reuses AutomationSchedule cron / timezone / run-now / retry / concurrency. Target config: `{ "quality_policy_id": <id> }`.
-
-## Slice plan
-
-1. **5-A Foundation** — current
-2. **5-B Feedback Dataset Materialization**
+1. **5-A Foundation** — complete
+2. **5-B Feedback Dataset Materialization** — current
 3. **5-C Advanced Quality Policies**
-4. **5-D UX / Final Hardening**
+4. **5-D Closed-loop UX / Final Hardening**
 
-Phase 5.1 (incremental / continued training) remains out of scope for Phase 5-A.
+Phase 5.1 (incremental / continued training) remains out of scope.
