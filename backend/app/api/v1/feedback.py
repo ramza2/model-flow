@@ -104,7 +104,7 @@ def get_materialization(
     run = get_owned(
         db, FeedbackMaterializationRun, run_id, project_id, "Feedback materialization"
     )
-    return materialization_service.run_out(run)
+    return materialization_service.run_out(run, db)
 
 
 @router.post("/projects/{project_id}/feedback-materializations", status_code=201)
@@ -127,4 +127,4 @@ def create_materialization(
         raise friendly(exc.status_code, exc.message, exc.detail) from exc
     db.commit()
     db.refresh(run)
-    return materialization_service.run_out(run)
+    return materialization_service.run_out(run, db)

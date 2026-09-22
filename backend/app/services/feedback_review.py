@@ -201,6 +201,7 @@ def apply_review_decisions(
             else FeedbackReviewStatus.REJECTED.value
         )
         previous = feedback.review_status
+        previous_comment = feedback.review_comment
         idempotent = previous == target
         if not idempotent:
             feedback.review_status = target
@@ -218,15 +219,36 @@ def apply_review_decisions(
                 resource_type="ground_truth_feedback",
                 resource_id=feedback.id,
                 user_id=reviewer_id,
-                before={"review_status": previous},
+                before={
+                    "review_status": previous,
+                    "comment": previous_comment,
+                },
                 after={
                     "review_status": feedback.review_status,
                     "comment": feedback.review_comment,
                 },
             )
         elif comment is not None and feedback.review_comment != str(comment):
-            # Same decision: allow optional comment update only when still mutable.
+            # Same decision with a changed comment remains human curation evidence.
+            before_comment = feedback.review_comment
             feedback.review_comment = str(comment)
+            feedback.reviewed_by = reviewer_id
+            feedback.reviewed_at = now
+            write_audit(
+                db,
+                action="feedback.review.comment_update",
+                resource_type="ground_truth_feedback",
+                resource_id=feedback.id,
+                user_id=reviewer_id,
+                before={
+                    "review_status": feedback.review_status,
+                    "comment": before_comment,
+                },
+                after={
+                    "review_status": feedback.review_status,
+                    "comment": feedback.review_comment,
+                },
+            )
 
         results.append(
             {

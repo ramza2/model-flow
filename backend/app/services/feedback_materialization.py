@@ -48,6 +48,15 @@ class FeedbackMaterializationError(Exception):
         super().__init__(message)
 
 
+# Runs that still own a Dataset base pin / feedback reservation.
+ACTIVE_MATERIALIZATION_STATUSES = (
+    JobStatus.pending,
+    JobStatus.queued,
+    JobStatus.running,
+    JobStatus.cancel_requested,
+)
+
+
 def _loads(value: str | None, default: Any = None) -> Any:
     if default is None:
         default = {}
@@ -63,7 +72,16 @@ def _dumps(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
-def run_out(run: FeedbackMaterializationRun) -> dict[str, Any]:
+def run_out(run: FeedbackMaterializationRun, db: Session | None = None) -> dict[str, Any]:
+    base_version_number: int | None = None
+    output_version_number: int | None = None
+    if db is not None:
+        if run.base_dataset_version_id is not None:
+            base = db.get(DatasetVersion, run.base_dataset_version_id)
+            base_version_number = base.version if base is not None else None
+        if run.output_dataset_version_id is not None:
+            output = db.get(DatasetVersion, run.output_dataset_version_id)
+            output_version_number = output.version if output is not None else None
     return {
         "id": run.id,
         "project_id": run.project_id,
@@ -72,7 +90,9 @@ def run_out(run: FeedbackMaterializationRun) -> dict[str, Any]:
         "source_training_job_id": run.source_training_job_id,
         "dataset_id": run.dataset_id,
         "base_dataset_version_id": run.base_dataset_version_id,
+        "base_dataset_version": base_version_number,
         "output_dataset_version_id": run.output_dataset_version_id,
+        "output_dataset_version": output_version_number,
         "status": run.status.value if hasattr(run.status, "value") else str(run.status),
         "feedback_count": run.feedback_count,
         "feedback_ids": _loads(run.feedback_ids_json, []),
@@ -224,13 +244,45 @@ def create_materialization_run(
             "Endpoint model is not ready for feedback materialization.",
             reason,
         )
+    if source_job.dataset_id is None:
+        raise FeedbackMaterializationError(
+            422, "Source training job is missing dataset lineage."
+        )
+
+    # Serialize creates per logical Dataset so concurrent runs cannot pin the
+    # same stale base and silently fork cumulative materialization history.
+    dataset = (
+        db.query(Dataset)
+        .filter(Dataset.id == source_job.dataset_id, Dataset.project_id == project_id)
+        .with_for_update()
+        .one_or_none()
+    )
+    if dataset is None:
+        raise FeedbackMaterializationError(422, "Source dataset was not found.")
+
+    active_run = db.scalar(
+        select(FeedbackMaterializationRun)
+        .where(
+            FeedbackMaterializationRun.dataset_id == dataset.id,
+            FeedbackMaterializationRun.status.in_(ACTIVE_MATERIALIZATION_STATUSES),
+        )
+        .order_by(FeedbackMaterializationRun.id.asc())
+        .limit(1)
+    )
+    if active_run is not None:
+        raise FeedbackMaterializationError(
+            409,
+            "An active feedback materialization run already exists for this dataset.",
+            f"active_run_id={active_run.id}",
+        )
 
     base_version = select_latest_compatible_base(
         db, project_id=project_id, source_job=source_job
     )
-    dataset = db.get(Dataset, source_job.dataset_id)
-    if dataset is None or dataset.project_id != project_id:
-        raise FeedbackMaterializationError(422, "Source dataset was not found.")
+    if base_version.dataset_id != dataset.id:
+        raise FeedbackMaterializationError(
+            422, "Resolved base dataset version does not belong to the source dataset."
+        )
 
     # Lock selected feedback rows for reservation.
     locked = list(
@@ -312,7 +364,7 @@ def create_materialization_run(
         resource_type="feedback_materialization_run",
         resource_id=run.id,
         user_id=created_by,
-        after=run_out(run),
+        after=run_out(run, db),
     )
     db.flush()
     return run
@@ -335,10 +387,15 @@ def release_reservation(db: Session, run: FeedbackMaterializationRun) -> None:
 
 def execute_materialization_run(
     db: Session, run: FeedbackMaterializationRun
-) -> FeedbackMaterializationRun:
-    """Execute a claimed (running) materialization. Raises on failure."""
+) -> tuple[FeedbackMaterializationRun, str | None]:
+    """Execute a claimed (running) materialization.
+
+    Returns ``(run, created_object_key)``. ``created_object_key`` is set only when
+    this call uploaded a new MinIO object that still needs a successful outer
+    ``db.commit()``; callers must delete that key if commit fails.
+    """
     if run.status == JobStatus.succeeded and run.output_dataset_version_id:
-        return run
+        return run, None
 
     write_audit(
         db,
@@ -442,6 +499,7 @@ def execute_materialization_run(
         f"project-{locked.project_id}/dataset-{locked.id}/"
         f"v{version_number}-{uuid.uuid4().hex}/{filename}"
     )
+    created_object_key: str | None = None
     try:
         output = datasets.create_dataset_version_from_bytes(
             db,
@@ -453,6 +511,7 @@ def execute_materialization_run(
             source_type="feedback_materialization",
             object_key=object_key,
         )
+        created_object_key = object_key
         # Verify retrain compatibility with the new version before success.
         try:
             prepare_retrain_job(
@@ -465,65 +524,62 @@ def execute_materialization_run(
                 ),
             )
         except (RetrainConfigError, TrainingConfigError) as exc:
-            # Roll back version + mirror + uploaded object.
+            # Roll back version + mirror; outer except deletes the object.
             db.delete(output)
             db.flush()
             # Restore dataset mirror to base version.
             datasets.update_dataset_mirror(locked, base_version)
             db.flush()
-            try:
-                storage.delete_object(settings.minio_datasets_bucket, object_key)
-            except Exception:
-                pass
             raise ValueError(
                 f"Materialized dataset is incompatible with source training job: {exc}"
             ) from exc
+
+        run.output_dataset_version_id = output.id
+        run.row_count_before = row_before
+        run.row_count_added = row_added
+        run.row_count_after = row_after
+        run.status = JobStatus.succeeded
+        run.finished_at = datetime.now(timezone.utc)
+        run.error_message = None
+
+        for feedback in feedback_rows:
+            feedback.materialization_run_id = run.id
+            feedback.materialized_dataset_version_id = output.id
+
+        create_alert(
+            db,
+            alert_type="feedback_dataset_ready",
+            title=f"Feedback dataset ready: {dataset.name} v{output.version}",
+            project_id=run.project_id,
+            severity=AlertSeverity.info,
+            message=(
+                f"Materialized {row_added} approved feedback row(s) onto "
+                f"base DatasetVersion #{base_version.id} creating "
+                f"DatasetVersion #{output.id} (v{output.version})."
+            ),
+            resource_type="dataset_version",
+            resource_id=str(output.id),
+            link_path=(
+                f"/projects/{run.project_id}/datasets/{dataset.id}"
+                f"?version={output.version}"
+            ),
+        )
+        write_audit(
+            db,
+            action="feedback_materialization.succeed",
+            resource_type="feedback_materialization_run",
+            resource_id=run.id,
+            after=run_out(run, db),
+        )
+        db.flush()
+        return run, created_object_key
     except Exception:
-        try:
-            storage.delete_object(settings.minio_datasets_bucket, object_key)
-        except Exception:
-            pass
+        if created_object_key:
+            try:
+                storage.delete_object(settings.minio_datasets_bucket, created_object_key)
+            except Exception:
+                pass
         raise
-
-    run.output_dataset_version_id = output.id
-    run.row_count_before = row_before
-    run.row_count_added = row_added
-    run.row_count_after = row_after
-    run.status = JobStatus.succeeded
-    run.finished_at = datetime.now(timezone.utc)
-    run.error_message = None
-
-    for feedback in feedback_rows:
-        feedback.materialization_run_id = run.id
-        feedback.materialized_dataset_version_id = output.id
-
-    create_alert(
-        db,
-        alert_type="feedback_dataset_ready",
-        title=f"Feedback dataset ready: {dataset.name} v{output.version}",
-        project_id=run.project_id,
-        severity=AlertSeverity.info,
-        message=(
-            f"Materialized {row_added} approved feedback row(s) onto "
-            f"base DatasetVersion #{base_version.id} creating "
-            f"DatasetVersion #{output.id} (v{output.version})."
-        ),
-        resource_type="dataset_version",
-        resource_id=str(output.id),
-        link_path=(
-            f"/projects/{run.project_id}/datasets/{dataset.id}"
-            f"?version={output.version}"
-        ),
-    )
-    write_audit(
-        db,
-        action="feedback_materialization.succeed",
-        resource_type="feedback_materialization_run",
-        resource_id=run.id,
-        after=run_out(run),
-    )
-    db.flush()
-    return run
 
 
 def feedback_materialization_lineage(
@@ -565,4 +621,4 @@ def list_runs(
         .offset(skip)
         .limit(limit)
     ).all()
-    return [run_out(row) for row in rows]
+    return [run_out(row, db) for row in rows]

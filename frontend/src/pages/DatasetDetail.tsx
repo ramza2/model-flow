@@ -1,5 +1,5 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ApiRequestError,
   api,
@@ -109,6 +109,8 @@ function summarizeCondition(rule: Record<string, unknown>) {
 
 export default function DatasetDetail() {
   const { projectId, datasetId } = useParams();
+  const [searchParams] = useSearchParams();
+  const versionQuery = searchParams.get("version");
   const { user } = useAuth();
   const { selectedProject } = useProject();
   const [ds, setDs] = useState<Dataset | null>(null);
@@ -185,7 +187,15 @@ export default function DatasetDetail() {
       ]);
       setDs(dataset);
       setVersions(versionRows);
-      setSelectedVersionId((current) => current || versionRows[0]?.id || null);
+      setSelectedVersionId((current) => {
+        if (versionQuery) {
+          const matched = versionRows.find(
+            (row) => String(row.version) === String(versionQuery),
+          );
+          if (matched) return matched.id;
+        }
+        return current || versionRows[0]?.id || null;
+      });
       const fallback = dataset.columns.includes("target") ? "target" : dataset.columns[0] || "target";
       setConditions((current) =>
         current.length === 1 && !current[0].column ? [emptyCondition(fallback)] : current.map((row) => ({
@@ -199,7 +209,7 @@ export default function DatasetDetail() {
     } finally {
       setLoading(false);
     }
-  }, [datasetId, loadRules, projectId]);
+  }, [datasetId, loadRules, projectId, versionQuery]);
 
   useEffect(() => {
     void load();

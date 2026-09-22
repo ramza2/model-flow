@@ -694,3 +694,583 @@ def test_succeeded_run_worker_idempotent(client, auth_headers, project_id, monke
         runner.process_feedback_materialization_run(db.get(FeedbackMaterializationRun, run_id))
         assert db.get(FeedbackMaterializationRun, run_id).output_dataset_version_id == first_output
         assert len(db.scalars(select(DatasetVersion)).all()) == count_before
+
+
+def _approve_two_feedback(client, auth_headers, project_id, endpoint_id, monkeypatch):
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0, 1])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    preds = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 11, "b": 12}, {"a": 13, "b": 14}]},
+    ).json()["prediction_ids"]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={
+            "items": [
+                {"prediction_id": preds[0], "actual": 0},
+                {"prediction_id": preds[1], "actual": 1},
+            ]
+        },
+    )
+    feedback = client.get(f"/api/v1/projects/{project_id}/feedback", headers=auth_headers).json()
+    fb_a = next(row for row in feedback if row["prediction_id"] == preds[0])
+    fb_b = next(row for row in feedback if row["prediction_id"] == preds[1])
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={
+            "items": [
+                {"feedback_id": fb_a["id"], "decision": "approved"},
+                {"feedback_id": fb_b["id"], "decision": "approved"},
+            ]
+        },
+    )
+    return fb_a["id"], fb_b["id"]
+
+
+def test_active_materialization_blocks_stale_base_and_cumulative_after(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        v1_id = seeded["version"].id
+        v1_rows = seeded["version"].row_count
+
+    fb_a, fb_b = _approve_two_feedback(
+        client, auth_headers, project_id, endpoint_id, monkeypatch
+    )
+
+    run_a = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [fb_a]},
+    )
+    assert run_a.status_code == 201, run_a.text
+    assert run_a.json()["base_dataset_version_id"] == v1_id
+    run_a_id = run_a.json()["id"]
+
+    # Second create while Run A is still pending must conflict (no stale fork).
+    run_b_blocked = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [fb_b]},
+    )
+    assert run_b_blocked.status_code == 409, run_b_blocked.text
+    assert "active" in run_b_blocked.json()["detail"].lower()
+
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_a_id)
+        )
+        run = db.get(FeedbackMaterializationRun, run_a_id)
+        assert run.status == JobStatus.succeeded
+        v2_id = run.output_dataset_version_id
+        assert db.get(DatasetVersion, v2_id).version == 2
+
+    run_b = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [fb_b]},
+    )
+    assert run_b.status_code == 201, run_b.text
+    assert run_b.json()["base_dataset_version_id"] == v2_id
+    assert run_b.json()["base_dataset_version"] == 2
+    run_b_id = run_b.json()["id"]
+
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_b_id)
+        )
+        run = db.get(FeedbackMaterializationRun, run_b_id)
+        assert run.status == JobStatus.succeeded
+        v3 = db.get(DatasetVersion, run.output_dataset_version_id)
+        assert v3.version == 3
+        assert v3.row_count == v1_rows + 2
+        frame = datasets.load_dataset_version_dataframe(v3)
+        assert ((frame["a"] == 11) & (frame["b"] == 12)).any()
+        assert ((frame["a"] == 13) & (frame["b"] == 14)).any()
+
+
+def test_post_upload_alert_failure_cleans_artifact(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        dataset_id = seeded["dataset"].id
+        v1_id = seeded["version"].id
+        v1_key = seeded["version"].object_key
+        mirror_before = seeded["dataset"].latest_version
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    run_id = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [feedback_id]},
+    ).json()["id"]
+
+    keys_before = set(OBJECT_STORE.keys())
+
+    def boom_alert(*_a, **_k):
+        raise RuntimeError("alert boom")
+
+    monkeypatch.setattr(feedback_materialization, "create_alert", boom_alert)
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_id)
+        )
+
+    with TestingSessionLocal() as db:
+        run = db.get(FeedbackMaterializationRun, run_id)
+        assert run.status == JobStatus.failed
+        assert run.output_dataset_version_id is None
+        fb = db.get(GroundTruthFeedback, feedback_id)
+        assert fb.materialization_run_id is None
+        assert fb.materialized_dataset_version_id is None
+        assert db.get(DatasetVersion, v1_id).object_key == v1_key
+        dataset = db.get(Dataset, dataset_id)
+        assert dataset.latest_version == mirror_before
+        versions = db.scalars(
+            select(DatasetVersion).where(DatasetVersion.dataset_id == dataset_id)
+        ).all()
+        assert len(versions) == 1
+        assert set(OBJECT_STORE.keys()) == keys_before
+
+
+def test_worker_commit_failure_cleans_new_artifact(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        dataset_id = seeded["dataset"].id
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    run_id = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [feedback_id]},
+    ).json()["id"]
+
+    keys_before = set(OBJECT_STORE.keys())
+    commit_calls = {"n": 0}
+
+    def session_factory():
+        db = TestingSessionLocal()
+        real_commit = db.commit
+
+        def commit():
+            commit_calls["n"] += 1
+            # First commit is the success commit after execute — force failure.
+            if commit_calls["n"] == 1:
+                raise RuntimeError("commit boom")
+            return real_commit()
+
+        db.commit = commit  # type: ignore[method-assign]
+        return db
+
+    monkeypatch.setattr(runner, "SessionLocal", session_factory)
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_id)
+        )
+
+    with TestingSessionLocal() as db:
+        run = db.get(FeedbackMaterializationRun, run_id)
+        assert run.status == JobStatus.failed
+        assert run.output_dataset_version_id is None
+        fb = db.get(GroundTruthFeedback, feedback_id)
+        assert fb.materialization_run_id is None
+        assert fb.materialized_dataset_version_id is None
+        assert (
+            len(
+                db.scalars(
+                    select(DatasetVersion).where(DatasetVersion.dataset_id == dataset_id)
+                ).all()
+            )
+            == 1
+        )
+        assert set(OBJECT_STORE.keys()) == keys_before
+
+
+def test_prediction_count_mismatch_fail_closed(client, auth_headers, project_id, monkeypatch):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    fewer = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]},
+    )
+    assert fewer.status_code == 422
+    with TestingSessionLocal() as db:
+        assert db.scalar(select(PredictionObservation).limit(1)) is None
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0, 1])
+    extra = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    )
+    assert extra.status_code == 422
+    with TestingSessionLocal() as db:
+        assert db.scalar(select(PredictionObservation).limit(1)) is None
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0, 1])
+    ok = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}, {"a": 3, "b": 4}]},
+    )
+    assert ok.status_code == 200
+    with TestingSessionLocal() as db:
+        rows = db.scalars(
+            select(PredictionObservation).order_by(PredictionObservation.instance_index)
+        ).all()
+        assert len(rows) == 2
+        assert json.loads(rows[0].input_json) == {"a": 1, "b": 2}
+        assert json.loads(rows[1].input_json) == {"a": 3, "b": 4}
+
+
+def test_service_api_key_prediction_stores_input_json(
+    client, auth_headers, project_id, monkeypatch
+):
+    from app.db.models import ServiceApiKey
+    from app.services import service_api_keys
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        raw_key, prefix, key_hash = service_api_keys.generate_service_api_key(db)
+        db.add(
+            ServiceApiKey(
+                project_id=project_id,
+                endpoint_id=endpoint_id,
+                name="feedback-sak",
+                key_prefix=prefix,
+                key_hash=key_hash,
+                created_by=1,
+                is_active=True,
+            )
+        )
+        db.commit()
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [1, 0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    response = client.post(
+        f"/api/v1/inference/endpoints/{endpoint_id}/predict",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={"instances": [{"a": 7, "b": 8}, {"a": 9, "b": 10}]},
+    )
+    assert response.status_code == 200, response.text
+    assert len(response.json()["prediction_ids"]) == 2
+    with TestingSessionLocal() as db:
+        rows = db.scalars(
+            select(PredictionObservation).order_by(PredictionObservation.instance_index)
+        ).all()
+        assert json.loads(rows[0].input_json) == {"a": 7, "b": 8}
+        assert json.loads(rows[1].input_json) == {"a": 9, "b": 10}
+
+    mismatch = client.post(
+        f"/api/v1/inference/endpoints/{endpoint_id}/predict",
+        headers={"Authorization": f"Bearer {raw_key}"},
+        json={"instances": [{"a": 1, "b": 2}]},
+    )
+    # predict still returns 2 from monkeypatch → mismatch
+    assert mismatch.status_code == 422
+
+
+def test_mixed_endpoint_and_model_feedback_rejected(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        model = seeded["model"]
+        other_ep = Endpoint(
+            project_id=project_id,
+            name="other-ep",
+            model_name=model.name,
+            model_version=model.version,
+            model_version_id=model.id,
+            model_uri=model.model_uri,
+            status="ready",
+            feature_schema_json=seeded["endpoint"].feature_schema_json,
+        )
+        db.add(other_ep)
+        db.flush()
+        other_endpoint_id = other_ep.id
+        # Observation on other endpoint with approved feedback
+        obs = PredictionObservation(
+            id="other-ep-obs",
+            project_id=project_id,
+            endpoint_id=other_endpoint_id,
+            model_version_id=model.id,
+            request_id="req-other",
+            instance_index=0,
+            prediction_json="0",
+            input_json=json.dumps({"a": 1, "b": 2}),
+            predicted_at=model.created_at,
+        )
+        db.add(obs)
+        fb = GroundTruthFeedback(
+            project_id=project_id,
+            prediction_observation_id=obs.id,
+            actual_json="0",
+            source="api",
+            review_status=FeedbackReviewStatus.APPROVED.value,
+        )
+        db.add(fb)
+        db.commit()
+        mixed_feedback_id = fb.id
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    own_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()
+    own_feedback = next(row for row in own_id if row["prediction_id"] == prediction_id)
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": own_feedback["id"], "decision": "approved"}]},
+    )
+
+    mixed = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "feedback_ids": [own_feedback["id"], mixed_feedback_id],
+        },
+    )
+    assert mixed.status_code == 422
+    assert "endpoint" in mixed.json()["detail"].lower()
+
+
+def test_cross_project_feedback_isolation(client, auth_headers, project_id, monkeypatch):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        other = Project(name="other-feedback-project", created_by=1)
+        db.add(other)
+        db.flush()
+        other_id = other.id
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+
+    cross_list = client.get(
+        f"/api/v1/projects/{other_id}/feedback", headers=auth_headers
+    )
+    assert cross_list.status_code in {200, 403, 404}
+    if cross_list.status_code == 200:
+        assert cross_list.json() == []
+
+    cross_review = client.post(
+        f"/api/v1/projects/{other_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    assert cross_review.status_code in {403, 404}
+
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    cross_mat = client.post(
+        f"/api/v1/projects/{other_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [feedback_id]},
+    )
+    assert cross_mat.status_code in {403, 404, 422}
+
+
+def test_compatibility_failure_rolls_back_and_cleans(
+    client, auth_headers, project_id, monkeypatch
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        dataset_id = seeded["dataset"].id
+        v1_id = seeded["version"].id
+        mirror_before = seeded["dataset"].latest_version
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    run_id = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [feedback_id]},
+    ).json()["id"]
+
+    keys_before = set(OBJECT_STORE.keys())
+    from app.services.retrain_service import RetrainConfigError
+
+    def flaky_prepare(*_args, **_kwargs):
+        raise RetrainConfigError("forced incompat")
+
+    # Patch after run creation so only execute-time compatibility check fails.
+    monkeypatch.setattr(feedback_materialization, "prepare_retrain_job", flaky_prepare)
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_id)
+        )
+
+    with TestingSessionLocal() as db:
+        run = db.get(FeedbackMaterializationRun, run_id)
+        assert run.status == JobStatus.failed
+        assert run.output_dataset_version_id is None
+        fb = db.get(GroundTruthFeedback, feedback_id)
+        assert fb.materialization_run_id is None
+        assert fb.materialized_dataset_version_id is None
+        assert db.get(Dataset, dataset_id).latest_version == mirror_before
+        assert db.get(DatasetVersion, v1_id) is not None
+        assert (
+            len(
+                db.scalars(
+                    select(DatasetVersion).where(DatasetVersion.dataset_id == dataset_id)
+                ).all()
+            )
+            == 1
+        )
+        assert set(OBJECT_STORE.keys()) == keys_before
+
+
+def test_review_comment_update_writes_audit(client, auth_headers, project_id, monkeypatch):
+    from app.db.models import AuditLog
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved", "comment": "first"}]},
+    )
+    updated = client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={
+            "items": [
+                {"feedback_id": feedback_id, "decision": "approved", "comment": "revised"}
+            ]
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["results"][0]["idempotent"] is True
+
+    with TestingSessionLocal() as db:
+        fb = db.get(GroundTruthFeedback, feedback_id)
+        assert fb.review_comment == "revised"
+        actions = [
+            row.action
+            for row in db.scalars(
+                select(AuditLog)
+                .where(AuditLog.resource_type == "ground_truth_feedback")
+                .order_by(AuditLog.id.asc())
+            ).all()
+        ]
+        assert "feedback.review.approve" in actions
+        assert "feedback.review.comment_update" in actions

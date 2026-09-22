@@ -590,4 +590,49 @@ describe("DatasetDetail upstream lineage", () => {
     });
   });
 
+  it("selects exact DatasetVersion from ?version= query even when not latest", async () => {
+    const older = { ...version, id: 11, version: 1 };
+    const mid = {
+      ...version,
+      id: 18,
+      version: 2,
+      original_filename: "sites-v2.parquet",
+      source_type: "feedback_materialization",
+    };
+    const newer = {
+      ...version,
+      id: 22,
+      version: 3,
+      original_filename: "sites-v3.parquet",
+      source_type: "feedback_materialization",
+    };
+    stubQualityApi();
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/datasets/3") return { ...dataset, latest_version: 3 };
+      if (path === "/projects/7/datasets/3/versions") return [newer, mid, older];
+      if (path.includes("/versions/2/preview")) {
+        return { columns: mid.columns, rows: [{ site_id: "S1", a: 1, target: 0 }] };
+      }
+      if (path.includes("/versions/2/lineage")) {
+        return { dataset_version: mid, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      if (path.includes("/quality-rules?")) return [];
+      if (path.includes("/quality-checks?")) return [];
+      if (path.includes("/splits")) return [];
+      throw new Error(`Unhandled api call ${path}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/datasets/3?version=2"]}>
+        <Routes>
+          <Route path="/projects/:projectId/datasets/:datasetId" element={<DatasetDetail />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const train = await screen.findByTestId("train-on-dataset");
+    expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=18");
+    expect(screen.getByDisplayValue(/v2 /)).toBeInTheDocument();
+  });
+
 });

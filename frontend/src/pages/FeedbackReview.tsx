@@ -29,7 +29,9 @@ type MaterializationRun = {
   endpoint_id: number;
   source_model_version_id: number;
   base_dataset_version_id: number;
+  base_dataset_version?: number | null;
   output_dataset_version_id?: number | null;
+  output_dataset_version?: number | null;
   dataset_id: number;
   feedback_count: number;
   row_count_added?: number | null;
@@ -307,14 +309,20 @@ export default function FeedbackReview() {
                     <td><StatusBadge status={run.status} /></td>
                     <td>#{run.endpoint_id}</td>
                     <td>#{run.source_model_version_id}</td>
-                    <td>#{run.base_dataset_version_id}</td>
+                    <td>#{run.base_dataset_version_id}{run.base_dataset_version != null ? ` (v${run.base_dataset_version})` : ""}</td>
                     <td>
                       {run.output_dataset_version_id ? (
                         <Link
-                          to={`/projects/${projectId}/datasets/${run.dataset_id}`}
+                          to={
+                            run.output_dataset_version != null
+                              ? `/projects/${projectId}/datasets/${run.dataset_id}?version=${run.output_dataset_version}`
+                              : `/projects/${projectId}/datasets/${run.dataset_id}`
+                          }
                           data-testid={`materialization-output-${run.id}`}
                         >
-                          DatasetVersion #{run.output_dataset_version_id}
+                          {run.output_dataset_version != null
+                            ? `v${run.output_dataset_version}`
+                            : `DatasetVersion #${run.output_dataset_version_id}`}
                         </Link>
                       ) : (
                         "—"

@@ -35,7 +35,9 @@ describe("FeedbackReview", () => {
             endpoint_id: 12,
             source_model_version_id: 44,
             base_dataset_version_id: 17,
+            base_dataset_version: 1,
             output_dataset_version_id: 18,
+            output_dataset_version: 2,
             dataset_id: 5,
             feedback_count: 1,
             finished_at: "2026-09-22T00:00:00Z",
@@ -89,7 +91,7 @@ describe("FeedbackReview", () => {
     expect(screen.getByTestId("feedback-snapshot-102")).toHaveTextContent("Not materializable");
     expect(screen.getByTestId("materialization-output-3")).toHaveAttribute(
       "href",
-      "/projects/7/datasets/5",
+      "/projects/7/datasets/5?version=2",
     );
 
     fireEvent.change(screen.getByTestId("feedback-status-filter"), { target: { value: "PENDING" } });

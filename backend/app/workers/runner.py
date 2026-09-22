@@ -219,21 +219,37 @@ def claim_next_feedback_materialization_run() -> FeedbackMaterializationRun | No
 
 def process_feedback_materialization_run(run: FeedbackMaterializationRun) -> None:
     db = SessionLocal()
+    created_object_key: str | None = None
     try:
         live = db.get(FeedbackMaterializationRun, run.id)
         if live is None:
             return
         if live.status == JobStatus.succeeded and live.output_dataset_version_id:
             return
-        feedback_materialization.execute_materialization_run(db, live)
+        _live, created_object_key = feedback_materialization.execute_materialization_run(
+            db, live
+        )
         db.commit()
     except Exception as exc:
         db.rollback()
+        # If commit failed after a successful execute, delete the newly uploaded
+        # object. execute() already cleans up on its own failures.
+        if created_object_key:
+            try:
+                from app.core.config import settings
+                from app.services import storage
+
+                storage.delete_object(settings.minio_datasets_bucket, created_object_key)
+            except Exception:
+                pass
         live = db.get(FeedbackMaterializationRun, run.id)
-        if live is not None:
+        if live is not None and not (
+            live.status == JobStatus.succeeded and live.output_dataset_version_id
+        ):
             live.status = JobStatus.failed
             live.error_message = str(exc)
             live.finished_at = datetime.now(timezone.utc)
+            live.output_dataset_version_id = None
             feedback_materialization.release_reservation(db, live)
             write_audit(
                 db,
