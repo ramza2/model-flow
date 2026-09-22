@@ -272,6 +272,51 @@ class PredictRequest(BaseModel):
     instances: list[dict[str, Any]] = Field(min_length=1)
 
 
+class GroundTruthItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    prediction_id: str = Field(min_length=1, max_length=36)
+    actual: Any
+    observed_at: datetime | str | None = None
+
+
+class GroundTruthBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[GroundTruthItem] = Field(min_length=1)
+
+
+class ModelQualityPolicyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    endpoint_id: int
+    name: str = Field(min_length=1, max_length=200)
+    is_active: bool = True
+    window_hours: int = Field(default=24, ge=1, le=24 * 90)
+    minimum_matched_samples: int = Field(default=20, ge=1, le=1_000_000)
+    primary_metric: str = Field(min_length=1, max_length=50)
+    warning_threshold: float
+    critical_threshold: float
+    consecutive_breaches: int = Field(default=2, ge=1, le=20)
+    cooldown_hours: int = Field(default=24, ge=0, le=24 * 90)
+    auto_retrain: bool = True
+
+
+class ModelQualityPolicyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_active: bool | None = None
+    window_hours: int | None = Field(default=None, ge=1, le=24 * 90)
+    minimum_matched_samples: int | None = Field(default=None, ge=1, le=1_000_000)
+    primary_metric: str | None = Field(default=None, min_length=1, max_length=50)
+    warning_threshold: float | None = None
+    critical_threshold: float | None = None
+    consecutive_breaches: int | None = Field(default=None, ge=1, le=20)
+    cooldown_hours: int | None = Field(default=None, ge=0, le=24 * 90)
+    auto_retrain: bool | None = None
+
+
 class ServiceApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     endpoint_id: int | None = None
@@ -374,7 +419,7 @@ class SchedulePipelineTarget(BaseModel):
 class ScheduleCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""
-    target_type: Literal["data_import", "batch_inference", "pipeline_run"]
+    target_type: Literal["data_import", "batch_inference", "pipeline_run", "model_quality"]
     target_config: dict[str, Any]
     cron_expression: str = Field(min_length=1, max_length=120)
     timezone: str = Field(default="UTC", min_length=1, max_length=100)

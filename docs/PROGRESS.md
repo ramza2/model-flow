@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 5 — Closed-loop MLOps** is the next implementation phase (not started on `main`).
+**Enhancement Phase 5-A — Closed-loop MLOps Foundation** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
 
 **Enhancement Phase 4 — Connectors is complete on `main`.**
 
@@ -166,7 +166,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@c9483de0ef6d557097abb9340aeee499d68d41bc`
+- Branch baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
+- Phase 4 closeout docs (PR #58): `364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 - Phase 4-E merge (PR #57): `c9483de0ef6d557097abb9340aeee499d68d41bc` (post-merge CI #278 PASS)
 - Phase 4-D merge (PR #56): `18576e6e54b751f416b87e110c39918fe7dc2045` (post-merge CI #273 PASS)
 - Phase 4-C merge (PR #55): `e8c5af7db26affd29c312f3739fb4b76db366ad6` (post-merge CI #268 PASS)
@@ -345,14 +346,16 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Start **Phase 5 — Closed-loop MLOps** from `main@c9483de0ef6d557097abb9340aeee499d68d41bc`. Planned scope (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)):
+Complete **Phase 5-A — Closed-loop MLOps Foundation** on a feature branch from `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-A must not be marked complete until that merge evidence exists.
 
-- prediction vs ground-truth comparison
-- model quality monitoring over time
-- performance degradation alerts
-- automatic full retraining pipeline trigger
-- new model version lands as **CANDIDATE**
-- **no automatic PRODUCTION promotion** — user approval required
+Acceptance boundary (non-negotiable):
+
+```text
+Closed-loop automation terminates at CANDIDATE.
+PRODUCTION always requires explicit authorized human action.
+```
+
+See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md) and [`phase-5a-verification.md`](./phase-5a-verification.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

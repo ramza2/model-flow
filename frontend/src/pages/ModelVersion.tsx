@@ -106,6 +106,7 @@ export default function ModelVersion() {
       || canReject
     ),
   );
+  const closedLoop = (mv?.metadata as { closed_loop?: Record<string, number | null> } | undefined)?.closed_loop;
 
   const targets = useMemo(() => parseTargetColumns(mv?.metadata), [mv?.metadata]);
   const problemType = typeof mv?.metadata?.problem_type === "string" ? mv.metadata.problem_type : undefined;
@@ -290,6 +291,44 @@ export default function ModelVersion() {
 
             <EntityLineage
               items={[
+                ...(closedLoop
+                  ? [
+                      {
+                        label: "Created by",
+                        value: "Closed-loop retraining",
+                      },
+                      {
+                        label: "Triggered by",
+                        value: closedLoop.quality_run_id
+                          ? `Quality Run #${closedLoop.quality_run_id}`
+                          : "—",
+                      },
+                      {
+                        label: "Source production model",
+                        value: closedLoop.source_model_version_id
+                          ? `ModelVersion #${closedLoop.source_model_version_id}`
+                          : "—",
+                        to: closedLoop.source_model_version_id
+                          ? `/projects/${projectId}/models/${closedLoop.source_model_version_id}`
+                          : undefined,
+                      },
+                      {
+                        label: "Source training job",
+                        value: closedLoop.source_training_job_id
+                          ? `TrainingJob #${closedLoop.source_training_job_id}`
+                          : "—",
+                        to: closedLoop.source_training_job_id
+                          ? `/projects/${projectId}/jobs/${closedLoop.source_training_job_id}`
+                          : undefined,
+                      },
+                      {
+                        label: "Training dataset",
+                        value: closedLoop.target_dataset_version_id
+                          ? `DatasetVersion #${closedLoop.target_dataset_version_id}`
+                          : "—",
+                      },
+                    ]
+                  : []),
                 {
                   label: "Dataset version",
                   value: mv.dataset_version_id ? `Version #${mv.dataset_version_id}` : "—",

@@ -79,6 +79,7 @@ class ScheduleTargetType(str, enum.Enum):
     data_import = "data_import"
     batch_inference = "batch_inference"
     pipeline_run = "pipeline_run"
+    model_quality = "model_quality"
 
 
 class ConcurrencyPolicy(str, enum.Enum):
@@ -543,10 +544,23 @@ class RetrainTrigger(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
-    trigger_type: Mapped[str] = mapped_column(String(50), nullable=False)  # manual|schedule|drift|new_version
+    # manual|schedule|drift|new_version|quality_degradation
+    trigger_type: Mapped[str] = mapped_column(String(50), nullable=False)
     config_json: Mapped[str] = mapped_column(Text, default="{}")
     last_triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_training_job_id: Mapped[int | None] = mapped_column(ForeignKey("training_jobs.id"), nullable=True)
+    quality_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_quality_runs.id"), nullable=True, unique=True, index=True
+    )
+    source_model_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=True
+    )
+    target_dataset_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("dataset_versions.id"), nullable=True
+    )
+    candidate_model_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -854,4 +868,102 @@ class DatasetPreparationRunInput(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     run: Mapped[DatasetPreparationRun] = relationship(back_populates="inputs")
+
+
+class PredictionObservation(Base):
+    __tablename__ = "prediction_observations"
+    __table_args__ = (
+        Index("ix_prediction_observations_endpoint_predicted", "endpoint_id", "predicted_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    endpoint_id: Mapped[int] = mapped_column(ForeignKey("endpoints.id"), nullable=False, index=True)
+    model_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=True, index=True
+    )
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    instance_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    prediction_json: Mapped[str] = mapped_column(Text, nullable=False)
+    predicted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class GroundTruthFeedback(Base):
+    __tablename__ = "ground_truth_feedback"
+    __table_args__ = (
+        UniqueConstraint(
+            "prediction_observation_id",
+            name="uq_ground_truth_prediction_observation",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    prediction_observation_id: Mapped[str] = mapped_column(
+        ForeignKey("prediction_observations.id"), nullable=False
+    )
+    actual_json: Mapped[str] = mapped_column(Text, nullable=False)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(50), nullable=False, default="api")
+    submitted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    service_api_key_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_api_keys.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ModelQualityPolicy(Base):
+    __tablename__ = "model_quality_policies"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    endpoint_id: Mapped[int] = mapped_column(ForeignKey("endpoints.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    window_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+    minimum_matched_samples: Mapped[int] = mapped_column(Integer, default=20, nullable=False)
+    primary_metric: Mapped[str] = mapped_column(String(50), nullable=False)
+    warning_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    critical_threshold: Mapped[float] = mapped_column(Float, nullable=False)
+    consecutive_breaches: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    cooldown_hours: Mapped[int] = mapped_column(Integer, default=24, nullable=False)
+    auto_retrain: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ModelQualityRun(Base):
+    __tablename__ = "model_quality_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
+    policy_id: Mapped[int] = mapped_column(
+        ForeignKey("model_quality_policies.id"), nullable=False, index=True
+    )
+    endpoint_id: Mapped[int] = mapped_column(ForeignKey("endpoints.id"), nullable=False)
+    model_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("model_versions.id"), nullable=True
+    )
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    prediction_count: Mapped[int] = mapped_column(Integer, default=0)
+    matched_ground_truth_count: Mapped[int] = mapped_column(Integer, default=0)
+    match_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metrics_json: Mapped[str] = mapped_column(Text, default="{}")
+    thresholds_json: Mapped[str] = mapped_column(Text, default="{}")
+    quality_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    trigger_decision_json: Mapped[str] = mapped_column(Text, default="{}")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    schedule_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("automation_schedule_runs.id"), nullable=True
+    )
 

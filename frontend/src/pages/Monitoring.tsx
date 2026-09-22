@@ -37,12 +37,34 @@ type ModelMetrics = {
   total_errors: number;
   latest_drift_status: string | null;
 };
+type QualitySummaryCard = {
+  policy_id: number;
+  policy_name: string;
+  endpoint_id: number;
+  endpoint_name: string | null;
+  current_model_version_id: number | null;
+  current_model_name: string | null;
+  current_model_version: string | null;
+  latest_quality_status: string | null;
+  primary_metric: string;
+  primary_metric_value: number | null;
+  matched_ground_truth_count: number;
+  prediction_count: number;
+  match_rate: number | null;
+  window_start: string | null;
+  window_end: string | null;
+  last_evaluated_at: string | null;
+  closed_loop_state: string;
+  latest_run_id: number | null;
+};
 
 export default function Monitoring() {
   const { projectId } = useParams();
   const [service, setService] = useState<ServiceMetrics | null>(null);
   const [data, setData] = useState<DataMetrics | null>(null);
   const [models, setModels] = useState<ModelMetrics | null>(null);
+  const [qualityCards, setQualityCards] = useState<QualitySummaryCard[]>([]);
+  const [qualityRuns, setQualityRuns] = useState<Array<Record<string, unknown>>>([]);
   const [hours, setHours] = useState("24");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -54,10 +76,14 @@ export default function Monitoring() {
       api<ServiceMetrics>(`/projects/${projectId}/monitoring/service?hours=${hours}`),
       api<DataMetrics>(`/projects/${projectId}/monitoring/data`),
       api<ModelMetrics>(`/projects/${projectId}/monitoring/models`),
-    ]).then(([serviceRows, dataRows, modelRows]) => {
+      api<{ items: QualitySummaryCard[] }>(`/projects/${projectId}/model-quality/summary`).catch(() => ({ items: [] })),
+      api<Array<Record<string, unknown>>>(`/projects/${projectId}/model-quality/runs?limit=20`).catch(() => []),
+    ]).then(([serviceRows, dataRows, modelRows, qualitySummary, runs]) => {
       setService(serviceRows);
       setData(dataRows);
       setModels(modelRows);
+      setQualityCards(qualitySummary.items || []);
+      setQualityRuns(Array.isArray(runs) ? runs : []);
     }).catch((reason) => setError(reason instanceof Error ? reason.message : "Monitoring metrics could not be loaded."))
       .finally(() => setLoading(false));
   }, [hours, projectId]);
@@ -148,6 +174,103 @@ export default function Monitoring() {
               )}
             </div>
           </DetailSection>
+
+          <DetailSection
+            eyebrow="Models"
+            title="Production Quality"
+            testId="monitoring-production-quality"
+          >
+            {qualityCards.length === 0 ? (
+              <EmptyState
+                title="No production quality policies"
+                description="Create a model quality policy to evaluate prediction vs ground-truth and drive closed-loop retraining to CANDIDATE."
+              />
+            ) : (
+              <div className="stack-gap" data-testid="production-quality-cards">
+                {qualityCards.map((card) => (
+                  <div className="panel nested-panel" key={card.policy_id} data-testid={`quality-card-${card.policy_id}`}>
+                    <div className="row-actions">
+                      <strong>{card.endpoint_name || `Endpoint #${card.endpoint_id}`}</strong>
+                      <StatusBadge status={card.latest_quality_status || "unknown"} />
+                      <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
+                        {card.closed_loop_state}
+                      </span>
+                    </div>
+                    <dl className="key-values">
+                      <div>
+                        <dt>Current model</dt>
+                        <dd>
+                          {card.current_model_name
+                            ? `${card.current_model_name} v${card.current_model_version}`
+                            : "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Primary metric</dt>
+                        <dd>
+                          {card.primary_metric}
+                          {card.primary_metric_value == null ? "" : ` = ${metric(card.primary_metric_value, 4)}`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Matched ground truth</dt>
+                        <dd data-testid={`matched-gt-${card.policy_id}`}>{card.matched_ground_truth_count}</dd>
+                      </div>
+                      <div>
+                        <dt>Predictions</dt>
+                        <dd>{card.prediction_count}</dd>
+                      </div>
+                      <div>
+                        <dt>Match rate</dt>
+                        <dd data-testid={`match-rate-${card.policy_id}`}>
+                          {card.match_rate == null ? "—" : `${metric(card.match_rate * 100, 1)}%`}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Last evaluated</dt>
+                        <dd>{card.last_evaluated_at ? new Date(card.last_evaluated_at).toLocaleString() : "—"}</dd>
+                      </div>
+                    </dl>
+                    {card.current_model_version_id ? (
+                      <div className="row-actions">
+                        <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
+                          Open current model
+                        </Link>
+                        <Link to={`/projects/${projectId}/alerts`}>Open alerts</Link>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </DetailSection>
+
+          {qualityRuns.length > 0 ? (
+            <DetailSection eyebrow="Models" title="Metric trend" testId="monitoring-quality-trend">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Run</th>
+                      <th>Status</th>
+                      <th>Matched</th>
+                      <th>Finished</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qualityRuns.map((run) => (
+                      <tr key={String(run.id)}>
+                        <td>#{String(run.id)}</td>
+                        <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
+                        <td>{String(run.matched_ground_truth_count ?? "—")}</td>
+                        <td>{run.finished_at ? new Date(String(run.finished_at)).toLocaleString() : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </DetailSection>
+          ) : null}
 
           <div className="two-column">
             <DetailSection

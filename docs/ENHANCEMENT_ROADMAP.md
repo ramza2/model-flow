@@ -227,12 +227,25 @@ See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contrac
 
 ## Phase 5 — Closed-loop MLOps
 
-- Prediction vs ground-truth comparison
-- Model quality monitoring over time
-- Performance degradation alerts
-- Automatic **full retraining pipeline** trigger
-- New model version lands as **CANDIDATE**
-- **No automatic PRODUCTION promotion** — user approval required
+**Status:** current — Phase 5-A
+
+Closed-loop production quality evaluation and full retraining that always terminates at **CANDIDATE**. Explicit human approval remains required for PRODUCTION.
+
+Implementation slices:
+
+1. **Phase 5-A — Closed-loop MLOps Foundation** — current
+   - PredictionObservation + prediction_ids
+   - GroundTruthFeedback (JWT + Service API Key)
+   - ModelQualityPolicy / ModelQualityRun
+   - classification / regression / multi-output metrics
+   - degradation Alert + AutomationSchedule `model_quality`
+   - automatic full retrain only with newer compatible DatasetVersion
+   - automatic Registry registration as **CANDIDATE** only (no auto approve / promote / endpoint swap)
+2. **Phase 5-B — Feedback Dataset Materialization** — planned
+3. **Phase 5-C — Advanced Quality Policies** — planned
+4. **Phase 5-D — Closed-loop UX / Final Hardening** — planned
+
+See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
 **Depends on:** scheduling, stable pipeline UX/runtime, and monitoring foundations.
 

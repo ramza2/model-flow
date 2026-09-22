@@ -263,8 +263,16 @@ def register_from_run(
     training_job_id: int | None = None,
     pipeline_run_id: int | None = None,
     created_by: int | None = None,
+    registry_model_name: str | None = None,
 ) -> ModelVersion:
-    """Register an MLflow run and mirror it in the app-owned registry."""
+    """Register an MLflow run and mirror it in the app-owned registry.
+
+    ``model_name`` drives the MLflow registered model name
+    (``project-{id}-{logical}`` when not already prefixed).
+    ``registry_model_name`` is the ModelFlow logical ``ModelVersion.name`` used by
+    promote/rollback. When omitted, ``ModelVersion.name`` remains the MLflow name
+    for backward compatibility with existing pipeline callers.
+    """
 
     run = mlflow_service.get_run(run_id)
     expected_experiment = mlflow_service.ensure_experiment(f"project-{project_id}")
@@ -276,19 +284,20 @@ def register_from_run(
         if model_name.startswith(f"project-{project_id}-")
         else f"project-{project_id}-{model_name}"
     )
+    app_name = registry_model_name if registry_model_name is not None else mlflow_name
     registered = mlflow_service.register_model(run_id, mlflow_name, artifact_path)
     version = str(registered["version"])
     if (
         db.scalar(
             select(ModelVersion.id).where(
                 ModelVersion.project_id == project_id,
-                ModelVersion.name == mlflow_name,
+                ModelVersion.name == app_name,
                 ModelVersion.version == version,
             )
         )
         is not None
     ):
-        raise ValueError(f"Model {mlflow_name} version {version} is already registered.")
+        raise ValueError(f"Model {app_name} version {version} is already registered.")
 
     training_job = resolve_training_job(
         db,
@@ -329,7 +338,7 @@ def register_from_run(
         metadata["problem_type"] = params["problem_type"]
     row = ModelVersion(
         project_id=project_id,
-        name=mlflow_name,
+        name=app_name,
         version=version,
         lifecycle=ModelLifecycle.CANDIDATE,
         mlflow_model_name=str(registered["name"]),

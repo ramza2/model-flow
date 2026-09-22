@@ -17,12 +17,15 @@ from app.db.models import (
     ConcurrencyPolicy,
     DataImportJob,
     JobStatus,
+    ModelQualityPolicy,
+    ModelQualityRun,
     PipelineRun,
     ScheduleRunStatus,
     ScheduleTargetType,
     ScheduleTriggerSource,
 )
 from app.services import cron_schedule, job_factories
+from app.services import model_quality as quality_service
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +114,8 @@ def _load_child_status(
         row = db.get(BatchInferenceJob, resource_id)
     elif target_type == ScheduleTargetType.pipeline_run:
         row = db.get(PipelineRun, resource_id)
+    elif target_type == ScheduleTargetType.model_quality:
+        row = db.get(ModelQualityRun, resource_id)
     else:
         return None
     return row.status if row is not None else None
@@ -120,6 +125,8 @@ def _dispatch_child_job(
     db: Session,
     schedule: AutomationSchedule,
     config: dict,
+    *,
+    schedule_run_id: int | None = None,
 ) -> int:
     created_by = schedule.created_by
     if schedule.target_type == ScheduleTargetType.data_import:
@@ -163,6 +170,19 @@ def _dispatch_child_job(
             fail_policy=str(config.get("fail_policy", "stop")),
             created_by=created_by,
             require_published=False,
+        )
+        return run.id
+    if schedule.target_type == ScheduleTargetType.model_quality:
+        policy = db.get(ModelQualityPolicy, int(config["quality_policy_id"]))
+        if policy is None or policy.project_id != schedule.project_id:
+            raise ValueError("Quality policy was not found for this schedule.")
+        if not policy.is_active:
+            raise ValueError("Quality policy is inactive.")
+        run = quality_service.enqueue_quality_run(
+            db,
+            policy=policy,
+            created_by=created_by,
+            schedule_run_id=schedule_run_id,
         )
         return run.id
     raise ValueError(f"Unsupported schedule target type '{schedule.target_type.value}'.")
@@ -419,7 +439,9 @@ def dispatch_pending_runs(db: Session, *, now: datetime | None = None) -> int:
             continue
         config = _loads_config(schedule)
         try:
-            resource_id = _dispatch_child_job(db, schedule, config)
+            resource_id = _dispatch_child_job(
+                db, schedule, config, schedule_run_id=run.id
+            )
         except Exception as exc:
             _finalize_run_failure(db, schedule, run, str(exc), now=now)
             continue
