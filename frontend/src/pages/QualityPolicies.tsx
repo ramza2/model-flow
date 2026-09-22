@@ -197,15 +197,41 @@ function endpointLabel(endpoints: Endpoint[], endpointId: number): string {
   return match ? match.name : `Endpoint #${endpointId}`;
 }
 
-function isBaselineEligible(run: QualityRun, policy: QualityPolicy): boolean {
-  if (run.policy_id !== policy.id) return false;
+function isBaselineEligible(
+  run: QualityRun,
+  policy: QualityPolicy,
+  endpoints: Endpoint[],
+): boolean {
+  // Cross-policy bootstrap: a baseline_delta policy cannot produce its own ok run
+  // until a baseline exists, so candidates may come from any same-endpoint policy.
+  if (run.endpoint_id !== policy.endpoint_id) return false;
   if (run.status !== "succeeded") return false;
   if (run.quality_status !== "ok") return false;
+  const endpoint = endpoints.find((row) => row.id === policy.endpoint_id);
+  const currentModelId = endpoint?.model_version_id ?? null;
+  if (currentModelId == null || run.model_version_id !== currentModelId) return false;
   if (run.matched_ground_truth_count < policy.minimum_matched_samples) return false;
   if (policy.minimum_match_rate != null) {
     const rate = run.match_rate ?? 0;
     if (rate < policy.minimum_match_rate) return false;
   }
+  return true;
+}
+
+/** Preserve legacy API shape when the edited policy is still a single absolute rule. */
+function shouldSubmitAsLegacy(
+  policyMode: "legacy" | "advanced" | undefined,
+  rules: RuleForm[],
+): boolean {
+  if (policyMode === "advanced") {
+    // Already advanced — keep sending rules unless reduced back to one absolute aggregate rule
+    // while intentionally clearing advanced mode. Prefer staying advanced once configured.
+    return false;
+  }
+  if (rules.length !== 1) return false;
+  const rule = rules[0];
+  if (rule.comparison !== "absolute") return false;
+  if (rule.target.trim() !== "") return false;
   return true;
 }
 
@@ -330,7 +356,11 @@ export default function QualityPolicies() {
     setBusy(true);
     setError("");
     setSuccess("");
-    const payload = {
+    const editingPolicy = editingId != null ? policies.find((row) => row.id === editingId) : null;
+    const useLegacy = shouldSubmitAsLegacy(editingPolicy?.mode, form.rules);
+    const rulesPayload = buildRulesPayload(form.rules);
+    const firstRule = rulesPayload[0];
+    const basePayload: Record<string, unknown> = {
       name: form.name.trim(),
       endpoint_id: Number(form.endpoint_id),
       window_hours: Number(form.window_hours),
@@ -342,8 +372,22 @@ export default function QualityPolicies() {
       auto_retrain: form.auto_retrain,
       is_active: form.is_active,
       rule_logic: form.rule_logic,
-      rules: buildRulesPayload(form.rules),
     };
+    const payload = useLegacy
+      ? {
+          ...basePayload,
+          primary_metric: firstRule?.metric || form.rules[0]?.metric || "f1_macro",
+          warning_threshold: firstRule?.warning_threshold ?? Number(form.rules[0]?.warning_threshold),
+          critical_threshold:
+            firstRule?.critical_threshold ?? Number(form.rules[0]?.critical_threshold),
+        }
+      : {
+          ...basePayload,
+          rules: rulesPayload,
+          primary_metric: firstRule?.metric,
+          warning_threshold: firstRule?.warning_threshold,
+          critical_threshold: firstRule?.critical_threshold,
+        };
     try {
       if (editingId == null) {
         const created = await api<QualityPolicy>(`/projects/${projectId}/model-quality/policies`, {
@@ -356,9 +400,11 @@ export default function QualityPolicies() {
         setForm(formFromPolicy(created));
       } else {
         const { endpoint_id: _endpointId, ...updateBody } = payload;
+        // Explicitly clear advanced rules when returning to legacy via PATCH.
+        const patchBody = useLegacy ? { ...updateBody, rules: [] } : updateBody;
         const updated = await api<QualityPolicy>(
           `/projects/${projectId}/model-quality/policies/${editingId}`,
-          { method: "PATCH", body: JSON.stringify(updateBody) },
+          { method: "PATCH", body: JSON.stringify(patchBody) },
         );
         setSuccess(`Updated policy “${updated.name}” (revision ${updated.revision}).`);
         setForm(formFromPolicy(updated));
@@ -432,8 +478,16 @@ export default function QualityPolicies() {
   };
 
   const eligibleRuns = selectedPolicy
-    ? runs.filter((run) => isBaselineEligible(run, selectedPolicy))
+    ? runs.filter((run) => isBaselineEligible(run, selectedPolicy, endpoints))
     : [];
+
+  const policyNameById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const policy of policies) {
+      map.set(policy.id, policy.name);
+    }
+    return map;
+  }, [policies]);
 
   const showBaselineWarning =
     needsBaseline &&
@@ -497,6 +551,7 @@ export default function QualityPolicies() {
                           <button
                             type="button"
                             className="btn link"
+                            data-testid={`select-policy-${policy.id}`}
                             onClick={() => {
                               setSelectedId(policy.id);
                               setShowForm(false);
@@ -935,10 +990,11 @@ export default function QualityPolicies() {
                 </div>
               ) : null}
               <div className="table-wrap" style={{ marginTop: "1rem" }}>
-                <table>
+                <table data-testid="baseline-candidate-table">
                   <thead>
                     <tr>
                       <th>Run</th>
+                      <th>Source policy</th>
                       <th>Status</th>
                       <th>Matched</th>
                       <th>Finished</th>
@@ -946,38 +1002,42 @@ export default function QualityPolicies() {
                     </tr>
                   </thead>
                   <tbody>
-                    {runs
-                      .filter((run) => run.policy_id === selectedPolicy.id)
-                      .map((run) => (
-                        <tr key={run.id} data-testid={`baseline-run-${run.id}`}>
-                          <td>#{run.id}</td>
-                          <td>
-                            <StatusBadge status={run.quality_status || run.status} />
-                          </td>
-                          <td>{run.matched_ground_truth_count}</td>
-                          <td>{run.finished_at ? formatDate(run.finished_at) : "—"}</td>
-                          <td>
-                            {canWrite && isBaselineEligible(run, selectedPolicy) ? (
-                              <button
-                                type="button"
-                                className="btn btn-secondary"
-                                disabled={busy}
-                                onClick={() => setBaseline(run.id)}
-                                data-testid="set-baseline-btn"
-                              >
-                                Use as baseline
-                              </button>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
+                    {eligibleRuns.map((run) => (
+                      <tr key={run.id} data-testid={`baseline-run-${run.id}`}>
+                        <td>#{run.id}</td>
+                        <td data-testid={`baseline-run-source-${run.id}`}>
+                          {policyNameById.get(run.policy_id) || `Policy #${run.policy_id}`}
+                          <span className="muted"> #{run.policy_id}</span>
+                        </td>
+                        <td>
+                          <StatusBadge status={run.quality_status || run.status} />
+                        </td>
+                        <td>{run.matched_ground_truth_count}</td>
+                        <td>{run.finished_at ? formatDate(run.finished_at) : "—"}</td>
+                        <td>
+                          {canWrite ? (
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              disabled={busy}
+                              onClick={() => setBaseline(run.id)}
+                              data-testid="set-baseline-btn"
+                            >
+                              Use as baseline
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
               {eligibleRuns.length === 0 ? (
                 <p className="muted">
-                  Eligible baseline runs must be succeeded with quality_status=ok and meet sample /
-                  match-rate minimums.
+                  Eligible baseline runs must share this policy&apos;s endpoint and current model,
+                  be succeeded with quality_status=ok, and meet sample / match-rate minimums.
+                  Runs from other policies on the same endpoint are allowed for first-time baseline
+                  bootstrap.
                 </p>
               ) : null}
             </DetailSection>

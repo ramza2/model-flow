@@ -699,7 +699,7 @@ def evaluate_quality_run(db: Session, run: ModelQualityRun) -> ModelQualityRun:
 
     run.thresholds_json = dumps(
         {
-            "mode": "advanced" if snapshot.get("effective_rules") else "legacy",
+            "mode": policy_service.snapshot_mode(snapshot),
             "rule_logic": rule_logic,
             "rules": rules,
             "primary_metric": snapshot.get("primary_metric", policy.primary_metric),

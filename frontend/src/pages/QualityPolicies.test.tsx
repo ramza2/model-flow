@@ -298,7 +298,7 @@ describe("QualityPolicies", () => {
 
     renderPage();
     await screen.findByTestId("policy-row-2");
-    fireEvent.click(screen.getByText("Advanced multi-rule"));
+    fireEvent.click(screen.getByTestId("select-policy-2"));
     expect(await screen.findByTestId("baseline-section")).toBeInTheDocument();
     expect(screen.getByTestId("set-baseline-btn")).toBeInTheDocument();
 
@@ -324,6 +324,142 @@ describe("QualityPolicies", () => {
     });
   });
 
+  it("allows cross-policy absolute OK run as baseline for baseline_delta policy", async () => {
+    const absoluteOkRun = {
+      id: 10,
+      policy_id: 1,
+      endpoint_id: 9,
+      model_version_id: 44,
+      status: "succeeded",
+      quality_status: "ok",
+      matched_ground_truth_count: 40,
+      prediction_count: 45,
+      match_rate: 40 / 45,
+      finished_at: "2026-01-02T00:00:00Z",
+      policy_revision: 1,
+    };
+    const otherEndpointRun = {
+      ...absoluteOkRun,
+      id: 20,
+      endpoint_id: 99,
+    };
+    const oldModelRun = {
+      ...absoluteOkRun,
+      id: 21,
+      model_version_id: 999,
+    };
+    const insufficientRun = {
+      ...absoluteOkRun,
+      id: 22,
+      quality_status: "insufficient_data",
+    };
+    const warningRun = {
+      ...absoluteOkRun,
+      id: 23,
+      quality_status: "warning",
+    };
+    const lowSampleRun = {
+      ...absoluteOkRun,
+      id: 24,
+      matched_ground_truth_count: 1,
+    };
+    const lowRateRun = {
+      ...absoluteOkRun,
+      id: 25,
+      match_rate: 0.1,
+    };
+    const policyB = {
+      ...advancedPolicy,
+      minimum_match_rate: 0.5,
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/model-quality/policies") && (!init || !init.method || init.method === "GET")) {
+        return [legacyPolicy, policyB];
+      }
+      if (path.endsWith("/endpoints")) return endpoints;
+      if (path.includes("/endpoints/9")) return endpoints[0];
+      if (path.includes("/model-quality/runs")) {
+        return [
+          absoluteOkRun,
+          otherEndpointRun,
+          oldModelRun,
+          insufficientRun,
+          warningRun,
+          lowSampleRun,
+          lowRateRun,
+        ];
+      }
+      if (path.includes("/baseline") && init?.method === "POST") {
+        expect(JSON.parse(String(init.body))).toEqual({ quality_run_id: 10 });
+        return {
+          policy: { ...policyB, revision: 4, baseline: { quality_run_id: 10 } },
+          baseline: { quality_run_id: 10 },
+        };
+      }
+      throw new Error(`unexpected ${path} ${init?.method || "GET"}`);
+    });
+
+    renderPage();
+    await screen.findByTestId("policy-row-2");
+    fireEvent.click(screen.getByTestId("select-policy-2"));
+    expect(await screen.findByTestId("baseline-section")).toBeInTheDocument();
+    expect(screen.getByTestId("baseline-run-10")).toBeInTheDocument();
+    expect(screen.getByTestId("baseline-run-source-10")).toHaveTextContent("Legacy F1");
+    expect(screen.getByTestId("baseline-run-source-10")).toHaveTextContent("#1");
+    expect(screen.queryByTestId("baseline-run-20")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("baseline-run-21")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("baseline-run-22")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("baseline-run-23")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("baseline-run-24")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("baseline-run-25")).not.toBeInTheDocument();
+    expect(screen.getByTestId("set-baseline-btn")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("set-baseline-btn"));
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/model-quality/policies/2/baseline",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ quality_run_id: 10 }),
+        }),
+      );
+    });
+  });
+
+  it("preserves legacy mode payload when editing a single absolute rule", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.endsWith("/model-quality/policies") && (!init || !init.method || init.method === "GET")) {
+        return [legacyPolicy];
+      }
+      if (path.endsWith("/endpoints")) return endpoints;
+      if (path.includes("/endpoints/9")) return endpoints[0];
+      if (path.includes("/model-quality/runs")) return [];
+      if (path.includes("/policies/1") && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        expect(body.rules).toEqual([]);
+        expect(body.primary_metric).toBe("f1_macro");
+        expect(body.warning_threshold).toBe(0.7);
+        expect(body.critical_threshold).toBe(0.5);
+        expect(body).not.toHaveProperty("endpoint_id");
+        return { ...legacyPolicy, name: "Legacy F1 renamed", revision: 1 };
+      }
+      throw new Error(`unexpected ${path} ${init?.method || "GET"}`);
+    });
+
+    renderPage();
+    await screen.findByTestId("policy-row-1");
+    fireEvent.click(screen.getByTestId("edit-policy-1"));
+    await screen.findByTestId("quality-policy-form");
+    fireEvent.change(screen.getByTestId("policy-name"), { target: { value: "Legacy F1 renamed" } });
+    fireEvent.click(screen.getByTestId("save-policy"));
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/model-quality/policies/1",
+        expect.objectContaining({ method: "PATCH" }),
+      );
+    });
+  });
+
   it("hides mutations for read-only users", async () => {
     canWriteRef.value = false;
     mockDefaultApis();
@@ -335,7 +471,7 @@ describe("QualityPolicies", () => {
     await screen.findByTestId("quality-policy-form");
     expect(screen.queryByTestId("add-rule")).not.toBeInTheDocument();
     expect(screen.queryByTestId("save-policy")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText("Advanced multi-rule"));
+    fireEvent.click(screen.getByTestId("select-policy-2"));
     await screen.findByTestId("baseline-section");
     expect(screen.queryByTestId("set-baseline-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("clear-baseline-btn")).not.toBeInTheDocument();

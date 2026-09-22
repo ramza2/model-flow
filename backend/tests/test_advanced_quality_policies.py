@@ -925,6 +925,134 @@ def test_baseline_set_clear_audit_and_revision(client, auth_headers, project_id,
     assert clear.json()["baseline"] is None
 
 
+def test_cross_policy_ok_run_can_bootstrap_baseline(client, auth_headers, project_id):
+    """Policy B (baseline_delta) may pin Policy A's OK run on the same endpoint/model."""
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        model_id = seeded["model"].id
+        db.commit()
+
+    policy_a = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "absolute-a",
+            "primary_metric": "accuracy",
+            "warning_threshold": 0.9,
+            "critical_threshold": 0.8,
+            "minimum_matched_samples": 2,
+            "auto_retrain": False,
+        },
+    )
+    assert policy_a.status_code == 201, policy_a.text
+    policy_a_id = policy_a.json()["id"]
+
+    policy_b = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "baseline-b",
+            "minimum_matched_samples": 2,
+            "minimum_match_rate": 0.5,
+            "auto_retrain": False,
+            "rules": [
+                {
+                    "metric": "accuracy",
+                    "comparison": "baseline_delta",
+                    "warning_threshold": 0.05,
+                    "critical_threshold": 0.1,
+                }
+            ],
+        },
+    )
+    assert policy_b.status_code == 201, policy_b.text
+    policy_b_id = policy_b.json()["id"]
+    assert policy_b.json()["revision"] == 1
+    assert policy_b.json()["baseline"] is None
+
+    with TestingSessionLocal() as db:
+        run = ModelQualityRun(
+            project_id=project_id,
+            policy_id=policy_a_id,
+            endpoint_id=endpoint_id,
+            model_version_id=model_id,
+            status=JobStatus.succeeded,
+            quality_status="ok",
+            prediction_count=10,
+            matched_ground_truth_count=8,
+            match_rate=0.8,
+            metrics_json=json.dumps({"accuracy": 0.95, "f1_macro": 0.9}),
+            thresholds_json=json.dumps({"mode": "legacy"}),
+            policy_revision=1,
+            policy_snapshot_json=json.dumps({"mode": "legacy", "revision": 1}),
+            evaluation_json="{}",
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+
+    set_resp = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies/{policy_b_id}/baseline",
+        headers=auth_headers,
+        json={"quality_run_id": run_id},
+    )
+    assert set_resp.status_code == 201, set_resp.text
+    body = set_resp.json()
+    assert body["baseline"]["quality_run_id"] == run_id
+    assert body["policy"]["revision"] == 2
+    assert body["policy"]["baseline"]["quality_run_id"] == run_id
+
+
+def test_snapshot_mode_and_thresholds_json_legacy(client, auth_headers, project_id, monkeypatch):
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        db.commit()
+
+    created = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "name": "legacy-mode",
+            "primary_metric": "accuracy",
+            "warning_threshold": 0.5,
+            "critical_threshold": 0.4,
+            "minimum_matched_samples": 1,
+            "auto_retrain": False,
+        },
+    ).json()
+    assert created["mode"] == "legacy"
+
+    monkeypatch.setattr(
+        "app.services.inference.predict",
+        lambda *args, **kwargs: [1],
+    )
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *args, **kwargs: None)
+    predicted = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": predicted["prediction_ids"][0], "actual": 1}]},
+    )
+    run = _enqueue_and_process(client, auth_headers, project_id, created["id"])
+    snap = json.loads(run.policy_snapshot_json)
+    thresholds = json.loads(run.thresholds_json)
+    assert snap["mode"] == "legacy"
+    assert thresholds["mode"] == "legacy"
+    assert qp.snapshot_mode({"effective_rules": snap["effective_rules"], "primary_metric": "accuracy"}) == "legacy"
+    assert qp.snapshot_mode({"mode": "advanced", "effective_rules": []}) == "advanced"
+
+
 def test_baseline_missing_and_model_mismatch(client, auth_headers, project_id, monkeypatch):
     with TestingSessionLocal() as db:
         seeded = _seed_endpoint(db, project_id)

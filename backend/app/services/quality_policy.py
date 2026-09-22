@@ -208,6 +208,32 @@ def policy_mode(policy: ModelQualityPolicy) -> str:
     return "advanced" if isinstance(stored, list) and stored else "legacy"
 
 
+def snapshot_mode(snapshot: dict[str, Any]) -> str:
+    """Resolve legacy|advanced from an immutable run snapshot."""
+
+    mode = snapshot.get("mode")
+    if mode in {"legacy", "advanced"}:
+        return str(mode)
+    # Older Phase 5-C snapshots always populated effective_rules without mode.
+    # Prefer explicit stored rules list when present; otherwise treat a single
+    # absolute primary-aligned rule as legacy.
+    stored_rules = snapshot.get("rules")
+    if isinstance(stored_rules, list):
+        return "advanced" if stored_rules else "legacy"
+    rules = snapshot.get("effective_rules")
+    if not isinstance(rules, list) or not rules:
+        return "legacy"
+    if (
+        len(rules) == 1
+        and str(rules[0].get("comparison") or "absolute").lower() == "absolute"
+        and rules[0].get("target") in (None, "")
+        and str(rules[0].get("metric") or "").lower()
+        == str(snapshot.get("primary_metric") or "").lower()
+    ):
+        return "legacy"
+    return "advanced"
+
+
 def semantic_config_from_policy(policy: ModelQualityPolicy) -> dict[str, Any]:
     return {
         "window_hours": int(policy.window_hours),
@@ -289,8 +315,10 @@ def build_policy_snapshot(
 ) -> dict[str, Any]:
     baseline = baseline if baseline is not None else get_baseline_for_policy(db, policy.id)
     rules = effective_quality_rules(policy)
+    mode = policy_mode(policy)
     snapshot = {
         "revision": int(getattr(policy, "revision", 1) or 1),
+        "mode": mode,
         "window_hours": int(policy.window_hours),
         "evaluation_delay_hours": int(getattr(policy, "evaluation_delay_hours", 0) or 0),
         "minimum_matched_samples": int(policy.minimum_matched_samples),
@@ -326,6 +354,7 @@ def legacy_compatible_snapshot(policy: ModelQualityPolicy) -> dict[str, Any]:
     """Build a snapshot from live policy for legacy pending runs without one."""
     return {
         "revision": int(getattr(policy, "revision", 1) or 1),
+        "mode": policy_mode(policy),
         "window_hours": int(policy.window_hours),
         "evaluation_delay_hours": int(getattr(policy, "evaluation_delay_hours", 0) or 0),
         "minimum_matched_samples": int(policy.minimum_matched_samples),
