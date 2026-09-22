@@ -1,6 +1,6 @@
 """Phase 5-B feedback dataset materialization.
 
-Revision ID: 019_feedback_dataset_materialization
+Revision ID: 019_feedback_materialization
 Revises: 018_closed_loop_mlops
 Create Date: 2026-09-22
 """
@@ -12,7 +12,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "019_feedback_dataset_materialization"
+revision: str = "019_feedback_materialization"
 down_revision: Union[str, None] = "018_closed_loop_mlops"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

@@ -9,7 +9,7 @@ Baseline: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`
 
 ## Delivered
 
-- Alembic head `019_feedback_dataset_materialization`
+- Alembic head `019_feedback_materialization`
 - `PredictionObservation.input_json` (nullable; new predictions only)
 - `GroundTruthFeedback` review lifecycle (`PENDING` / `APPROVED` / `REJECTED`)
 - Feedback review APIs (`DATA_READ` / `DATA_WRITE`)
