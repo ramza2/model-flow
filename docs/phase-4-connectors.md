@@ -1,7 +1,7 @@
 # Phase 4 — Connectors
 
-Status: **Implementation plan — Phase 4-E current / Phase 4 completion pending merge**  
-Baseline: `main@18576e6e54b751f416b87e110c39918fe7dc2045` (Phase 4-D complete)
+Status: **Implementation plan — Phase 4 complete on `main`**  
+Baseline: `main@c9483de0ef6d557097abb9340aeee499d68d41bc` (Phase 4-E merge / PR #57; post-merge CI #278 PASS)
 
 ## Purpose
 
@@ -186,7 +186,7 @@ Compose profile `source` adds:
 2. **4-B — MySQL / MariaDB** — complete
 3. **4-C — Microsoft SQL Server** — complete
 4. **4-D — Oracle** — complete on `main` (PR #56 / `18576e6e54b751f416b87e110c39918fe7dc2045`, CI #273 PASS)
-5. **4-E — Final Hardening / Connector Regression** — current
+5. **4-E — Final Hardening / Connector Regression** — complete on `main` (PR #57 / `c9483de0ef6d557097abb9340aeee499d68d41bc`, CI #278 PASS)
 
 ## Phase 4-D (complete)
 
@@ -220,4 +220,4 @@ See [`phase-4e-verification.md`](./phase-4e-verification.md) for the PG / MySQL 
 - Playwright connector flows remain green (Oracle default schema without manual APP workaround when APP credentials are used)
 - `./scripts/verify.sh` and exact PR HEAD CI pass
 
-Phase 4 is not marked complete until this Draft PR merges and `main` CI passes.
+Phase 4-E is complete on `main` (PR #57 squash `c9483de0ef6d557097abb9340aeee499d68d41bc`; post-merge CI #278 PASS). See [`phase-4e-verification.md`](./phase-4e-verification.md).

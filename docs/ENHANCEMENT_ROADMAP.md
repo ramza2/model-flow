@@ -181,7 +181,7 @@ See [`phase-3-pipeline-ux.md`](./phase-3-pipeline-ux.md) for the implementation 
 
 ## Phase 4 — Connectors
 
-**Status:** current — Phase 4-E
+**Status:** complete (Phase 4-E merged via PR #57; `main@c9483de0ef6d557097abb9340aeee499d68d41bc`; post-merge CI #278 PASS)
 
 Expand the existing Data Source lifecycle behind reusable connector contracts while preserving encrypted credentials, project scoping, import jobs, immutable DatasetVersions, and lineage.
 
@@ -210,12 +210,12 @@ Implementation slices:
    - Host/Port (default 1521) with `service_name` (no SID UI) and encrypted Connection URL modes
    - `SET TRANSACTION READ ONLY` on import/preview transactions
    - disposable `oracle-source` Compose fixture (`gvenzl/oracle-free` exact tag)
-5. **Phase 4-E — Final Hardening / Connector Regression** — current
-   - Oracle autonomous SELECT / UDF boundary hardening
+5. **Phase 4-E — Final Hardening / Connector Regression** — complete on `main` (PR #57 / `c9483de0ef6d557097abb9340aeee499d68d41bc`, CI #278 PASS)
+   - Oracle final hardening (autonomous SELECT / UDF boundary, quoted identifiers, comment-glue fail-closed)
    - duplicate allowlisted query parameter fail-closed (Oracle + MSSQL)
    - Oracle URL-mode stale Host/Port config cleanup + import schema default UX
    - PostgreSQL Connection URL scheme allowlist (cross-dialect reject)
-   - cross-connector read-only / lifecycle / lineage / E2E regression
+   - cross-connector security / read-only / lifecycle / lineage regression; full verification PASS
 
 Phase 4-E intentionally excludes new connector types, CDC, incremental sync, SSH tunnels, write-back, Instant Client / Thick mode, wallets, and architecture rewrites.
 
