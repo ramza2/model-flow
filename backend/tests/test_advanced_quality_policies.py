@@ -22,7 +22,6 @@ from app.db.models import (
     Endpoint,
     JobStatus,
     ModelLifecycle,
-    ModelQualityBaseline,
     ModelQualityPolicy,
     ModelQualityRun,
     ModelVersion,
@@ -750,7 +749,6 @@ def test_run_policy_snapshot_immutable_to_patch(client, auth_headers, project_id
     with TestingSessionLocal() as db:
         seeded = _seed_endpoint(db, project_id)
         endpoint_id = seeded["endpoint"].id
-        model_id = seeded["model"].id
         db.commit()
 
     created = client.post(
@@ -1355,7 +1353,6 @@ def test_critical_advanced_retrain_candidate_only(client, auth_headers, project_
         seeded = _seed_endpoint(db, project_id)
         endpoint_id = seeded["endpoint"].id
         model_id = seeded["model"].id
-        job_id = seeded["job"].id
         v2_id = seeded["v2"].id
         db.commit()
 
