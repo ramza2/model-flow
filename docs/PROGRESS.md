@@ -2,7 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 4-E — Final Hardening / Connector Regression** is the current implementation phase.
+**Enhancement Phase 5 — Closed-loop MLOps** is the next implementation phase (not started on `main`).
+
+**Enhancement Phase 4 — Connectors is complete on `main`.**
 
 Phase **4-A — Connector Foundation + REST API Source** is complete on `main` (merged via PR #52; merge commit `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`; post-merge CI #254 PASS).
 
@@ -14,7 +16,17 @@ Phase **4-C — Microsoft SQL Server Connector** is complete on `main` (merged v
 
 Phase **4-D — Oracle Connector** is complete on `main` (merged via PR #56; merge commit `18576e6e54b751f416b87e110c39918fe7dc2045`; post-merge CI #273 PASS).
 
-Phase 4-E starts from `main@18576e6e54b751f416b87e110c39918fe7dc2045`. Phase 4 completion is pending Phase 4-E merge.
+Phase **4-E — Final Hardening / Connector Regression** is complete on `main` (merged via PR #57; squash commit `c9483de0ef6d557097abb9340aeee499d68d41bc`; post-merge CI #278 PASS).
+
+Phase 4-E delivered:
+
+- Oracle final hardening (autonomous SELECT / UDF boundary, including quoted identifiers and comment-glue fail-closed)
+- duplicate query parameter handling (Oracle + MSSQL)
+- Oracle stale URL-mode config cleanup
+- Oracle schema default UX
+- PostgreSQL Connection URL scheme allowlist
+- cross-connector security / read-only / lifecycle / lineage regression
+- full verification PASS (see [`phase-4e-verification.md`](./phase-4e-verification.md))
 
 Phase 3 remains complete on `main`.
 
@@ -154,7 +166,12 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620`
+- Branch baseline: `main@c9483de0ef6d557097abb9340aeee499d68d41bc`
+- Phase 4-E merge (PR #57): `c9483de0ef6d557097abb9340aeee499d68d41bc` (post-merge CI #278 PASS)
+- Phase 4-D merge (PR #56): `18576e6e54b751f416b87e110c39918fe7dc2045` (post-merge CI #273 PASS)
+- Phase 4-C merge (PR #55): `e8c5af7db26affd29c312f3739fb4b76db366ad6` (post-merge CI #268 PASS)
+- Phase 4-B merge (PR #54): `aa6bae2428390f3c49ff39693abeb3bf169faab4` (post-merge CI #259 PASS)
+- Phase 4-A merge (PR #52): `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1` (post-merge CI #254 PASS)
 - Phase 3 closeout merge (PR #51): `b0c8d517b8e83c57e1b1bcaedb8a4120bc99e620` (post-merge CI #247 / run `35292163693` PASS)
 - Phase 3-D merge (PR #50): `ff6c1f92752263c5684f4d3311d377d05b27f4e4` (post-merge CI #245 / run `35289545125` PASS)
 - Phase 3-C merge (PR #49): `33fdab3955f3a199b25ce0fb37e35c0cb3d0b26a`
@@ -328,7 +345,14 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 4-E — Final Hardening / Connector Regression** from `main@18576e6e54b751f416b87e110c39918fe7dc2045`. Acceptance requires Oracle Phase 4-D debt closure (autonomous SELECT function boundary, duplicate `service_name` fail-closed, URL-mode stale `service_name` cleanup, import schema default UX), cross-connector URL/read-only/lifecycle regression, and the full verification gate to pass. Phase 4 is not complete until this Draft PR merges and `main` CI passes.
+Start **Phase 5 — Closed-loop MLOps** from `main@c9483de0ef6d557097abb9340aeee499d68d41bc`. Planned scope (see [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)):
+
+- prediction vs ground-truth comparison
+- model quality monitoring over time
+- performance degradation alerts
+- automatic full retraining pipeline trigger
+- new model version lands as **CANDIDATE**
+- **no automatic PRODUCTION promotion** — user approval required
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

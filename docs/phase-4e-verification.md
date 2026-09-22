@@ -1,11 +1,12 @@
 # Phase 4-E Verification — Final Hardening / Connector Regression
 
-Baseline: `main@18576e6e54b751f416b87e110c39918fe7dc2045`
+Baseline: `main@c9483de0ef6d557097abb9340aeee499d68d41bc`
 
 ## Provenance
 
 - Phase 4-D PR #56 squash-merged at `18576e6e54b751f416b87e110c39918fe7dc2045` (CI #273 PASS)
-- Phase 4-E current / Phase 4 completion pending merge
+- Phase 4-E PR #57 squash-merged at `c9483de0ef6d557097abb9340aeee499d68d41bc` (post-merge CI #278 PASS)
+- **Enhancement Phase 4 — Connectors is complete on `main`.**
 
 ## Scope
 
@@ -80,4 +81,4 @@ Out of scope: new connectors, CDC / incremental sync, SSH tunnels, write-back, I
 - Cross-connector regression module `test_phase4e_connector_regression.py`
 - `./scripts/verify.sh` full gate
 
-Phase 4 is complete only after this Draft PR merges and the resulting `main` CI passes.
+Phase 4-E verification evidence applies to the merged `main` baseline above; Phase 4 connector enhancement is closed on `main`.
