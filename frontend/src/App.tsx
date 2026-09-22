@@ -32,6 +32,7 @@ import {
   PipelineRunLifecyclePage,
 } from "./pages/PipelineLifecycleUx";
 import Monitoring from "./pages/Monitoring";
+import QualityPolicies from "./pages/QualityPolicies";
 import FeedbackReview from "./pages/FeedbackReview";
 import Alerts from "./pages/Alerts";
 import AuditLogs from "./pages/AuditLogs";
@@ -72,6 +73,7 @@ function ProductRoutes() {
     <Route path="/projects/:projectId/deployments/:endpointId/predict" element={<Predict />} />
     <Route path="/projects/:projectId/deployments/:endpointId/api" element={<DeploymentApiUsage />} />
     <Route path="/projects/:projectId/monitoring" element={<Monitoring />} />
+    <Route path="/projects/:projectId/model-quality/policies" element={<QualityPolicies />} />
     <Route path="/projects/:projectId/feedback" element={<FeedbackReview />} />
     <Route path="/projects/:projectId/alerts" element={<Alerts />} />
     <Route path="/projects/:projectId/audit" element={<AuditLogs />} />

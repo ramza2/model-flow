@@ -43,6 +43,7 @@ const projectGroups: { label: string; items: ProjectNavItem[] }[] = [
     items: [
       { label: "Schedules", path: "schedules", icon: "⏱" },
       { label: "Monitoring", path: "monitoring", icon: "◉" },
+      { label: "Quality Policies", path: "model-quality/policies", icon: "▤" },
       { label: "Alerts", path: "alerts", icon: "⚑" },
     ],
   },
@@ -64,6 +65,8 @@ const crumbLabels: Record<string, string> = {
   predict: "Prediction Test",
   batch: "Batch Inference",
   monitoring: "Monitoring",
+  "model-quality": "Model Quality",
+  policies: "Quality Policies",
   alerts: "Alerts",
   audit: "Audit Logs",
   admin: "Administration",
