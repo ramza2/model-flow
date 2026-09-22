@@ -363,7 +363,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 5-B — Feedback Dataset Materialization** on a feature branch from `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-B must not be marked complete until that merge evidence exists.
+Complete **Phase 5-C — Advanced Quality Policies** on a feature branch from `main@4549b04030a9443266592a5cbbe8e06a2a3600a2`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-C must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 
