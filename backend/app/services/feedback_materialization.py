@@ -499,7 +499,10 @@ def execute_materialization_run(
         f"project-{locked.project_id}/dataset-{locked.id}/"
         f"v{version_number}-{uuid.uuid4().hex}/{filename}"
     )
-    created_object_key: str | None = None
+    # Register cleanup target before helper runs so orphan objects are deleted
+    # even when create_dataset_version_from_bytes fails after MinIO upload
+    # (upload → flush) and never returns.
+    created_object_key: str | None = object_key
     try:
         output = datasets.create_dataset_version_from_bytes(
             db,
@@ -511,7 +514,6 @@ def execute_materialization_run(
             source_type="feedback_materialization",
             object_key=object_key,
         )
-        created_object_key = object_key
         # Verify retrain compatibility with the new version before success.
         try:
             prepare_retrain_job(

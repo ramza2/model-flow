@@ -859,6 +859,107 @@ def test_post_upload_alert_failure_cleans_artifact(
         assert set(OBJECT_STORE.keys()) == keys_before
 
 
+def test_helper_internal_flush_failure_after_upload_cleans_orphan(
+    client, auth_headers, project_id, monkeypatch
+):
+    """Upload succeeds inside create_dataset_version_from_bytes, then flush fails.
+
+    created_object_key must already be registered so outer cleanup deletes the
+    orphan even though the helper never returns.
+    """
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        dataset_id = seeded["dataset"].id
+        v1_id = seeded["version"].id
+        v1_key = seeded["version"].object_key
+        mirror_before = seeded["dataset"].latest_version
+
+    monkeypatch.setattr("app.services.inference.predict", lambda *a, **k: [0])
+    monkeypatch.setattr("app.services.inference.validate_instances", lambda *a, **k: None)
+    prediction_id = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"a": 1, "b": 2}]},
+    ).json()["prediction_ids"][0]
+    client.post(
+        f"/api/v1/projects/{project_id}/ground-truth",
+        headers=auth_headers,
+        json={"items": [{"prediction_id": prediction_id, "actual": 0}]},
+    )
+    feedback_id = client.get(
+        f"/api/v1/projects/{project_id}/feedback", headers=auth_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/api/v1/projects/{project_id}/feedback/review",
+        headers=auth_headers,
+        json={"items": [{"feedback_id": feedback_id, "decision": "approved"}]},
+    )
+    run_id = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [feedback_id]},
+    ).json()["id"]
+
+    keys_before = set(OBJECT_STORE.keys())
+    uploaded_materialization_keys: list[str] = []
+    fail_next_flush = {"armed": False}
+
+    def upload_bytes(bucket, key, data, content_type="application/octet-stream"):
+        OBJECT_STORE[(bucket, key)] = data
+        if "feedback-materialization-run-" in key:
+            uploaded_materialization_keys.append(key)
+            # Arm flush failure only after the real helper upload succeeds.
+            fail_next_flush["armed"] = True
+
+    monkeypatch.setattr(storage, "upload_bytes", upload_bytes)
+
+    def session_factory():
+        db = TestingSessionLocal()
+        real_flush = db.flush
+
+        def flush(*args, **kwargs):
+            if fail_next_flush["armed"]:
+                fail_next_flush["armed"] = False
+                raise RuntimeError("forced flush failure after upload")
+            return real_flush(*args, **kwargs)
+
+        db.flush = flush  # type: ignore[method-assign]
+        return db
+
+    monkeypatch.setattr(runner, "SessionLocal", session_factory)
+
+    with TestingSessionLocal() as db:
+        runner.process_feedback_materialization_run(
+            db.get(FeedbackMaterializationRun, run_id)
+        )
+
+    assert uploaded_materialization_keys, "expected materialization object to be uploaded once"
+
+    with TestingSessionLocal() as db:
+        run = db.get(FeedbackMaterializationRun, run_id)
+        assert run.status == JobStatus.failed
+        assert run.output_dataset_version_id is None
+        fb = db.get(GroundTruthFeedback, feedback_id)
+        assert fb.materialization_run_id is None
+        assert fb.materialized_dataset_version_id is None
+        assert db.get(DatasetVersion, v1_id).object_key == v1_key
+        assert db.get(Dataset, dataset_id).latest_version == mirror_before
+        assert (
+            len(
+                db.scalars(
+                    select(DatasetVersion).where(DatasetVersion.dataset_id == dataset_id)
+                ).all()
+            )
+            == 1
+        )
+        # Orphan upload removed; base seed objects remain.
+        assert set(OBJECT_STORE.keys()) == keys_before
+        store_keys = {key for (_bucket, key) in OBJECT_STORE.keys()}
+        for key in uploaded_materialization_keys:
+            assert key not in store_keys
+
+
 def test_worker_commit_failure_cleans_new_artifact(
     client, auth_headers, project_id, monkeypatch
 ):
