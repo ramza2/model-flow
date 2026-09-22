@@ -19,9 +19,19 @@ Baseline: `main@1bb13bc2e527951e1a580787c35cd530fed45e7a`
 - Feedback Review UI + Monitoring “Review feedback” link
 - Phase 5-A closed-loop CANDIDATE boundary preserved
 
-## Full gate
+## Full gate (local)
 
-`./scripts/verify.sh` on verified PR HEAD — see PR verification evidence.
+| Item | Result |
+|------|--------|
+| HEAD | `832eee0cded84eb03a267b8ad6f631197ae2dfb3` |
+| `./scripts/verify.sh` | PASS (`artifacts/verify/RESULT.txt=OK`) |
+| Backend | 424 passed |
+| Frontend | 41 files / 317 tests |
+| Playwright | 31 passed (incl. `e2e/feedback-materialization.spec.ts`) |
+| Alembic head | `019_feedback_materialization` |
+
+GitHub Actions CI on the same HEAD is tracked separately on Draft PR #60.
+Phase 5-B remains **not complete** until merge + post-merge `main` CI PASS.
 
 ## Acceptance reminder
 
