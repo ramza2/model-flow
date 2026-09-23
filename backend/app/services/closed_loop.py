@@ -161,6 +161,17 @@ def maybe_create_degradation_alert(
 ) -> Alert | None:
     if run.quality_status not in {"warning", "critical"}:
         return None
+    # Serialize concurrent processors for the same quality run without a new
+    # Alert unique constraint / migration. RetrainTrigger still uses quality_run_id UNIQUE.
+    locked_run = db.get(
+        ModelQualityRun,
+        run.id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    if locked_run is None:
+        return None
+    run = locked_run
     resource_id = str(run.id)
     existing = _existing_alert(
         db,

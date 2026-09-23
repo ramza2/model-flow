@@ -433,12 +433,18 @@ def validate_baseline_run(
 
 
 def lock_policy_for_update(db: Session, policy_id: int) -> ModelQualityPolicy | None:
-    """Lock a policy row before revision-affecting mutations."""
+    """Lock a policy row and refresh any stale identity-map instance.
 
-    return db.scalar(
-        select(ModelQualityPolicy)
-        .where(ModelQualityPolicy.id == policy_id)
-        .with_for_update()
+    Callers that already loaded the policy via ``get``/``get_owned`` must still
+    use this helper before bumping ``revision`` so concurrent commits are visible
+    after the row lock is acquired (``populate_existing``).
+    """
+
+    return db.get(
+        ModelQualityPolicy,
+        policy_id,
+        with_for_update=True,
+        populate_existing=True,
     )
 
 
@@ -449,6 +455,8 @@ def set_baseline(
     quality_run_id: int,
     created_by: int | None,
 ) -> ModelQualityBaseline:
+    # Prefer an already-locked policy from the route; still re-lock with
+    # populate_existing so stale identity-map revisions cannot win.
     locked = lock_policy_for_update(db, policy.id)
     if locked is None:
         raise ValueError("Quality policy was not found.")

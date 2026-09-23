@@ -630,3 +630,342 @@ def test_candidate_ready_structured_state(project_id):
         assert detail["code"] == "candidate_ready"
         assert detail["candidate_model_version_id"] == candidate.id
         assert candidate.lifecycle == ModelLifecycle.CANDIDATE
+
+
+def test_multi_policy_same_endpoint_trigger_isolation(client, auth_headers, project_id):
+    """Policy B must not inherit Policy A's candidate/retrain on the same endpoint."""
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        db.commit()
+
+    policy_a = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "name": "policy-a-critical",
+            "endpoint_id": seeded["endpoint_id"],
+            "primary_metric": "f1_macro",
+            "warning_threshold": 0.7,
+            "critical_threshold": 0.5,
+            "minimum_matched_samples": 5,
+            "auto_retrain": False,
+        },
+    ).json()
+    policy_b = client.post(
+        f"/api/v1/projects/{project_id}/model-quality/policies",
+        headers=auth_headers,
+        json={
+            "name": "policy-b-needs-baseline",
+            "endpoint_id": seeded["endpoint_id"],
+            "rule_logic": "any",
+            "rules": [
+                {
+                    "metric": "f1_macro",
+                    "comparison": "baseline_delta",
+                    "warning_threshold": 0.05,
+                    "critical_threshold": 0.1,
+                }
+            ],
+            "minimum_matched_samples": 5,
+            "auto_retrain": False,
+        },
+    ).json()
+
+    with TestingSessionLocal() as db:
+        run_a = _seed_quality_run(
+            db,
+            project_id=project_id,
+            endpoint_id=seeded["endpoint_id"],
+            policy_id=policy_a["id"],
+            model_version_id=seeded["model_version_id"],
+            quality_status="critical",
+        )
+        job = db.get(TrainingJob, seeded["training_job_id"])
+        candidate = ModelVersion(
+            project_id=project_id,
+            name="candidate-from-a",
+            version="a-1",
+            lifecycle=ModelLifecycle.CANDIDATE,
+            mlflow_model_name=f"project-{project_id}-cand-a",
+            mlflow_version="9",
+            mlflow_run_id="run-a",
+            model_uri="models:/demo/a",
+            metrics_json="{}",
+            metadata_json="{}",
+            dataset_version_id=seeded["dataset_version_id"],
+            training_job_id=job.id,
+            gates_passed=True,
+        )
+        db.add(candidate)
+        db.flush()
+        db.add(
+            RetrainTrigger(
+                project_id=project_id,
+                quality_run_id=run_a.id,
+                trigger_type="quality_degradation",
+                created_training_job_id=job.id,
+                candidate_model_version_id=candidate.id,
+                target_dataset_version_id=seeded["dataset_version_id"],
+                config_json="{}",
+            )
+        )
+        db.commit()
+        candidate_id = candidate.id
+
+    summary = client.get(
+        f"/api/v1/projects/{project_id}/model-quality/summary",
+        headers=auth_headers,
+    ).json()["items"]
+    card_a = next(row for row in summary if row["policy_id"] == policy_a["id"])
+    card_b = next(row for row in summary if row["policy_id"] == policy_b["id"])
+
+    assert card_a["closed_loop"]["code"] == "candidate_ready"
+    assert card_a["closed_loop"]["candidate_model_version_id"] == candidate_id
+    assert card_b["closed_loop"]["code"] == "needs_baseline"
+    assert card_b["closed_loop"]["candidate_model_version_id"] is None
+    assert card_b["closed_loop"]["retrain_trigger_id"] is None
+
+
+def test_materializable_sql_filter_before_pagination(client, auth_headers, project_id):
+    from datetime import datetime, timezone
+
+    from app.db.models import (
+        FeedbackReviewStatus,
+        GroundTruthFeedback,
+        PredictionObservation,
+    )
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        now = datetime.now(timezone.utc)
+        # Older non-materializable rows (no input snapshot) come first by id.
+        for i in range(30):
+            obs = PredictionObservation(
+                id=f"non-mat-{i}",
+                project_id=project_id,
+                endpoint_id=seeded["endpoint_id"],
+                model_version_id=seeded["model_version_id"],
+                request_id=f"req-non-{i}",
+                instance_index=0,
+                prediction_json="0",
+                input_json=None,
+                predicted_at=now,
+            )
+            db.add(obs)
+            db.flush()
+            db.add(
+                GroundTruthFeedback(
+                    project_id=project_id,
+                    prediction_observation_id=obs.id,
+                    actual_json="1",
+                    review_status=FeedbackReviewStatus.APPROVED.value,
+                )
+            )
+        mat_ids: list[int] = []
+        for i in range(10):
+            obs = PredictionObservation(
+                id=f"mat-{i}",
+                project_id=project_id,
+                endpoint_id=seeded["endpoint_id"],
+                model_version_id=seeded["model_version_id"],
+                request_id=f"req-mat-{i}",
+                instance_index=0,
+                prediction_json="0",
+                input_json='{"a":1,"b":2}',
+                predicted_at=now,
+            )
+            db.add(obs)
+            db.flush()
+            fb = GroundTruthFeedback(
+                project_id=project_id,
+                prediction_observation_id=obs.id,
+                actual_json="1",
+                review_status=FeedbackReviewStatus.APPROVED.value,
+            )
+            db.add(fb)
+            db.flush()
+            mat_ids.append(fb.id)
+        # Extra materializable rows for multi-page continuity (30 total mat).
+        for i in range(10, 30):
+            obs = PredictionObservation(
+                id=f"mat-extra-{i}",
+                project_id=project_id,
+                endpoint_id=seeded["endpoint_id"],
+                model_version_id=seeded["model_version_id"],
+                request_id=f"req-mat-extra-{i}",
+                instance_index=0,
+                prediction_json="0",
+                input_json='{"a":1,"b":2}',
+                predicted_at=now,
+            )
+            db.add(obs)
+            db.flush()
+            fb = GroundTruthFeedback(
+                project_id=project_id,
+                prediction_observation_id=obs.id,
+                actual_json="1",
+                review_status=FeedbackReviewStatus.APPROVED.value,
+            )
+            db.add(fb)
+            db.flush()
+            mat_ids.append(fb.id)
+        db.commit()
+
+    # First page must not be polluted by the 30 non-materializable older rows.
+    page1 = client.get(
+        f"/api/v1/projects/{project_id}/feedback",
+        headers=auth_headers,
+        params={"materializable": True, "paged": True, "skip": 0, "limit": 25},
+    )
+    assert page1.status_code == 200
+    body1 = page1.json()
+    assert body1["total"] == 30
+    assert len(body1["items"]) == 25
+    assert all(item["materializable"] is True for item in body1["items"])
+
+    page2 = client.get(
+        f"/api/v1/projects/{project_id}/feedback",
+        headers=auth_headers,
+        params={"materializable": True, "paged": True, "skip": 25, "limit": 25},
+    )
+    body2 = page2.json()
+    assert body2["total"] == 30
+    assert len(body2["items"]) == 5
+    ids1 = {item["id"] for item in body1["items"]}
+    ids2 = {item["id"] for item in body2["items"]}
+    assert ids1.isdisjoint(ids2)
+    assert ids1 | ids2 == set(mat_ids)
+
+    # When only 10 materializable exist among 40 rows, limit=25 still returns 10/10.
+    with TestingSessionLocal() as db:
+        for fb_id in mat_ids[10:]:
+            fb = db.get(GroundTruthFeedback, fb_id)
+            db.delete(fb)
+        db.commit()
+
+    only10 = client.get(
+        f"/api/v1/projects/{project_id}/feedback",
+        headers=auth_headers,
+        params={"materializable": True, "paged": True, "skip": 0, "limit": 25},
+    ).json()
+    assert only10["total"] == 10
+    assert len(only10["items"]) == 10
+
+
+def test_lock_policy_for_update_refreshes_stale_identity_map(project_id):
+    """populate_existing must reload revision after another writer commits.
+
+    SQLite cannot prove cross-transaction row-lock waits; this asserts the
+    freshness half of the lock-first contract used by baseline set/clear/PATCH.
+    """
+
+    from sqlalchemy import update
+
+    from app.services import quality_policy as policy_service
+
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=seeded["endpoint_id"],
+            name="lock-freshness",
+            primary_metric="f1_macro",
+            warning_threshold=0.7,
+            critical_threshold=0.5,
+            minimum_matched_samples=5,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=False,
+            window_hours=24,
+            is_active=True,
+            revision=3,
+            rule_logic="any",
+            rules_json="[]",
+            evaluation_delay_hours=0,
+        )
+        db.add(policy)
+        db.commit()
+        policy_id = policy.id
+
+    with TestingSessionLocal() as db:
+        stale = db.get(ModelQualityPolicy, policy_id)
+        assert stale is not None
+        assert stale.revision == 3
+
+        # Concurrent writer updates the row outside this Session's UOW so the
+        # identity-map instance stays stale until populate_existing refreshes it.
+        with engine.connect() as conn:
+            conn.execute(
+                update(ModelQualityPolicy)
+                .where(ModelQualityPolicy.id == policy_id)
+                .values(revision=4)
+            )
+            conn.commit()
+
+        assert stale.revision == 3
+
+        locked = policy_service.lock_policy_for_update(db, policy_id)
+        assert locked is not None
+        assert locked.revision == 4
+        locked.revision = int(locked.revision) + 1
+        db.commit()
+
+    with TestingSessionLocal() as db:
+        assert db.get(ModelQualityPolicy, policy_id).revision == 5
+
+
+def test_degradation_alert_locks_quality_run_row(project_id):
+    with TestingSessionLocal() as db:
+        seeded = _seed_endpoint(db, project_id)
+        policy = ModelQualityPolicy(
+            project_id=project_id,
+            endpoint_id=seeded["endpoint_id"],
+            name="alert-lock",
+            primary_metric="f1_macro",
+            warning_threshold=0.7,
+            critical_threshold=0.5,
+            minimum_matched_samples=5,
+            consecutive_breaches=1,
+            cooldown_hours=0,
+            auto_retrain=False,
+            window_hours=24,
+            is_active=True,
+            revision=1,
+            rule_logic="any",
+            rules_json="[]",
+            evaluation_delay_hours=0,
+        )
+        db.add(policy)
+        db.flush()
+        run = _seed_quality_run(
+            db,
+            project_id=project_id,
+            endpoint_id=seeded["endpoint_id"],
+            policy_id=policy.id,
+            model_version_id=seeded["model_version_id"],
+            quality_status="critical",
+            evaluation=(
+                '{"rules":[{"metric":"f1_macro","status":"critical",'
+                '"comparison":"absolute","current_value":0.2}]}'
+            ),
+        )
+        endpoint = db.get(Endpoint, seeded["endpoint_id"])
+        first = closed_loop.maybe_create_degradation_alert(
+            db, run=run, policy=policy, endpoint=endpoint
+        )
+        second = closed_loop.maybe_create_degradation_alert(
+            db, run=run, policy=policy, endpoint=endpoint
+        )
+        db.commit()
+        assert first is not None and second is not None
+        assert first.id == second.id
+        assert (
+            db.scalar(
+                select(Alert).where(
+                    Alert.resource_type == "model_quality_run",
+                    Alert.resource_id == str(run.id),
+                )
+            )
+            is not None
+        )

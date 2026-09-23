@@ -105,17 +105,8 @@ def compute_closed_loop_detail(
 ) -> dict[str, Any]:
     """Derive structured closed-loop state from persisted entities only."""
 
-    latest_run = db.scalar(
-        select(ModelQualityRun)
-        .where(
-            ModelQualityRun.project_id == project_id,
-            ModelQualityRun.endpoint_id == endpoint_id,
-            ModelQualityRun.status == JobStatus.succeeded,
-        )
-        .order_by(ModelQualityRun.id.desc())
-    )
     if policy is not None:
-        policy_run = db.scalar(
+        latest_run = db.scalar(
             select(ModelQualityRun)
             .where(
                 ModelQualityRun.policy_id == policy.id,
@@ -123,17 +114,30 @@ def compute_closed_loop_detail(
             )
             .order_by(ModelQualityRun.id.desc())
         )
-        if policy_run is not None:
-            latest_run = policy_run
+    else:
+        latest_run = db.scalar(
+            select(ModelQualityRun)
+            .where(
+                ModelQualityRun.project_id == project_id,
+                ModelQualityRun.endpoint_id == endpoint_id,
+                ModelQualityRun.status == JobStatus.succeeded,
+            )
+            .order_by(ModelQualityRun.id.desc())
+        )
+
+    trigger_filters = [
+        RetrainTrigger.project_id == project_id,
+        RetrainTrigger.trigger_type == "quality_degradation",
+        ModelQualityRun.endpoint_id == endpoint_id,
+    ]
+    # Policy-scoped cards must not inherit another policy's retrain/candidate.
+    if policy is not None:
+        trigger_filters.append(ModelQualityRun.policy_id == policy.id)
 
     latest_trigger = db.scalar(
         select(RetrainTrigger)
         .join(ModelQualityRun, ModelQualityRun.id == RetrainTrigger.quality_run_id)
-        .where(
-            RetrainTrigger.project_id == project_id,
-            RetrainTrigger.trigger_type == "quality_degradation",
-            ModelQualityRun.endpoint_id == endpoint_id,
-        )
+        .where(*trigger_filters)
         .order_by(RetrainTrigger.id.desc())
     )
 

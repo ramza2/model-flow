@@ -559,7 +559,10 @@ def set_quality_baseline(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    # Lock-first so concurrent baseline/PATCH cannot operate on a stale revision.
+    policy = policy_service.lock_policy_for_update(db, policy_id)
+    if policy is None or policy.project_id != project_id:
+        raise friendly(404, "Quality policy was not found.")
     before = quality_service.policy_out(policy, db)
     try:
         baseline = policy_service.set_baseline(
@@ -595,7 +598,9 @@ def clear_quality_baseline(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    policy = policy_service.lock_policy_for_update(db, policy_id)
+    if policy is None or policy.project_id != project_id:
+        raise friendly(404, "Quality policy was not found.")
     before = quality_service.policy_out(policy, db)
     cleared = policy_service.clear_baseline(db, policy=policy)
     if not cleared:
