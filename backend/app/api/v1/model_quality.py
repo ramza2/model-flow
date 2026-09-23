@@ -33,7 +33,7 @@ from app.schemas.v1 import (
     ModelQualityPolicyCreate,
     ModelQualityPolicyUpdate,
 )
-from app.services import closed_loop, closed_loop_ux, model_quality as quality_service
+from app.services import closed_loop_ux, model_quality as quality_service
 from app.services import quality_policy as policy_service
 
 router = APIRouter(tags=["model-quality"])

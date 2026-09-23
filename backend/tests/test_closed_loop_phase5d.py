@@ -25,8 +25,6 @@ from app.db.models import (
     ModelQualityRun,
     ModelVersion,
     Project,
-    ProjectMembership,
-    ProjectRole,
     RetrainTrigger,
     TrainingJob,
     User,
