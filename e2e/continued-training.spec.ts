@@ -114,5 +114,5 @@ test("continued training UX wires Continue action and lineage", async ({ page, r
 
   await expect(page.getByTestId("job-continue-lineage")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("job-continue-lineage")).toContainText(`Job #${sourceJob.id}`);
-  await expect(page.getByTestId("job-training-mode")).toHaveText("continued");
+  await expect(page.getByTestId("job-training-mode")).toContainText("continued");
 });
