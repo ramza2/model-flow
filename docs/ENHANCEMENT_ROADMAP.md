@@ -227,7 +227,7 @@ See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contrac
 
 ## Phase 5 — Closed-loop MLOps
 
-**Status:** current — Phase 5-C
+**Status:** current — Phase 5-D
 
 Closed-loop production quality evaluation and full retraining that always terminates at **CANDIDATE**. Explicit human approval remains required for PRODUCTION.
 
@@ -245,8 +245,10 @@ Implementation slices:
 2. **Phase 5-B — Feedback Dataset Materialization** — complete
    - PR #60 merged; squash `4549b04030a9443266592a5cbbe8e06a2a3600a2`; post-merge CI #294 PASS
    - Alembic head at merge: `019_feedback_materialization`
-3. **Phase 5-C — Advanced Quality Policies** — current
-4. **Phase 5-D — Closed-loop UX / Final Hardening** — planned
+3. **Phase 5-C — Advanced Quality Policies** — complete
+   - PR #61 merged; squash `2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`; post-merge CI #300 PASS
+   - Alembic head at merge: `020_advanced_quality_policy`
+4. **Phase 5-D — Closed-loop UX / Final Hardening** — current
 
 See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 

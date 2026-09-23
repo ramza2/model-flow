@@ -1,7 +1,7 @@
 # Phase 5 — Closed-loop MLOps
 
-Status: **Phase 5-C current (advanced quality policies)**  
-Baseline: `main@4549b04030a9443266592a5cbbe8e06a2a3600a2` (Phase 5-B complete)
+Status: **Phase 5-D current (closed-loop UX / final hardening)**  
+Baseline: `main@2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c` (Phase 5-C complete)
 
 ## Non-negotiable boundary
 
@@ -54,7 +54,9 @@ Rules:
 
 See [`phase-5b-verification.md`](./phase-5b-verification.md).
 
-## Phase 5-C (current)
+## Phase 5-C (complete)
+
+PR #61 · squash `2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c` · CI #300 PASS · Alembic `020_advanced_quality_policy`
 
 Advanced Quality Policies strengthen evaluation without changing Candidate governance:
 
@@ -86,11 +88,36 @@ Key additions:
 
 See [`phase-5c-verification.md`](./phase-5c-verification.md).
 
+## Phase 5-D (current)
+
+Closed-loop UX / Final Hardening makes the existing loop operable at scale:
+
+```text
+Monitoring Production Quality card
+  → structured closed_loop detail (code / reason / next action / resource ids)
+  → recovery CTAs (Quality Policies, Feedback, Dataset, Training, Candidate, Alerts)
+  → expandable quality-run evidence
+  → filtered + paginated quality history
+Quality Policies
+  → server-filtered baseline candidates (endpoint + current model + ok)
+  → baseline candidate pagination
+Feedback Review
+  → review_status / endpoint / materializable filters + pagination
+  → materialization history pagination + failed error clarity
+Hardening
+  → policy revision row lock on baseline set/clear/semantic PATCH
+  → re-verify alert / RetrainTrigger / Candidate idempotency
+```
+
+No new quality algorithms, no auto PRODUCTION, no Phase 5.1 incremental training.
+
+Preferred Alembic head remains `020_advanced_quality_policy` (no new migration unless required).
+
 ## Slice order
 
 1. **5-A Foundation** — complete
 2. **5-B Feedback Dataset Materialization** — complete
-3. **5-C Advanced Quality Policies** — current
-4. **5-D Closed-loop UX / Final Hardening**
+3. **5-C Advanced Quality Policies** — complete
+4. **5-D Closed-loop UX / Final Hardening** — current
 
 Phase 5.1 (incremental / continued training) remains out of scope.

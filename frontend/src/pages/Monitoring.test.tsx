@@ -82,6 +82,16 @@ describe("Monitoring", () => {
               window_end: null,
               last_evaluated_at: "2026-01-01T00:00:00Z",
               closed_loop_state: "Candidate ready",
+              closed_loop: {
+                code: "candidate_ready",
+                label: "Candidate ready",
+                reason: "critical_degradation",
+                reason_label: "Critical quality degradation triggered retraining",
+                next_action: "Review the candidate ModelVersion before requesting approval.",
+                quality_run_id: 11,
+                candidate_model_version_id: 91,
+                policy_id: 1,
+              },
               latest_run_id: 11,
               revision: 4,
               mode: "advanced",
@@ -107,28 +117,36 @@ describe("Monitoring", () => {
         };
       }
       if (path.includes("/model-quality/runs")) {
-        return [
-          {
-            id: 11,
-            quality_status: "critical",
-            status: "succeeded",
-            matched_ground_truth_count: 25,
-            prediction_count: 30,
-            match_rate: 25 / 30,
-            policy_revision: 4,
-            finished_at: "2026-01-01T00:00:00Z",
-            evaluation: {
-              rules: [
-                {
-                  metric: "f1_macro",
-                  comparison: "baseline_delta",
-                  degradation_delta: 0.12,
-                  status: "critical",
-                },
-              ],
+        return {
+          items: [
+            {
+              id: 11,
+              quality_status: "critical",
+              status: "succeeded",
+              matched_ground_truth_count: 25,
+              prediction_count: 30,
+              match_rate: 25 / 30,
+              policy_revision: 4,
+              model_version_id: 3,
+              finished_at: "2026-01-01T00:00:00Z",
+              trigger_decision: { reason: "retrain_triggered" },
+              evaluation: {
+                reason: null,
+                rules: [
+                  {
+                    metric: "f1_macro",
+                    comparison: "baseline_delta",
+                    degradation_delta: 0.12,
+                    status: "critical",
+                  },
+                ],
+              },
             },
-          },
-        ];
+          ],
+          total: 1,
+          skip: 0,
+          limit: 10,
+        };
       }
       throw new Error(`unexpected ${path}`);
     });
@@ -155,6 +173,12 @@ describe("Monitoring", () => {
     );
     expect(screen.getByTestId("matched-gt-1")).toHaveTextContent("25");
     expect(screen.getByTestId("closed-loop-state-9")).toHaveTextContent("Candidate ready");
+    expect(await screen.findByTestId("closed-loop-detail-1")).toBeInTheDocument();
+    expect(screen.getByTestId("recovery-candidate-1")).toHaveAttribute(
+      "href",
+      "/projects/7/registry?modelVersionId=91",
+    );
+    expect(screen.getByTestId("view-quality-history-1")).toBeInTheDocument();
     expect(screen.getByText("No prediction traffic")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("monitoring-window"), { target: { value: "168" } });
     expect(apiMock).toHaveBeenCalledWith(expect.stringContaining("hours=168"));

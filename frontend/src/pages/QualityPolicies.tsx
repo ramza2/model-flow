@@ -249,7 +249,10 @@ export default function QualityPolicies() {
 
   const [policies, setPolicies] = useState<QualityPolicy[]>([]);
   const [endpoints, setEndpoints] = useState<Endpoint[]>([]);
-  const [runs, setRuns] = useState<QualityRun[]>([]);
+  const [baselineCandidates, setBaselineCandidates] = useState<QualityRun[]>([]);
+  const [baselineTotal, setBaselineTotal] = useState(0);
+  const [baselineSkip, setBaselineSkip] = useState(0);
+  const [baselineLoading, setBaselineLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<PolicyForm>(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -259,6 +262,8 @@ export default function QualityPolicies() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  const BASELINE_PAGE_SIZE = 10;
 
   const selectedPolicy = useMemo(
     () => policies.find((row) => row.id === selectedId) || null,
@@ -274,12 +279,10 @@ export default function QualityPolicies() {
     Promise.all([
       api<QualityPolicy[]>(`/projects/${projectId}/model-quality/policies`),
       api<Endpoint[]>(`/projects/${projectId}/endpoints`),
-      api<QualityRun[]>(`/projects/${projectId}/model-quality/runs?limit=50`).catch(() => []),
     ])
-      .then(([policyRows, endpointRows, runRows]) => {
+      .then(([policyRows, endpointRows]) => {
         setPolicies(policyRows);
         setEndpoints(endpointRows);
-        setRuns(Array.isArray(runRows) ? runRows : []);
       })
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : "Quality policies could not be loaded."),
@@ -291,6 +294,59 @@ export default function QualityPolicies() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || !selectedPolicy) {
+      setBaselineCandidates([]);
+      setBaselineTotal(0);
+      return;
+    }
+    const endpoint = endpoints.find((row) => row.id === selectedPolicy.endpoint_id);
+    const modelVersionId = endpoint?.model_version_id;
+    if (modelVersionId == null) {
+      setBaselineCandidates([]);
+      setBaselineTotal(0);
+      return;
+    }
+    let cancelled = false;
+    setBaselineLoading(true);
+    const params = new URLSearchParams({
+      paged: "true",
+      endpoint_id: String(selectedPolicy.endpoint_id),
+      model_version_id: String(modelVersionId),
+      quality_status: "ok",
+      status: "succeeded",
+      skip: String(baselineSkip),
+      limit: String(BASELINE_PAGE_SIZE),
+    });
+    api<{ items: QualityRun[]; total: number }>(
+      `/projects/${projectId}/model-quality/runs?${params.toString()}`,
+    )
+      .then((page) => {
+        if (cancelled) return;
+        const items = Array.isArray(page.items) ? page.items : [];
+        setBaselineCandidates(
+          items.filter((run) => isBaselineEligible(run, selectedPolicy, endpoints)),
+        );
+        setBaselineTotal(Number(page.total || 0));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBaselineCandidates([]);
+          setBaselineTotal(0);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBaselineLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, selectedPolicy, endpoints, baselineSkip]);
+
+  useEffect(() => {
+    setBaselineSkip(0);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!projectId || !form.endpoint_id) {
@@ -478,9 +534,7 @@ export default function QualityPolicies() {
     }
   };
 
-  const eligibleRuns = selectedPolicy
-    ? runs.filter((run) => isBaselineEligible(run, selectedPolicy, endpoints))
-    : [];
+  const eligibleRuns = baselineCandidates;
 
   const policyNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -1003,7 +1057,13 @@ export default function QualityPolicies() {
                     </tr>
                   </thead>
                   <tbody>
-                    {eligibleRuns.map((run) => (
+                    {baselineLoading ? (
+                      <tr>
+                        <td colSpan={6}><Loading label="Loading baseline candidates" /></td>
+                      </tr>
+                    ) : null}
+                    {!baselineLoading
+                      ? eligibleRuns.map((run) => (
                       <tr key={run.id} data-testid={`baseline-run-${run.id}`}>
                         <td>#{run.id}</td>
                         <td data-testid={`baseline-run-source-${run.id}`}>
@@ -1029,11 +1089,37 @@ export default function QualityPolicies() {
                           ) : null}
                         </td>
                       </tr>
-                    ))}
+                    ))
+                      : null}
                   </tbody>
                 </table>
               </div>
-              {eligibleRuns.length === 0 ? (
+              <div className="row-actions" data-testid="baseline-candidate-pagination">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={baselineSkip <= 0 || baselineLoading}
+                  onClick={() => setBaselineSkip((prev) => Math.max(0, prev - BASELINE_PAGE_SIZE))}
+                  data-testid="baseline-candidates-prev"
+                >
+                  Previous
+                </button>
+                <span className="muted">
+                  {baselineTotal === 0
+                    ? "0 candidates"
+                    : `${baselineSkip + 1}–${Math.min(baselineSkip + BASELINE_PAGE_SIZE, baselineTotal)} of ${baselineTotal}`}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={baselineSkip + BASELINE_PAGE_SIZE >= baselineTotal || baselineLoading}
+                  onClick={() => setBaselineSkip((prev) => prev + BASELINE_PAGE_SIZE)}
+                  data-testid="baseline-candidates-next"
+                >
+                  Next
+                </button>
+              </div>
+              {!baselineLoading && eligibleRuns.length === 0 ? (
                 <p className="muted">
                   Eligible baseline runs must share this policy&apos;s endpoint and current model,
                   be succeeded with quality_status=ok, and meet sample / match-rate minimums.

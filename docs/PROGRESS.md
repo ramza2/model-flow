@@ -2,7 +2,16 @@
 
 ## Current phase
 
-**Enhancement Phase 5-C — Advanced Quality Policies** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+**Enhancement Phase 5-D — Closed-loop UX / Final Hardening** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+
+**Enhancement Phase 5-C — Advanced Quality Policies is complete on `main`.**
+
+Phase 5-C complete evidence:
+
+- PR #61 squash merge commit `2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`
+- post-merge `main` CI #300 PASS
+- Alembic head at merge: `020_advanced_quality_policy`
+- Current baseline for Phase 5-D: `main@2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`
 
 **Enhancement Phase 5-B — Feedback Dataset Materialization is complete on `main`.**
 
@@ -11,7 +20,6 @@ Phase 5-B complete evidence:
 - PR #60 squash merge commit `4549b04030a9443266592a5cbbe8e06a2a3600a2`
 - post-merge `main` CI #294 PASS
 - Alembic head at merge: `019_feedback_materialization`
-- Current baseline for Phase 5-C: `main@4549b04030a9443266592a5cbbe8e06a2a3600a2`
 
 **Enhancement Phase 5-A — Closed-loop MLOps Foundation is complete on `main`.**
 
@@ -363,7 +371,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 5-C — Advanced Quality Policies** on a feature branch from `main@4549b04030a9443266592a5cbbe8e06a2a3600a2`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-C must not be marked complete until that merge evidence exists.
+Complete **Phase 5-D — Closed-loop UX / Final Hardening** on a feature branch from `main@2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-D must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 

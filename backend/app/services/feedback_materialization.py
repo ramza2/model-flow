@@ -624,3 +624,14 @@ def list_runs(
         .limit(limit)
     ).all()
     return [run_out(row, db) for row in rows]
+
+
+def count_runs(db: Session, *, project_id: int) -> int:
+    from sqlalchemy import func
+
+    return int(
+        db.scalar(
+            select(func.count()).where(FeedbackMaterializationRun.project_id == project_id)
+        )
+        or 0
+    )

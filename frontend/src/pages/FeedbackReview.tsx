@@ -40,6 +40,9 @@ type MaterializationRun = {
   error_message?: string | null;
 };
 
+const PAGE_SIZE = 25;
+const HISTORY_PAGE_SIZE = 10;
+
 function stringifyValue(value: unknown): string {
   if (value == null) return "—";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -54,35 +57,79 @@ function stringifyValue(value: unknown): string {
 
 export default function FeedbackReview() {
   const { projectId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   const { selectedProject } = useProject();
   const canWrite = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
 
   const [items, setItems] = useState<FeedbackItem[]>([]);
+  const [itemTotal, setItemTotal] = useState(0);
   const [runs, setRuns] = useState<MaterializationRun[]>([]);
+  const [runTotal, setRunTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState(searchParams.get("review_status") || "");
   const [endpointFilter, setEndpointFilter] = useState(searchParams.get("endpoint_id") || "");
+  const [materializableFilter, setMaterializableFilter] = useState(
+    searchParams.get("materializable") || "",
+  );
+  const [feedbackSkip, setFeedbackSkip] = useState(Number(searchParams.get("skip") || 0) || 0);
+  const [historySkip, setHistorySkip] = useState(0);
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
+
+  const syncUrl = (
+    next: {
+      review_status?: string;
+      endpoint_id?: string;
+      materializable?: string;
+      skip?: number;
+    },
+  ) => {
+    const params = new URLSearchParams();
+    const status = next.review_status ?? statusFilter;
+    const endpoint = next.endpoint_id ?? endpointFilter;
+    const materializable = next.materializable ?? materializableFilter;
+    const skip = next.skip ?? feedbackSkip;
+    if (status) params.set("review_status", status);
+    if (endpoint) params.set("endpoint_id", endpoint);
+    if (materializable) params.set("materializable", materializable);
+    if (skip > 0) params.set("skip", String(skip));
+    setSearchParams(params, { replace: true });
+  };
 
   const load = () => {
     if (!projectId) return;
     setLoading(true);
     setError(null);
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({
+      paged: "true",
+      skip: String(feedbackSkip),
+      limit: String(PAGE_SIZE),
+    });
     if (statusFilter) params.set("review_status", statusFilter);
     if (endpointFilter) params.set("endpoint_id", endpointFilter);
-    const qs = params.toString();
+    if (materializableFilter === "true" || materializableFilter === "false") {
+      params.set("materializable", materializableFilter);
+    }
+    const historyParams = new URLSearchParams({
+      paged: "true",
+      skip: String(historySkip),
+      limit: String(HISTORY_PAGE_SIZE),
+    });
     Promise.all([
-      api<FeedbackItem[]>(`/projects/${projectId}/feedback${qs ? `?${qs}` : ""}`),
-      api<MaterializationRun[]>(`/projects/${projectId}/feedback-materializations`),
+      api<{ items: FeedbackItem[]; total: number }>(
+        `/projects/${projectId}/feedback?${params.toString()}`,
+      ),
+      api<{ items: MaterializationRun[]; total: number }>(
+        `/projects/${projectId}/feedback-materializations?${historyParams.toString()}`,
+      ),
     ])
       .then(([feedback, history]) => {
-        setItems(feedback);
-        setRuns(history);
+        setItems(Array.isArray(feedback.items) ? feedback.items : []);
+        setItemTotal(Number(feedback.total || 0));
+        setRuns(Array.isArray(history.items) ? history.items : []);
+        setRunTotal(Number(history.total || 0));
       })
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Feedback could not be loaded."))
       .finally(() => setLoading(false));
@@ -91,7 +138,7 @@ export default function FeedbackReview() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, statusFilter, endpointFilter]);
+  }, [projectId, statusFilter, endpointFilter, materializableFilter, feedbackSkip, historySkip]);
 
   const selectedIds = useMemo(
     () => Object.entries(selected).filter(([, on]) => on).map(([id]) => Number(id)),
@@ -134,7 +181,6 @@ export default function FeedbackReview() {
         `Create a new immutable DatasetVersion from ${materializableSelected.length} approved feedback row(s)?`,
         `Endpoint #${endpointId}`,
         `Production model #${materializableSelected[0].model_version_id}`,
-        "Existing DatasetVersions will not be modified.",
       ].join("\n"),
     );
     if (!confirmed) return;
@@ -168,7 +214,12 @@ export default function FeedbackReview() {
           Review status
           <select
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStatusFilter(value);
+              setFeedbackSkip(0);
+              syncUrl({ review_status: value, skip: 0 });
+            }}
             data-testid="feedback-status-filter"
           >
             <option value="">All</option>
@@ -181,10 +232,32 @@ export default function FeedbackReview() {
           Endpoint ID
           <input
             value={endpointFilter}
-            onChange={(event) => setEndpointFilter(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setEndpointFilter(value);
+              setFeedbackSkip(0);
+              syncUrl({ endpoint_id: value, skip: 0 });
+            }}
             placeholder="optional"
             data-testid="feedback-endpoint-filter"
           />
+        </label>
+        <label>
+          Materializable
+          <select
+            value={materializableFilter}
+            onChange={(event) => {
+              const value = event.target.value;
+              setMaterializableFilter(value);
+              setFeedbackSkip(0);
+              syncUrl({ materializable: value, skip: 0 });
+            }}
+            data-testid="feedback-materializable-filter"
+          >
+            <option value="">All</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
+          </select>
         </label>
         {canWrite ? (
           <>
@@ -254,7 +327,7 @@ export default function FeedbackReview() {
                     <td>{item.endpoint_name || (item.endpoint_id != null ? `#${item.endpoint_id}` : "—")}</td>
                     <td>
                       {item.model_name
-                        ? `${item.model_name} v${item.model_version}`
+                        ? `${item.model_name}${item.model_version ? ` v${item.model_version}` : ""}`
                         : item.model_version_id != null
                           ? `#${item.model_version_id}`
                           : "—"}
@@ -279,6 +352,39 @@ export default function FeedbackReview() {
               })}
             </tbody>
           </table>
+          <div className="row-actions" data-testid="feedback-pagination">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={feedbackSkip <= 0 || loading}
+              onClick={() => {
+                const next = Math.max(0, feedbackSkip - PAGE_SIZE);
+                setFeedbackSkip(next);
+                syncUrl({ skip: next });
+              }}
+              data-testid="feedback-prev"
+            >
+              Previous
+            </button>
+            <span className="muted">
+              {itemTotal === 0
+                ? "0 rows"
+                : `${feedbackSkip + 1}–${Math.min(feedbackSkip + PAGE_SIZE, itemTotal)} of ${itemTotal}`}
+            </span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={feedbackSkip + PAGE_SIZE >= itemTotal || loading}
+              onClick={() => {
+                const next = feedbackSkip + PAGE_SIZE;
+                setFeedbackSkip(next);
+                syncUrl({ skip: next });
+              }}
+              data-testid="feedback-next"
+            >
+              Next
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -298,6 +404,7 @@ export default function FeedbackReview() {
                   <th>Base version</th>
                   <th>Output version</th>
                   <th>Feedback rows</th>
+                  <th>Rows added</th>
                   <th>Finished</th>
                   <th>Error</th>
                 </tr>
@@ -329,14 +436,46 @@ export default function FeedbackReview() {
                       )}
                     </td>
                     <td>{run.feedback_count}</td>
+                    <td data-testid={`materialization-rows-added-${run.id}`}>
+                      {run.status === "succeeded" ? (run.row_count_added ?? 0) : "—"}
+                    </td>
                     <td>{run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}</td>
-                    <td>{run.error_message || "—"}</td>
+                    <td data-testid={`materialization-error-${run.id}`}>
+                      {run.status === "failed"
+                        ? (run.error_message || "Materialization failed")
+                        : (run.error_message || "—")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
+        <div className="row-actions" data-testid="materialization-history-pagination">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={historySkip <= 0 || loading}
+            onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
+            data-testid="materialization-history-prev"
+          >
+            Previous
+          </button>
+          <span className="muted">
+            {runTotal === 0
+              ? "0 runs"
+              : `${historySkip + 1}–${Math.min(historySkip + HISTORY_PAGE_SIZE, runTotal)} of ${runTotal}`}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={historySkip + HISTORY_PAGE_SIZE >= runTotal || loading}
+            onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
+            data-testid="materialization-history-next"
+          >
+            Next
+          </button>
+        </div>
       </section>
     </div>
   );

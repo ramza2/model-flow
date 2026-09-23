@@ -152,6 +152,58 @@ def list_feedback(
     return results
 
 
+def count_feedback(
+    db: Session,
+    *,
+    project_id: int,
+    endpoint_id: int | None = None,
+    model_version_id: int | None = None,
+    review_status: str | None = None,
+    materialized: bool | None = None,
+    materializable: bool | None = None,
+) -> int:
+    """Count matching feedback rows (materializable filter applied after hydrate)."""
+
+    # materializable depends on hydrated fields, so reuse list with a high bound
+    # only when that filter is set; otherwise use a SQL count.
+    if materializable is not None:
+        rows = list_feedback(
+            db,
+            project_id=project_id,
+            endpoint_id=endpoint_id,
+            model_version_id=model_version_id,
+            review_status=review_status,
+            materialized=materialized,
+            materializable=materializable,
+            skip=0,
+            limit=500,
+        )
+        return len(rows)
+
+    from sqlalchemy import func
+
+    query = (
+        select(func.count())
+        .select_from(GroundTruthFeedback)
+        .join(
+            PredictionObservation,
+            PredictionObservation.id == GroundTruthFeedback.prediction_observation_id,
+        )
+        .where(GroundTruthFeedback.project_id == project_id)
+    )
+    if endpoint_id is not None:
+        query = query.where(PredictionObservation.endpoint_id == endpoint_id)
+    if model_version_id is not None:
+        query = query.where(PredictionObservation.model_version_id == model_version_id)
+    if review_status:
+        query = query.where(GroundTruthFeedback.review_status == review_status.upper())
+    if materialized is True:
+        query = query.where(GroundTruthFeedback.materialized_dataset_version_id.is_not(None))
+    elif materialized is False:
+        query = query.where(GroundTruthFeedback.materialized_dataset_version_id.is_(None))
+    return int(db.scalar(query) or 0)
+
+
 def apply_review_decisions(
     db: Session,
     *,

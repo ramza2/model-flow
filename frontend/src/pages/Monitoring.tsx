@@ -1,6 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
+import {
+  closedLoopRecoveryLinks,
+  formatMatchedSamples,
+  reasonLabel,
+  triggerDecisionLabel,
+  type ClosedLoopDetail,
+} from "../closedLoopUx";
 import {
   EmptyState,
   ErrorNotice,
@@ -55,19 +62,26 @@ type QualitySummaryCard = {
   window_end: string | null;
   last_evaluated_at: string | null;
   closed_loop_state: string;
+  closed_loop?: ClosedLoopDetail | null;
   latest_run_id: number | null;
+  latest_trigger_decision?: Record<string, unknown> | null;
   revision?: number;
   mode?: "legacy" | "advanced" | string;
   rule_logic?: string;
   rule_count?: number;
   evaluation_delay_hours?: number;
   minimum_match_rate?: number | null;
+  minimum_matched_samples?: number;
   baseline_quality_run_id?: number | null;
   baseline_model_version_id?: number | null;
   baseline_required?: boolean;
   latest_evaluation?: Record<string, unknown> | null;
   latest_policy_revision?: number | null;
 };
+
+type QualityRunRow = Record<string, unknown> & { id: number };
+
+const HISTORY_PAGE_SIZE = 10;
 
 function prettyMetric(name: string): string {
   if (name === "f1_macro") return "F1";
@@ -112,15 +126,35 @@ function breachedRuleCount(evaluation: unknown): number {
   }).length;
 }
 
+function detailFromCard(card: QualitySummaryCard): ClosedLoopDetail {
+  if (card.closed_loop && typeof card.closed_loop === "object") {
+    return card.closed_loop;
+  }
+  return {
+    code: "healthy",
+    label: card.closed_loop_state || "Healthy",
+    reason: null,
+    next_action: null,
+    quality_run_id: card.latest_run_id,
+    policy_id: card.policy_id,
+  };
+}
+
 export default function Monitoring() {
   const { projectId } = useParams();
   const [service, setService] = useState<ServiceMetrics | null>(null);
   const [data, setData] = useState<DataMetrics | null>(null);
   const [models, setModels] = useState<ModelMetrics | null>(null);
   const [qualityCards, setQualityCards] = useState<QualitySummaryCard[]>([]);
-  const [qualityRuns, setQualityRuns] = useState<Array<Record<string, unknown>>>([]);
+  const [qualityRuns, setQualityRuns] = useState<QualityRunRow[]>([]);
+  const [qualityRunTotal, setQualityRunTotal] = useState(0);
+  const [historyEndpointId, setHistoryEndpointId] = useState<string>("");
+  const [historyPolicyId, setHistoryPolicyId] = useState<string>("");
+  const [historySkip, setHistorySkip] = useState(0);
+  const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
   const [hours, setHours] = useState("24");
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -131,16 +165,38 @@ export default function Monitoring() {
       api<DataMetrics>(`/projects/${projectId}/monitoring/data`),
       api<ModelMetrics>(`/projects/${projectId}/monitoring/models`),
       api<{ items: QualitySummaryCard[] }>(`/projects/${projectId}/model-quality/summary`).catch(() => ({ items: [] })),
-      api<Array<Record<string, unknown>>>(`/projects/${projectId}/model-quality/runs?limit=20`).catch(() => []),
-    ]).then(([serviceRows, dataRows, modelRows, qualitySummary, runs]) => {
+    ]).then(([serviceRows, dataRows, modelRows, qualitySummary]) => {
       setService(serviceRows);
       setData(dataRows);
       setModels(modelRows);
       setQualityCards(qualitySummary.items || []);
-      setQualityRuns(Array.isArray(runs) ? runs : []);
     }).catch((reason) => setError(reason instanceof Error ? reason.message : "Monitoring metrics could not be loaded."))
       .finally(() => setLoading(false));
   }, [hours, projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
+    setHistoryLoading(true);
+    const params = new URLSearchParams({
+      paged: "true",
+      skip: String(historySkip),
+      limit: String(HISTORY_PAGE_SIZE),
+    });
+    if (historyEndpointId) params.set("endpoint_id", historyEndpointId);
+    if (historyPolicyId) params.set("policy_id", historyPolicyId);
+    api<{ items: QualityRunRow[]; total: number }>(
+      `/projects/${projectId}/model-quality/runs?${params.toString()}`,
+    )
+      .then((page) => {
+        setQualityRuns(Array.isArray(page.items) ? page.items : []);
+        setQualityRunTotal(Number(page.total || 0));
+      })
+      .catch(() => {
+        setQualityRuns([]);
+        setQualityRunTotal(0);
+      })
+      .finally(() => setHistoryLoading(false));
+  }, [projectId, historyEndpointId, historyPolicyId, historySkip]);
 
   const maxRequests = Math.max(1, ...(service?.series.map((point) => point.requests) || [1]));
   const attention = useMemo(() => {
@@ -154,6 +210,27 @@ export default function Monitoring() {
       driftStatus: models.latest_drift_status,
     });
   }, [projectId, service, data, models]);
+
+  const historyEndpoints = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const card of qualityCards) {
+      map.set(card.endpoint_id, card.endpoint_name || `Endpoint #${card.endpoint_id}`);
+    }
+    return Array.from(map.entries());
+  }, [qualityCards]);
+
+  const historyPolicies = useMemo(() => {
+    return qualityCards
+      .filter((card) => !historyEndpointId || String(card.endpoint_id) === historyEndpointId)
+      .map((card) => ({ id: card.policy_id, name: card.policy_name }));
+  }, [qualityCards, historyEndpointId]);
+
+  const openHistoryForCard = (card: QualitySummaryCard) => {
+    setHistoryEndpointId(String(card.endpoint_id));
+    setHistoryPolicyId(String(card.policy_id));
+    setHistorySkip(0);
+    setExpandedRunId(card.latest_run_id);
+  };
 
   return (
     <div className="ops-page">
@@ -253,6 +330,12 @@ export default function Monitoring() {
               <div className="stack-gap" data-testid="production-quality-cards">
                 {qualityCards.map((card) => {
                   const advanced = card.mode === "advanced";
+                  const detail = detailFromCard(card);
+                  const recoveryLinks = closedLoopRecoveryLinks(String(projectId), detail, card);
+                  const decisionReason =
+                    card.latest_trigger_decision && typeof card.latest_trigger_decision.reason === "string"
+                      ? String(card.latest_trigger_decision.reason)
+                      : detail.reason;
                   return (
                     <div className="panel nested-panel" key={card.policy_id} data-testid={`quality-card-${card.policy_id}`}>
                       <div className="row-actions">
@@ -264,8 +347,37 @@ export default function Monitoring() {
                           </span>
                         ) : null}
                         <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
-                          {card.closed_loop_state}
+                          {detail.label || card.closed_loop_state}
                         </span>
+                      </div>
+                      <div className="notice" data-testid={`closed-loop-detail-${card.policy_id}`}>
+                        <p data-testid={`closed-loop-code-${card.policy_id}`}>
+                          <strong>{detail.label}</strong>
+                          {detail.reason ? (
+                            <>
+                              {" — "}
+                              <span data-testid={`closed-loop-reason-${card.policy_id}`}>
+                                {detail.reason_label || reasonLabel(detail.reason)}
+                              </span>
+                            </>
+                          ) : null}
+                        </p>
+                        {detail.code === "insufficient_data" ? (
+                          <p className="muted" data-testid={`closed-loop-samples-${card.policy_id}`}>
+                            {formatMatchedSamples(
+                              card.matched_ground_truth_count,
+                              card.minimum_matched_samples,
+                            )}
+                          </p>
+                        ) : null}
+                        {detail.next_action ? (
+                          <p data-testid={`closed-loop-next-${card.policy_id}`}>{detail.next_action}</p>
+                        ) : null}
+                        {decisionReason ? (
+                          <p className="muted" data-testid={`trigger-decision-${card.policy_id}`}>
+                            Trigger: {triggerDecisionLabel(decisionReason)}
+                          </p>
+                        ) : null}
                       </div>
                       <dl className="key-values">
                         <div>
@@ -341,7 +453,12 @@ export default function Monitoring() {
                           <dd>{card.last_evaluated_at ? new Date(card.last_evaluated_at).toLocaleString() : "—"}</dd>
                         </div>
                       </dl>
-                      <div className="row-actions">
+                      <div className="row-actions" data-testid={`closed-loop-actions-${card.policy_id}`}>
+                        {recoveryLinks.map((link) => (
+                          <Link key={link.id} to={link.to} data-testid={`recovery-${link.id}-${card.policy_id}`}>
+                            {link.label}
+                          </Link>
+                        ))}
                         {card.current_model_version_id ? (
                           <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
                             Open current model
@@ -353,6 +470,14 @@ export default function Monitoring() {
                         >
                           Review feedback
                         </Link>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => openHistoryForCard(card)}
+                          data-testid={`view-quality-history-${card.policy_id}`}
+                        >
+                          View quality history
+                        </button>
                         <Link
                           to={`/projects/${projectId}/model-quality/policies`}
                           data-testid={`manage-policy-${card.policy_id}`}
@@ -368,8 +493,47 @@ export default function Monitoring() {
             )}
           </DetailSection>
 
-          {qualityRuns.length > 0 ? (
-            <DetailSection eyebrow="Models" title="Metric trend" testId="monitoring-quality-trend">
+          <DetailSection eyebrow="Models" title="Quality history" testId="monitoring-quality-trend">
+            <div className="row-actions" data-testid="quality-history-filters">
+              <label>
+                Endpoint
+                <select
+                  value={historyEndpointId}
+                  onChange={(event) => {
+                    setHistoryEndpointId(event.target.value);
+                    setHistoryPolicyId("");
+                    setHistorySkip(0);
+                  }}
+                  data-testid="quality-history-endpoint-filter"
+                >
+                  <option value="">All</option>
+                  {historyEndpoints.map(([id, name]) => (
+                    <option key={id} value={String(id)}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Policy
+                <select
+                  value={historyPolicyId}
+                  onChange={(event) => {
+                    setHistoryPolicyId(event.target.value);
+                    setHistorySkip(0);
+                  }}
+                  data-testid="quality-history-policy-filter"
+                >
+                  <option value="">All</option>
+                  {historyPolicies.map((policy) => (
+                    <option key={policy.id} value={String(policy.id)}>{policy.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {historyLoading ? <Loading label="Loading quality history" /> : null}
+            {!historyLoading && qualityRuns.length === 0 ? (
+              <p className="muted">No quality runs match the current filters.</p>
+            ) : null}
+            {!historyLoading && qualityRuns.length > 0 ? (
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -382,6 +546,7 @@ export default function Monitoring() {
                       <th>Breached rules</th>
                       <th>Evidence</th>
                       <th>Finished</th>
+                      <th />
                     </tr>
                   </thead>
                   <tbody>
@@ -390,32 +555,147 @@ export default function Monitoring() {
                       const matched = Number(run.matched_ground_truth_count ?? 0);
                       const predictions = Number(run.prediction_count ?? 0);
                       const matchRate = run.match_rate;
+                      const expanded = expandedRunId === run.id;
+                      const decision =
+                        run.trigger_decision && typeof run.trigger_decision === "object"
+                          ? (run.trigger_decision as Record<string, unknown>)
+                          : null;
+                      const evalObj =
+                        evaluation && typeof evaluation === "object"
+                          ? (evaluation as Record<string, unknown>)
+                          : null;
                       return (
-                        <tr key={String(run.id)} data-testid={`quality-run-row-${run.id}`}>
-                          <td>#{String(run.id)}</td>
-                          <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
-                          <td data-testid={`run-policy-rev-${run.id}`}>
-                            {run.policy_revision == null ? "—" : String(run.policy_revision)}
-                          </td>
-                          <td data-testid={`run-matched-preds-${run.id}`}>
-                            {matched} / {predictions}
-                          </td>
-                          <td>
-                            {matchRate == null || typeof matchRate !== "number"
-                              ? "—"
-                              : `${metric(matchRate * 100, 1)}%`}
-                          </td>
-                          <td data-testid={`run-breached-${run.id}`}>{breachedRuleCount(evaluation)}</td>
-                          <td data-testid={`run-evidence-${run.id}`}>{evaluationEvidence(evaluation)}</td>
-                          <td>{run.finished_at ? new Date(String(run.finished_at)).toLocaleString() : "—"}</td>
-                        </tr>
+                        <Fragment key={String(run.id)}>
+                          <tr data-testid={`quality-run-row-${run.id}`}>
+                            <td>#{String(run.id)}</td>
+                            <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
+                            <td data-testid={`run-policy-rev-${run.id}`}>
+                              {run.policy_revision == null ? "—" : String(run.policy_revision)}
+                            </td>
+                            <td data-testid={`run-matched-preds-${run.id}`}>
+                              {matched} / {predictions}
+                            </td>
+                            <td>
+                              {matchRate == null || typeof matchRate !== "number"
+                                ? "—"
+                                : `${metric(matchRate * 100, 1)}%`}
+                            </td>
+                            <td data-testid={`run-breached-${run.id}`}>{breachedRuleCount(evaluation)}</td>
+                            <td data-testid={`run-evidence-${run.id}`}>{evaluationEvidence(evaluation)}</td>
+                            <td>{run.finished_at ? new Date(String(run.finished_at)).toLocaleString() : "—"}</td>
+                            <td>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => setExpandedRunId(expanded ? null : run.id)}
+                                data-testid={`expand-quality-run-${run.id}`}
+                              >
+                                {expanded ? "Hide" : "Details"}
+                              </button>
+                            </td>
+                          </tr>
+                          {expanded ? (
+                            <tr data-testid={`quality-run-detail-${run.id}`}>
+                              <td colSpan={9}>
+                                <dl className="key-values">
+                                  <div><dt>Quality Run ID</dt><dd>#{run.id}</dd></div>
+                                  <div><dt>Policy revision</dt><dd>{String(run.policy_revision ?? "—")}</dd></div>
+                                  <div><dt>ModelVersion</dt><dd>#{String(run.model_version_id ?? "—")}</dd></div>
+                                  <div>
+                                    <dt>Window</dt>
+                                    <dd>
+                                      {run.window_start ? new Date(String(run.window_start)).toLocaleString() : "—"}
+                                      {" → "}
+                                      {run.window_end ? new Date(String(run.window_end)).toLocaleString() : "—"}
+                                    </dd>
+                                  </div>
+                                  <div><dt>Matched / Predictions</dt><dd>{matched} / {predictions}</dd></div>
+                                  <div>
+                                    <dt>Match rate</dt>
+                                    <dd>
+                                      {matchRate == null || typeof matchRate !== "number"
+                                        ? "—"
+                                        : `${metric(matchRate * 100, 1)}%`}
+                                    </dd>
+                                  </div>
+                                  <div><dt>Quality status</dt><dd>{String(run.quality_status || "—")}</dd></div>
+                                  <div>
+                                    <dt>Sufficiency reason</dt>
+                                    <dd data-testid={`run-sufficiency-${run.id}`}>
+                                      {reasonLabel(
+                                        evalObj && typeof evalObj.reason === "string"
+                                          ? String(evalObj.reason)
+                                          : null,
+                                      )}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Rule evidence</dt>
+                                    <dd>{evaluationEvidence(evaluation)}</dd>
+                                  </div>
+                                  <div>
+                                    <dt>Baseline run / model</dt>
+                                    <dd>
+                                      {evalObj?.baseline_quality_run_id != null
+                                        ? `Run #${String(evalObj.baseline_quality_run_id)}`
+                                        : "—"}
+                                      {" / "}
+                                      {evalObj?.baseline_model_version_id != null
+                                        ? `Model #${String(evalObj.baseline_model_version_id)}`
+                                        : "—"}
+                                    </dd>
+                                  </div>
+                                  <div>
+                                    <dt>Trigger decision</dt>
+                                    <dd data-testid={`run-trigger-${run.id}`}>
+                                      {triggerDecisionLabel(
+                                        decision && typeof decision.reason === "string"
+                                          ? String(decision.reason)
+                                          : null,
+                                      )}
+                                    </dd>
+                                  </div>
+                                </dl>
+                                <details>
+                                  <summary>Advanced JSON</summary>
+                                  <pre className="code-block">{JSON.stringify({ evaluation: evalObj, trigger_decision: decision }, null, 2)}</pre>
+                                </details>
+                              </td>
+                            </tr>
+                          ) : null}
+                        </Fragment>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            </DetailSection>
-          ) : null}
+            ) : null}
+            <div className="row-actions" data-testid="quality-history-pagination">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={historySkip <= 0 || historyLoading}
+                onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
+                data-testid="quality-history-prev"
+              >
+                Previous
+              </button>
+              <span className="muted">
+                {qualityRunTotal === 0
+                  ? "0 runs"
+                  : `${historySkip + 1}–${Math.min(historySkip + HISTORY_PAGE_SIZE, qualityRunTotal)} of ${qualityRunTotal}`}
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={historySkip + HISTORY_PAGE_SIZE >= qualityRunTotal || historyLoading}
+                onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
+                data-testid="quality-history-next"
+              >
+                Next
+              </button>
+            </div>
+          </DetailSection>
 
           <div className="two-column">
             <DetailSection
