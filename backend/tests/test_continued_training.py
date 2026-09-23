@@ -562,7 +562,6 @@ def test_continued_training_partial_fit_and_frozen_preprocessing(
     preprocessing = source_pipeline.named_steps["preprocessing"]
     estimator = source_pipeline.named_steps["estimator"]
 
-    fit_called = {"preprocessing": 0, "estimator": 0}
     transform_called = {"count": 0}
     partial_fit_called = {"count": 0}
 
