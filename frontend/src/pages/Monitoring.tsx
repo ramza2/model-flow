@@ -56,7 +56,61 @@ type QualitySummaryCard = {
   last_evaluated_at: string | null;
   closed_loop_state: string;
   latest_run_id: number | null;
+  revision?: number;
+  mode?: "legacy" | "advanced" | string;
+  rule_logic?: string;
+  rule_count?: number;
+  evaluation_delay_hours?: number;
+  minimum_match_rate?: number | null;
+  baseline_quality_run_id?: number | null;
+  baseline_model_version_id?: number | null;
+  baseline_required?: boolean;
+  latest_evaluation?: Record<string, unknown> | null;
+  latest_policy_revision?: number | null;
 };
+
+function prettyMetric(name: string): string {
+  if (name === "f1_macro") return "F1";
+  if (name === "precision_macro") return "Precision";
+  if (name === "recall_macro") return "Recall";
+  return name;
+}
+
+export function formatRuleEvidence(rule: Record<string, unknown>): string {
+  const metricName = prettyMetric(String(rule.metric || "metric"));
+  const status = String(rule.status || "unknown").toUpperCase();
+  if (rule.comparison === "baseline_delta") {
+    const delta = rule.degradation_delta;
+    const deltaText =
+      typeof delta === "number" ? metric(delta, 2) : delta == null ? "—" : String(delta);
+    return `${metricName} baseline delta ${deltaText} → ${status}`;
+  }
+  const value = rule.current_value;
+  const valueText =
+    typeof value === "number" ? metric(value, 4) : value == null ? "—" : String(value);
+  return `${metricName} ${valueText} → ${status}`;
+}
+
+function evaluationEvidence(evaluation: unknown): string {
+  if (!evaluation || typeof evaluation !== "object") return "—";
+  const rules = (evaluation as { rules?: unknown }).rules;
+  if (!Array.isArray(rules) || rules.length === 0) return "—";
+  return rules
+    .filter((row): row is Record<string, unknown> => !!row && typeof row === "object")
+    .map((row) => formatRuleEvidence(row))
+    .join("; ");
+}
+
+function breachedRuleCount(evaluation: unknown): number {
+  if (!evaluation || typeof evaluation !== "object") return 0;
+  const rules = (evaluation as { rules?: unknown }).rules;
+  if (!Array.isArray(rules)) return 0;
+  return rules.filter((row) => {
+    if (!row || typeof row !== "object") return false;
+    const status = String((row as { status?: unknown }).status || "").toLowerCase();
+    return status === "warning" || status === "critical";
+  }).length;
+}
 
 export default function Monitoring() {
   const { projectId } = useParams();
@@ -179,74 +233,137 @@ export default function Monitoring() {
             eyebrow="Models"
             title="Production Quality"
             testId="monitoring-production-quality"
+            actions={(
+              <Link to={`/projects/${projectId}/model-quality/policies`} data-testid="quality-policies-link">
+                Quality policies
+              </Link>
+            )}
           >
             {qualityCards.length === 0 ? (
               <EmptyState
                 title="No production quality policies"
                 description="Create a model quality policy to evaluate prediction vs ground-truth and drive closed-loop retraining to CANDIDATE."
+                action={(
+                  <Link to={`/projects/${projectId}/model-quality/policies`} className="btn">
+                    Open quality policies
+                  </Link>
+                )}
               />
             ) : (
               <div className="stack-gap" data-testid="production-quality-cards">
-                {qualityCards.map((card) => (
-                  <div className="panel nested-panel" key={card.policy_id} data-testid={`quality-card-${card.policy_id}`}>
-                    <div className="row-actions">
-                      <strong>{card.endpoint_name || `Endpoint #${card.endpoint_id}`}</strong>
-                      <StatusBadge status={card.latest_quality_status || "unknown"} />
-                      <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
-                        {card.closed_loop_state}
-                      </span>
-                    </div>
-                    <dl className="key-values">
-                      <div>
-                        <dt>Current model</dt>
-                        <dd>
-                          {card.current_model_name
-                            ? `${card.current_model_name} v${card.current_model_version}`
-                            : "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Primary metric</dt>
-                        <dd>
-                          {card.primary_metric}
-                          {card.primary_metric_value == null ? "" : ` = ${metric(card.primary_metric_value, 4)}`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Matched ground truth</dt>
-                        <dd data-testid={`matched-gt-${card.policy_id}`}>{card.matched_ground_truth_count}</dd>
-                      </div>
-                      <div>
-                        <dt>Predictions</dt>
-                        <dd>{card.prediction_count}</dd>
-                      </div>
-                      <div>
-                        <dt>Match rate</dt>
-                        <dd data-testid={`match-rate-${card.policy_id}`}>
-                          {card.match_rate == null ? "—" : `${metric(card.match_rate * 100, 1)}%`}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Last evaluated</dt>
-                        <dd>{card.last_evaluated_at ? new Date(card.last_evaluated_at).toLocaleString() : "—"}</dd>
-                      </div>
-                    </dl>
-                    {card.current_model_version_id ? (
+                {qualityCards.map((card) => {
+                  const advanced = card.mode === "advanced";
+                  return (
+                    <div className="panel nested-panel" key={card.policy_id} data-testid={`quality-card-${card.policy_id}`}>
                       <div className="row-actions">
-                        <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
-                          Open current model
-                        </Link>
+                        <strong>{card.endpoint_name || `Endpoint #${card.endpoint_id}`}</strong>
+                        <StatusBadge status={card.latest_quality_status || "unknown"} />
+                        {card.baseline_required ? (
+                          <span className="notice notice-warning" data-testid={`baseline-required-${card.policy_id}`}>
+                            Baseline required
+                          </span>
+                        ) : null}
+                        <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
+                          {card.closed_loop_state}
+                        </span>
+                      </div>
+                      <dl className="key-values">
+                        <div>
+                          <dt>Current model</dt>
+                          <dd>
+                            {card.current_model_name
+                              ? `${card.current_model_name} v${card.current_model_version}`
+                              : "—"}
+                          </dd>
+                        </div>
+                        {advanced ? (
+                          <>
+                            <div>
+                              <dt>Revision</dt>
+                              <dd data-testid={`quality-revision-${card.policy_id}`}>{card.revision ?? "—"}</dd>
+                            </div>
+                            <div>
+                              <dt>Rules</dt>
+                              <dd data-testid={`quality-rule-count-${card.policy_id}`}>
+                                {card.rule_count ?? 0} · {(card.rule_logic || "any").toUpperCase()}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Baseline run</dt>
+                              <dd data-testid={`quality-baseline-${card.policy_id}`}>
+                                {card.baseline_quality_run_id == null
+                                  ? "—"
+                                  : `#${card.baseline_quality_run_id}`}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Evaluation delay</dt>
+                              <dd>{card.evaluation_delay_hours ?? 0}h</dd>
+                            </div>
+                            <div>
+                              <dt>Minimum match rate</dt>
+                              <dd data-testid={`match-rate-min-${card.policy_id}`}>
+                                {card.minimum_match_rate == null
+                                  ? "—"
+                                  : `${metric(card.minimum_match_rate * 100, 1)}%`}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt>Latest status</dt>
+                              <dd>{card.latest_quality_status || "—"}</dd>
+                            </div>
+                          </>
+                        ) : (
+                          <div>
+                            <dt>Primary metric</dt>
+                            <dd>
+                              {card.primary_metric}
+                              {card.primary_metric_value == null ? "" : ` = ${metric(card.primary_metric_value, 4)}`}
+                            </dd>
+                          </div>
+                        )}
+                        <div>
+                          <dt>Matched ground truth</dt>
+                          <dd data-testid={`matched-gt-${card.policy_id}`}>{card.matched_ground_truth_count}</dd>
+                        </div>
+                        <div>
+                          <dt>Predictions</dt>
+                          <dd>{card.prediction_count}</dd>
+                        </div>
+                        <div>
+                          <dt>Match rate</dt>
+                          <dd data-testid={`match-rate-${card.policy_id}`}>
+                            {card.match_rate == null ? "—" : `${metric(card.match_rate * 100, 1)}%`}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Last evaluated</dt>
+                          <dd>{card.last_evaluated_at ? new Date(card.last_evaluated_at).toLocaleString() : "—"}</dd>
+                        </div>
+                      </dl>
+                      <div className="row-actions">
+                        {card.current_model_version_id ? (
+                          <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
+                            Open current model
+                          </Link>
+                        ) : null}
                         <Link
                           to={`/projects/${projectId}/feedback?endpoint_id=${card.endpoint_id}`}
                           data-testid={`review-feedback-${card.endpoint_id}`}
                         >
                           Review feedback
                         </Link>
+                        <Link
+                          to={`/projects/${projectId}/model-quality/policies`}
+                          data-testid={`manage-policy-${card.policy_id}`}
+                        >
+                          Manage policy
+                        </Link>
                         <Link to={`/projects/${projectId}/alerts`}>Open alerts</Link>
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </DetailSection>
@@ -259,19 +376,41 @@ export default function Monitoring() {
                     <tr>
                       <th>Run</th>
                       <th>Status</th>
-                      <th>Matched</th>
+                      <th>Policy rev</th>
+                      <th>Matched / Predictions</th>
+                      <th>Match rate</th>
+                      <th>Breached rules</th>
+                      <th>Evidence</th>
                       <th>Finished</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {qualityRuns.map((run) => (
-                      <tr key={String(run.id)}>
-                        <td>#{String(run.id)}</td>
-                        <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
-                        <td>{String(run.matched_ground_truth_count ?? "—")}</td>
-                        <td>{run.finished_at ? new Date(String(run.finished_at)).toLocaleString() : "—"}</td>
-                      </tr>
-                    ))}
+                    {qualityRuns.map((run) => {
+                      const evaluation = run.evaluation;
+                      const matched = Number(run.matched_ground_truth_count ?? 0);
+                      const predictions = Number(run.prediction_count ?? 0);
+                      const matchRate = run.match_rate;
+                      return (
+                        <tr key={String(run.id)} data-testid={`quality-run-row-${run.id}`}>
+                          <td>#{String(run.id)}</td>
+                          <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
+                          <td data-testid={`run-policy-rev-${run.id}`}>
+                            {run.policy_revision == null ? "—" : String(run.policy_revision)}
+                          </td>
+                          <td data-testid={`run-matched-preds-${run.id}`}>
+                            {matched} / {predictions}
+                          </td>
+                          <td>
+                            {matchRate == null || typeof matchRate !== "number"
+                              ? "—"
+                              : `${metric(matchRate * 100, 1)}%`}
+                          </td>
+                          <td data-testid={`run-breached-${run.id}`}>{breachedRuleCount(evaluation)}</td>
+                          <td data-testid={`run-evidence-${run.id}`}>{evaluationEvidence(evaluation)}</td>
+                          <td>{run.finished_at ? new Date(String(run.finished_at)).toLocaleString() : "—"}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

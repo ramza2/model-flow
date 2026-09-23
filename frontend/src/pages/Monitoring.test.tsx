@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import Monitoring from "./Monitoring";
+import Monitoring, { formatRuleEvidence } from "./Monitoring";
 
 const apiMock = vi.fn();
 
@@ -11,6 +11,19 @@ vi.mock("../api", async () => {
     ...actual,
     api: (...args: unknown[]) => apiMock(...args),
   };
+});
+
+describe("formatRuleEvidence", () => {
+  it("formats baseline delta evidence compactly", () => {
+    expect(
+      formatRuleEvidence({
+        metric: "f1_macro",
+        comparison: "baseline_delta",
+        degradation_delta: 0.12,
+        status: "critical",
+      }),
+    ).toBe("F1 baseline delta 0.12 → CRITICAL");
+  });
 });
 
 describe("Monitoring", () => {
@@ -70,6 +83,25 @@ describe("Monitoring", () => {
               last_evaluated_at: "2026-01-01T00:00:00Z",
               closed_loop_state: "Candidate ready",
               latest_run_id: 11,
+              revision: 4,
+              mode: "advanced",
+              rule_logic: "any",
+              rule_count: 2,
+              evaluation_delay_hours: 2,
+              minimum_match_rate: 0.75,
+              baseline_quality_run_id: null,
+              baseline_required: true,
+              latest_evaluation: {
+                rules: [
+                  {
+                    metric: "f1_macro",
+                    comparison: "baseline_delta",
+                    degradation_delta: 0.12,
+                    status: "critical",
+                  },
+                ],
+              },
+              latest_policy_revision: 4,
             },
           ],
         };
@@ -81,7 +113,20 @@ describe("Monitoring", () => {
             quality_status: "critical",
             status: "succeeded",
             matched_ground_truth_count: 25,
+            prediction_count: 30,
+            match_rate: 25 / 30,
+            policy_revision: 4,
             finished_at: "2026-01-01T00:00:00Z",
+            evaluation: {
+              rules: [
+                {
+                  metric: "f1_macro",
+                  comparison: "baseline_delta",
+                  degradation_delta: 0.12,
+                  status: "critical",
+                },
+              ],
+            },
           },
         ];
       }
@@ -113,5 +158,29 @@ describe("Monitoring", () => {
     expect(screen.getByText("No prediction traffic")).toBeInTheDocument();
     fireEvent.change(screen.getByTestId("monitoring-window"), { target: { value: "168" } });
     expect(apiMock).toHaveBeenCalledWith(expect.stringContaining("hours=168"));
+  });
+
+  it("shows advanced policy summary fields and evidence", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/7/monitoring"]}>
+        <Routes>
+          <Route path="/projects/:projectId/monitoring" element={<Monitoring />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("quality-revision-1")).toHaveTextContent("4");
+    expect(screen.getByTestId("quality-rule-count-1")).toHaveTextContent("2");
+    expect(screen.getByTestId("quality-rule-count-1")).toHaveTextContent("ANY");
+    expect(screen.getByTestId("baseline-required-1")).toHaveTextContent("Baseline required");
+    expect(screen.getByTestId("quality-policies-link")).toHaveAttribute(
+      "href",
+      "/projects/7/model-quality/policies",
+    );
+    expect(screen.getByTestId("run-policy-rev-11")).toHaveTextContent("4");
+    expect(screen.getByTestId("run-matched-preds-11")).toHaveTextContent("25 / 30");
+    expect(screen.getByTestId("run-breached-11")).toHaveTextContent("1");
+    expect(screen.getByTestId("run-evidence-11")).toHaveTextContent(
+      "F1 baseline delta 0.12 → CRITICAL",
+    );
   });
 });

@@ -931,11 +931,19 @@ def test_endpoint_scoped_cooldown_isolation(client, auth_headers, project_id, mo
         )
         db.commit()
         assert closed_loop._cooldown_active(
-            db, policy=policy_a, endpoint_id=endpoint_a, now=now
+            db,
+            project_id=policy_a.project_id,
+            endpoint_id=endpoint_a,
+            cooldown_hours=policy_a.cooldown_hours,
+            now=now,
         )
         # Endpoint B recent trigger must not clear A's cooldown.
         assert closed_loop._cooldown_active(
-            db, policy=policy_a, endpoint_id=endpoint_a, now=now
+            db,
+            project_id=policy_a.project_id,
+            endpoint_id=endpoint_a,
+            cooldown_hours=policy_a.cooldown_hours,
+            now=now,
         )
 
 

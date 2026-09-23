@@ -29,10 +29,12 @@ from app.db.models import (
 from app.db.session import get_db
 from app.schemas.v1 import (
     GroundTruthBatchRequest,
+    ModelQualityBaselineSetRequest,
     ModelQualityPolicyCreate,
     ModelQualityPolicyUpdate,
 )
 from app.services import closed_loop, model_quality as quality_service
+from app.services import quality_policy as policy_service
 
 router = APIRouter(tags=["model-quality"])
 
@@ -162,6 +164,76 @@ def _submit_ground_truth_items(
     return {"accepted": accepted, "count": len(accepted)}
 
 
+def _endpoint_model_context(db: Session, endpoint: Endpoint) -> tuple[str, list[str]]:
+    model = (
+        db.get(ModelVersion, endpoint.model_version_id)
+        if endpoint.model_version_id
+        else None
+    )
+    return (
+        quality_service.resolve_problem_type(db, model),
+        quality_service.resolve_target_columns(db, model),
+    )
+
+
+def _apply_legacy_primary_fields(policy: ModelQualityPolicy, rules: list[dict[str, Any]]) -> None:
+    if not rules:
+        return
+    first = rules[0]
+    policy.primary_metric = first["metric"]
+    policy.warning_threshold = float(first["warning_threshold"])
+    policy.critical_threshold = float(first["critical_threshold"])
+
+
+def _validate_policy_config(
+    db: Session,
+    *,
+    endpoint: Endpoint,
+    primary_metric: str,
+    warning_threshold: float,
+    critical_threshold: float,
+    rules_raw: list[Any] | None,
+    rule_logic: str,
+    evaluation_delay_hours: int,
+    minimum_match_rate: float | None,
+) -> tuple[list[dict[str, Any]], str, str, float | None, int]:
+    try:
+        delay = policy_service.validate_evaluation_delay(evaluation_delay_hours)
+        match_rate = policy_service.validate_match_rate(minimum_match_rate)
+        logic = policy_service.validate_rule_logic(rule_logic)
+        rules = policy_service.validate_and_normalize_rules(rules_raw)
+        if not rules:
+            primary = quality_service.validate_policy_metric_thresholds(
+                primary_metric=primary_metric,
+                warning_threshold=warning_threshold,
+                critical_threshold=critical_threshold,
+            )
+            rules = [
+                {
+                    "metric": primary,
+                    "target": None,
+                    "comparison": "absolute",
+                    "warning_threshold": float(warning_threshold),
+                    "critical_threshold": float(critical_threshold),
+                }
+            ]
+            # Legacy mode stores empty rules_json; return empty for persistence.
+            problem_type, target_columns = _endpoint_model_context(db, endpoint)
+            policy_service.validate_rules_against_model(
+                rules, problem_type=problem_type, target_columns=target_columns
+            )
+            return [], logic, primary, match_rate, delay
+
+        problem_type, target_columns = _endpoint_model_context(db, endpoint)
+        policy_service.validate_rules_against_model(
+            rules, problem_type=problem_type, target_columns=target_columns
+        )
+        primary = rules[0]["metric"]
+        return rules, logic, primary, match_rate, delay
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
+
+
 @router.post("/projects/{project_id}/ground-truth")
 def submit_ground_truth(
     project_id: int,
@@ -220,7 +292,7 @@ def list_quality_policies(
         .offset(skip)
         .limit(limit)
     ).all()
-    return [quality_service.policy_out(row) for row in rows]
+    return [quality_service.policy_out(row, db) for row in rows]
 
 
 @router.post("/projects/{project_id}/model-quality/policies", status_code=201)
@@ -232,29 +304,76 @@ def create_quality_policy(
 ):
     auth, _, _ = access
     endpoint = get_owned(db, Endpoint, body.endpoint_id, project_id, "Endpoint")
-    try:
-        primary_metric = quality_service.validate_policy_metric_thresholds(
-            primary_metric=body.primary_metric,
-            warning_threshold=body.warning_threshold,
-            critical_threshold=body.critical_threshold,
+    rules_raw = (
+        [rule.model_dump() for rule in body.rules] if body.rules is not None else None
+    )
+    if rules_raw is None or rules_raw == []:
+        if body.primary_metric is None or body.warning_threshold is None or body.critical_threshold is None:
+            raise friendly(
+                422,
+                "Legacy policies require primary_metric, warning_threshold, and critical_threshold.",
+            )
+        primary_metric = body.primary_metric
+        warning_threshold = body.warning_threshold
+        critical_threshold = body.critical_threshold
+        persist_rules: list[dict[str, Any]] = []
+    else:
+        primary_metric = body.primary_metric or rules_raw[0]["metric"]
+        warning_threshold = (
+            body.warning_threshold
+            if body.warning_threshold is not None
+            else float(rules_raw[0]["warning_threshold"])
         )
-    except ValueError as exc:
-        raise friendly(422, str(exc)) from exc
+        critical_threshold = (
+            body.critical_threshold
+            if body.critical_threshold is not None
+            else float(rules_raw[0]["critical_threshold"])
+        )
+        persist_rules = rules_raw
+
+    rules, logic, primary, match_rate, delay = _validate_policy_config(
+        db,
+        endpoint=endpoint,
+        primary_metric=primary_metric,
+        warning_threshold=float(warning_threshold),
+        critical_threshold=float(critical_threshold),
+        rules_raw=persist_rules if persist_rules else None,
+        rule_logic=body.rule_logic,
+        evaluation_delay_hours=body.evaluation_delay_hours,
+        minimum_match_rate=body.minimum_match_rate,
+    )
+    # When advanced rules provided, persist them; legacy keeps [].
+    stored_rules = rules if persist_rules else []
+    if stored_rules:
+        warning_threshold = float(stored_rules[0]["warning_threshold"])
+        critical_threshold = float(stored_rules[0]["critical_threshold"])
+        primary = stored_rules[0]["metric"]
+    else:
+        # Re-validate legacy single metric (already done inside helper for empty list path)
+        pass
+
     policy = ModelQualityPolicy(
         project_id=project_id,
         endpoint_id=endpoint.id,
         name=body.name.strip(),
         is_active=body.is_active,
         window_hours=body.window_hours,
+        evaluation_delay_hours=delay,
         minimum_matched_samples=body.minimum_matched_samples,
-        primary_metric=primary_metric,
-        warning_threshold=body.warning_threshold,
-        critical_threshold=body.critical_threshold,
+        minimum_match_rate=match_rate,
+        primary_metric=primary,
+        warning_threshold=float(warning_threshold),
+        critical_threshold=float(critical_threshold),
         consecutive_breaches=body.consecutive_breaches,
         cooldown_hours=body.cooldown_hours,
         auto_retrain=body.auto_retrain,
+        revision=1,
+        rule_logic=logic,
+        rules_json=policy_service.dumps(stored_rules),
         created_by=auth.user.id,
     )
+    if stored_rules:
+        _apply_legacy_primary_fields(policy, stored_rules)
     db.add(policy)
     db.flush()
     audit_event(
@@ -263,11 +382,11 @@ def create_quality_policy(
         "model_quality_policy.create",
         "model_quality_policy",
         policy.id,
-        after=quality_service.policy_out(policy),
+        after=quality_service.policy_out(policy, db),
     )
     db.commit()
     db.refresh(policy)
-    return quality_service.policy_out(policy)
+    return quality_service.policy_out(policy, db)
 
 
 @router.get("/projects/{project_id}/model-quality/policies/{policy_id}")
@@ -278,7 +397,8 @@ def get_quality_policy(
     db: Session = Depends(get_db),
 ):
     return quality_service.policy_out(
-        get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+        get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy"),
+        db,
     )
 
 
@@ -292,32 +412,117 @@ def update_quality_policy(
 ):
     auth, _, _ = access
     policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
-    before = quality_service.policy_out(policy)
+    before = quality_service.policy_out(policy, db)
+    before_semantic = policy_service.semantic_config_from_policy(policy)
     data = body.model_dump(exclude_unset=True)
+    endpoint = get_owned(db, Endpoint, policy.endpoint_id, project_id, "Endpoint")
+
     if "name" in data and data["name"] is not None:
         policy.name = str(data["name"]).strip()
+    if "is_active" in data and data["is_active"] is not None:
+        policy.is_active = bool(data["is_active"])
+
+    # Merge patch onto current config then validate wholly.
+    current_rules = policy_service._loads(policy.rules_json, [])
+    merged_rules = current_rules if isinstance(current_rules, list) else []
+    if "rules" in data:
+        merged_rules = data["rules"] if data["rules"] is not None else []
+
+    primary_metric = data.get("primary_metric", policy.primary_metric)
+    warning_threshold = data.get("warning_threshold", policy.warning_threshold)
+    critical_threshold = data.get("critical_threshold", policy.critical_threshold)
+    rule_logic = data.get("rule_logic", policy.rule_logic)
+    evaluation_delay_hours = data.get(
+        "evaluation_delay_hours", policy.evaluation_delay_hours
+    )
+    minimum_match_rate = (
+        data["minimum_match_rate"]
+        if "minimum_match_rate" in data
+        else policy.minimum_match_rate
+    )
+
     for field in (
-        "is_active",
         "window_hours",
         "minimum_matched_samples",
-        "primary_metric",
-        "warning_threshold",
-        "critical_threshold",
         "consecutive_breaches",
         "cooldown_hours",
         "auto_retrain",
     ):
         if field in data and data[field] is not None:
             setattr(policy, field, data[field])
-    try:
-        policy.primary_metric = quality_service.validate_policy_metric_thresholds(
-            primary_metric=policy.primary_metric,
-            warning_threshold=policy.warning_threshold,
-            critical_threshold=policy.critical_threshold,
+
+    # Determine whether caller is switching to/from advanced rules.
+    advanced_requested = "rules" in data
+    if advanced_requested and (merged_rules is None or merged_rules == []):
+        # Clear advanced rules → legacy mode using primary fields.
+        rules, logic, primary, match_rate, delay = _validate_policy_config(
+            db,
+            endpoint=endpoint,
+            primary_metric=str(primary_metric),
+            warning_threshold=float(warning_threshold),
+            critical_threshold=float(critical_threshold),
+            rules_raw=None,
+            rule_logic=str(rule_logic or "any"),
+            evaluation_delay_hours=int(evaluation_delay_hours or 0),
+            minimum_match_rate=minimum_match_rate,
         )
-    except ValueError as exc:
-        raise friendly(422, str(exc)) from exc
+        policy.rules_json = "[]"
+        policy.primary_metric = primary
+        policy.warning_threshold = float(warning_threshold)
+        policy.critical_threshold = float(critical_threshold)
+    elif advanced_requested:
+        rules, logic, primary, match_rate, delay = _validate_policy_config(
+            db,
+            endpoint=endpoint,
+            primary_metric=str(primary_metric or "f1_macro"),
+            warning_threshold=float(
+                warning_threshold
+                if warning_threshold is not None
+                else merged_rules[0]["warning_threshold"]
+            ),
+            critical_threshold=float(
+                critical_threshold
+                if critical_threshold is not None
+                else merged_rules[0]["critical_threshold"]
+            ),
+            rules_raw=merged_rules,
+            rule_logic=str(rule_logic or "any"),
+            evaluation_delay_hours=int(evaluation_delay_hours or 0),
+            minimum_match_rate=minimum_match_rate,
+        )
+        policy.rules_json = policy_service.dumps(rules)
+        _apply_legacy_primary_fields(policy, rules)
+    else:
+        # No rules patch: keep mode; still validate merged primary + existing rules.
+        existing = policy_service._loads(policy.rules_json, [])
+        rules, logic, primary, match_rate, delay = _validate_policy_config(
+            db,
+            endpoint=endpoint,
+            primary_metric=str(primary_metric),
+            warning_threshold=float(warning_threshold),
+            critical_threshold=float(critical_threshold),
+            rules_raw=existing if isinstance(existing, list) and existing else None,
+            rule_logic=str(rule_logic or "any"),
+            evaluation_delay_hours=int(evaluation_delay_hours or 0),
+            minimum_match_rate=minimum_match_rate,
+        )
+        if isinstance(existing, list) and existing:
+            policy.rules_json = policy_service.dumps(rules)
+            _apply_legacy_primary_fields(policy, rules)
+        else:
+            policy.primary_metric = primary
+            policy.warning_threshold = float(warning_threshold)
+            policy.critical_threshold = float(critical_threshold)
+
+    policy.rule_logic = logic
+    policy.evaluation_delay_hours = delay
+    policy.minimum_match_rate = match_rate
     policy.updated_at = datetime.now(timezone.utc)
+
+    after_semantic = policy_service.semantic_config_from_policy(policy)
+    if not policy_service.configs_semantically_equal(before_semantic, after_semantic):
+        policy.revision = int(getattr(policy, "revision", 1) or 1) + 1
+
     action = "model_quality_policy.update"
     if "is_active" in data and data["is_active"] is not None:
         action = (
@@ -332,11 +537,78 @@ def update_quality_policy(
         "model_quality_policy",
         policy.id,
         before=before,
-        after=quality_service.policy_out(policy),
+        after=quality_service.policy_out(policy, db),
     )
     db.commit()
     db.refresh(policy)
-    return quality_service.policy_out(policy)
+    return quality_service.policy_out(policy, db)
+
+
+@router.post(
+    "/projects/{project_id}/model-quality/policies/{policy_id}/baseline",
+    status_code=201,
+)
+def set_quality_baseline(
+    project_id: int,
+    policy_id: int,
+    body: ModelQualityBaselineSetRequest,
+    access=Depends(require_project_perm(Permission.MONITOR_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    before = quality_service.policy_out(policy, db)
+    try:
+        baseline = policy_service.set_baseline(
+            db,
+            policy=policy,
+            quality_run_id=body.quality_run_id,
+            created_by=auth.user.id,
+        )
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
+    audit_event(
+        db,
+        auth,
+        "model_quality_policy.baseline_set",
+        "model_quality_policy",
+        policy.id,
+        before=before,
+        after=quality_service.policy_out(policy, db),
+    )
+    db.commit()
+    db.refresh(policy)
+    return {
+        "policy": quality_service.policy_out(policy, db),
+        "baseline": policy_service.baseline_out(baseline),
+    }
+
+
+@router.delete("/projects/{project_id}/model-quality/policies/{policy_id}/baseline")
+def clear_quality_baseline(
+    project_id: int,
+    policy_id: int,
+    access=Depends(require_project_perm(Permission.MONITOR_WRITE)),
+    db: Session = Depends(get_db),
+):
+    auth, _, _ = access
+    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    before = quality_service.policy_out(policy, db)
+    cleared = policy_service.clear_baseline(db, policy=policy)
+    if not cleared:
+        raise friendly(404, "No baseline is set for this policy.")
+    audit_event(
+        db,
+        auth,
+        "model_quality_policy.baseline_clear",
+        "model_quality_policy",
+        policy.id,
+        before=before,
+        after=quality_service.policy_out(policy, db),
+    )
+    db.commit()
+    db.refresh(policy)
+    return quality_service.policy_out(policy, db)
 
 
 @router.post("/projects/{project_id}/model-quality/policies/{policy_id}/evaluate", status_code=201)
@@ -431,6 +703,11 @@ def quality_summary(
             if latest
             else None
         )
+        baseline = policy_service.get_baseline_for_policy(db, policy.id)
+        effective = policy_service.effective_quality_rules(policy)
+        evaluation = (
+            quality_service._loads(latest.evaluation_json, {}) if latest else {}
+        )
         cards.append(
             {
                 "policy_id": policy.id,
@@ -455,6 +732,24 @@ def quality_summary(
                     db, project_id=project_id, endpoint_id=policy.endpoint_id
                 ),
                 "latest_run_id": latest.id if latest else None,
+                "revision": int(getattr(policy, "revision", 1) or 1),
+                "mode": policy_service.policy_mode(policy),
+                "rule_logic": str(getattr(policy, "rule_logic", "any") or "any"),
+                "rule_count": len(effective),
+                "evaluation_delay_hours": int(
+                    getattr(policy, "evaluation_delay_hours", 0) or 0
+                ),
+                "minimum_match_rate": getattr(policy, "minimum_match_rate", None),
+                "baseline_quality_run_id": baseline.quality_run_id if baseline else None,
+                "baseline_model_version_id": (
+                    baseline.model_version_id if baseline else None
+                ),
+                "baseline_required": any(
+                    rule.get("comparison") == "baseline_delta" for rule in effective
+                )
+                and baseline is None,
+                "latest_evaluation": evaluation if latest else None,
+                "latest_policy_revision": latest.policy_revision if latest else None,
             }
         )
     return {"items": cards}

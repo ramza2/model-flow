@@ -96,6 +96,11 @@ describe("AppShell Phase 1.5-A navigation", () => {
       "/projects/9/preparations",
     );
     expect(within(nav).getByRole("link", { name: /^Pipelines$/ })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Monitoring/ })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /Quality Policies/ })).toHaveAttribute(
+      "href",
+      "/projects/9/model-quality/policies",
+    );
     expect(within(nav).getByRole("link", { name: /Training Jobs/ })).toHaveClass("active");
     expect(within(nav).getByRole("link", { name: /^Audit Logs$/ })).toHaveAttribute("href", "/projects/9/audit");
     expect(within(nav).getByRole("link", { name: /Global Audit Logs/ })).toHaveAttribute("href", "/audit");
