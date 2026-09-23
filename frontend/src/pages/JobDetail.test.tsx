@@ -275,4 +275,177 @@ describe("JobDetail retrain", () => {
     expect(await screen.findByTestId("job-problem-type")).toHaveTextContent("regression");
   });
 
+  it("shows Continue training for eligible SGD jobs and submits continue endpoint", async () => {
+    const sgdJob = {
+      ...succeededJob,
+      algorithm: "sgd_classifier",
+      is_retrain: false,
+      retrain_source_job_id: null,
+      continued_from_job_id: null,
+      is_continued_training: false,
+      training_mode: "fresh",
+    };
+    const versions = [
+      {
+        id: 30,
+        dataset_id: 3,
+        project_id: 7,
+        version: 1,
+        original_filename: "v1.csv",
+        format: "csv",
+        row_count: 10,
+        column_count: 3,
+        columns: ["a", "b", "target"],
+        dtypes: {},
+        stats: {},
+        source_type: "upload",
+        created_at: "2026-01-01T00:00:00Z",
+      },
+      {
+        id: 31,
+        dataset_id: 3,
+        project_id: 7,
+        version: 2,
+        original_filename: "v2.csv",
+        format: "csv",
+        row_count: 12,
+        column_count: 3,
+        columns: ["a", "b", "target"],
+        dtypes: {},
+        stats: {},
+        source_type: "upload",
+        created_at: "2026-01-02T00:00:00Z",
+      },
+    ];
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes("/training/algorithms")) {
+        return {
+          algorithms: [
+            {
+              id: "sgd_classifier",
+              display_name: "SGD classifier",
+              problem_types: ["classification"],
+              supports_continued_training: true,
+              continued_training_strategy: "partial_fit",
+              default_hyperparameters: {},
+              supported_hyperparameters: [],
+              hyperparameters: [],
+            },
+          ],
+        };
+      }
+      if (path.endsWith("/jobs/42") && (!init || init.method === undefined)) return sgdJob;
+      if (path.endsWith("/datasets/3/versions")) return versions;
+      if (path.endsWith("/dataset-versions/31/splits")) return [];
+      if (path.endsWith("/continue") && init?.method === "POST") {
+        return {
+          ...sgdJob,
+          id: 88,
+          name: "baseline (continued)",
+          dataset_version_id: 31,
+          continued_from_job_id: 42,
+          is_continued_training: true,
+          training_mode: "continued",
+          status: "pending",
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("job-continue"));
+    expect(await screen.findByTestId("job-continue-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("continue-strategy")).toHaveTextContent("partial_fit");
+    expect(screen.getByTestId("continue-batch-hint")).toHaveTextContent("update batch");
+    const versionSelect = screen.getByTestId("continue-dataset-version") as HTMLSelectElement;
+    expect(versionSelect.value).toBe("31");
+    expect(Array.from(versionSelect.options).map((o) => o.value)).not.toContain("30");
+    fireEvent.change(screen.getByTestId("continue-name"), {
+      target: { value: "sgd continued v2" },
+    });
+    fireEvent.click(screen.getByTestId("continue-submit"));
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/jobs/42/continue",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            dataset_version_id: 31,
+            split_id: null,
+            name: "sgd continued v2",
+          }),
+        }),
+      );
+    });
+    expect(navigateMock).toHaveBeenCalledWith("/projects/7/jobs/88");
+  });
+
+  it("hides Continue training for unsupported algorithms", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("/training/algorithms")) {
+        return {
+          algorithms: [
+            {
+              id: "random_forest",
+              display_name: "Random forest",
+              problem_types: ["classification"],
+              supports_continued_training: false,
+              continued_training_strategy: "unsupported",
+              default_hyperparameters: {},
+              supported_hyperparameters: [],
+              hyperparameters: [],
+            },
+          ],
+        };
+      }
+      if (path.endsWith("/jobs/42")) return succeededJob;
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
+    expect(screen.queryByTestId("job-continue")).not.toBeInTheDocument();
+    expect(screen.getByTestId("retrain-continue-hint")).toHaveTextContent(
+      "Continued training unavailable",
+    );
+  });
+
+  it("shows continued lineage on continued jobs", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          algorithm: "sgd_classifier",
+          is_retrain: false,
+          retrain_source_job_id: null,
+          continued_from_job_id: 10,
+          is_continued_training: true,
+          training_mode: "continued",
+        };
+      }
+      if (path.includes("/training/algorithms")) {
+        return {
+          algorithms: [
+            {
+              id: "sgd_classifier",
+              display_name: "SGD classifier",
+              problem_types: ["classification"],
+              supports_continued_training: true,
+              continued_training_strategy: "partial_fit",
+              default_hyperparameters: {},
+              supported_hyperparameters: [],
+              hyperparameters: [],
+            },
+          ],
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    const lineage = await screen.findByTestId("job-continue-lineage");
+    expect(lineage).toHaveTextContent("Job #10");
+    expect(lineage.querySelector("a")).toHaveAttribute("href", "/projects/7/jobs/10");
+    expect(screen.getByTestId("job-training-mode")).toHaveTextContent("continued");
+    expect(screen.getByText("Continued training source")).toBeInTheDocument();
+  });
+
 });

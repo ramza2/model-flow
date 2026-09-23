@@ -20,7 +20,7 @@ from sklearn.ensemble import (
     RandomForestRegressor,
 )
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression, Ridge
+from sklearn.linear_model import LogisticRegression, Ridge, SGDClassifier, SGDRegressor
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -84,6 +84,9 @@ class TrainingJobContext:
     split_id: int | None = None
     dataset_version_id: int | None = None
     retrain_source_job_id: int | None = None
+    continued_from_job_id: int | None = None
+    continued_from_mlflow_run_id: str | None = None
+    continued_from_model_uri: str | None = None
     split_train_hash: str | None = None
     split_validation_hash: str | None = None
     split_test_hash: str | None = None
@@ -161,16 +164,110 @@ def _estimator(
         estimator = RandomForestClassifier(n_estimators=100, random_state=seed)
     elif algorithm == "gradient_boosting":
         estimator = GradientBoostingClassifier(random_state=seed)
+    elif algorithm == "sgd_classifier":
+        estimator = SGDClassifier(random_state=seed)
     elif algorithm == "ridge":
         estimator = Ridge()
     elif algorithm == "random_forest_regressor":
         estimator = RandomForestRegressor(n_estimators=100, random_state=seed)
+    elif algorithm == "sgd_regressor":
+        estimator = SGDRegressor(random_state=seed)
     else:
         estimator = GradientBoostingRegressor(random_state=seed)
     estimator.set_params(**_filtered_params(estimator, hyperparameters))
     if multi_output:
         return wrap_estimator_for_multi_output(estimator, algorithm)
     return estimator
+
+
+def _load_continued_source_pipeline(model_uri: str) -> Pipeline:
+    """Load and validate a source sklearn Pipeline for continued training."""
+    try:
+        loaded = mlflow.sklearn.load_model(model_uri)
+    except Exception as exc:  # noqa: BLE001 — surface as training failure
+        raise ValueError(
+            "The source model artifact could not be loaded for continued training. "
+            "Use Full Retrain instead."
+        ) from exc
+    if not isinstance(loaded, Pipeline):
+        raise ValueError(
+            "The source model artifact does not support continued training. "
+            "Use Full Retrain instead."
+        )
+    if "preprocessing" not in loaded.named_steps or "estimator" not in loaded.named_steps:
+        raise ValueError(
+            "The source model artifact does not support continued training. "
+            "Use Full Retrain instead."
+        )
+    estimator = loaded.named_steps["estimator"]
+    if not callable(getattr(estimator, "partial_fit", None)):
+        raise ValueError(
+            "The source model artifact does not support continued training. "
+            "Use Full Retrain instead."
+        )
+    return loaded
+
+
+def _validate_continued_classes(
+    estimator: Any,
+    y_train: pd.Series | pd.DataFrame,
+    *,
+    problem_type: str,
+) -> None:
+    if problem_type != "classification":
+        return
+    classes = getattr(estimator, "classes_", None)
+    if classes is None:
+        raise ValueError(
+            "The source classifier has no fitted classes_. "
+            "Use Full Retrain instead."
+        )
+    known = {str(value) for value in np.asarray(classes).tolist()}
+    if isinstance(y_train, pd.DataFrame):
+        observed = {str(value) for value in y_train.iloc[:, 0].dropna().unique().tolist()}
+    else:
+        observed = {str(value) for value in y_train.dropna().unique().tolist()}
+    unknown = sorted(observed - known)
+    if unknown:
+        raise ValueError(
+            "New target classes require Full Retrain. "
+            f"Unknown classes in update data: {', '.join(unknown[:10])}."
+        )
+
+
+def _continued_partial_fit(
+    source_pipeline: Pipeline,
+    *,
+    x_train: pd.DataFrame,
+    y_train: pd.Series | pd.DataFrame,
+    problem_type: str,
+    log: Any,
+) -> Pipeline:
+    """Update estimator via partial_fit; never refit preprocessing."""
+    preprocessing = source_pipeline.named_steps["preprocessing"]
+    estimator = source_pipeline.named_steps["estimator"]
+    _validate_continued_classes(estimator, y_train, problem_type=problem_type)
+    log("Transforming update batch with frozen source preprocessing...")
+    try:
+        # Intentionally call transform only — never fit / fit_transform.
+        x_transformed = preprocessing.transform(x_train)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Update data is incompatible with the frozen source preprocessing. "
+            "Use full retraining if you need a different dataset/schema."
+        ) from exc
+    log("Updating estimator with partial_fit (preprocessing remains frozen)...")
+    if problem_type == "classification" and hasattr(estimator, "classes_"):
+        estimator.partial_fit(x_transformed, y_train, classes=estimator.classes_)
+    else:
+        estimator.partial_fit(x_transformed, y_train)
+    # Rebuild Pipeline so named_steps still point at the same fitted objects.
+    return Pipeline(
+        [
+            ("preprocessing", preprocessing),
+            ("estimator", estimator),
+        ]
+    )
 
 
 def _imputer_config(value: Any, default: str) -> tuple[str, Any | None]:
@@ -540,21 +637,50 @@ class SklearnTrainingRunner:
             x_train, x_val, x_test, y_train, y_val, y_test = splits
             features_for_schema = features
 
-        estimator = _estimator(
-            algorithm,
-            ctx.hyperparameters,
-            ctx.random_seed,
-            multi_output=multi_output,
-        )
-        model = Pipeline(
-            [
-                ("preprocessing", _preprocessor(features_for_schema, ctx.preprocessing)),
-                ("estimator", estimator),
-            ]
-        )
+        continued = ctx.continued_from_job_id is not None
+        if continued:
+            if not ctx.continued_from_model_uri:
+                raise ValueError(
+                    "Continued training requires the source model URI. "
+                    "Use Full Retrain instead."
+                )
+            if multi_output:
+                raise ValueError(
+                    "Continued training supports single-output models only. "
+                    "Use Full Retrain for multi-output models."
+                )
+            source_pipeline = _load_continued_source_pipeline(ctx.continued_from_model_uri)
+            log(
+                f"Continued training from job #{ctx.continued_from_job_id} "
+                f"(frozen preprocessing + partial_fit)"
+            )
+            model = _continued_partial_fit(
+                source_pipeline,
+                x_train=x_train,
+                y_train=y_train,
+                problem_type=problem_type,
+                log=log,
+            )
+            # Deferred: actual partial_fit already ran; skip model.fit below.
+            skip_fit = True
+        else:
+            estimator = _estimator(
+                algorithm,
+                ctx.hyperparameters,
+                ctx.random_seed,
+                multi_output=multi_output,
+            )
+            model = Pipeline(
+                [
+                    ("preprocessing", _preprocessor(features_for_schema, ctx.preprocessing)),
+                    ("estimator", estimator),
+                ]
+            )
+            skip_fit = False
         log(
             f"task={problem_type}, algorithm={algorithm}, "
             f"features={selected}, split={len(x_train)}/{len(x_val)}/{len(x_test)}"
+            + (", training_mode=continued" if continued else "")
         )
 
         mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
@@ -579,11 +705,17 @@ class SklearnTrainingRunner:
             "pandas_version": pd.__version__,
             "numpy_version": np.__version__,
             "mlflow_version": mlflow.__version__,
+            "training_mode": "continued" if continued else "fresh",
         }
         if ctx.dataset_version_id is not None:
             logged_params["dataset_version_id"] = ctx.dataset_version_id
         if ctx.retrain_source_job_id is not None:
             logged_params["retrain_source_job_id"] = ctx.retrain_source_job_id
+            logged_params["training_mode"] = "full_retrain"
+        if ctx.continued_from_job_id is not None:
+            logged_params["continued_from_job_id"] = ctx.continued_from_job_id
+        if ctx.continued_from_mlflow_run_id:
+            logged_params["continued_from_mlflow_run_id"] = ctx.continued_from_mlflow_run_id
         if ctx.split_id is not None:
             logged_params["split_id"] = ctx.split_id
             logged_params["split_train_ratio"] = ctx.train_ratio
@@ -611,17 +743,27 @@ class SklearnTrainingRunner:
                 "modelflow.algorithm": algorithm,
                 "modelflow.multi_output": str(multi_output).lower(),
                 "modelflow.output_count": str(len(target_columns)),
+                "modelflow.training_mode": str(logged_params["training_mode"]),
             }
             if ctx.retrain_source_job_id is not None:
                 tags["modelflow.retrain_source_job_id"] = str(ctx.retrain_source_job_id)
+            if ctx.continued_from_job_id is not None:
+                tags["modelflow.continued_from_job_id"] = str(ctx.continued_from_job_id)
+            if ctx.continued_from_mlflow_run_id:
+                tags["modelflow.continued_from_mlflow_run_id"] = (
+                    ctx.continued_from_mlflow_run_id
+                )
             if ctx.split_id is not None:
                 tags["modelflow.split_id"] = str(ctx.split_id)
                 tags["modelflow.split_source"] = "saved"
             else:
                 tags["modelflow.split_source"] = "runtime"
             mlflow.set_tags(tags)
-            log("Fitting preprocessing pipeline and estimator...")
-            model.fit(x_train, y_train)
+            if skip_fit:
+                log("Continued training: estimator updated via partial_fit; skipping fit.")
+            else:
+                log("Fitting preprocessing pipeline and estimator...")
+                model.fit(x_train, y_train)
 
             metric_values: dict[str, float] = {}
             target_metrics_payload: dict[str, Any] = {"targets": target_columns}
@@ -694,7 +836,11 @@ class SklearnTrainingRunner:
                 "target_columns": target_columns,
                 "multi_output": multi_output,
                 "output_schema": output_schema,
+                "training_mode": logged_params["training_mode"],
             }
+            if ctx.continued_from_job_id is not None:
+                metadata["continued_from_job_id"] = ctx.continued_from_job_id
+                metadata["continued_from_mlflow_run_id"] = ctx.continued_from_mlflow_run_id
             if ctx.split_id is not None:
                 metadata["split"] = {
                     "split_id": ctx.split_id,

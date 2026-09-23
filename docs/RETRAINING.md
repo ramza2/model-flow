@@ -12,7 +12,7 @@ The worker always builds a new sklearn pipeline/estimator and calls `fit()` from
 - call `partial_fit` or `warm_start`
 - resume an existing MLflow run
 
-**Incremental / Continued Training is not part of Phase 1.1.** That will be a separate phase.
+**Incremental / Continued Training is Phase 5.1** — see [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md). Full retrain remains fresh `fit()` with `retrain_source_job_id`; continued training uses `continued_from_job_id` and must not be confused with this document's semantics.
 
 ## API
 
@@ -69,8 +69,9 @@ GET /api/v1/projects/{project_id}/jobs?retrain_source_job_id={source_job_id}
 | `parent_job_id` | Immediate predecessor for **retry** or **clone** flows |
 | `retrain_source_job_id` | Source job for **full retrain** jobs |
 | `is_retrain` | `true` when `retrain_source_job_id` is set |
+| `continued_from_job_id` | Source job for **continued training** (Phase 5.1; distinct) |
 
-Retry and retrain lineage are intentionally separate so retry chains are not confused with retrain chains.
+Retry, retrain, and continued-training lineage are intentionally separate so chains are not confused.
 
 ## MLflow
 

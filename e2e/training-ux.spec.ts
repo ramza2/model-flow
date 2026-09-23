@@ -53,8 +53,9 @@ test("training auto detection filters classification algorithms", async ({ page 
 
   await expect(page.getByTestId("detected-problem-type")).toContainText("Classification", { timeout: 30_000 });
   const algorithm = page.getByTestId("job-algorithm");
-  await expect(algorithm.locator("option")).toHaveCount(3);
+  await expect(algorithm.locator("option")).toHaveCount(4);
   await expect(algorithm).toContainText("Random forest");
+  await expect(algorithm).toContainText("SGD classifier");
   await expect(algorithm).not.toContainText("Ridge regression");
   await page.getByTestId("job-name").fill("e2e-auto-cls");
   await page.getByTestId("job-submit").click();
