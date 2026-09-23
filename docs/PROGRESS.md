@@ -2,7 +2,17 @@
 
 ## Current phase
 
-**Enhancement Phase 5-D — Closed-loop UX / Final Hardening** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+**Enhancement Phase 5.1 — Incremental / Continued Training** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+
+Baseline: `main@b7702144ffdabc94b02ccd323aa460de09e550fa` (Phase 5-D / PR #62; post-merge CI #304 PASS; Alembic head `020_advanced_quality_policy`).
+
+**Enhancement Phase 5 — Closed-loop MLOps is complete on `main`.**
+
+Phase 5-D complete evidence:
+
+- PR #62 squash merge commit `b7702144ffdabc94b02ccd323aa460de09e550fa`
+- post-merge `main` CI #304 PASS
+- Alembic head at merge: `020_advanced_quality_policy`
 
 **Enhancement Phase 5-C — Advanced Quality Policies is complete on `main`.**
 
@@ -11,7 +21,6 @@ Phase 5-C complete evidence:
 - PR #61 squash merge commit `2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`
 - post-merge `main` CI #300 PASS
 - Alembic head at merge: `020_advanced_quality_policy`
-- Current baseline for Phase 5-D: `main@2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`
 
 **Enhancement Phase 5-B — Feedback Dataset Materialization is complete on `main`.**
 
@@ -371,17 +380,17 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 5-D — Closed-loop UX / Final Hardening** on a feature branch from `main@2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5-D must not be marked complete until that merge evidence exists.
+Complete **Phase 5.1 — Incremental / Continued Training** on a feature branch from `main@b7702144ffdabc94b02ccd323aa460de09e550fa`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5.1 must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 
 ```text
-Closed-loop automation terminates at CANDIDATE.
-PRODUCTION always requires explicit authorized human action.
-Only explicitly APPROVED feedback can become training data.
+Full Retrain != Continued Training
+Closed-loop automation continues to use full retraining only.
+Continued training is manual/explicit and terminates at CANDIDATE when registered.
 ```
 
-See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md), [`phase-5a-verification.md`](./phase-5a-verification.md), and [`phase-5b-verification.md`](./phase-5b-verification.md).
+See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md) and [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

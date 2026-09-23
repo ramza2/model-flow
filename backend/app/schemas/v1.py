@@ -169,6 +169,17 @@ class JobRetrainRequest(BaseModel):
     description: str | None = None
 
 
+class JobContinueRequest(BaseModel):
+    """Continued / incremental training request (Phase 5.1)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_version_id: int
+    split_id: int | None = None
+    name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
+
+
 class PipelineCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str = ""

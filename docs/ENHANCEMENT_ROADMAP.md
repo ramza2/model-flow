@@ -227,7 +227,7 @@ See [`phase-4-connectors.md`](./phase-4-connectors.md) for the connector contrac
 
 ## Phase 5 — Closed-loop MLOps
 
-**Status:** current — Phase 5-D
+**Status:** complete — Phase 5-D
 
 Closed-loop production quality evaluation and full retraining that always terminates at **CANDIDATE**. Explicit human approval remains required for PRODUCTION.
 
@@ -248,7 +248,9 @@ Implementation slices:
 3. **Phase 5-C — Advanced Quality Policies** — complete
    - PR #61 merged; squash `2753a8e7a2c9338f6e0458a2d9f9c71dea38f32c`; post-merge CI #300 PASS
    - Alembic head at merge: `020_advanced_quality_policy`
-4. **Phase 5-D — Closed-loop UX / Final Hardening** — current
+4. **Phase 5-D — Closed-loop UX / Final Hardening** — complete
+   - PR #62 merged; squash `b7702144ffdabc94b02ccd323aa460de09e550fa`; post-merge CI #304 PASS
+   - Alembic head at merge: `020_advanced_quality_policy`
 
 See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
@@ -258,10 +260,15 @@ See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
 ## Phase 5.1 — Incremental / Continued Training
 
-- supported-algorithm-only continued learning
-- `partial_fit`, warm-start, or equivalent capability where technically valid
-- explicit distinction from full retraining
-- lineage and compatibility rules for continued training
+**Status:** current
+
+- supported-algorithm-only continued learning (`sgd_classifier` / `sgd_regressor` via `partial_fit`)
+- explicit distinction from full retraining (`continued_from_job_id` vs `retrain_source_job_id`)
+- frozen fitted preprocessing + estimator state update on a newer DatasetVersion of the same Dataset
+- lineage and compatibility gates (no row-level delta inference; no closed-loop auto-continue)
+- Draft implementation — not complete on `main` until merge + post-merge CI PASS
+
+See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md).
 
 **Depends on:** stable full-retraining semantics and closed-loop workflow foundations.
 

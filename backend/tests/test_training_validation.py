@@ -109,7 +109,7 @@ def _upload(client, auth_headers, project_id: int, csv: bytes, filename="data.cs
     return response.json()
 
 
-def test_algorithm_catalog_lists_six_algorithms(client, auth_headers):
+def test_algorithm_catalog_lists_algorithms_with_continued_capability(client, auth_headers):
     project_id = _project(client, auth_headers, "catalog")
     response = client.get(
         f"/api/v1/projects/{project_id}/training/algorithms",
@@ -121,12 +121,22 @@ def test_algorithm_catalog_lists_six_algorithms(client, auth_headers):
         "random_forest",
         "logistic_regression",
         "gradient_boosting",
+        "sgd_classifier",
         "ridge",
         "random_forest_regressor",
         "gradient_boosting_regressor",
+        "sgd_regressor",
     }
-    assert len(list_algorithms("classification")) == 3
-    assert len(list_algorithms("regression")) == 3
+    assert len(list_algorithms("classification")) == 4
+    assert len(list_algorithms("regression")) == 4
+    by_id = {row["id"]: row for row in list_algorithms()}
+    assert by_id["sgd_classifier"]["supports_continued_training"] is True
+    assert by_id["sgd_classifier"]["continued_training_strategy"] == "partial_fit"
+    assert by_id["sgd_regressor"]["supports_continued_training"] is True
+    assert by_id["sgd_regressor"]["continued_training_strategy"] == "partial_fit"
+    assert by_id["random_forest"]["supports_continued_training"] is False
+    assert by_id["logistic_regression"]["supports_continued_training"] is False
+    assert by_id["ridge"]["supports_continued_training"] is False
 
 
 def test_detect_problem_type_string_and_continuous():

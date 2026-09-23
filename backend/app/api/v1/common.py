@@ -300,6 +300,19 @@ def split_out(row: DatasetSplit) -> dict[str, Any]:
 
 
 def job_out(row: TrainingJob) -> dict[str, Any]:
+    continued_from = getattr(row, "continued_from_job_id", None)
+    is_continued = continued_from is not None
+    is_retrain = row.retrain_source_job_id is not None
+    if is_continued:
+        training_mode = "continued"
+    elif is_retrain:
+        training_mode = "full_retrain"
+    elif row.parent_job_id is not None and row.retry_count > 0:
+        training_mode = "retry"
+    elif row.parent_job_id is not None:
+        training_mode = "clone"
+    else:
+        training_mode = "fresh"
     return {
         "id": row.id,
         "project_id": row.project_id,
@@ -334,7 +347,10 @@ def job_out(row: TrainingJob) -> dict[str, Any]:
         "created_by": row.created_by,
         "parent_job_id": row.parent_job_id,
         "retrain_source_job_id": row.retrain_source_job_id,
-        "is_retrain": row.retrain_source_job_id is not None,
+        "is_retrain": is_retrain,
+        "continued_from_job_id": continued_from,
+        "is_continued_training": is_continued,
+        "training_mode": training_mode,
         "created_at": row.created_at,
         "started_at": row.started_at,
         "finished_at": row.finished_at,
