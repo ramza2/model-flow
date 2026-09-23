@@ -107,12 +107,12 @@ test("continued training UX wires Continue action and lineage", async ({ page, r
   await expect(page.getByTestId("job-retrain")).toBeVisible();
   await page.getByTestId("job-continue").click();
   await expect(page.getByTestId("job-continue-dialog")).toBeVisible();
-  await expect(page.getByTestId("continue-strategy")).toHaveTextContent("partial_fit");
+  await expect(page.getByTestId("continue-strategy")).toHaveText("partial_fit");
   await page.getByTestId("continue-dataset-version").selectOption(String(version2Id));
   await page.getByTestId("continue-name").fill("e2e-sgd-continued");
   await page.getByTestId("continue-submit").click();
 
   await expect(page.getByTestId("job-continue-lineage")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByTestId("job-continue-lineage")).toContainText(`Job #${sourceJob.id}`);
-  await expect(page.getByTestId("job-training-mode")).toHaveTextContent("continued");
+  await expect(page.getByTestId("job-training-mode")).toHaveText("continued");
 });
