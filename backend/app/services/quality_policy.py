@@ -432,6 +432,22 @@ def validate_baseline_run(
             raise ValueError(f"Baseline run does not include target '{rule['target']}'.")
 
 
+def lock_policy_for_update(db: Session, policy_id: int) -> ModelQualityPolicy | None:
+    """Lock a policy row and refresh any stale identity-map instance.
+
+    Callers that already loaded the policy via ``get``/``get_owned`` must still
+    use this helper before bumping ``revision`` so concurrent commits are visible
+    after the row lock is acquired (``populate_existing``).
+    """
+
+    return db.get(
+        ModelQualityPolicy,
+        policy_id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+
+
 def set_baseline(
     db: Session,
     *,
@@ -439,6 +455,12 @@ def set_baseline(
     quality_run_id: int,
     created_by: int | None,
 ) -> ModelQualityBaseline:
+    # Prefer an already-locked policy from the route; still re-lock with
+    # populate_existing so stale identity-map revisions cannot win.
+    locked = lock_policy_for_update(db, policy.id)
+    if locked is None:
+        raise ValueError("Quality policy was not found.")
+    policy = locked
     run = db.get(ModelQualityRun, quality_run_id)
     if run is None or run.project_id != policy.project_id:
         raise ValueError("Quality run was not found.")
@@ -477,6 +499,10 @@ def set_baseline(
 
 
 def clear_baseline(db: Session, *, policy: ModelQualityPolicy) -> bool:
+    locked = lock_policy_for_update(db, policy.id)
+    if locked is None:
+        return False
+    policy = locked
     existing = get_baseline_for_policy(db, policy.id)
     if existing is None:
         return False

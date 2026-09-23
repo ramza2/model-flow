@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, not_, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
@@ -42,6 +42,31 @@ def is_materializable(observation: PredictionObservation | None) -> bool:
     if observation is None:
         return False
     return bool(observation.input_json and str(observation.input_json).strip())
+
+
+def input_snapshot_sql_clause(*, available: bool):
+    """SQL equivalent of ``bool(input_json and input_json.strip())``."""
+
+    has_snapshot = and_(
+        PredictionObservation.input_json.is_not(None),
+        func.trim(PredictionObservation.input_json) != "",
+    )
+    return has_snapshot if available else not_(has_snapshot)
+
+
+def materializable_sql_clause(*, materializable: bool):
+    """SQL equivalent of ``feedback_out(... )['materializable']``.
+
+    Requires a non-empty input snapshot plus APPROVED review and unlocked rows.
+    """
+
+    ready = and_(
+        input_snapshot_sql_clause(available=True),
+        GroundTruthFeedback.review_status == FeedbackReviewStatus.APPROVED.value,
+        GroundTruthFeedback.materialized_dataset_version_id.is_(None),
+        GroundTruthFeedback.materialization_run_id.is_(None),
+    )
+    return ready if materializable else not_(ready)
 
 
 def is_materialized(feedback: GroundTruthFeedback) -> bool:
@@ -106,6 +131,31 @@ def feedback_out(
     }
 
 
+def _feedback_filter_clauses(
+    *,
+    project_id: int,
+    endpoint_id: int | None = None,
+    model_version_id: int | None = None,
+    review_status: str | None = None,
+    materialized: bool | None = None,
+    materializable: bool | None = None,
+) -> list[Any]:
+    clauses: list[Any] = [GroundTruthFeedback.project_id == project_id]
+    if endpoint_id is not None:
+        clauses.append(PredictionObservation.endpoint_id == endpoint_id)
+    if model_version_id is not None:
+        clauses.append(PredictionObservation.model_version_id == model_version_id)
+    if review_status:
+        clauses.append(GroundTruthFeedback.review_status == review_status.upper())
+    if materialized is True:
+        clauses.append(GroundTruthFeedback.materialized_dataset_version_id.is_not(None))
+    elif materialized is False:
+        clauses.append(GroundTruthFeedback.materialized_dataset_version_id.is_(None))
+    if materializable is not None:
+        clauses.append(materializable_sql_clause(materializable=bool(materializable)))
+    return clauses
+
+
 def list_feedback(
     db: Session,
     *,
@@ -118,38 +168,62 @@ def list_feedback(
     skip: int = 0,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
+    clauses = _feedback_filter_clauses(
+        project_id=project_id,
+        endpoint_id=endpoint_id,
+        model_version_id=model_version_id,
+        review_status=review_status,
+        materialized=materialized,
+        materializable=materializable,
+    )
     query = (
         select(GroundTruthFeedback, PredictionObservation)
         .join(
             PredictionObservation,
             PredictionObservation.id == GroundTruthFeedback.prediction_observation_id,
         )
-        .where(GroundTruthFeedback.project_id == project_id)
+        .where(*clauses)
+        .order_by(GroundTruthFeedback.id.desc())
+        .offset(skip)
+        .limit(limit)
     )
-    if endpoint_id is not None:
-        query = query.where(PredictionObservation.endpoint_id == endpoint_id)
-    if model_version_id is not None:
-        query = query.where(PredictionObservation.model_version_id == model_version_id)
-    if review_status:
-        query = query.where(GroundTruthFeedback.review_status == review_status.upper())
-    if materialized is True:
-        query = query.where(GroundTruthFeedback.materialized_dataset_version_id.is_not(None))
-    elif materialized is False:
-        query = query.where(GroundTruthFeedback.materialized_dataset_version_id.is_(None))
+    rows = db.execute(query).all()
+    return [
+        feedback_out(db, feedback, observation=observation)
+        for feedback, observation in rows
+    ]
 
-    rows = db.execute(
-        query.order_by(GroundTruthFeedback.id.desc()).offset(skip).limit(limit)
-    ).all()
 
-    results: list[dict[str, Any]] = []
-    for feedback, observation in rows:
-        item = feedback_out(db, feedback, observation=observation)
-        if materializable is True and not item["materializable"]:
-            continue
-        if materializable is False and item["materializable"]:
-            continue
-        results.append(item)
-    return results
+def count_feedback(
+    db: Session,
+    *,
+    project_id: int,
+    endpoint_id: int | None = None,
+    model_version_id: int | None = None,
+    review_status: str | None = None,
+    materialized: bool | None = None,
+    materializable: bool | None = None,
+) -> int:
+    """Exact SQL count using the same filters as ``list_feedback``."""
+
+    clauses = _feedback_filter_clauses(
+        project_id=project_id,
+        endpoint_id=endpoint_id,
+        model_version_id=model_version_id,
+        review_status=review_status,
+        materialized=materialized,
+        materializable=materializable,
+    )
+    query = (
+        select(func.count())
+        .select_from(GroundTruthFeedback)
+        .join(
+            PredictionObservation,
+            PredictionObservation.id == GroundTruthFeedback.prediction_observation_id,
+        )
+        .where(*clauses)
+    )
+    return int(db.scalar(query) or 0)
 
 
 def apply_review_decisions(

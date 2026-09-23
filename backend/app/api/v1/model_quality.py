@@ -33,7 +33,7 @@ from app.schemas.v1 import (
     ModelQualityPolicyCreate,
     ModelQualityPolicyUpdate,
 )
-from app.services import closed_loop, model_quality as quality_service
+from app.services import closed_loop_ux, model_quality as quality_service
 from app.services import quality_policy as policy_service
 
 router = APIRouter(tags=["model-quality"])
@@ -411,7 +411,10 @@ def update_quality_policy(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    # Row lock so concurrent baseline set/clear/PATCH cannot lose revision bumps.
+    policy = policy_service.lock_policy_for_update(db, policy_id)
+    if policy is None or policy.project_id != project_id:
+        raise friendly(404, "Quality policy was not found.")
     before = quality_service.policy_out(policy, db)
     before_semantic = policy_service.semantic_config_from_policy(policy)
     data = body.model_dump(exclude_unset=True)
@@ -556,7 +559,10 @@ def set_quality_baseline(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    # Lock-first so concurrent baseline/PATCH cannot operate on a stale revision.
+    policy = policy_service.lock_policy_for_update(db, policy_id)
+    if policy is None or policy.project_id != project_id:
+        raise friendly(404, "Quality policy was not found.")
     before = quality_service.policy_out(policy, db)
     try:
         baseline = policy_service.set_baseline(
@@ -592,7 +598,9 @@ def clear_quality_baseline(
     db: Session = Depends(get_db),
 ):
     auth, _, _ = access
-    policy = get_owned(db, ModelQualityPolicy, policy_id, project_id, "Quality policy")
+    policy = policy_service.lock_policy_for_update(db, policy_id)
+    if policy is None or policy.project_id != project_id:
+        raise friendly(404, "Quality policy was not found.")
     before = quality_service.policy_out(policy, db)
     cleared = policy_service.clear_baseline(db, policy=policy)
     if not cleared:
@@ -635,20 +643,41 @@ def list_quality_runs(
     project_id: int,
     endpoint_id: int | None = None,
     policy_id: int | None = None,
+    model_version_id: int | None = None,
+    quality_status: str | None = None,
+    status: str | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    paged: bool = Query(
+        default=False,
+        description="When true, return {items,total,skip,limit} instead of a bare list.",
+    ),
     _=Depends(require_project_perm(Permission.MONITOR_READ)),
     db: Session = Depends(get_db),
 ):
-    statement = select(ModelQualityRun).where(ModelQualityRun.project_id == project_id)
+    from sqlalchemy import func
+
+    filters = [ModelQualityRun.project_id == project_id]
     if endpoint_id is not None:
-        statement = statement.where(ModelQualityRun.endpoint_id == endpoint_id)
+        filters.append(ModelQualityRun.endpoint_id == endpoint_id)
     if policy_id is not None:
-        statement = statement.where(ModelQualityRun.policy_id == policy_id)
+        filters.append(ModelQualityRun.policy_id == policy_id)
+    if model_version_id is not None:
+        filters.append(ModelQualityRun.model_version_id == model_version_id)
+    if quality_status is not None:
+        filters.append(ModelQualityRun.quality_status == quality_status.strip().lower())
+    if status is not None:
+        filters.append(ModelQualityRun.status == status.strip().lower())
+
+    statement = select(ModelQualityRun).where(*filters)
     rows = db.scalars(
         statement.order_by(ModelQualityRun.id.desc()).offset(skip).limit(limit)
     ).all()
-    return [quality_service.quality_run_out(row) for row in rows]
+    items = [quality_service.quality_run_out(row) for row in rows]
+    if not paged:
+        return items
+    total = int(db.scalar(select(func.count()).select_from(ModelQualityRun).where(*filters)) or 0)
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
 @router.get("/projects/{project_id}/model-quality/runs/{run_id}")
@@ -708,6 +737,15 @@ def quality_summary(
         evaluation = (
             quality_service._loads(latest.evaluation_json, {}) if latest else {}
         )
+        closed_loop_detail = closed_loop_ux.compute_closed_loop_detail(
+            db,
+            project_id=project_id,
+            endpoint_id=policy.endpoint_id,
+            policy=policy,
+        )
+        decision = (
+            quality_service._loads(latest.trigger_decision_json, {}) if latest else {}
+        )
         cards.append(
             {
                 "policy_id": policy.id,
@@ -728,10 +766,12 @@ def quality_summary(
                 "window_start": latest.window_start if latest else None,
                 "window_end": latest.window_end if latest else None,
                 "last_evaluated_at": latest.finished_at if latest else None,
-                "closed_loop_state": closed_loop.compute_closed_loop_state(
-                    db, project_id=project_id, endpoint_id=policy.endpoint_id
+                "closed_loop_state": closed_loop_ux.compute_closed_loop_state_label(
+                    closed_loop_detail
                 ),
+                "closed_loop": closed_loop_detail,
                 "latest_run_id": latest.id if latest else None,
+                "latest_trigger_decision": decision if latest else None,
                 "revision": int(getattr(policy, "revision", 1) or 1),
                 "mode": policy_service.policy_mode(policy),
                 "rule_logic": str(getattr(policy, "rule_logic", "any") or "any"),
@@ -740,6 +780,9 @@ def quality_summary(
                     getattr(policy, "evaluation_delay_hours", 0) or 0
                 ),
                 "minimum_match_rate": getattr(policy, "minimum_match_rate", None),
+                "minimum_matched_samples": int(
+                    getattr(policy, "minimum_matched_samples", 0) or 0
+                ),
                 "baseline_quality_run_id": baseline.quality_run_id if baseline else None,
                 "baseline_model_version_id": (
                     baseline.model_version_id if baseline else None

@@ -44,10 +44,11 @@ def list_feedback(
     materializable: bool | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    paged: bool = Query(default=False),
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
-    return review_service.list_feedback(
+    items = review_service.list_feedback(
         db,
         project_id=project_id,
         endpoint_id=endpoint_id,
@@ -58,6 +59,18 @@ def list_feedback(
         skip=skip,
         limit=limit,
     )
+    if not paged:
+        return items
+    total = review_service.count_feedback(
+        db,
+        project_id=project_id,
+        endpoint_id=endpoint_id,
+        model_version_id=model_version_id,
+        review_status=review_status,
+        materialized=materialized,
+        materializable=materializable,
+    )
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
 @router.post("/projects/{project_id}/feedback/review")
@@ -86,12 +99,17 @@ def list_materializations(
     project_id: int,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
+    paged: bool = Query(default=False),
     _=Depends(require_project_perm(Permission.DATA_READ)),
     db: Session = Depends(get_db),
 ):
-    return materialization_service.list_runs(
+    items = materialization_service.list_runs(
         db, project_id=project_id, skip=skip, limit=limit
     )
+    if not paged:
+        return items
+    total = materialization_service.count_runs(db, project_id=project_id)
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
 @router.get("/projects/{project_id}/feedback-materializations/{run_id}")

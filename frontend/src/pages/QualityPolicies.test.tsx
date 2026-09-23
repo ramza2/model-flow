@@ -149,7 +149,7 @@ function mockDefaultApis(policies = [legacyPolicy, advancedPolicy]) {
     }
     if (path.endsWith("/endpoints")) return endpoints;
     if (path.includes("/endpoints/9")) return endpoints[0];
-    if (path.includes("/model-quality/runs")) return [okRun];
+    if (path.includes("/model-quality/runs")) return { items: [okRun], total: 1, skip: 0, limit: 10 };
     if (path.endsWith("/model-quality/policies") && init?.method === "POST") {
       return { ...advancedPolicy, id: 99, name: "Created", revision: 1, baseline: null };
     }
@@ -273,7 +273,7 @@ describe("QualityPolicies", () => {
       }
       if (path.endsWith("/endpoints")) return endpoints;
       if (path.includes("/endpoints/9")) return endpoints[0];
-      if (path.includes("/model-quality/runs")) return [okRun];
+      if (path.includes("/model-quality/runs")) return { items: [okRun], total: 1, skip: 0, limit: 10 };
       if (path.includes("/baseline") && init?.method === "POST") {
         const baseline = {
           id: 1,
@@ -379,15 +379,20 @@ describe("QualityPolicies", () => {
       if (path.endsWith("/endpoints")) return endpoints;
       if (path.includes("/endpoints/9")) return endpoints[0];
       if (path.includes("/model-quality/runs")) {
-        return [
-          absoluteOkRun,
-          otherEndpointRun,
-          oldModelRun,
-          insufficientRun,
-          warningRun,
-          lowSampleRun,
-          lowRateRun,
-        ];
+        return {
+          items: [
+            absoluteOkRun,
+            otherEndpointRun,
+            oldModelRun,
+            insufficientRun,
+            warningRun,
+            lowSampleRun,
+            lowRateRun,
+          ],
+          total: 7,
+          skip: 0,
+          limit: 10,
+        };
       }
       if (path.includes("/baseline") && init?.method === "POST") {
         expect(JSON.parse(String(init.body))).toEqual({ quality_run_id: 10 });
@@ -433,7 +438,7 @@ describe("QualityPolicies", () => {
       }
       if (path.endsWith("/endpoints")) return endpoints;
       if (path.includes("/endpoints/9")) return endpoints[0];
-      if (path.includes("/model-quality/runs")) return [];
+      if (path.includes("/model-quality/runs")) return { items: [], total: 0, skip: 0, limit: 10 };
       if (path.includes("/policies/1") && init?.method === "PATCH") {
         const body = JSON.parse(String(init.body));
         expect(body.rules).toEqual([]);
@@ -498,7 +503,7 @@ describe("QualityPolicies", () => {
       }
       if (path.endsWith("/endpoints")) return endpoints;
       if (path.includes("/endpoints/9")) return endpoints[0];
-      if (path.includes("/model-quality/runs")) return [];
+      if (path.includes("/model-quality/runs")) return { items: [], total: 0, skip: 0, limit: 10 };
       if (init?.method === "POST") {
         throw new Error(
           "For baseline_delta rules, warning_threshold must be <= critical_threshold.",

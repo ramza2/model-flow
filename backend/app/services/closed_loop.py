@@ -161,6 +161,17 @@ def maybe_create_degradation_alert(
 ) -> Alert | None:
     if run.quality_status not in {"warning", "critical"}:
         return None
+    # Serialize concurrent processors for the same quality run without a new
+    # Alert unique constraint / migration. RetrainTrigger still uses quality_run_id UNIQUE.
+    locked_run = db.get(
+        ModelQualityRun,
+        run.id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    if locked_run is None:
+        return None
+    run = locked_run
     resource_id = str(run.id)
     existing = _existing_alert(
         db,
@@ -747,48 +758,20 @@ def compute_closed_loop_state(
     *,
     project_id: int,
     endpoint_id: int,
+    policy: ModelQualityPolicy | None = None,
 ) -> str:
-    """Presentation-only closed-loop state derived from persisted entities."""
+    """Presentation-only closed-loop state derived from persisted entities.
 
-    latest_run = db.scalar(
-        select(ModelQualityRun)
-        .where(
-            ModelQualityRun.project_id == project_id,
-            ModelQualityRun.endpoint_id == endpoint_id,
-            ModelQualityRun.status == JobStatus.succeeded,
-        )
-        .order_by(ModelQualityRun.id.desc())
-    )
-    latest_trigger = db.scalar(
-        select(RetrainTrigger)
-        .join(ModelQualityRun, ModelQualityRun.id == RetrainTrigger.quality_run_id)
-        .where(
-            RetrainTrigger.project_id == project_id,
-            RetrainTrigger.trigger_type == "quality_degradation",
-            ModelQualityRun.endpoint_id == endpoint_id,
-        )
-        .order_by(RetrainTrigger.id.desc())
-    )
-    if latest_trigger is not None:
-        if latest_trigger.candidate_model_version_id:
-            candidate = db.get(ModelVersion, latest_trigger.candidate_model_version_id)
-            if candidate and candidate.lifecycle == ModelLifecycle.CANDIDATE:
-                return "Candidate ready"
-            if candidate and candidate.lifecycle == ModelLifecycle.PENDING_APPROVAL:
-                return "Awaiting human review"
-        if latest_trigger.created_training_job_id:
-            job = db.get(TrainingJob, latest_trigger.created_training_job_id)
-            if job is not None:
-                if job.status in {JobStatus.pending, JobStatus.queued}:
-                    return "Retraining queued"
-                if job.status == JobStatus.running:
-                    return "Retraining running"
-                if (
-                    job.status == JobStatus.succeeded
-                    and not latest_trigger.candidate_model_version_id
-                ):
-                    return "Candidate ready"
+    Returns the legacy string label for backward compatibility. Prefer
+    ``compute_closed_loop_detail`` for structured reason/CTA payloads.
+    """
 
-    if latest_run and latest_run.quality_status in {"warning", "critical"}:
-        return "Degraded"
-    return "Healthy"
+    from app.services.closed_loop_ux import (
+        compute_closed_loop_detail,
+        compute_closed_loop_state_label,
+    )
+
+    detail = compute_closed_loop_detail(
+        db, project_id=project_id, endpoint_id=endpoint_id, policy=policy
+    )
+    return compute_closed_loop_state_label(detail)
