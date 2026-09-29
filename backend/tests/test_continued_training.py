@@ -882,12 +882,29 @@ def test_explicit_feature_contract_tolerates_extra_column(
         assert child.status == JobStatus.succeeded, child.error_message
         assert child.continued_from_job_id == source["id"]
 
-    # Feature schema / params must match source contract (a,b), not adopt c.
+    # Feature schema / signature must match source fitted contract (a,b), not adopt c.
+    import json
+
     import mlflow
+    from mlflow.artifacts import download_artifacts
 
     run = mlflow.get_run(child.mlflow_run_id)
     assert run.data.params.get("features") == "a,b"
     assert "c" not in (run.data.params.get("features") or "").split(",")
+
+    schema_path = download_artifacts(
+        run_id=child.mlflow_run_id, artifact_path="feature_schema.json"
+    )
+    with open(schema_path, encoding="utf-8") as handle:
+        feature_schema = json.load(handle)
+    schema_names = [row["name"] for row in feature_schema]
+    assert schema_names == ["a", "b"]
+    assert "c" not in schema_names
+
+    model_info = mlflow.models.get_model_info(child.model_uri)
+    signature_inputs = [inp.name for inp in model_info.signature.inputs]
+    assert signature_inputs == ["a", "b"]
+    assert "c" not in signature_inputs
 
 
 def test_dtype_incompatible_feature_rejects(client, auth_headers, project_id):
