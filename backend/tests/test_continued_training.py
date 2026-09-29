@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.db.models import (
     Base,
+    DatasetVersion,
     JobStatus,
     ModelLifecycle,
     Project,
@@ -66,6 +67,11 @@ CSV_REG_V2 = (
     b"16,17,16.0\n17,18,17.0\n18,19,18.0\n19,20,19.0\n20,21,20.0\n"
 )
 CSV_BAD_COLUMNS = b"x,y,z\n1,2,3\n4,5,6\n"
+CSV_V2_EXTRA_FEATURE = (
+    b"a,b,c,target\n"
+    b"11,12,100,0\n12,13,101,1\n13,14,102,0\n14,15,103,1\n15,16,104,0\n"
+    b"16,17,105,1\n17,18,106,0\n18,19,107,1\n19,20,108,0\n20,21,109,1\n"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -625,7 +631,6 @@ def test_continued_training_partial_fit_and_frozen_preprocessing(
 
 def test_continued_rejects_new_classification_classes(tmp_path, monkeypatch):
     pytest.importorskip("mlflow")
-    import mlflow.sklearn
 
     tracking = tmp_path / "mlruns"
     tracking.mkdir()
@@ -748,3 +753,200 @@ def test_continued_register_starts_as_candidate(client, auth_headers, project_id
     assert registered.status_code == 201, registered.text
     assert registered.json()["lifecycle"] == ModelLifecycle.CANDIDATE.value
     assert registered.json()["lifecycle"] != "PRODUCTION"
+
+
+def test_continued_sets_tracking_uri_before_source_load(tmp_path, monkeypatch):
+    """Source runs:/ URI must resolve via settings.mlflow_tracking_uri, not global state."""
+    pytest.importorskip("mlflow")
+    import mlflow
+
+    store_a = tmp_path / "mlruns-a"
+    store_b = tmp_path / "mlruns-b"
+    store_a.mkdir()
+    store_b.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", store_a.as_uri())
+
+    fresh = SklearnTrainingRunner().run(
+        TrainingJobContext(
+            job_id=30,
+            project_id=1,
+            job_name="sgd-source-uri",
+            target_column="target",
+            algorithm="sgd_classifier",
+            hyperparameters={"max_iter": 200},
+            csv_bytes=CSV_V1,
+            experiment_name="uri-exp",
+            feature_columns=["a", "b"],
+            dataset_version_id=1,
+        )
+    )
+    assert fresh.model_uri.startswith("runs:/")
+
+    # Poison global tracking URI so a missing set_tracking_uri would look in B.
+    mlflow.set_tracking_uri(store_b.as_uri())
+    assert settings.mlflow_tracking_uri == store_a.as_uri()
+
+    continued = SklearnTrainingRunner().run(
+        TrainingJobContext(
+            job_id=31,
+            project_id=1,
+            job_name="sgd-continued-uri",
+            target_column="target",
+            algorithm="sgd_classifier",
+            hyperparameters={"max_iter": 200},
+            csv_bytes=CSV_V2,
+            experiment_name="uri-exp",
+            feature_columns=["a", "b"],
+            dataset_version_id=2,
+            continued_from_job_id=30,
+            continued_from_mlflow_run_id=fresh.mlflow_run_id,
+            continued_from_model_uri=fresh.model_uri,
+        )
+    )
+    assert continued.mlflow_run_id
+    assert continued.mlflow_run_id != fresh.mlflow_run_id
+    assert continued.model_uri != fresh.model_uri
+    assert continued.params["training_mode"] == "continued"
+
+
+def test_implicit_feature_contract_rejects_added_feature(client, auth_headers, project_id):
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        feature_columns=["a", "b"],
+    )
+    # Simulate persisted implicit selection (empty feature_columns_json means
+    # all non-target columns from the source DatasetVersion).
+    with TestingSessionLocal() as db:
+        job = db.get(TrainingJob, source["id"])
+        job.feature_columns_json = "[]"
+        job.status = JobStatus.succeeded
+        job.mlflow_run_id = "source-run"
+        job.model_uri = "runs:/source/model"
+        job.metrics_json = '{"accuracy": 0.9}'
+        db.commit()
+    _, version_v2 = _upload_dataset(
+        client, auth_headers, project_id, CSV_V2_EXTRA_FEATURE, name="iris"
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/continue",
+        headers=auth_headers,
+        json={"dataset_version_id": version_v2, "name": "implicit-extra"},
+    )
+    assert response.status_code == 422, response.text
+    assert "feature schema changed" in response.json()["detail"].lower()
+    assert "Full Retrain" in response.json()["detail"]
+
+
+def test_explicit_feature_contract_tolerates_extra_column(
+    client, auth_headers, project_id, monkeypatch, tmp_path
+):
+    pytest.importorskip("mlflow")
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
+    monkeypatch.setattr(runner, "SessionLocal", TestingSessionLocal)
+
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        feature_columns=["a", "b"],
+    )
+    runner.process_job(type("Claim", (), {"id": source["id"]})())
+    with TestingSessionLocal() as db:
+        source_row = db.get(TrainingJob, source["id"])
+        assert source_row.status == JobStatus.succeeded, source_row.error_message
+
+    _, version_v2 = _upload_dataset(
+        client, auth_headers, project_id, CSV_V2_EXTRA_FEATURE, name="iris"
+    )
+    continued = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/continue",
+        headers=auth_headers,
+        json={"dataset_version_id": version_v2, "name": "explicit-extra"},
+    )
+    assert continued.status_code == 201, continued.text
+    runner.process_job(type("Claim", (), {"id": continued.json()["id"]})())
+    with TestingSessionLocal() as db:
+        child = db.get(TrainingJob, continued.json()["id"])
+        assert child.status == JobStatus.succeeded, child.error_message
+        assert child.continued_from_job_id == source["id"]
+
+    # Feature schema / params must match source contract (a,b), not adopt c.
+    import mlflow
+
+    run = mlflow.get_run(child.mlflow_run_id)
+    assert run.data.params.get("features") == "a,b"
+    assert "c" not in (run.data.params.get("features") or "").split(",")
+
+
+def test_dtype_incompatible_feature_rejects(client, auth_headers, project_id):
+    import json
+
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        feature_columns=["a", "b"],
+    )
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+    with TestingSessionLocal() as db:
+        version = db.get(DatasetVersion, version_v2)
+        dtypes = json.loads(version.dtypes_json or "{}")
+        dtypes["a"] = "object"
+        version.dtypes_json = json.dumps(dtypes)
+        db.commit()
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/continue",
+        headers=auth_headers,
+        json={"dataset_version_id": version_v2, "name": "dtype-feature"},
+    )
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "dtype" in detail.lower()
+    assert "Full Retrain" in detail
+
+
+def test_target_dtype_incompatibility_rejects(client, auth_headers, project_id):
+    import json
+
+    dataset_id, version_id = _upload_dataset(client, auth_headers, project_id, CSV_V1)
+    source = _create_job(
+        client,
+        auth_headers,
+        project_id,
+        dataset_id,
+        version_id,
+        feature_columns=["a", "b"],
+    )
+    _mark_succeeded(source["id"])
+    _, version_v2 = _upload_dataset(client, auth_headers, project_id, CSV_V2, name="iris")
+    with TestingSessionLocal() as db:
+        version = db.get(DatasetVersion, version_v2)
+        dtypes = json.loads(version.dtypes_json or "{}")
+        dtypes["target"] = "object"
+        version.dtypes_json = json.dumps(dtypes)
+        db.commit()
+    response = client.post(
+        f"/api/v1/projects/{project_id}/jobs/{source['id']}/continue",
+        headers=auth_headers,
+        json={"dataset_version_id": version_v2, "name": "dtype-target"},
+    )
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert "dtype" in detail.lower()
+    assert "target" in detail.lower()

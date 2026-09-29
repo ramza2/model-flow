@@ -637,6 +637,10 @@ class SklearnTrainingRunner:
             x_train, x_val, x_test, y_train, y_val, y_test = splits
             features_for_schema = features
 
+        # Configure tracking URI before any runs:/ artifact load (continued path)
+        # and before creating the fresh MLflow run.
+        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
+
         continued = ctx.continued_from_job_id is not None
         if continued:
             if not ctx.continued_from_model_uri:
@@ -683,7 +687,6 @@ class SklearnTrainingRunner:
             + (", training_mode=continued" if continued else "")
         )
 
-        mlflow.set_tracking_uri(settings.mlflow_tracking_uri)
         mlflow.set_experiment(ctx.experiment_name)
         logged_params: dict[str, Any] = {
             **ctx.hyperparameters,

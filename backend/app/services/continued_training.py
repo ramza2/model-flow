@@ -141,17 +141,96 @@ def validate_continued_dataset_version(
     return target
 
 
+def _dtype_category(dtype_name: str | None) -> str:
+    """Coarse dtype category for continued-training compatibility checks."""
+    value = str(dtype_name or "").lower()
+    if not value:
+        return "unknown"
+    if value in {"bool", "boolean"} or value.startswith("bool"):
+        return "bool"
+    if "datetime" in value or value in {"date", "timestamp"}:
+        return "datetime"
+    if value in {
+        "object",
+        "string",
+        "str",
+        "text",
+        "category",
+        "categorical",
+    } or value.startswith("string"):
+        return "string"
+    if any(
+        token in value
+        for token in (
+            "int",
+            "float",
+            "double",
+            "number",
+            "numeric",
+            "decimal",
+            "uint",
+            "complex",
+        )
+    ):
+        return "numeric"
+    return "other"
+
+
+def _dtypes_compatible(source_dtype: str | None, target_dtype: str | None) -> bool:
+    source_cat = _dtype_category(source_dtype)
+    target_cat = _dtype_category(target_dtype)
+    if source_cat == "unknown" or target_cat == "unknown":
+        # Missing metadata: do not invent compatibility; fail closed only on
+        # known category mismatches when both sides are present.
+        return True
+    if source_cat == "numeric" and target_cat == "numeric":
+        return True
+    return source_cat == target_cat
+
+
+def effective_source_feature_columns(
+    source: TrainingJob,
+    source_version: DatasetVersion,
+) -> tuple[list[str], bool]:
+    """Return (ordered feature names, explicit_selection).
+
+    Empty ``feature_columns_json`` means implicit selection of all non-target
+    columns from the source DatasetVersion (preserving column order).
+    """
+    explicit = [str(c) for c in _loads(source.feature_columns_json, [])]
+    if explicit:
+        return explicit, True
+    columns = _loads(source_version.columns_json, [])
+    if not isinstance(columns, list):
+        columns = []
+    targets = set(effective_target_columns_from_job(source))
+    implied = [str(c) for c in columns if str(c) not in targets]
+    return implied, False
+
+
 def validate_continued_feature_contract(
     *,
     source: TrainingJob,
+    source_version: DatasetVersion,
     target_version: DatasetVersion,
 ) -> None:
-    source_features = [str(c) for c in _loads(source.feature_columns_json, [])]
-    if not source_features:
-        return
-    columns = _loads(target_version.columns_json, [])
-    column_names = {str(c) for c in columns} if isinstance(columns, list) else set()
-    missing = [name for name in source_features if name not in column_names]
+    expected_features, explicit = effective_source_feature_columns(
+        source, source_version
+    )
+    if not expected_features:
+        raise ContinuedTrainingError(
+            422,
+            "Source training job has no resolvable feature columns.",
+            "Use Full Retrain if you need a different dataset/schema.",
+        )
+
+    target_columns = _loads(target_version.columns_json, [])
+    if not isinstance(target_columns, list):
+        target_columns = []
+    target_column_names = [str(c) for c in target_columns]
+    target_name_set = set(target_column_names)
+
+    missing = [name for name in expected_features if name not in target_name_set]
     if missing:
         raise ContinuedTrainingError(
             422,
@@ -159,13 +238,59 @@ def validate_continued_feature_contract(
             + ", ".join(missing[:10]),
             "Use full retraining if you need a different dataset/schema.",
         )
+
     targets = effective_target_columns_from_job(source)
     for target_name in targets:
-        if target_name not in column_names:
+        if target_name not in target_name_set:
             raise ContinuedTrainingError(
                 422,
                 f"Target DatasetVersion is missing target column '{target_name}'.",
                 "Use full retraining if you need a different dataset/schema.",
+            )
+
+    # Preserve source feature order: selected target columns must appear in the
+    # same relative order as the source contract.
+    positions = {name: index for index, name in enumerate(target_column_names)}
+    ordered_positions = [positions[name] for name in expected_features]
+    if ordered_positions != sorted(ordered_positions):
+        raise ContinuedTrainingError(
+            422,
+            "Target DatasetVersion feature order is incompatible with the source contract.",
+            "Use full retraining if you need a different dataset/schema.",
+        )
+
+    if not explicit:
+        # Implicit selection: any new non-target column would change the training
+        # contract under empty feature_columns semantics — reject.
+        target_non_targets = [
+            name for name in target_column_names if name not in set(targets)
+        ]
+        if target_non_targets != expected_features:
+            raise ContinuedTrainingError(
+                422,
+                "Dataset feature schema changed. "
+                "Use Full Retrain to adopt new features.",
+                "Use Full Retrain if you need a different dataset/schema.",
+            )
+
+    source_dtypes = _loads(source_version.dtypes_json, {})
+    target_dtypes = _loads(target_version.dtypes_json, {})
+    if not isinstance(source_dtypes, dict):
+        source_dtypes = {}
+    if not isinstance(target_dtypes, dict):
+        target_dtypes = {}
+
+    for column in [*expected_features, *targets]:
+        source_dtype = source_dtypes.get(column)
+        target_dtype = target_dtypes.get(column)
+        if source_dtype is None or target_dtype is None:
+            continue
+        if not _dtypes_compatible(str(source_dtype), str(target_dtype)):
+            raise ContinuedTrainingError(
+                422,
+                f"Column '{column}' dtype changed from {source_dtype} to {target_dtype}. "
+                "Use Full Retrain if you need a different dataset/schema.",
+                "Use Full Retrain if you need a different dataset/schema.",
             )
 
 
@@ -174,8 +299,15 @@ def build_continued_job_create(
     body: JobContinueRequest,
     *,
     target_version: DatasetVersion,
+    expected_features: list[str],
 ) -> JobCreate:
-    """Copy source configuration; never allow algorithm/preprocessing overrides."""
+    """Copy source configuration; never allow algorithm/preprocessing overrides.
+
+    ``expected_features`` is the resolved source feature contract. Even when the
+    source stored an empty feature_columns list (implicit all non-targets), the
+    continued child freezes that concrete ordered feature list so the update
+    DatasetVersion cannot silently expand the contract.
+    """
 
     return build_job_create_from_source(
         source,
@@ -193,7 +325,7 @@ def build_continued_job_create(
             "problem_type": source.problem_type,
             "hyperparameters": _loads(source.hyperparameters_json, {}),
             "preprocessing": _loads(source.preprocessing_json, {}),
-            "feature_columns": _loads(source.feature_columns_json, []),
+            "feature_columns": list(expected_features),
             "random_seed": source.random_seed,
         },
     )
@@ -211,9 +343,24 @@ def prepare_continued_job(
     target_version = validate_continued_dataset_version(
         db, source=source, dataset_version_id=body.dataset_version_id
     )
-    validate_continued_feature_contract(source=source, target_version=target_version)
+    source_version = db.get(DatasetVersion, source.dataset_version_id)
+    if source_version is None:
+        raise ContinuedTrainingError(
+            404,
+            "Source DatasetVersion was not found.",
+            "Use Full Retrain if you need a different dataset/schema.",
+        )
+    validate_continued_feature_contract(
+        source=source,
+        source_version=source_version,
+        target_version=target_version,
+    )
+    expected_features, _ = effective_source_feature_columns(source, source_version)
     create_body = build_continued_job_create(
-        source, body, target_version=target_version
+        source,
+        body,
+        target_version=target_version,
+        expected_features=expected_features,
     )
     # Reuse standard training validation (split ownership, ratios, etc.).
     validated: ValidatedTrainingConfig = validate_training_config(
