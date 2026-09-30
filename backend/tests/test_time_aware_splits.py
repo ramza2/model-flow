@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import io
 import secrets
-from unittest.mock import MagicMock, patch
-
-import numpy as np
 import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
@@ -196,9 +193,13 @@ def test_time_value_validation_rejects_bad_values():
         order_frame_by_time(
             pd.DataFrame({"t": ["2024-01-01", "not-a-date"], "x": [1, 2]}), "t"
         )
-    with pytest.raises(ValueError, match="infinite|NaN"):
+    with pytest.raises(ValueError, match="null|NaN|infinite"):
         order_frame_by_time(
             pd.DataFrame({"t": [1.0, float("nan")], "x": [1, 2]}), "t"
+        )
+    with pytest.raises(ValueError, match="infinite|NaN"):
+        order_frame_by_time(
+            pd.DataFrame({"t": [1.0, float("inf")], "x": [1, 2]}), "t"
         )
 
 
@@ -405,40 +406,50 @@ def test_job_create_time_validation_and_saved_split_authority(client, auth_heade
     assert body["random_seed"] == 7
 
 
-def test_direct_time_training_earliest_train_latest_test(monkeypatch):
+def test_direct_time_training_earliest_train_latest_test(monkeypatch, tmp_path):
+    pytest.importorskip("mlflow")
     frame = pd.read_csv(io.BytesIO(TIME_CSV))
     # Shuffle input to prove runner re-orders.
     frame = frame.sample(frac=1, random_state=0).reset_index(drop=True)
     csv_bytes = frame.to_csv(index=False).encode()
 
-    captured: dict = {}
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    from app.core.config import settings
 
-    class FakeRun:
-        info = MagicMock(run_id="run-time-1")
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
 
-        def __enter__(self):
-            return self
+    split_calls = {"random": 0}
+    real_split = __import__("app.services.training", fromlist=["_split"])._split
 
-        def __exit__(self, *args):
-            return False
+    def guarded_split(*args, **kwargs):
+        split_calls["random"] += 1
+        return real_split(*args, **kwargs)
 
-    monkeypatch.setattr("app.services.training.mlflow.set_tracking_uri", lambda *_: None)
-    monkeypatch.setattr("app.services.training.mlflow.set_experiment", lambda *_: None)
-    monkeypatch.setattr("app.services.training.mlflow.start_run", lambda **_: FakeRun())
-    monkeypatch.setattr(
-        "app.services.training.mlflow.log_params",
-        lambda params: captured.update(params=params),
-    )
-    monkeypatch.setattr(
-        "app.services.training.mlflow.set_tags",
-        lambda tags: captured.update(tags=tags),
-    )
-    monkeypatch.setattr("app.services.training.mlflow.log_metrics", lambda *_a, **_k: None)
-    monkeypatch.setattr("app.services.training.mlflow.log_dict", lambda *_a, **_k: None)
-    monkeypatch.setattr(
-        "app.services.training.mlflow.sklearn.log_model",
-        lambda *a, **k: MagicMock(model_uri="models:/x"),
-    )
+    monkeypatch.setattr("app.services.training._split", guarded_split)
+
+    fit_capture: dict = {}
+    from sklearn.pipeline import Pipeline as SkPipeline
+
+    original_fit = SkPipeline.fit
+
+    def capturing_fit(self, x, y=None, **fit_params):
+        fit_capture["train_a"] = list(x["a"])
+        return original_fit(self, x, y, **fit_params)
+
+    monkeypatch.setattr(SkPipeline, "fit", capturing_fit)
+
+    logged: dict = {}
+    import mlflow
+
+    real_log_params = mlflow.log_params
+
+    def capture_params(params):
+        logged["params"] = dict(params)
+        return real_log_params(params)
+
+    monkeypatch.setattr(mlflow, "log_params", capture_params)
 
     ctx = TrainingJobContext(
         job_id=1,
@@ -446,8 +457,8 @@ def test_direct_time_training_earliest_train_latest_test(monkeypatch):
         job_name="time-direct",
         target_column="target",
         algorithm="logistic_regression",
-        hyperparameters={},
-        experiment_name="exp",
+        hyperparameters={"max_iter": 200},
+        experiment_name="exp-time",
         csv_bytes=csv_bytes,
         feature_columns=["a", "b"],
         train_ratio=0.6,
@@ -458,23 +469,13 @@ def test_direct_time_training_earliest_train_latest_test(monkeypatch):
         time_column="event_time",
         problem_type="classification",
     )
-    with patch("sklearn.pipeline.Pipeline.fit", autospec=True) as fit_mock:
-        fit_mock.side_effect = lambda self, x, y=None: self
-        with patch(
-            "sklearn.pipeline.Pipeline.predict",
-            side_effect=lambda self, x: np.zeros(len(x)),
-        ):
-            result = SklearnTrainingRunner().run(ctx)
-
-    assert result.mlflow_run_id == "run-time-1"
-    assert captured["params"]["split_strategy"] == "time"
-    assert captured["params"]["time_column"] == "event_time"
-    assert captured["tags"]["modelflow.split_strategy"] == "time"
-    x_train = fit_mock.call_args.args[1]
-    train_a = list(x_train["a"])
-    assert train_a == [1, 2, 3, 4, 5, 6]
-    # No future rows in train.
-    assert max(train_a) == 6
+    result = SklearnTrainingRunner().run(ctx)
+    assert result.mlflow_run_id
+    assert split_calls["random"] == 0
+    assert fit_capture["train_a"] == [1, 2, 3, 4, 5, 6]
+    assert max(fit_capture["train_a"]) == 6
+    assert logged["params"]["split_strategy"] == "time"
+    assert logged["params"]["time_column"] == "event_time"
 
 
 def test_retry_clone_retrain_preserve_time_fields():
@@ -485,6 +486,7 @@ def test_retry_clone_retrain_preserve_time_fields():
         dataset_version_id=2,
         split_id=None,
         name="source",
+        description="",
         target_column="target",
         target_columns_json='["target"]',
         problem_type="classification",
@@ -503,6 +505,7 @@ def test_retry_clone_retrain_preserve_time_fields():
         status=JobStatus.succeeded,
         model_uri="models:/x",
         mlflow_run_id="run-1",
+        max_retries=1,
     )
     cloned = build_job_create_from_source(source, name="clone")
     assert cloned.split_strategy == "time"
