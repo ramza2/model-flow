@@ -80,6 +80,8 @@ class TrainingJobContext:
     val_ratio: float = 0.15
     test_ratio: float = 0.15
     random_seed: int = 42
+    split_strategy: str = "random"
+    time_column: str | None = None
     data_format: str = "csv"
     split_id: int | None = None
     dataset_version_id: int | None = None
@@ -610,32 +612,81 @@ class SklearnTrainingRunner:
             if ctx.csv_bytes is None:
                 raise ValueError("Training data is missing.")
             full_frame = _read_frame(ctx.csv_bytes, ctx.data_format)
-            if multi_output:
-                problem_type = normalize_problem_type_for_targets(
-                    ctx.problem_type,
-                    full_frame,
-                    target_columns,
+            split_strategy = (ctx.split_strategy or "random").strip().lower()
+            if split_strategy == "time":
+                from app.services.dataset_splits import (
+                    order_frame_by_time,
+                    time_partition_boundaries,
+                    validate_time_column_config,
                 )
-            features, target, selected = _partition_frame(
-                full_frame,
-                target_columns=target_columns,
-                feature_columns=ctx.feature_columns,
-                preprocessing=ctx.preprocessing,
-            )
-            if not multi_output:
-                problem_type = _normalise_problem_type(ctx.problem_type, target)  # type: ignore[arg-type]
-            algorithm = _algorithm(ctx.algorithm, problem_type)
-            splits = _split(
-                features,
-                target,
-                train_ratio=ctx.train_ratio,
-                val_ratio=ctx.val_ratio,
-                test_ratio=ctx.test_ratio,
-                seed=ctx.random_seed,
-                classification=problem_type == "classification",
-            )
-            x_train, x_val, x_test, y_train, y_val, y_test = splits
-            features_for_schema = features
+
+                time_column = validate_time_column_config(
+                    ctx.time_column,
+                    columns=[str(c) for c in full_frame.columns],
+                    target_columns=target_columns,
+                    feature_columns=list(ctx.feature_columns or []),
+                )
+                # Chronological order on the raw frame before target/feature selection.
+                full_frame = order_frame_by_time(full_frame, time_column)
+                if multi_output:
+                    problem_type = normalize_problem_type_for_targets(
+                        ctx.problem_type,
+                        full_frame,
+                        target_columns,
+                    )
+                features, target, selected = _partition_frame(
+                    full_frame,
+                    target_columns=target_columns,
+                    feature_columns=ctx.feature_columns,
+                    preprocessing=ctx.preprocessing,
+                )
+                if not multi_output:
+                    problem_type = _normalise_problem_type(ctx.problem_type, target)  # type: ignore[arg-type]
+                algorithm = _algorithm(ctx.algorithm, problem_type)
+                train_end, val_end = time_partition_boundaries(
+                    len(features),
+                    ctx.train_ratio,
+                    ctx.val_ratio,
+                    ctx.test_ratio,
+                )
+                x_train = features.iloc[:train_end]
+                x_val = features.iloc[train_end:val_end]
+                x_test = features.iloc[val_end:]
+                y_train = target.iloc[:train_end]
+                y_val = target.iloc[train_end:val_end]
+                y_test = target.iloc[val_end:]
+                features_for_schema = features
+                log(
+                    f"Using time-ordered split on '{time_column}' "
+                    f"(no shuffle; contiguous chronological partitions)"
+                )
+            else:
+                if multi_output:
+                    problem_type = normalize_problem_type_for_targets(
+                        ctx.problem_type,
+                        full_frame,
+                        target_columns,
+                    )
+                features, target, selected = _partition_frame(
+                    full_frame,
+                    target_columns=target_columns,
+                    feature_columns=ctx.feature_columns,
+                    preprocessing=ctx.preprocessing,
+                )
+                if not multi_output:
+                    problem_type = _normalise_problem_type(ctx.problem_type, target)  # type: ignore[arg-type]
+                algorithm = _algorithm(ctx.algorithm, problem_type)
+                splits = _split(
+                    features,
+                    target,
+                    train_ratio=ctx.train_ratio,
+                    val_ratio=ctx.val_ratio,
+                    test_ratio=ctx.test_ratio,
+                    seed=ctx.random_seed,
+                    classification=problem_type == "classification",
+                )
+                x_train, x_val, x_test, y_train, y_val, y_test = splits
+                features_for_schema = features
 
         # Configure tracking URI before any runs:/ artifact load (continued path)
         # and before creating the fresh MLflow run.
@@ -702,6 +753,7 @@ class SklearnTrainingRunner:
             "val_ratio": ctx.val_ratio,
             "test_ratio": ctx.test_ratio,
             "random_seed": ctx.random_seed,
+            "split_strategy": (ctx.split_strategy or "random"),
             "git_sha": settings.git_sha,
             "python_version": platform.python_version(),
             "sklearn_version": sklearn.__version__,
@@ -719,6 +771,8 @@ class SklearnTrainingRunner:
             logged_params["continued_from_job_id"] = ctx.continued_from_job_id
         if ctx.continued_from_mlflow_run_id:
             logged_params["continued_from_mlflow_run_id"] = ctx.continued_from_mlflow_run_id
+        if ctx.time_column:
+            logged_params["time_column"] = ctx.time_column
         if ctx.split_id is not None:
             logged_params["split_id"] = ctx.split_id
             logged_params["split_train_ratio"] = ctx.train_ratio
@@ -747,6 +801,7 @@ class SklearnTrainingRunner:
                 "modelflow.multi_output": str(multi_output).lower(),
                 "modelflow.output_count": str(len(target_columns)),
                 "modelflow.training_mode": str(logged_params["training_mode"]),
+                "modelflow.split_strategy": str(logged_params["split_strategy"]),
             }
             if ctx.retrain_source_job_id is not None:
                 tags["modelflow.retrain_source_job_id"] = str(ctx.retrain_source_job_id)
@@ -756,6 +811,8 @@ class SklearnTrainingRunner:
                 tags["modelflow.continued_from_mlflow_run_id"] = (
                     ctx.continued_from_mlflow_run_id
                 )
+            if ctx.time_column:
+                tags["modelflow.time_column"] = str(ctx.time_column)
             if ctx.split_id is not None:
                 tags["modelflow.split_id"] = str(ctx.split_id)
                 tags["modelflow.split_source"] = "saved"
@@ -840,6 +897,8 @@ class SklearnTrainingRunner:
                 "multi_output": multi_output,
                 "output_schema": output_schema,
                 "training_mode": logged_params["training_mode"],
+                "split_strategy": logged_params["split_strategy"],
+                "time_column": ctx.time_column,
             }
             if ctx.continued_from_job_id is not None:
                 metadata["continued_from_job_id"] = ctx.continued_from_job_id
@@ -852,6 +911,8 @@ class SklearnTrainingRunner:
                     "validation_ratio": ctx.val_ratio,
                     "test_ratio": ctx.test_ratio,
                     "random_seed": ctx.random_seed,
+                    "split_strategy": logged_params["split_strategy"],
+                    "time_column": ctx.time_column,
                     "hashes": {
                         "train": ctx.split_train_hash,
                         "validation": ctx.split_validation_hash,

@@ -405,6 +405,8 @@ describe("DatasetDetail saved splits", () => {
           val_ratio: body.val_ratio,
           test_ratio: body.test_ratio,
           random_seed: body.random_seed,
+          split_strategy: body.split_strategy || "random",
+          time_column: body.time_column ?? null,
           config_signature: "0.700000:0.150000:0.150000:42",
           created_at: "2026-08-10T00:00:00Z",
         };
@@ -418,6 +420,7 @@ describe("DatasetDetail saved splits", () => {
     fireEvent.change(screen.getByTestId("split-name"), { target: { value: "split-custom" } });
     fireEvent.click(screen.getByTestId("create-split-submit"));
     expect(await screen.findByTestId("saved-split-77")).toHaveTextContent("split-custom");
+    expect(screen.getByTestId("saved-split-77")).toHaveTextContent("Random");
     const post = apiMock.mock.calls.find(
       (call) => String(call[0]).includes("/splits") && (call[1] as RequestInit | undefined)?.method === "POST",
     );
@@ -428,6 +431,54 @@ describe("DatasetDetail saved splits", () => {
       val_ratio: 0.15,
       test_ratio: 0.15,
       random_seed: 42,
+      split_strategy: "random",
+      time_column: null,
+    });
+  });
+
+  it("creates a time-ordered split with required time column", async () => {
+    stubQualityApi();
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path.includes("/splits") && method === "POST") {
+        const body = JSON.parse(String(init?.body || "{}"));
+        return {
+          id: 88,
+          name: body.name,
+          dataset_version_id: 11,
+          train_ratio: body.train_ratio,
+          val_ratio: body.val_ratio,
+          test_ratio: body.test_ratio,
+          random_seed: body.random_seed,
+          split_strategy: body.split_strategy,
+          time_column: body.time_column,
+          config_signature: "0.700000:0.150000:0.150000:42:time:abc",
+          created_at: "2026-08-10T00:00:00Z",
+        };
+      }
+      return base(path, init);
+    });
+
+    renderPage();
+    await screen.findByTestId("open-create-split");
+    fireEvent.click(screen.getByTestId("open-create-split"));
+    fireEvent.change(screen.getByTestId("split-strategy"), { target: { value: "time" } });
+    expect(screen.getByTestId("split-time-column")).toBeInTheDocument();
+    expect(screen.getByTestId("split-time-seed-hint")).toHaveTextContent(/does not shuffle/i);
+    fireEvent.click(screen.getByTestId("create-split-submit"));
+    expect(await screen.findByTestId("split-form-error")).toHaveTextContent(/time column/i);
+
+    fireEvent.change(screen.getByTestId("split-time-column"), { target: { value: "site_id" } });
+    fireEvent.change(screen.getByTestId("split-name"), { target: { value: "timed-split" } });
+    fireEvent.click(screen.getByTestId("create-split-submit"));
+    expect(await screen.findByTestId("saved-split-88")).toHaveTextContent("Time ordered · site_id");
+    const post = apiMock.mock.calls.find(
+      (call) => String(call[0]).includes("/splits") && (call[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(JSON.parse(String((post![1] as RequestInit).body))).toMatchObject({
+      split_strategy: "time",
+      time_column: "site_id",
     });
   });
 });

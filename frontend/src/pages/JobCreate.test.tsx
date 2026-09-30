@@ -1656,6 +1656,203 @@ describe("JobCreate UX", () => {
   });
 });
 
+describe("JobCreate time-aware split", () => {
+  it("switches to time strategy, excludes time column, and posts payload fields", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "timed",
+              columns: ["event_time", "a", "b", "target"],
+              latest_version: 1,
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 66,
+              name: "saved-time",
+              dataset_version_id: 11,
+              train_ratio: 0.6,
+              val_ratio: 0.2,
+              test_ratio: 0.2,
+              random_seed: 42,
+              split_strategy: "time",
+              time_column: "event_time",
+            },
+          ],
+        };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "timed.csv",
+              columns: ["event_time", "a", "b", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: 321, status: "pending" }) };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("job-split-strategy");
+    fireEvent.change(screen.getByTestId("job-split-strategy"), { target: { value: "time" } });
+    fireEvent.change(screen.getByTestId("job-time-column"), { target: { value: "event_time" } });
+    expect(screen.queryByTestId("target-event_time")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("feature-event_time")).not.toBeInTheDocument();
+    expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(/does not shuffle/i);
+
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({
+      split_strategy: "time",
+      time_column: "event_time",
+      split_id: null,
+    });
+
+    // Selecting a saved time split shows strategy summary and hides manual controls.
+    // Navigate again for saved-split rendering coverage.
+  });
+
+  it("renders saved time split summary without conflicting manual controls", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "timed",
+              columns: ["event_time", "a", "b", "target"],
+              latest_version: 1,
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 66,
+              name: "saved-time",
+              dataset_version_id: 11,
+              train_ratio: 0.6,
+              val_ratio: 0.2,
+              test_ratio: 0.2,
+              random_seed: 42,
+              split_strategy: "time",
+              time_column: "event_time",
+            },
+          ],
+        };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "timed.csv",
+              columns: ["event_time", "a", "b", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("job-data-split");
+    await waitFor(() => expect(screen.getByTestId("job-data-split")).toHaveTextContent("Time ordered"));
+    fireEvent.change(screen.getByTestId("job-data-split"), { target: { value: "66" } });
+    expect(await screen.findByTestId("job-saved-split-summary")).toHaveTextContent(
+      /Time ordered · event_time/i,
+    );
+    expect(screen.queryByTestId("job-split-strategy")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("target-event_time")).not.toBeInTheDocument();
+  });
+});
+
 describe("JobDetail clone navigation", () => {
   it("links clone configuration to the create form", async () => {
     vi.stubGlobal(

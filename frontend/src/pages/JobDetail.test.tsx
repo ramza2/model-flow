@@ -448,4 +448,24 @@ describe("JobDetail retrain", () => {
     expect(screen.getByText("Continued training source")).toBeInTheDocument();
   });
 
+  it("shows time-ordered split metadata on job detail", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          split_id: 12,
+          split_strategy: "time",
+          time_column: "event_time",
+          is_retrain: false,
+          retrain_source_job_id: null,
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-split-strategy-label")).toHaveTextContent("Time ordered");
+    expect(screen.getByTestId("job-time-column-label")).toHaveTextContent("event_time");
+    expect(screen.getByTestId("job-data-split")).toHaveTextContent("Saved split #12");
+  });
+
 });

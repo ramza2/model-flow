@@ -527,6 +527,18 @@ def _execute_node(
             train_ratio=float(config.get("train_ratio", split_config.get("train_ratio", 0.7))),
             val_ratio=float(config.get("val_ratio", split_config.get("val_ratio", 0.15))),
             test_ratio=float(config.get("test_ratio", split_config.get("test_ratio", 0.15))),
+            split_strategy=str(
+                config.get(
+                    "split_strategy",
+                    split_config.get("split_strategy", "random"),
+                )
+                or "random"
+            ),
+            time_column=(
+                config.get("time_column")
+                if config.get("time_column") is not None
+                else split_config.get("time_column")
+            ),
             status=JobStatus.running,
             started_at=datetime.now(timezone.utc),
             created_by=run.created_by,
@@ -553,6 +565,8 @@ def _execute_node(
                 val_ratio=job.val_ratio,
                 test_ratio=job.test_ratio,
                 random_seed=job.random_seed,
+                split_strategy=getattr(job, "split_strategy", None) or "random",
+                time_column=getattr(job, "time_column", None),
             )
         )
         job.status = JobStatus.succeeded

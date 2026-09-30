@@ -313,7 +313,11 @@ function TrainingForm({
     [catalog, problemType],
   );
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
-  const featureChoices = datasetColumns.filter((column) => column !== target);
+  const splitStrategy = asString(config.split_strategy, "random") === "time" ? "time" : "random";
+  const timeColumn = asString(config.time_column, "");
+  const featureChoices = datasetColumns.filter(
+    (column) => column !== target && !(splitStrategy === "time" && column === timeColumn),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -445,6 +449,55 @@ function TrainingForm({
           ))}
         </fieldset>
       )}
+      <label>
+        Split strategy
+        <select
+          data-testid="node-config-split-strategy"
+          value={splitStrategy}
+          onChange={(event) => {
+            const next = event.target.value === "time" ? "time" : "random";
+            onChange({
+              ...config,
+              split_strategy: next,
+              time_column: next === "time" ? timeColumn || null : null,
+              feature_columns:
+                next === "time" && timeColumn
+                  ? features.filter((column) => column !== timeColumn)
+                  : features,
+            });
+          }}
+        >
+          <option value="random">Random</option>
+          <option value="time">Time ordered</option>
+        </select>
+      </label>
+      {splitStrategy === "time" ? (
+        <label>
+          Time column
+          <select
+            data-testid="node-config-time-column"
+            value={timeColumn}
+            onChange={(event) => {
+              const next = event.target.value;
+              onChange({
+                ...config,
+                split_strategy: "time",
+                time_column: next || null,
+                feature_columns: features.filter((column) => column !== next),
+              });
+            }}
+          >
+            <option value="">Select time column…</option>
+            {datasetColumns
+              .filter((column) => column !== target)
+              .map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+          </select>
+        </label>
+      ) : null}
       <label>
         Hyperparameters
         <textarea

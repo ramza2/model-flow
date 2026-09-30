@@ -72,6 +72,8 @@ def build_job_create_from_source(
         "train_ratio": source.train_ratio,
         "val_ratio": source.val_ratio,
         "test_ratio": source.test_ratio,
+        "split_strategy": getattr(source, "split_strategy", None) or "random",
+        "time_column": getattr(source, "time_column", None),
         "max_retries": source.max_retries,
     }
     values.update(overrides or {})
@@ -107,6 +109,8 @@ def build_retrain_job_create(source: TrainingJob, body: JobRetrainRequest) -> Jo
         train_ratio=source.train_ratio,
         val_ratio=source.val_ratio,
         test_ratio=source.test_ratio,
+        split_strategy=getattr(source, "split_strategy", None) or "random",
+        time_column=getattr(source, "time_column", None),
         max_retries=source.max_retries,
     )
 

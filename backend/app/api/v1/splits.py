@@ -16,7 +16,14 @@ from app.db.models import DatasetSplit, DatasetVersion
 from app.db.session import get_db
 from app.schemas.v1 import SplitCreate
 from app.services import storage
-from app.services.dataset_splits import content_sha256, split_config_signature
+from app.services.dataset_splits import (
+    SPLIT_STRATEGY_TIME,
+    apply_time_ordered_partitions,
+    content_sha256,
+    coerce_split_fields,
+    split_config_signature,
+    validate_time_column_config,
+)
 
 router = APIRouter(tags=["splits"])
 
@@ -65,11 +72,20 @@ def create_split(
         project_id,
         "Dataset version",
     )
+    try:
+        split_strategy, time_column = coerce_split_fields(
+            body.split_strategy, body.time_column
+        )
+    except ValueError as exc:
+        raise friendly(422, str(exc)) from exc
+
     signature = split_config_signature(
         body.train_ratio,
         body.val_ratio,
         body.test_ratio,
         body.random_seed,
+        split_strategy=split_strategy,
+        time_column=time_column,
     )
     existing = _find_existing_split(db, version.id, signature)
     if existing is not None:
@@ -80,10 +96,7 @@ def create_split(
         data = storage.download_bytes(
             settings.minio_datasets_bucket, version.object_key
         )
-        frame = _read_frame(data, version.format).sample(
-            frac=1,
-            random_state=body.random_seed,
-        )
+        frame = _read_frame(data, version.format)
     except Exception as exc:
         raise friendly(
             502, "The dataset version could not be loaded for splitting."
@@ -91,13 +104,32 @@ def create_split(
     if len(frame) == 0:
         raise friendly(400, "Cannot create a split from an empty dataset version.")
 
-    train_end = int(len(frame) * body.train_ratio)
-    val_end = train_end + int(len(frame) * body.val_ratio)
-    partitions = {
-        "train": frame.iloc[:train_end],
-        "validation": frame.iloc[train_end:val_end],
-        "test": frame.iloc[val_end:],
-    }
+    if split_strategy == SPLIT_STRATEGY_TIME:
+        columns = list(frame.columns.astype(str))
+        try:
+            time_column = validate_time_column_config(
+                time_column,
+                columns=columns,
+            )
+            partitions = apply_time_ordered_partitions(
+                frame,
+                time_column=time_column,
+                train_ratio=body.train_ratio,
+                val_ratio=body.val_ratio,
+                test_ratio=body.test_ratio,
+            )
+        except ValueError as exc:
+            raise friendly(400, str(exc)) from exc
+    else:
+        # Legacy random path: shuffle then contiguous partitions (unchanged).
+        frame = frame.sample(frac=1, random_state=body.random_seed)
+        train_end = int(len(frame) * body.train_ratio)
+        val_end = train_end + int(len(frame) * body.val_ratio)
+        partitions = {
+            "train": frame.iloc[:train_end],
+            "validation": frame.iloc[train_end:val_end],
+            "test": frame.iloc[val_end:],
+        }
 
     row = DatasetSplit(
         project_id=project_id,
@@ -107,6 +139,8 @@ def create_split(
         val_ratio=body.val_ratio,
         test_ratio=body.test_ratio,
         random_seed=body.random_seed,
+        split_strategy=split_strategy,
+        time_column=time_column,
         config_signature=signature,
     )
     db.add(row)

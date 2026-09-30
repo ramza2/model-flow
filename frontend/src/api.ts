@@ -204,6 +204,8 @@ export type DatasetVersion = {
   created_at: string;
 };
 
+export type SplitStrategy = "random" | "time";
+
 export type DatasetSplit = {
   id: number;
   name: string;
@@ -212,6 +214,8 @@ export type DatasetSplit = {
   val_ratio: number;
   test_ratio: number;
   random_seed: number;
+  split_strategy?: SplitStrategy | string;
+  time_column?: string | null;
   config_signature?: string;
   hashes?: {
     train: string | null;
@@ -418,6 +422,8 @@ export type Job = {
   feature_columns: string[];
   ratios?: { train: number; validation: number; test: number };
   random_seed?: number;
+  split_strategy?: SplitStrategy | string;
+  time_column?: string | null;
   status: string;
   logs: string;
   mlflow_run_id: string | null;

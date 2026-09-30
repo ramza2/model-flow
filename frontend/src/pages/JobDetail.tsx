@@ -272,21 +272,46 @@ export default function JobDetail() {
                     {job.split_id ? (
                       <>
                         <div>Saved split #{job.split_id}</div>
+                        <div data-testid="job-split-strategy-label">
+                          Split:{" "}
+                          {(job.split_strategy || "random") === "time" ? "Time ordered" : "Random"}
+                        </div>
+                        {(job.split_strategy || "random") === "time" && job.time_column ? (
+                          <div data-testid="job-time-column-label">
+                            Time column: {job.time_column}
+                          </div>
+                        ) : null}
                         <small>
                           {job.ratios
                             ? `${Math.round(job.ratios.train * 100)}% train · ${Math.round(job.ratios.validation * 100)}% validation · ${Math.round(job.ratios.test * 100)}% test`
                             : "—"}
-                          {typeof job.random_seed === "number" ? ` · seed ${job.random_seed}` : ""}
+                          {(job.split_strategy || "random") === "random" &&
+                          typeof job.random_seed === "number"
+                            ? ` · seed ${job.random_seed}`
+                            : ""}
                         </small>
                       </>
                     ) : (
                       <>
                         <div>Runtime split</div>
+                        <div data-testid="job-split-strategy-label">
+                          Split:{" "}
+                          {(job.split_strategy || "random") === "time" ? "Time ordered" : "Random"}
+                        </div>
+                        {(job.split_strategy || "random") === "time" && job.time_column ? (
+                          <div data-testid="job-time-column-label">
+                            Time column: {job.time_column}
+                          </div>
+                        ) : null}
                         <small>
                           {job.ratios
                             ? `${Math.round(job.ratios.train * 100)}/${Math.round(job.ratios.validation * 100)}/${Math.round(job.ratios.test * 100)}`
                             : "70/15/15"}
-                          {typeof job.random_seed === "number" ? ` · seed ${job.random_seed}` : " · seed 42"}
+                          {(job.split_strategy || "random") === "random"
+                            ? typeof job.random_seed === "number"
+                              ? ` · seed ${job.random_seed}`
+                              : " · seed 42"
+                            : ""}
                         </small>
                       </>
                     )}
