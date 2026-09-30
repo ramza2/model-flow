@@ -315,9 +315,19 @@ function TrainingForm({
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
   const splitStrategy = asString(config.split_strategy, "random") === "time" ? "time" : "random";
   const timeColumn = asString(config.time_column, "");
+  const targetChoices = datasetColumns.filter(
+    (column) => !(splitStrategy === "time" && timeColumn && column === timeColumn),
+  );
   const featureChoices = datasetColumns.filter(
     (column) => column !== target && !(splitStrategy === "time" && column === timeColumn),
   );
+
+  function pickAlternateTarget(reserved: string, currentTarget: string): string {
+    if (!reserved || reserved !== currentTarget) return currentTarget;
+    const alternatives = datasetColumns.filter((column) => column !== reserved);
+    if (alternatives.includes("target")) return "target";
+    return alternatives[0] || "";
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -384,7 +394,7 @@ function TrainingForm({
         {datasetColumns.length > 0 ? (
           <select
             data-testid="node-config-target"
-            value={target}
+            value={targetChoices.includes(target) ? target : ""}
             onChange={(event) => {
               const nextTarget = event.target.value;
               onChange({
@@ -394,7 +404,10 @@ function TrainingForm({
               });
             }}
           >
-            {datasetColumns.map((column) => (
+            {!targetChoices.includes(target) ? (
+              <option value="">Select target column…</option>
+            ) : null}
+            {targetChoices.map((column) => (
               <option key={column} value={column}>
                 {column}
               </option>
@@ -456,14 +469,17 @@ function TrainingForm({
           value={splitStrategy}
           onChange={(event) => {
             const next = event.target.value === "time" ? "time" : "random";
+            const reserved = next === "time" ? timeColumn : "";
+            const nextTarget = pickAlternateTarget(reserved, target);
             onChange({
               ...config,
               split_strategy: next,
               time_column: next === "time" ? timeColumn || null : null,
-              feature_columns:
-                next === "time" && timeColumn
-                  ? features.filter((column) => column !== timeColumn)
-                  : features,
+              target_column: nextTarget,
+              feature_columns: features.filter(
+                (column) =>
+                  column !== nextTarget && !(reserved && column === reserved),
+              ),
             });
           }}
         >
@@ -479,11 +495,15 @@ function TrainingForm({
             value={timeColumn}
             onChange={(event) => {
               const next = event.target.value;
+              const nextTarget = pickAlternateTarget(next, target);
               onChange({
                 ...config,
                 split_strategy: "time",
                 time_column: next || null,
-                feature_columns: features.filter((column) => column !== next),
+                target_column: nextTarget,
+                feature_columns: features.filter(
+                  (column) => column !== next && column !== nextTarget,
+                ),
               });
             }}
           >

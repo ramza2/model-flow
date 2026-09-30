@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "fs";
-import os
+import os from "os";
 import path from "path";
 
 function requiredEnv(name: "E2E_ADMIN_EMAIL" | "E2E_ADMIN_PASSWORD"): string {

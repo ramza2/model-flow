@@ -555,6 +555,21 @@ class SklearnTrainingRunner:
         target_columns = list(ctx.target_columns or [ctx.target_column])
         multi_output = is_multi_output(target_columns)
 
+        from app.services.dataset_splits import (
+            SPLIT_STRATEGY_TIME,
+            coerce_split_fields,
+            order_frame_by_time,
+            resolve_time_mode_feature_columns,
+            time_partition_boundaries,
+        )
+
+        # Fail closed: unknown strategies never silently fall back to random.
+        split_strategy, time_column = coerce_split_fields(
+            ctx.split_strategy, ctx.time_column
+        )
+        ctx.split_strategy = split_strategy
+        ctx.time_column = time_column
+
         using_saved_split = ctx.split_id is not None or ctx.train_bytes is not None
         if using_saved_split:
             if ctx.train_bytes is None or ctx.validation_bytes is None or ctx.test_bytes is None:
@@ -574,22 +589,31 @@ class SklearnTrainingRunner:
                 if frame.empty:
                     raise ValueError(f"Saved {label} split artifact has no rows.")
 
+            effective_features = list(ctx.feature_columns or [])
+            if split_strategy == SPLIT_STRATEGY_TIME:
+                effective_features = resolve_time_mode_feature_columns(
+                    columns=[str(c) for c in train_frame.columns],
+                    target_columns=target_columns,
+                    feature_columns=ctx.feature_columns,
+                    time_column=time_column,  # type: ignore[arg-type]
+                )
+
             x_train, y_train, selected = _partition_frame(
                 train_frame,
                 target_columns=target_columns,
-                feature_columns=ctx.feature_columns,
+                feature_columns=effective_features,
                 preprocessing=ctx.preprocessing,
             )
             x_val, y_val, _ = _partition_frame(
                 val_frame,
                 target_columns=target_columns,
-                feature_columns=ctx.feature_columns,
+                feature_columns=effective_features,
                 preprocessing=ctx.preprocessing,
             )
             x_test, y_test, _ = _partition_frame(
                 test_frame,
                 target_columns=target_columns,
-                feature_columns=ctx.feature_columns,
+                feature_columns=effective_features,
                 preprocessing=ctx.preprocessing,
             )
             if len(x_train) < 1:
@@ -612,22 +636,16 @@ class SklearnTrainingRunner:
             if ctx.csv_bytes is None:
                 raise ValueError("Training data is missing.")
             full_frame = _read_frame(ctx.csv_bytes, ctx.data_format)
-            split_strategy = (ctx.split_strategy or "random").strip().lower()
-            if split_strategy == "time":
-                from app.services.dataset_splits import (
-                    order_frame_by_time,
-                    time_partition_boundaries,
-                    validate_time_column_config,
-                )
-
-                time_column = validate_time_column_config(
-                    ctx.time_column,
-                    columns=[str(c) for c in full_frame.columns],
+            if split_strategy == SPLIT_STRATEGY_TIME:
+                columns = [str(c) for c in full_frame.columns]
+                effective_features = resolve_time_mode_feature_columns(
+                    columns=columns,
                     target_columns=target_columns,
-                    feature_columns=list(ctx.feature_columns or []),
+                    feature_columns=ctx.feature_columns,
+                    time_column=time_column,  # type: ignore[arg-type]
                 )
                 # Chronological order on the raw frame before target/feature selection.
-                full_frame = order_frame_by_time(full_frame, time_column)
+                full_frame = order_frame_by_time(full_frame, time_column)  # type: ignore[arg-type]
                 if multi_output:
                     problem_type = normalize_problem_type_for_targets(
                         ctx.problem_type,
@@ -637,7 +655,7 @@ class SklearnTrainingRunner:
                 features, target, selected = _partition_frame(
                     full_frame,
                     target_columns=target_columns,
-                    feature_columns=ctx.feature_columns,
+                    feature_columns=effective_features,
                     preprocessing=ctx.preprocessing,
                 )
                 if not multi_output:

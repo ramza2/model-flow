@@ -388,6 +388,62 @@ describe("NodeConfigForm", () => {
     expect(screen.getByTestId("node-config-quality-hint")).toHaveTextContent(/unavailable/i);
     expect(screen.getByTestId("quality-config")).toHaveTextContent('"quality_rule_id":10');
   });
+
+  it("excludes time column from target and feature choices in training form", async () => {
+    apiMock.mockResolvedValue({
+      algorithms: [
+        {
+          id: "random_forest",
+          display_name: "Random forest",
+          problem_types: ["classification", "regression"],
+          default_hyperparameters: { n_estimators: 10 },
+          supported_hyperparameters: [],
+          hyperparameters: [],
+        },
+      ],
+    });
+
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        target_column: "event_time",
+        problem_type: "classification",
+        algorithm: "random_forest",
+        feature_columns: ["a", "b"],
+        hyperparameters: { n_estimators: 10 },
+        split_strategy: "random",
+        time_column: "event_time",
+      });
+      return (
+        <div>
+          <pre data-testid="training-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="training"
+            config={config}
+            onChange={setConfig}
+            datasetColumns={["event_time", "a", "b", "target"]}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await screen.findByTestId("node-config-split-strategy");
+    // Enabling time mode while target == time_column must reassign the target.
+    fireEvent.change(screen.getByTestId("node-config-split-strategy"), {
+      target: { value: "time" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent(
+        '"split_strategy":"time"',
+      );
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent(
+        '"target_column":"event_time"',
+      );
+    });
+    const targetSelect = screen.getByTestId("node-config-target") as HTMLSelectElement;
+    expect([...targetSelect.options].map((option) => option.value)).not.toContain("event_time");
+    expect(screen.getByTestId("node-config-features")).not.toHaveTextContent("event_time");
+  });
 });
 
 describe("PipelineBuilder", () => {

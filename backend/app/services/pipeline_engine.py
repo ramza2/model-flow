@@ -162,6 +162,20 @@ def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str,
                     resolve_algorithm(algorithm, problem_type)
             except ValueError as exc:
                 errors.append(f"Node '{node_id}' {exc}")
+        try:
+            from app.services.dataset_splits import coerce_split_fields
+
+            strategy, time_col = coerce_split_fields(
+                config.get("split_strategy", "random"),
+                config.get("time_column"),
+            )
+        except ValueError as exc:
+            errors.append(f"Node '{node_id}' {exc}")
+        else:
+            if strategy == "time" and time_col and time_col in targets:
+                errors.append(
+                    f"Node '{node_id}' time_column cannot be a target column."
+                )
     elif node_type == "split":
         try:
             train_ratio = float(config.get("train_ratio", 0.7))
@@ -510,6 +524,25 @@ def _execute_node(
             primary_target, target_columns = _pipeline_target_columns(config)
         except TargetColumnError as exc:
             raise ValueError(str(exc)) from exc
+        from app.services.dataset_splits import coerce_split_fields
+
+        raw_time_column = (
+            config.get("time_column")
+            if config.get("time_column") is not None
+            else split_config.get("time_column")
+        )
+        try:
+            split_strategy, time_column = coerce_split_fields(
+                config.get(
+                    "split_strategy",
+                    split_config.get("split_strategy", "random"),
+                ),
+                raw_time_column,
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        if time_column and time_column in target_columns:
+            raise ValueError("time_column cannot be a target column.")
         job = TrainingJob(
             project_id=run.project_id,
             dataset_id=dataset_id,
@@ -527,18 +560,8 @@ def _execute_node(
             train_ratio=float(config.get("train_ratio", split_config.get("train_ratio", 0.7))),
             val_ratio=float(config.get("val_ratio", split_config.get("val_ratio", 0.15))),
             test_ratio=float(config.get("test_ratio", split_config.get("test_ratio", 0.15))),
-            split_strategy=str(
-                config.get(
-                    "split_strategy",
-                    split_config.get("split_strategy", "random"),
-                )
-                or "random"
-            ),
-            time_column=(
-                config.get("time_column")
-                if config.get("time_column") is not None
-                else split_config.get("time_column")
-            ),
+            split_strategy=split_strategy,
+            time_column=time_column,
             status=JobStatus.running,
             started_at=datetime.now(timezone.utc),
             created_by=run.created_by,
@@ -565,8 +588,8 @@ def _execute_node(
                 val_ratio=job.val_ratio,
                 test_ratio=job.test_ratio,
                 random_seed=job.random_seed,
-                split_strategy=getattr(job, "split_strategy", None) or "random",
-                time_column=getattr(job, "time_column", None),
+                split_strategy=split_strategy,
+                time_column=time_column,
             )
         )
         job.status = JobStatus.succeeded

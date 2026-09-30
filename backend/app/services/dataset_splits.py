@@ -109,15 +109,20 @@ def resolve_time_sort_key(series: pd.Series) -> pd.Series:
 
 
 def order_frame_by_time(frame: pd.DataFrame, time_column: str) -> pd.DataFrame:
-    """Stable ascending chronological order (earliest → latest)."""
+    """Stable ascending chronological order (earliest → latest).
+
+    Only row order changes. Input columns and cell values are preserved exactly;
+    no temporary columns are written into the frame (avoids colliding with a
+    user column named ``__mf_time_key``).
+    """
     if time_column not in frame.columns:
         raise ValueError(f"Time column '{time_column}' was not found in the dataset.")
     key = resolve_time_sort_key(frame[time_column])
-    ordered = frame.copy()
-    ordered["__mf_time_key"] = key.to_numpy()
-    # mergesort is stable: duplicate timestamps keep original relative order.
-    ordered = ordered.sort_values("__mf_time_key", kind="mergesort", ascending=True)
-    return ordered.drop(columns=["__mf_time_key"]).reset_index(drop=True)
+    # Positional stable argsort: ignore frame index labels so duplicates cannot
+    # rematerialize rows via label-based reindexing.
+    aligned = pd.Series(np.asarray(key), index=pd.RangeIndex(len(frame)))
+    positions = aligned.sort_values(kind="mergesort", ascending=True).index.to_numpy()
+    return frame.iloc[positions].reset_index(drop=True)
 
 
 def time_partition_boundaries(
@@ -189,3 +194,37 @@ def coerce_split_fields(
     if column is None:
         raise ValueError("time_column is required when split_strategy is 'time'.")
     return strategy, column
+
+
+def resolve_time_mode_feature_columns(
+    *,
+    columns: list[str],
+    target_columns: list[str],
+    feature_columns: list[str] | None,
+    time_column: str,
+) -> list[str]:
+    """Resolve estimator features for time mode (time_column never a feature)."""
+    targets = list(target_columns or [])
+    explicit = list(feature_columns or [])
+    if explicit:
+        validate_time_column_config(
+            time_column,
+            columns=columns,
+            target_columns=targets,
+            feature_columns=explicit,
+        )
+        return explicit
+    validate_time_column_config(
+        time_column,
+        columns=columns,
+        target_columns=targets,
+        feature_columns=[],
+    )
+    selected = [
+        column
+        for column in columns
+        if column not in targets and column != time_column
+    ]
+    if not selected:
+        raise ValueError("No usable feature columns were selected.")
+    return selected

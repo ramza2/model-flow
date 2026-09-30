@@ -535,3 +535,154 @@ def test_apply_time_partitions_no_shuffle():
     assert parts["train"]["a"].tolist() == [1, 2, 3, 4, 5, 6]
     assert parts["validation"]["a"].tolist() == [7, 8]
     assert parts["test"]["a"].tolist() == [9, 10]
+
+
+def test_order_frame_preserves_temp_key_column_name():
+    frame = pd.DataFrame(
+        {
+            "event_time": ["2024-01-03", "2024-01-01", "2024-01-02"],
+            "__mf_time_key": ["keep-c", "keep-a", "keep-b"],
+            "feature": [30, 10, 20],
+            "target": [1, 0, 1],
+        }
+    )
+    ordered = order_frame_by_time(frame, "event_time")
+    assert list(ordered.columns) == ["event_time", "__mf_time_key", "feature", "target"]
+    assert ordered["__mf_time_key"].tolist() == ["keep-a", "keep-b", "keep-c"]
+    assert ordered["feature"].tolist() == [10, 20, 30]
+    assert ordered["target"].tolist() == [0, 1, 1]
+
+
+def test_time_split_api_preserves_temp_key_column(client, auth_headers):
+    csv = (
+        b"event_time,__mf_time_key,a,target\n"
+        b"2024-01-03,keep-c,3,1\n"
+        b"2024-01-01,keep-a,1,0\n"
+        b"2024-01-02,keep-b,2,1\n"
+        b"2024-01-04,keep-d,4,0\n"
+        b"2024-01-05,keep-e,5,1\n"
+    )
+    project_id, _, version_id = _project_dataset(client, auth_headers, csv=csv)
+    created = client.post(
+        f"/api/v1/projects/{project_id}/dataset-versions/{version_id}/splits",
+        headers=auth_headers,
+        json={
+            "split_strategy": "time",
+            "time_column": "event_time",
+            "train_ratio": 0.6,
+            "val_ratio": 0.2,
+            "test_ratio": 0.2,
+            "random_seed": 1,
+        },
+    )
+    assert created.status_code == 201, created.text
+    train_key = created.json()["object_keys"]["train"]
+    train_bytes = next(v for (_b, k), v in OBJECT_STORE.items() if k == train_key)
+    train_frame = pd.read_csv(io.BytesIO(train_bytes))
+    assert "__mf_time_key" in train_frame.columns
+    assert train_frame["__mf_time_key"].tolist() == ["keep-a", "keep-b", "keep-c"]
+    assert list(train_frame.columns) == ["event_time", "__mf_time_key", "a", "target"]
+
+
+def test_runner_rejects_unknown_split_strategy(tmp_path, monkeypatch):
+    pytest.importorskip("mlflow")
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
+    ctx = TrainingJobContext(
+        job_id=1,
+        project_id=1,
+        job_name="bad-strategy",
+        target_column="target",
+        algorithm="logistic_regression",
+        hyperparameters={},
+        experiment_name="exp",
+        csv_bytes=TIME_CSV,
+        feature_columns=["a", "b"],
+        split_strategy="chronological",
+        time_column="event_time",
+        problem_type="classification",
+    )
+    with pytest.raises(ValueError, match="Unsupported split_strategy"):
+        SklearnTrainingRunner().run(ctx)
+
+
+def test_runner_excludes_time_column_from_implicit_features(tmp_path, monkeypatch):
+    pytest.importorskip("mlflow")
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
+
+    fit_capture: dict = {}
+    from sklearn.pipeline import Pipeline as SkPipeline
+
+    original_fit = SkPipeline.fit
+
+    def capturing_fit(self, x, y=None, **fit_params):
+        fit_capture["columns"] = list(x.columns)
+        return original_fit(self, x, y, **fit_params)
+
+    monkeypatch.setattr(SkPipeline, "fit", capturing_fit)
+
+    ctx = TrainingJobContext(
+        job_id=2,
+        project_id=1,
+        job_name="implicit-features",
+        target_column="target",
+        algorithm="logistic_regression",
+        hyperparameters={"max_iter": 200},
+        experiment_name="exp-implicit",
+        csv_bytes=TIME_CSV,
+        feature_columns=[],
+        train_ratio=0.6,
+        val_ratio=0.2,
+        test_ratio=0.2,
+        random_seed=42,
+        split_strategy="time",
+        time_column="event_time",
+        problem_type="classification",
+    )
+    result = SklearnTrainingRunner().run(ctx)
+    assert result.mlflow_run_id
+    assert "event_time" not in fit_capture["columns"]
+    assert set(fit_capture["columns"]) == {"a", "b"}
+
+
+def test_runner_rejects_time_mode_with_no_usable_features(tmp_path, monkeypatch):
+    pytest.importorskip("mlflow")
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
+    csv = (
+        b"event_time,target\n"
+        b"2024-01-01,0\n2024-01-02,1\n2024-01-03,0\n"
+        b"2024-01-04,1\n2024-01-05,0\n"
+    )
+    ctx = TrainingJobContext(
+        job_id=3,
+        project_id=1,
+        job_name="no-features",
+        target_column="target",
+        algorithm="logistic_regression",
+        hyperparameters={},
+        experiment_name="exp-empty",
+        csv_bytes=csv,
+        feature_columns=[],
+        split_strategy="time",
+        time_column="event_time",
+        problem_type="classification",
+        train_ratio=0.6,
+        val_ratio=0.2,
+        test_ratio=0.2,
+    )
+    with pytest.raises(ValueError, match="No usable feature columns were selected"):
+        SklearnTrainingRunner().run(ctx)
