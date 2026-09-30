@@ -162,9 +162,10 @@ services:
     restart: "no"
 
   minio:
-    # Pull-verified community MinIO mirror (quay.io/minio/* anonymous pulls unauthorized as of 2026-09).
-    # Image includes both `minio` and `mc` binaries; pin after pull/run verification (D-016).
-    image: registry.gitlab.com/140crafts/use-jinear/minio:RELEASE.2025-03-12T18-04-18Z
+    # Built from official upstream source pins (see infra/minio/). Not a third-party mirror.
+    build:
+      context: ./infra/minio
+    image: modelflow/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
@@ -181,8 +182,10 @@ services:
       retries: 20
 
   minio-init:
-    # Same pull-verified image as `minio` (bundles `mc`); replaces quay.io/minio/mc.
-    image: registry.gitlab.com/140crafts/use-jinear/minio:RELEASE.2025-03-12T18-04-18Z
+    # Reuses the same organization-built image (bundles `mc` from official minio/mc source).
+    build:
+      context: ./infra/minio
+    image: modelflow/minio:RELEASE.2025-10-15T17-29-55Z
     depends_on:
       minio:
         condition: service_healthy
