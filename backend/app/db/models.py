@@ -332,6 +332,10 @@ class TrainingJob(Base):
     retrain_source_job_id: Mapped[int | None] = mapped_column(
         ForeignKey("training_jobs.id"), nullable=True, index=True
     )
+    # Phase 5.1: continued/incremental training source (distinct from full retrain).
+    continued_from_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_jobs.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

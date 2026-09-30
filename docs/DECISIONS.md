@@ -82,11 +82,23 @@ Historical; see D-016.
 - **Choice:** Frontend via pinned Node image; E2E via Playwright image; JSON via python:3.11-slim. Host: Docker, Compose, curl, bash.
 - **Consequences:** First verify pull slower; no host Node/Python required.
 
-## D-016: Pin external Docker images to pull-verified tags
+## D-016: Pin external infrastructure images with trusted provenance
 
-- **Choice:** Pin MinIO/mc/Postgres/Node/nginx/Playwright/MLflow/Python tags after pull verification. See compose + verify.sh.
-- **Consequences:** Re-verify before upgrades; never invent unverified tags.
-- **Follow-up (2026-09):** MinIO server/client images are pulled from `quay.io/minio/*` (same release tags). Docker Hub `minio/minio` / `minio/mc` repositories no longer allow anonymous pulls.
+- **Choice:** External infrastructure images (Postgres, Node, nginx, Playwright, MLflow base, Python, object store, etc.) must be:
+  1. from a **trusted upstream** or an **organization-controlled** mirror/build,
+  2. pinned to an exact version/tag (never floating `latest` / `main` / `master`),
+  3. preferably digest-pinned when consumed as a prebuilt image,
+  4. checked for current **security-support** status before adoption or upgrade.
+  Pull/run verification alone is necessary but not sufficient trust.
+- **Consequences:** Re-verify before upgrades; never invent unverified tags; do not adopt third-party community mirrors as default ModelFlow runtime dependencies solely because they pull.
+- **Follow-up (2026-09):** Docker Hub `minio/minio` / `minio/mc` anonymous pulls denied; interim pin used `quay.io/minio/*` release tags.
+- **Follow-up (2026-09-29):** Anonymous `quay.io/minio/*` pulls returned `unauthorized`. A third-party GitLab community mirror was briefly used and is **rejected** as a default Compose dependency (supply-chain boundary for datasets, model artifacts, backups, and MinIO credentials).
+- **Current MinIO choice (Option B — reproducible upstream build):** Default Compose builds `modelflow/minio:RELEASE.2025-10-15T17-29-55Z` from `infra/minio/Dockerfile` using official archived AGPLv3 source pins:
+  - server: `github.com/minio/minio` tag `RELEASE.2025-10-15T17-29-55Z` (Security/CVE) commit `9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a`
+  - client: `github.com/minio/mc` tag `RELEASE.2025-08-13T08-35-41Z` commit `7394ce0dd2a80935aded936b09fa12cbb3cb8096`
+  - build/runtime bases digest-pinned in that Dockerfile
+  - AIStor commercial images are not used without a separate license/compatibility decision
+  - Follow-up: publish the built image digest to an organization-controlled registry (Option A) so CI/dev can pull immutable digests instead of rebuilding from source every time.
 
 ## D-017: GitHub Actions CI runs the same verify.sh gate
 

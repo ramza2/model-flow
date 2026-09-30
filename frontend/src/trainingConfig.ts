@@ -15,6 +15,9 @@ export type AlgorithmSpec = {
   default_hyperparameters: Record<string, unknown>;
   supported_hyperparameters: string[];
   hyperparameters: HyperparameterSpec[];
+  multi_output_strategy?: string;
+  continued_training_strategy?: "unsupported" | "partial_fit" | string;
+  supports_continued_training?: boolean;
 };
 
 export function formatHyperparameters(values: Record<string, unknown>): string {

@@ -23,17 +23,24 @@ ALGORITHM_ALIASES = {
     "rf_regressor": "random_forest_regressor",
     "gradient_boosting_regressor": "gradient_boosting_regressor",
     "gb_regressor": "gradient_boosting_regressor",
+    "sgd": "sgd_classifier",
+    "sgd_classifier": "sgd_classifier",
+    "sgdclassifier": "sgd_classifier",
+    "sgd_regressor": "sgd_regressor",
+    "sgdregressor": "sgd_regressor",
 }
 
 CLASSIFICATION_ALGORITHMS = {
     "logistic_regression",
     "random_forest",
     "gradient_boosting",
+    "sgd_classifier",
 }
 REGRESSION_ALGORITHMS = {
     "ridge",
     "random_forest_regressor",
     "gradient_boosting_regressor",
+    "sgd_regressor",
 }
 
 # Hyperparameters accepted by sklearn estimators but ignored at create-time validation
@@ -65,6 +72,12 @@ class AlgorithmSpec:
     problem_types: tuple[str, ...]
     hyperparameters: tuple[HyperparameterSpec, ...]
     multi_output_strategy: str = "unsupported"  # native | wrapper | unsupported
+    # Phase 5.1: unsupported | partial_fit
+    continued_training_strategy: str = "unsupported"
+
+    @property
+    def supports_continued_training(self) -> bool:
+        return self.continued_training_strategy != "unsupported"
 
     @property
     def default_hyperparameters(self) -> dict[str, Any]:
@@ -80,6 +93,8 @@ class AlgorithmSpec:
             "display_name": self.display_name,
             "problem_types": list(self.problem_types),
             "multi_output_strategy": self.multi_output_strategy,
+            "continued_training_strategy": self.continued_training_strategy,
+            "supports_continued_training": self.supports_continued_training,
             "default_hyperparameters": self.default_hyperparameters,
             "supported_hyperparameters": sorted(self.supported_parameter_names),
             "hyperparameters": [
@@ -141,6 +156,34 @@ _GB_PARAMS = (
         "Maximum depth of individual regression estimators.",
         minimum=1,
         maximum=100,
+    ),
+)
+
+_SGD_PARAMS = (
+    HyperparameterSpec(
+        "alpha",
+        "number",
+        0.0001,
+        "Constant that multiplies the regularization term.",
+        minimum=0.0,
+        maximum=1.0,
+    ),
+    HyperparameterSpec(
+        "max_iter",
+        "integer",
+        1000,
+        "Maximum number of passes over the training data.",
+        minimum=1,
+        maximum=100000,
+    ),
+    HyperparameterSpec(
+        "tol",
+        "number",
+        0.001,
+        "Stopping criterion tolerance.",
+        minimum=0.0,
+        maximum=1.0,
+        nullable=True,
     ),
 )
 
@@ -209,6 +252,22 @@ ALGORITHM_CATALOG: dict[str, AlgorithmSpec] = {
         problem_types=("regression",),
         hyperparameters=_GB_PARAMS,
         multi_output_strategy="wrapper",
+    ),
+    "sgd_classifier": AlgorithmSpec(
+        id="sgd_classifier",
+        display_name="SGD classifier",
+        problem_types=("classification",),
+        hyperparameters=_SGD_PARAMS,
+        multi_output_strategy="unsupported",
+        continued_training_strategy="partial_fit",
+    ),
+    "sgd_regressor": AlgorithmSpec(
+        id="sgd_regressor",
+        display_name="SGD regressor",
+        problem_types=("regression",),
+        hyperparameters=_SGD_PARAMS,
+        multi_output_strategy="unsupported",
+        continued_training_strategy="partial_fit",
     ),
 }
 

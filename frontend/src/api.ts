@@ -429,6 +429,9 @@ export type Job = {
   parent_job_id: number | null;
   retrain_source_job_id: number | null;
   is_retrain: boolean;
+  continued_from_job_id?: number | null;
+  is_continued_training?: boolean;
+  training_mode?: "fresh" | "retry" | "clone" | "full_retrain" | "continued" | string;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

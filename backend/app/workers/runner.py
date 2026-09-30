@@ -456,7 +456,20 @@ def process_job(job: TrainingJob) -> None:
             "data_format": data_format,
             "dataset_version_id": live.dataset_version_id,
             "retrain_source_job_id": live.retrain_source_job_id,
+            "continued_from_job_id": live.continued_from_job_id,
         }
+        if live.continued_from_job_id is not None:
+            source_job = db.get(TrainingJob, live.continued_from_job_id)
+            if source_job is None:
+                raise RuntimeError(
+                    f"Continued-training source job #{live.continued_from_job_id} is missing."
+                )
+            if not source_job.model_uri or not source_job.mlflow_run_id:
+                raise RuntimeError(
+                    "Continued-training source job is missing model artifact or MLflow run."
+                )
+            ctx_kwargs["continued_from_model_uri"] = source_job.model_uri
+            ctx_kwargs["continued_from_mlflow_run_id"] = source_job.mlflow_run_id
         if live.split_id is not None:
             split = db.get(DatasetSplit, live.split_id)
             if split is None:

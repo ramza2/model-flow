@@ -18,8 +18,12 @@ from app.core.deps import get_auth, require_project_perm
 from app.core.rbac import Permission
 from app.db.models import DatasetVersion, JobStatus, TrainingJob
 from app.db.session import get_db
-from app.schemas.v1 import JobCloneRequest, JobCreate, JobRetrainRequest
+from app.schemas.v1 import JobCloneRequest, JobContinueRequest, JobCreate, JobRetrainRequest
 from app.services.algorithm_catalog import list_algorithms
+from app.services.continued_training import (
+    ContinuedTrainingError,
+    prepare_continued_job,
+)
 from app.services.retrain_service import (
     RetrainConfigError,
     build_job_create_from_source,
@@ -48,6 +52,10 @@ def _raise_config_error(exc: TrainingConfigError) -> None:
 
 
 def _raise_retrain_error(exc: RetrainConfigError) -> None:
+    raise friendly(exc.status_code, exc.detail, exc.hint) from exc
+
+
+def _raise_continued_error(exc: ContinuedTrainingError) -> None:
     raise friendly(exc.status_code, exc.detail, exc.hint) from exc
 
 
@@ -131,6 +139,7 @@ def list_jobs(
     project_id: int,
     status: JobStatus | None = None,
     retrain_source_job_id: int | None = None,
+    continued_from_job_id: int | None = None,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=500),
     _=Depends(require_project_perm(Permission.TRAIN_READ)),
@@ -143,6 +152,11 @@ def list_jobs(
         get_owned(db, TrainingJob, retrain_source_job_id, project_id, "Training job")
         statement = statement.where(
             TrainingJob.retrain_source_job_id == retrain_source_job_id
+        )
+    if continued_from_job_id is not None:
+        get_owned(db, TrainingJob, continued_from_job_id, project_id, "Training job")
+        statement = statement.where(
+            TrainingJob.continued_from_job_id == continued_from_job_id
         )
     rows = db.scalars(
         statement.order_by(TrainingJob.id.desc()).offset(skip).limit(limit)
@@ -311,6 +325,49 @@ def retrain_job(
             "retrain_source_job_id": source.id,
             "dataset_version_id": body.dataset_version_id,
             "split_id": body.split_id,
+        },
+    )
+    db.commit()
+    db.refresh(job)
+    return job_out(job)
+
+
+@router.post("/projects/{project_id}/jobs/{job_id}/continue", status_code=201)
+def continue_job(
+    project_id: int,
+    job_id: int,
+    body: JobContinueRequest,
+    access=Depends(require_project_perm(Permission.TRAIN_WRITE)),
+    db: Session = Depends(get_db),
+):
+    """Continued / incremental training (Phase 5.1).
+
+    Distinct from full retrain: freezes fitted preprocessing and updates the
+    estimator via ``partial_fit`` on a newer compatible DatasetVersion.
+    """
+    auth, _, _ = access
+    source = get_owned(db, TrainingJob, job_id, project_id, "Training job")
+    try:
+        validated = prepare_continued_job(db, project_id, source, body)
+    except ContinuedTrainingError as exc:
+        _raise_continued_error(exc)
+    except TrainingConfigError as exc:
+        _raise_config_error(exc)
+    job = _new_job(validated.body, project_id, auth.user.id, validated.version)
+    job.continued_from_job_id = source.id
+    db.add(job)
+    db.flush()
+    audit_event(
+        db,
+        auth,
+        "training_job.continue",
+        "training_job",
+        job.id,
+        after={
+            "continued_from_job_id": source.id,
+            "dataset_version_id": body.dataset_version_id,
+            "split_id": body.split_id,
+            "training_mode": "continued",
         },
     )
     db.commit()

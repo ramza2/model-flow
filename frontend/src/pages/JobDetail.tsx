@@ -15,6 +15,8 @@ import {
 import { DetailSection, EntityLineage, MetricSummary, TargetChips } from "../lifecycleComponents";
 import { resolveDisplayProblemType } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+import type { AlgorithmSpec } from "../trainingConfig";
+import JobContinueTrainingDialog from "./JobContinueTrainingDialog";
 import JobRetrainDialog from "./JobRetrainDialog";
 import RegisterModelDialog from "./RegisterModelDialog";
 
@@ -24,13 +26,16 @@ export default function JobDetail() {
   const { user } = useAuth();
   const { selectedProject } = useProject();
   const [job, setJob] = useState<Job | null>(null);
+  const [algorithmSpec, setAlgorithmSpec] = useState<AlgorithmSpec | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState("");
   const [showRetrain, setShowRetrain] = useState(false);
+  const [showContinue, setShowContinue] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canRegister = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+  const supportsContinued = Boolean(algorithmSpec?.supports_continued_training);
 
   useEffect(() => {
     let alive = true;
@@ -45,6 +50,26 @@ export default function JobDetail() {
       clearInterval(t);
     };
   }, [jobId, projectId]);
+
+  useEffect(() => {
+    if (!projectId || !job?.algorithm) {
+      setAlgorithmSpec(null);
+      return;
+    }
+    let alive = true;
+    api<{ algorithms: AlgorithmSpec[] }>(`/projects/${projectId}/training/algorithms`)
+      .then((payload) => {
+        if (!alive) return;
+        const match = (payload.algorithms ?? []).find((item) => item.id === job.algorithm) ?? null;
+        setAlgorithmSpec(match);
+      })
+      .catch(() => {
+        if (alive) setAlgorithmSpec(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [job?.algorithm, projectId]);
 
   async function register(modelName: string) {
     if (!job) return;
@@ -91,6 +116,9 @@ export default function JobDetail() {
 
   const active = job && ["pending", "queued", "running", "cancel_requested"].includes(job.status);
   const targets = job ? effectiveTargetColumns(job) : [];
+  const showRetrainAction = canTrain && job?.status === "succeeded";
+  const showContinueAction =
+    showRetrainAction && Boolean(job?.model_uri) && Boolean(job?.mlflow_run_id) && supportsContinued;
 
   return (
     <div>
@@ -116,9 +144,14 @@ export default function JobDetail() {
                 {busy === "register" ? "Registering…" : "Register model"}
               </button>
             )}
-            {canTrain && job?.status === "succeeded" && !(canRegister && job.model_uri) && (
+            {showRetrainAction && !(canRegister && job?.model_uri) && (
               <button type="button" className="btn" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
                 Retrain
+              </button>
+            )}
+            {showContinueAction && !(canRegister && job?.model_uri) && (
+              <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
+                Continue training
               </button>
             )}
           </>
@@ -155,12 +188,32 @@ export default function JobDetail() {
                 Open experiment
               </Link>
             )}
-            {canTrain && job.status === "succeeded" && canRegister && job.model_uri && (
+            {showRetrainAction && canRegister && job.model_uri && (
               <button type="button" className="btn secondary" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
                 Retrain
               </button>
             )}
+            {showContinueAction && canRegister && job.model_uri && (
+              <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
+                Continue training
+              </button>
+            )}
           </div>
+
+          {showRetrainAction && (
+            <p className="form-hint" data-testid="retrain-continue-hint">
+              <strong>Full retrain</strong> trains a fresh model and preprocessing pipeline from scratch.
+              {supportsContinued ? (
+                <>
+                  {" "}
+                  <strong>Continue training</strong> reuses fitted preprocessing and updates the estimator
+                  via partial_fit on a newer DatasetVersion of the same Dataset.
+                </>
+              ) : algorithmSpec ? (
+                <> Continued training unavailable for {algorithmSpec.display_name}.</>
+              ) : null}
+            </p>
+          )}
 
           <MetricSummary
             metrics={job.metrics}
@@ -178,8 +231,22 @@ export default function JobDetail() {
                   </Link>
                 </p>
               )}
+              {job.is_continued_training && job.continued_from_job_id && (
+                <p data-testid="job-continue-lineage">
+                  Continued from{" "}
+                  <Link to={`/projects/${projectId}/jobs/${job.continued_from_job_id}`}>
+                    Job #{job.continued_from_job_id}
+                  </Link>
+                </p>
+              )}
               <dl className="key-values">
                 <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
+                {job.training_mode && (
+                  <div data-testid="job-training-mode">
+                    <dt>Training mode</dt>
+                    <dd>{job.training_mode.replaceAll("_", " ")}</dd>
+                  </div>
+                )}
                 <div data-testid="job-problem-type">
                   <dt>Problem type</dt>
                   <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
@@ -254,6 +321,15 @@ export default function JobDetail() {
                       },
                     ]
                   : []),
+                ...(job.is_continued_training && job.continued_from_job_id
+                  ? [
+                      {
+                        label: "Continued training source",
+                        value: `Job #${job.continued_from_job_id}`,
+                        to: `/projects/${projectId}/jobs/${job.continued_from_job_id}`,
+                      },
+                    ]
+                  : []),
               ]}
             />
           </div>
@@ -285,6 +361,17 @@ export default function JobDetail() {
               onClose={() => setShowRetrain(false)}
               onCreated={(created) => {
                 setShowRetrain(false);
+                navigate(`/projects/${projectId}/jobs/${created.id}`);
+              }}
+            />
+          )}
+          {showContinue && (
+            <JobContinueTrainingDialog
+              projectId={projectId!}
+              sourceJob={job}
+              onClose={() => setShowContinue(false)}
+              onCreated={(created) => {
+                setShowContinue(false);
                 navigate(`/projects/${projectId}/jobs/${created.id}`);
               }}
             />
