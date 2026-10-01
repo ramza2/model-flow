@@ -489,6 +489,8 @@ def test_pipeline_split_does_not_create_dataset_split_rows(pipeline_db):
         "val_ratio": 0.15,
         "test_ratio": 0.15,
         "random_seed": 42,
+        "split_strategy": "random",
+        "time_column": None,
     }
     pd.testing.assert_frame_equal(first["splits"]["train"], second["splits"]["train"])
     pd.testing.assert_frame_equal(first["splits"]["val"], second["splits"]["val"])
