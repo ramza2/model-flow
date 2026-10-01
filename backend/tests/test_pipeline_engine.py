@@ -778,7 +778,7 @@ def test_pipeline_time_training_persists_and_excludes_time_feature(pipeline_db, 
     import pandas as pd
 
     from app.db.models import Dataset, DatasetVersion, TrainingJob
-    from app.services.training import SklearnTrainingRunner, TrainingJobContext
+    from app.services.training import SklearnTrainingRunner
 
     pytest.importorskip("mlflow")
     tracking = tmp_path / "mlruns"
