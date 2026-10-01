@@ -63,7 +63,9 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-time-ordered-job");
   await expect(page.getByTestId("job-data-split")).toBeVisible();
-  await page.getByTestId("job-data-split").selectOption({ label: /e2e-time-split · Time ordered/i });
+  await page.getByTestId("job-data-split").selectOption({
+    label: "e2e-time-split · Time ordered · event_time · 70/15/15",
+  });
   await expect(page.getByTestId("job-saved-split-summary")).toContainText(/Time ordered · event_time/i);
   await page.getByTestId("job-submit").click();
 
