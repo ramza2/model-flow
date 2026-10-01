@@ -155,10 +155,14 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
   await login(page);
   await page.goto(`/projects/${projectId}/pipelines/${pipelineId}`);
   await expect(page.getByTestId("pipeline-library-dataset_load")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("canvas-node-training-1")).toBeVisible();
-  await expect(page.getByTestId("canvas-node-training-1")).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
 
-  await page.getByTestId("canvas-node-training-1").click();
+  const trainingNode = page
+    .getByTestId("pipeline-step-node")
+    .filter({ hasText: "Forecast train" });
+  await expect(trainingNode).toBeVisible({ timeout: 30_000 });
+  await expect(trainingNode).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
+
+  await trainingNode.click();
   await expect(page.getByTestId("node-config-training-task")).toHaveValue("forecasting");
   await expect(page.getByTestId("node-config-problem-type")).toHaveValue("regression");
   await expect(page.getByTestId("node-config-split-strategy")).toHaveValue("time");
@@ -183,7 +187,10 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
     timeout: 30_000,
   });
   await expect(page.getByText(/succeeded/i).first()).toBeVisible({ timeout: 180_000 });
-  await expect(page.getByTestId("canvas-node-training-1")).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
+  const runTrainingNode = page
+    .getByTestId("pipeline-step-node")
+    .filter({ hasText: "Forecast train" });
+  await expect(runTrainingNode).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
   await expect(page.getByTestId("pipeline-run-step-training-1")).toBeVisible();
   await expect(page.getByTestId("pipeline-run-step-model_registration-1")).toBeVisible();
 });
