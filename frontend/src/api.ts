@@ -240,6 +240,8 @@ export type DatasetPreparationNodeType =
   | "group_by"
   | "unpivot"
   | "pivot"
+  | "lag"
+  | "rolling_window"
   | "output";
 
 export type DatasetPreparationNodePosition = {

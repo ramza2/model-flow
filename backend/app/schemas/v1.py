@@ -528,6 +528,8 @@ class DatasetPreparationNode(BaseModel):
         "group_by",
         "unpivot",
         "pivot",
+        "lag",
+        "rolling_window",
         "output",
     ]
     config: dict[str, Any] = Field(default_factory=dict)

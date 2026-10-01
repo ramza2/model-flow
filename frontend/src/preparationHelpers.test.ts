@@ -32,8 +32,10 @@ import {
   serializeFillValues,
   serializeFilterConditions,
   serializeGroupByConfig,
+  serializeLagConfig,
   serializeUnpivotConfig,
   serializePivotConfig,
+  serializeRollingWindowConfig,
   sourceDatasetIdsInGraph,
   staggerPreparationPosition,
   targetHandleToPort,
@@ -91,12 +93,22 @@ describe("preparationHelpers", () => {
       variable_column: "variable",
       value_column: "value",
     });
- expect(defaultConfigForPreparation("pivot")).toEqual({
+    expect(defaultConfigForPreparation("pivot")).toEqual({
       index_columns: [],
       columns_column: "",
       value_column: "",
       aggregation: "sum",
       pivot_values: [],
+    });
+    expect(defaultConfigForPreparation("lag")).toEqual({
+      time_column: "",
+      source_column: "",
+      lags: [],
+    });
+    expect(defaultConfigForPreparation("rolling_window")).toEqual({
+      time_column: "",
+      source_column: "",
+      windows: [],
     });
   });
 
@@ -106,6 +118,8 @@ describe("preparationHelpers", () => {
     expect(PREPARATION_NODE_TYPES).toContain("group_by");
     expect(PREPARATION_NODE_TYPES).toContain("unpivot");
     expect(PREPARATION_NODE_TYPES).toContain("pivot");
+    expect(PREPARATION_NODE_TYPES).toContain("lag");
+    expect(PREPARATION_NODE_TYPES).toContain("rolling_window");
     expect(PREPARATION_NODE_LIBRARY.map((item) => item.type)).toContain("filter");
     const transformGroup = PREPARATION_NODE_LIBRARY_GROUPS.find(
       (group) => group.id === "transform",
@@ -122,11 +136,15 @@ describe("preparationHelpers", () => {
       "group_by",
       "unpivot",
       "pivot",
+      "lag",
+      "rolling_window",
     ]);
     expect(isPreparationTransformType("select")).toBe(true);
     expect(isPreparationTransformType("group_by")).toBe(true);
     expect(isPreparationTransformType("unpivot")).toBe(true);
     expect(isPreparationTransformType("pivot")).toBe(true);
+    expect(isPreparationTransformType("lag")).toBe(true);
+    expect(isPreparationTransformType("rolling_window")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
   });
 
@@ -434,6 +452,8 @@ describe("preparationHelpers", () => {
       "group_by",
       "unpivot",
       "pivot",
+      "lag",
+      "rolling_window",
       "output",
     ]);
     expect(
@@ -746,5 +766,119 @@ describe("preparationHelpers", () => {
         { data: { node_type: "select", config: { columns: [] } } },
       ]),
     ).toEqual(new Set([2, 3]));
+  });
+
+  it("serializes lag and rolling window configs", () => {
+    expect(
+      preparationConfigSummary("lag", {
+        time_column: "event_time",
+        source_column: "sales",
+        lags: [{ periods: 1 }, { periods: 7 }],
+      }),
+    ).toEqual(["Time: event_time", "Source: sales", "2 lags"]);
+    expect(
+      preparationConfigSummary("rolling_window", {
+        time_column: "",
+        source_column: "",
+        windows: [],
+      }),
+    ).toEqual(["Time column not set", "Source column not set", "No windows"]);
+
+    expect(
+      serializeLagConfig({
+        timeColumn: "",
+        sourceColumn: "sales",
+        lags: [],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        "Time column is required.",
+        "At least one lag is required.",
+      ]),
+    );
+    expect(
+      serializeLagConfig({
+        timeColumn: "sales",
+        sourceColumn: "sales",
+        lags: [{ periods: "1", output: "x" }],
+      }).errors,
+    ).toContain("Time column and source column must be different.");
+    expect(
+      serializeLagConfig({
+        timeColumn: "t",
+        sourceColumn: "s",
+        lags: [
+          { periods: "0", output: "a" },
+          { periods: "1.5", output: "b" },
+          { periods: "1", output: "c" },
+          { periods: "1", output: "d" },
+        ],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("periods must be a positive integer"),
+        "Lag periods must be unique.",
+      ]),
+    );
+    expect(
+      serializeLagConfig({
+        timeColumn: "event_time",
+        sourceColumn: "sales",
+        lags: [
+          { periods: "1", output: "sales_lag_1" },
+          { periods: "7", output: "sales_lag_7" },
+        ],
+      }),
+    ).toEqual({
+      time_column: "event_time",
+      source_column: "sales",
+      lags: [
+        { periods: 1, output: "sales_lag_1" },
+        { periods: 7, output: "sales_lag_7" },
+      ],
+      errors: [],
+    });
+
+    expect(
+      serializeRollingWindowConfig({
+        timeColumn: "t",
+        sourceColumn: "s",
+        windows: [{ window: "3", aggregation: "median", output: "x" }],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("aggregation must be AVG, SUM, MIN, or MAX"),
+      ]),
+    );
+    expect(
+      serializeRollingWindowConfig({
+        timeColumn: "event_time",
+        sourceColumn: "sales",
+        windows: [
+          { window: "7", aggregation: "avg", output: "sales_roll_avg_7" },
+          { window: "7", aggregation: "AVG", output: "dup" },
+        ],
+      }).errors,
+    ).toEqual(
+      expect.arrayContaining([expect.stringContaining("duplicate window/aggregation")]),
+    );
+    expect(
+      serializeRollingWindowConfig({
+        timeColumn: "event_time",
+        sourceColumn: "sales",
+        windows: [
+          { window: "7", aggregation: "avg", output: "sales_roll_avg_7" },
+          { window: "7", aggregation: "max", output: "sales_roll_max_7" },
+        ],
+      }),
+    ).toEqual({
+      time_column: "event_time",
+      source_column: "sales",
+      windows: [
+        { window: 7, aggregation: "avg", output: "sales_roll_avg_7" },
+        { window: 7, aggregation: "max", output: "sales_roll_max_7" },
+      ],
+      errors: [],
+    });
   });
 });
