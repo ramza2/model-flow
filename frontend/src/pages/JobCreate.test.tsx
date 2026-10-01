@@ -1141,6 +1141,7 @@ describe("JobCreate UX", () => {
         "ridge",
         "random_forest_regressor",
         "gradient_boosting_regressor",
+        "sgd_regressor",
       ]);
     });
 
@@ -1160,6 +1161,7 @@ describe("JobCreate UX", () => {
       "ridge",
       "random_forest_regressor",
       "gradient_boosting_regressor",
+      "sgd_regressor",
     ]);
   });
 
@@ -1249,6 +1251,7 @@ describe("JobCreate UX", () => {
         "ridge",
         "random_forest_regressor",
         "gradient_boosting_regressor",
+        "sgd_regressor",
       ]);
     });
     fireEvent.click(screen.getByTestId("job-submit"));
@@ -1982,19 +1985,23 @@ describe("JobCreate time-aware split", () => {
     expect(screen.getByTestId("job-forecast-horizons")).toBeInTheDocument();
     expect(screen.getByTestId("job-forecast-horizons-help")).toHaveTextContent(/observation steps/i);
 
-    const algorithmSelect = screen.getByTestId("job-algorithm") as HTMLSelectElement;
-    const algorithmIds = Array.from(algorithmSelect.options).map((option) => option.value);
-    expect(algorithmIds).toEqual([
-      "ridge",
-      "random_forest_regressor",
-      "gradient_boosting_regressor",
-    ]);
-    expect(algorithmIds).not.toContain("sgd_regressor");
+    await waitFor(() => {
+      const algorithmSelect = screen.getByTestId("job-algorithm") as HTMLSelectElement;
+      const algorithmIds = Array.from(algorithmSelect.options).map((option) => option.value);
+      expect(algorithmIds).toEqual([
+        "ridge",
+        "random_forest_regressor",
+        "gradient_boosting_regressor",
+      ]);
+      expect(algorithmIds).not.toContain("sgd_regressor");
+    });
 
-    const splitSelect = screen.getByTestId("job-data-split") as HTMLSelectElement;
-    const splitLabels = Array.from(splitSelect.options).map((option) => option.textContent || "");
-    expect(splitLabels.some((label) => label.includes("time-saved"))).toBe(true);
-    expect(splitLabels.some((label) => label.includes("random-saved"))).toBe(false);
+    await waitFor(() => {
+      const splitSelect = screen.getByTestId("job-data-split") as HTMLSelectElement;
+      const splitLabels = Array.from(splitSelect.options).map((option) => option.textContent || "");
+      expect(splitLabels.some((label) => /time-saved/i.test(label))).toBe(true);
+      expect(splitLabels.some((label) => /random-saved/i.test(label))).toBe(false);
+    });
 
     fireEvent.click(screen.getByTestId("target-sales"));
     fireEvent.change(screen.getByTestId("job-time-column"), { target: { value: "event_time" } });
