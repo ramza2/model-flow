@@ -8,8 +8,8 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 |-------|--------|--------|
 | **6-A** | Time-aware training foundation — chronological train/validation/test splits, persisted `split_strategy` / `time_column`, API/UX/MLflow/lineage | **complete** (PR #65 merged; squash/main `9376c5c209f9ebce7e52da15d341707f904bedd7`; post-merge main CI #323 PASS; Alembic head `022_time_series_foundation`) |
 | **6-B** | Lag / rolling-window feature preparation | **complete** (PR #66 merged; squash/main `deb98ed18d6483fdd72adf430ab2cc5b763a3758`; post-merge main CI #329 PASS; Alembic head `022_time_series_foundation`) |
-| **6-C** | Forecasting / multi-step training (horizons, supported forecasters) | **current** (Draft until merge + post-merge `main` CI PASS; Alembic `023_forecasting_training` on feature branch) |
-| **6-D** | Pipeline / UX / final hardening | future |
+| **6-C** | Forecasting / multi-step training (horizons, supported forecasters) | **complete** (PR #67 merged; squash/main `abc738a5da390f62a5aade4691fcc640531c5d53`; post-merge main CI #333 PASS; Alembic head `023_forecasting_training`) |
+| **6-D** | Pipeline / UX / final hardening | **current** (Draft until merge + post-merge `main` CI PASS) |
 
 ```text
 6-A Time-aware Training Foundation
@@ -23,8 +23,8 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 
 **6-A = time-aware foundation (complete).**  
 **6-B = lag / rolling (complete).**  
-**6-C = forecasting + multi-step (current).**  
-**6-D = integration / hardening.**
+**6-C = forecasting + multi-step (complete).**  
+**6-D = Pipeline / UX / final hardening (current).**
 
 Unpivot already exists from Phase 2-F1; Phase 6 must not re-implement it.
 
