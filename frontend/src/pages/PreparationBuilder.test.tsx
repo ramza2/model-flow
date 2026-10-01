@@ -2262,9 +2262,8 @@ describe("PreparationBuilder", () => {
 
     fireEvent.click(screen.getByTestId("preparation-save-version"));
     await waitFor(() => expect(saved).not.toBeNull());
-    const nodes = (
-      saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } }
-    ).graph!.nodes!;
+    expect(saved).not.toBeNull();
+    const nodes = saved!.graph!.nodes!;
     expect(nodes.find((node) => node.id === "lag-1")?.config).toEqual({
       time_column: "event_time",
       source_column: "sales",
