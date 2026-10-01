@@ -216,7 +216,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
+- Branch baseline: `main@9376c5c209f9ebce7e52da15d341707f904bedd7`
+- Phase 6-A merge (PR #65): `9376c5c209f9ebce7e52da15d341707f904bedd7` (post-merge CI #323 PASS; Alembic head `022_time_series_foundation`)
 - Phase 4 closeout docs (PR #58): `364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 - Phase 4-E merge (PR #57): `c9483de0ef6d557097abb9340aeee499d68d41bc` (post-merge CI #278 PASS)
 - Phase 4-D merge (PR #56): `18576e6e54b751f416b87e110c39918fe7dc2045` (post-merge CI #273 PASS)
