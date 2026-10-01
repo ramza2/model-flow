@@ -180,6 +180,6 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
   });
   await page.getByTestId("preparation-open-output-dataset").click();
   await expect(page.getByText(/Column statistics/i)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("sales_lag_1")).toBeVisible();
-  await expect(page.getByText("sales_roll_avg_3")).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "sales_lag_1" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "sales_roll_avg_3" })).toBeVisible();
 });
