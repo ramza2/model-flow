@@ -426,6 +426,10 @@ export type Job = {
   random_seed?: number;
   split_strategy?: SplitStrategy | string;
   time_column?: string | null;
+  training_task?: "tabular" | "forecasting" | string;
+  forecast_strategy?: "direct_multioutput" | string | null;
+  forecast_horizons?: number[];
+  forecast_output_names?: string[];
   status: string;
   logs: string;
   mlflow_run_id: string | null;

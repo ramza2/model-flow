@@ -329,6 +329,14 @@ class TrainingJob(Base):
         String(20), nullable=False, default="random", server_default="random"
     )
     time_column: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Phase 6-C: tabular | forecasting (+ direct multi-horizon fields).
+    training_task: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="tabular", server_default="tabular"
+    )
+    forecast_strategy: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    forecast_horizons_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
     logs: Mapped[str] = mapped_column(Text, default="")
     mlflow_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

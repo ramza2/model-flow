@@ -82,6 +82,9 @@ class TrainingJobContext:
     random_seed: int = 42
     split_strategy: str = "random"
     time_column: str | None = None
+    training_task: str = "tabular"
+    forecast_strategy: str | None = None
+    forecast_horizons: list[int] = field(default_factory=list)
     data_format: str = "csv"
     split_id: int | None = None
     dataset_version_id: int | None = None
@@ -552,15 +555,21 @@ class SklearnTrainingRunner:
         def log(message: str) -> None:
             logs.append(message)
 
-        target_columns = list(ctx.target_columns or [ctx.target_column])
-        multi_output = is_multi_output(target_columns)
-
         from app.services.dataset_splits import (
             SPLIT_STRATEGY_TIME,
             coerce_split_fields,
             order_frame_by_time,
             resolve_time_mode_feature_columns,
             time_partition_boundaries,
+        )
+        from app.services.forecasting import (
+            ForecastingError,
+            TRAINING_TASK_FORECASTING,
+            build_forecast_metrics_payload,
+            build_forecast_supervised_partition,
+            forecast_output_names,
+            is_forecasting_task,
+            require_numeric_forecast_target,
         )
 
         # Fail closed: unknown strategies never silently fall back to random.
@@ -570,8 +579,168 @@ class SklearnTrainingRunner:
         ctx.split_strategy = split_strategy
         ctx.time_column = time_column
 
+        forecasting = is_forecasting_task(ctx.training_task)
+        base_target_column = ctx.target_column
+        source_target_columns = list(ctx.target_columns or [ctx.target_column])
+        forecast_horizons = list(ctx.forecast_horizons or [])
+        if forecasting:
+            if len(source_target_columns) != 1:
+                raise ValueError("Forecasting requires exactly one base target column.")
+            if split_strategy != SPLIT_STRATEGY_TIME or not time_column:
+                raise ValueError("Forecasting requires a time-ordered split and time_column.")
+            if not forecast_horizons:
+                raise ValueError("Forecasting requires non-empty forecast_horizons.")
+            if ctx.continued_from_job_id is not None:
+                raise ValueError(
+                    "Continued training is not supported for forecasting jobs. "
+                    "Use Full Retrain."
+                )
+            base_target_column = source_target_columns[0]
+            target_columns = forecast_output_names(base_target_column, forecast_horizons)
+            multi_output = len(target_columns) > 1
+        else:
+            target_columns = list(source_target_columns)
+            multi_output = is_multi_output(target_columns)
+
         using_saved_split = ctx.split_id is not None or ctx.train_bytes is not None
-        if using_saved_split:
+        if forecasting and using_saved_split:
+            if ctx.train_bytes is None or ctx.validation_bytes is None or ctx.test_bytes is None:
+                raise ValueError(
+                    "Saved split requires train, validation, and test artifacts."
+                )
+            if not ctx.train_bytes or not ctx.validation_bytes or not ctx.test_bytes:
+                raise ValueError("Saved split artifact is empty.")
+            train_raw = _read_frame(ctx.train_bytes, ctx.data_format)
+            val_raw = _read_frame(ctx.validation_bytes, ctx.data_format)
+            test_raw = _read_frame(ctx.test_bytes, ctx.data_format)
+            for label, frame in (
+                ("train", train_raw),
+                ("validation", val_raw),
+                ("test", test_raw),
+            ):
+                if frame.empty:
+                    raise ValueError(f"Saved {label} split artifact has no rows.")
+            # Defense-in-depth: stable chronological order inside each artifact.
+            train_raw = order_frame_by_time(train_raw, time_column)  # type: ignore[arg-type]
+            val_raw = order_frame_by_time(val_raw, time_column)  # type: ignore[arg-type]
+            test_raw = order_frame_by_time(test_raw, time_column)  # type: ignore[arg-type]
+            require_numeric_forecast_target(train_raw, base_target_column)
+            effective_features = resolve_time_mode_feature_columns(
+                columns=[str(c) for c in train_raw.columns],
+                target_columns=[base_target_column],
+                feature_columns=ctx.feature_columns,
+                time_column=time_column,  # type: ignore[arg-type]
+            )
+            selected = _select_feature_columns(
+                train_raw,
+                [base_target_column],
+                effective_features,
+                ctx.preprocessing,
+            )
+            try:
+                x_train, y_train = build_forecast_supervised_partition(
+                    train_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="train",
+                )
+                x_val, y_val = build_forecast_supervised_partition(
+                    val_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="validation",
+                    require_min_rows=ctx.val_ratio > 0,
+                )
+                x_test, y_test = build_forecast_supervised_partition(
+                    test_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="test",
+                    require_min_rows=ctx.test_ratio > 0,
+                )
+            except ForecastingError as exc:
+                raise ValueError(str(exc)) from exc
+            if not multi_output:
+                y_train = y_train.iloc[:, 0]
+                y_val = y_val.iloc[:, 0] if not y_val.empty else y_val
+                y_test = y_test.iloc[:, 0] if not y_test.empty else y_test
+            problem_type = "regression"
+            algorithm = _algorithm(ctx.algorithm, problem_type)
+            features_for_schema = x_train
+            log(
+                f"Using saved dataset split #{ctx.split_id} for forecasting "
+                f"(per-partition horizons {forecast_horizons}; no cross-partition labels)"
+            )
+        elif forecasting:
+            if ctx.csv_bytes is None:
+                raise ValueError("Training data is missing.")
+            full_frame = _read_frame(ctx.csv_bytes, ctx.data_format)
+            columns = [str(c) for c in full_frame.columns]
+            effective_features = resolve_time_mode_feature_columns(
+                columns=columns,
+                target_columns=[base_target_column],
+                feature_columns=ctx.feature_columns,
+                time_column=time_column,  # type: ignore[arg-type]
+            )
+            # Chronological order on the raw frame BEFORE any future-target shift.
+            full_frame = order_frame_by_time(full_frame, time_column)  # type: ignore[arg-type]
+            require_numeric_forecast_target(full_frame, base_target_column)
+            selected = _select_feature_columns(
+                full_frame,
+                [base_target_column],
+                effective_features,
+                ctx.preprocessing,
+            )
+            train_end, val_end = time_partition_boundaries(
+                len(full_frame),
+                ctx.train_ratio,
+                ctx.val_ratio,
+                ctx.test_ratio,
+            )
+            train_raw = full_frame.iloc[:train_end].copy()
+            val_raw = full_frame.iloc[train_end:val_end].copy()
+            test_raw = full_frame.iloc[val_end:].copy()
+            try:
+                x_train, y_train = build_forecast_supervised_partition(
+                    train_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="train",
+                )
+                x_val, y_val = build_forecast_supervised_partition(
+                    val_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="validation",
+                    require_min_rows=ctx.val_ratio > 0,
+                )
+                x_test, y_test = build_forecast_supervised_partition(
+                    test_raw,
+                    target_column=base_target_column,
+                    feature_columns=selected,
+                    horizons=forecast_horizons,
+                    partition_label="test",
+                    require_min_rows=ctx.test_ratio > 0,
+                )
+            except ForecastingError as exc:
+                raise ValueError(str(exc)) from exc
+            if not multi_output:
+                y_train = y_train.iloc[:, 0]
+                y_val = y_val.iloc[:, 0] if not y_val.empty else y_val
+                y_test = y_test.iloc[:, 0] if not y_test.empty else y_test
+            problem_type = "regression"
+            algorithm = _algorithm(ctx.algorithm, problem_type)
+            features_for_schema = x_train
+            log(
+                f"Using time-ordered forecasting split on '{time_column}' "
+                f"(raw partitions then per-partition horizons {forecast_horizons})"
+            )
+        elif using_saved_split:
             if ctx.train_bytes is None or ctx.validation_bytes is None or ctx.test_bytes is None:
                 raise ValueError(
                     "Saved split requires train, validation, and test artifacts."
@@ -772,6 +941,7 @@ class SklearnTrainingRunner:
             "test_ratio": ctx.test_ratio,
             "random_seed": ctx.random_seed,
             "split_strategy": (ctx.split_strategy or "random"),
+            "training_task": TRAINING_TASK_FORECASTING if forecasting else "tabular",
             "git_sha": settings.git_sha,
             "python_version": platform.python_version(),
             "sklearn_version": sklearn.__version__,
@@ -780,6 +950,12 @@ class SklearnTrainingRunner:
             "mlflow_version": mlflow.__version__,
             "training_mode": "continued" if continued else "fresh",
         }
+        if forecasting:
+            logged_params["forecast_strategy"] = ctx.forecast_strategy or "direct_multioutput"
+            logged_params["forecast_target_column"] = base_target_column
+            logged_params["forecast_horizons"] = json.dumps(forecast_horizons)
+            logged_params["forecast_output_names"] = json.dumps(target_columns)
+            logged_params["source_target_columns"] = json.dumps([base_target_column])
         if ctx.dataset_version_id is not None:
             logged_params["dataset_version_id"] = ctx.dataset_version_id
         if ctx.retrain_source_job_id is not None:
@@ -820,7 +996,12 @@ class SklearnTrainingRunner:
                 "modelflow.output_count": str(len(target_columns)),
                 "modelflow.training_mode": str(logged_params["training_mode"]),
                 "modelflow.split_strategy": str(logged_params["split_strategy"]),
+                "modelflow.training_task": str(logged_params["training_task"]),
             }
+            if forecasting:
+                tags["modelflow.forecast_strategy"] = str(
+                    logged_params.get("forecast_strategy") or "direct_multioutput"
+                )
             if ctx.retrain_source_job_id is not None:
                 tags["modelflow.retrain_source_job_id"] = str(ctx.retrain_source_job_id)
             if ctx.continued_from_job_id is not None:
@@ -898,8 +1079,19 @@ class SklearnTrainingRunner:
                 )},
             )
             mlflow.log_dict(feature_schema, "feature_schema.json")
-            if multi_output:
+            if multi_output or forecasting:
                 mlflow.log_dict(target_metrics_payload, "target_metrics.json")
+            if forecasting:
+                forecast_metrics = build_forecast_metrics_payload(
+                    target_column=base_target_column,
+                    horizons=forecast_horizons,
+                    output_names=target_columns,
+                    per_target_metrics=(
+                        target_metrics_payload.get("test")
+                        or target_metrics_payload.get("validation")
+                    ),
+                )
+                mlflow.log_dict(forecast_metrics, "forecast_metrics.json")
             metadata: dict[str, Any] = {
                 "git_sha": settings.git_sha,
                 "libraries": {
@@ -917,7 +1109,16 @@ class SklearnTrainingRunner:
                 "training_mode": logged_params["training_mode"],
                 "split_strategy": logged_params["split_strategy"],
                 "time_column": ctx.time_column,
+                "training_task": logged_params["training_task"],
             }
+            if forecasting:
+                metadata["source_target_columns"] = [base_target_column]
+                metadata["forecasting"] = {
+                    "strategy": logged_params.get("forecast_strategy"),
+                    "target_column": base_target_column,
+                    "horizons": forecast_horizons,
+                    "output_names": target_columns,
+                }
             if ctx.continued_from_job_id is not None:
                 metadata["continued_from_job_id"] = ctx.continued_from_job_id
                 metadata["continued_from_mlflow_run_id"] = ctx.continued_from_mlflow_run_id

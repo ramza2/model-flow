@@ -18,7 +18,52 @@ export type AlgorithmSpec = {
   multi_output_strategy?: string;
   continued_training_strategy?: "unsupported" | "partial_fit" | string;
   supports_continued_training?: boolean;
+  forecasting_strategy?: "direct_multioutput" | "unsupported" | string;
+  supports_forecasting?: boolean;
 };
+
+export function algorithmsForTrainingTask(
+  catalog: AlgorithmSpec[],
+  problemType: string,
+  trainingTask: "tabular" | "forecasting" = "tabular",
+): AlgorithmSpec[] {
+  const byProblem = algorithmsForProblemType(catalog, problemType);
+  if (trainingTask !== "forecasting") return byProblem;
+  return byProblem.filter((item) => item.supports_forecasting === true);
+}
+
+export function parseForecastHorizonsText(
+  text: string,
+): { ok: true; value: number[] } | { ok: false; message: string } {
+  const parts = text
+    .split(/[,\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) {
+    return { ok: false, message: "Enter at least one forecast horizon (for example 1, 2, 3)." };
+  }
+  if (parts.length > 50) {
+    return { ok: false, message: "Forecast horizons accept at most 50 entries." };
+  }
+  const horizons: number[] = [];
+  for (const part of parts) {
+    if (!/^[1-9]\d*$/.test(part)) {
+      return { ok: false, message: `Horizon '${part}' must be a positive integer.` };
+    }
+    const value = Number(part);
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      return { ok: false, message: `Horizon '${part}' must be a positive integer.` };
+    }
+    if (value > 1000) {
+      return { ok: false, message: `Horizon '${part}' must be <= 1000.` };
+    }
+    horizons.push(value);
+  }
+  if (new Set(horizons).size !== horizons.length) {
+    return { ok: false, message: "Forecast horizons must not contain duplicates." };
+  }
+  return { ok: true, value: [...horizons].sort((a, b) => a - b) };
+}
 
 export function formatHyperparameters(values: Record<string, unknown>): string {
   return `${JSON.stringify(values, null, 2)}\n`;

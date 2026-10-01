@@ -143,6 +143,9 @@ class JobCreate(BaseModel):
     test_ratio: float = Field(default=0.15, ge=0, lt=1)
     split_strategy: Literal["random", "time"] = "random"
     time_column: str | None = Field(default=None, max_length=200)
+    training_task: Literal["tabular", "forecasting"] = "tabular"
+    forecast_strategy: Literal["direct_multioutput"] | None = None
+    forecast_horizons: list[int] = Field(default_factory=list)
     max_retries: int = Field(default=1, ge=0, le=10)
 
     @model_validator(mode="after")
@@ -176,6 +179,51 @@ class JobCreate(BaseModel):
             update={
                 "target_column": primary,
                 "target_columns": effective,
+            }
+        )
+
+    @model_validator(mode="after")
+    def canonicalize_forecasting(self) -> JobCreate:
+        from app.services.forecasting import (
+            FORECAST_STRATEGY_DIRECT,
+            TRAINING_TASK_FORECASTING,
+            TRAINING_TASK_TABULAR,
+            coerce_forecast_fields,
+        )
+
+        try:
+            task, strategy, horizons = coerce_forecast_fields(
+                self.training_task,
+                self.forecast_strategy,
+                self.forecast_horizons,
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+        if task == TRAINING_TASK_TABULAR:
+            return self.model_copy(
+                update={
+                    "training_task": TRAINING_TASK_TABULAR,
+                    "forecast_strategy": None,
+                    "forecast_horizons": [],
+                }
+            )
+
+        # Forecasting requires single target + regression + time split.
+        # Saved-split authority may still overwrite split fields later.
+        if self.problem_type not in {"regression", "auto"}:
+            raise ValueError("Forecasting requires problem_type 'regression'.")
+        targets = list(self.target_columns or ([self.target_column] if self.target_column else []))
+        if len(targets) != 1:
+            raise ValueError("Forecasting requires exactly one base target column.")
+        if self.split_id is None and self.split_strategy != "time":
+            raise ValueError("Forecasting requires split_strategy 'time'.")
+        return self.model_copy(
+            update={
+                "training_task": TRAINING_TASK_FORECASTING,
+                "forecast_strategy": strategy or FORECAST_STRATEGY_DIRECT,
+                "forecast_horizons": horizons,
+                "problem_type": "regression" if self.problem_type == "auto" else self.problem_type,
             }
         )
 

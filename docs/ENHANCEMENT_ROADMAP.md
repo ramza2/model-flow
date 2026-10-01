@@ -278,16 +278,16 @@ See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md).
 
 ## Phase 6 — Time-series / Multi-step
 
-**Status:** current — Phase 6-B
+**Status:** current — Phase 6-C
 
 Slice plan:
 
 1. **6-A — Time-aware Training Foundation** (complete) — chronological train/validation/test splits, persisted `split_strategy` / `time_column`, API/UX/MLflow/lineage. Evidence: PR #65 merged; squash/main `9376c5c209f9ebce7e52da15d341707f904bedd7`; post-merge main CI #323 PASS; Alembic head `022_time_series_foundation`.
-2. **6-B — Lag / Rolling Feature Preparation** (current) — lag and past-only rolling-window transforms in Dataset Preparation. Not complete until Draft PR merge + post-merge `main` CI PASS.
-3. **6-C — Forecasting / Multi-step Training** — horizons and supported forecasters (future).
+2. **6-B — Lag / Rolling Feature Preparation** (complete) — lag and past-only rolling-window transforms in Dataset Preparation. Evidence: PR #66 merged; squash/main `deb98ed18d6483fdd72adf430ab2cc5b763a3758`; post-merge main CI #329 PASS; Alembic head `022_time_series_foundation`.
+3. **6-C — Forecasting / Multi-step Training** (current) — direct multi-horizon forecasting on sklearn regressors. Not complete until Draft PR merge + post-merge `main` CI PASS.
 4. **6-D — Pipeline / UX / Final Hardening** (future).
 
-Phase 6-A time-aware splits are on `main`. Phase 6-B adds preparation-time lag/rolling only. Forecasting models, multi-step prediction, panel/entity features, and walk-forward CV remain later slices. Unpivot already exists from Phase 2-F1.
+Phase 6-A/6-B are on `main`. Phase 6-C adds forecasting training only. Recursive forecasting, panel/entity features, walk-forward CV, and Pipeline forecasting authoring remain later slices. Unpivot already exists from Phase 2-F1.
 
 See [`phase-6-time-series.md`](./phase-6-time-series.md).
 

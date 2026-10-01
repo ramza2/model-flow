@@ -74,10 +74,16 @@ class AlgorithmSpec:
     multi_output_strategy: str = "unsupported"  # native | wrapper | unsupported
     # Phase 5.1: unsupported | partial_fit
     continued_training_strategy: str = "unsupported"
+    # Phase 6-C: unsupported | direct_multioutput
+    forecasting_strategy: str = "unsupported"
 
     @property
     def supports_continued_training(self) -> bool:
         return self.continued_training_strategy != "unsupported"
+
+    @property
+    def supports_forecasting(self) -> bool:
+        return self.forecasting_strategy != "unsupported"
 
     @property
     def default_hyperparameters(self) -> dict[str, Any]:
@@ -95,6 +101,8 @@ class AlgorithmSpec:
             "multi_output_strategy": self.multi_output_strategy,
             "continued_training_strategy": self.continued_training_strategy,
             "supports_continued_training": self.supports_continued_training,
+            "forecasting_strategy": self.forecasting_strategy,
+            "supports_forecasting": self.supports_forecasting,
             "default_hyperparameters": self.default_hyperparameters,
             "supported_hyperparameters": sorted(self.supported_parameter_names),
             "hyperparameters": [
@@ -238,6 +246,7 @@ ALGORITHM_CATALOG: dict[str, AlgorithmSpec] = {
             ),
         ),
         multi_output_strategy="native",
+        forecasting_strategy="direct_multioutput",
     ),
     "random_forest_regressor": AlgorithmSpec(
         id="random_forest_regressor",
@@ -245,6 +254,7 @@ ALGORITHM_CATALOG: dict[str, AlgorithmSpec] = {
         problem_types=("regression",),
         hyperparameters=_TREE_PARAMS,
         multi_output_strategy="native",
+        forecasting_strategy="direct_multioutput",
     ),
     "gradient_boosting_regressor": AlgorithmSpec(
         id="gradient_boosting_regressor",
@@ -252,6 +262,7 @@ ALGORITHM_CATALOG: dict[str, AlgorithmSpec] = {
         problem_types=("regression",),
         hyperparameters=_GB_PARAMS,
         multi_output_strategy="wrapper",
+        forecasting_strategy="direct_multioutput",
     ),
     "sgd_classifier": AlgorithmSpec(
         id="sgd_classifier",

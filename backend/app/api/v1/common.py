@@ -301,6 +301,23 @@ def split_out(row: DatasetSplit) -> dict[str, Any]:
     }
 
 
+def _job_forecast_horizons(row: TrainingJob) -> list[int]:
+    from app.services.forecasting import loads_forecast_horizons
+
+    return loads_forecast_horizons(getattr(row, "forecast_horizons_json", None))
+
+
+def _job_forecast_output_names(row: TrainingJob) -> list[str]:
+    from app.services.forecasting import forecast_output_names, is_forecasting_task
+
+    if not is_forecasting_task(getattr(row, "training_task", None)):
+        return []
+    horizons = _job_forecast_horizons(row)
+    if not horizons:
+        return []
+    return forecast_output_names(row.target_column, horizons)
+
+
 def job_out(row: TrainingJob) -> dict[str, Any]:
     continued_from = getattr(row, "continued_from_job_id", None)
     is_continued = continued_from is not None
@@ -335,6 +352,10 @@ def job_out(row: TrainingJob) -> dict[str, Any]:
         "random_seed": row.random_seed,
         "split_strategy": getattr(row, "split_strategy", None) or "random",
         "time_column": getattr(row, "time_column", None),
+        "training_task": getattr(row, "training_task", None) or "tabular",
+        "forecast_strategy": getattr(row, "forecast_strategy", None),
+        "forecast_horizons": _job_forecast_horizons(row),
+        "forecast_output_names": _job_forecast_output_names(row),
         "ratios": {
             "train": row.train_ratio,
             "validation": row.val_ratio,

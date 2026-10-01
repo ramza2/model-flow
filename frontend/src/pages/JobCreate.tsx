@@ -5,8 +5,10 @@ import { effectiveTargetColumns } from "../jobHelpers";
 import { EmptyState, ErrorNotice, Loading, PageHeader } from "../components";
 import {
   algorithmsForProblemType,
+  algorithmsForTrainingTask,
   defaultAlgorithmId,
   formatHyperparameters,
+  parseForecastHorizonsText,
   validateHyperparametersText,
   type AlgorithmSpec,
 } from "../trainingConfig";
@@ -77,6 +79,8 @@ export default function JobCreate() {
   const [randomSeed, setRandomSeed] = useState(42);
   const [splitStrategy, setSplitStrategy] = useState<"random" | "time">("random");
   const [timeColumn, setTimeColumn] = useState("");
+  const [trainingTask, setTrainingTask] = useState<"tabular" | "forecasting">("tabular");
+  const [forecastHorizonsText, setForecastHorizonsText] = useState("1, 2, 3");
   const [maxRetries, setMaxRetries] = useState(1);
   const [savedSplits, setSavedSplits] = useState<DatasetSplit[]>([]);
   const [splitId, setSplitId] = useState<number | null>(null);
@@ -97,15 +101,21 @@ export default function JobCreate() {
     return selected?.columns || EMPTY_COLUMNS;
   }, [selected?.columns, selectedVersion]);
   const primaryTarget = targets[0] ?? "";
-  const isMultiTarget = targets.length > 1;
-  const effectiveProblemType = isMultiTarget
+  const isForecasting = trainingTask === "forecasting";
+  const isMultiTarget = !isForecasting && targets.length > 1;
+  const effectiveProblemType = isForecasting || isMultiTarget
     ? "regression"
     : problemType === "auto"
       ? detectedType || "auto"
       : problemType;
   const visibleAlgorithms = useMemo(
-    () => algorithmsForProblemType(catalog, effectiveProblemType === "auto" ? "" : effectiveProblemType),
-    [catalog, effectiveProblemType],
+    () =>
+      algorithmsForTrainingTask(
+        catalog,
+        effectiveProblemType === "auto" ? "" : effectiveProblemType,
+        trainingTask,
+      ),
+    [catalog, effectiveProblemType, trainingTask],
   );
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
   const effectiveSplitStrategy =
@@ -124,6 +134,13 @@ export default function JobCreate() {
     (column) => !targets.includes(column) && column !== reservedTimeColumn,
   );
   const availableTargets = schemaColumns.filter((column) => column !== reservedTimeColumn);
+  const selectableSavedSplits = useMemo(
+    () =>
+      isForecasting
+        ? savedSplits.filter((row) => (row.split_strategy || "random") === "time")
+        : savedSplits,
+    [isForecasting, savedSplits],
+  );
   const selectedSavedSplit = splitId != null ? savedSplits.find((row) => row.id === splitId) : null;
 
   useEffect(() => {
@@ -177,6 +194,13 @@ export default function JobCreate() {
         if (typeof job.max_retries === "number") setMaxRetries(job.max_retries);
         setSplitStrategy(job.split_strategy === "time" ? "time" : "random");
         setTimeColumn(job.time_column || "");
+        setTrainingTask(job.training_task === "forecasting" ? "forecasting" : "tabular");
+        if (job.training_task === "forecasting") {
+          const horizons = Array.isArray(job.forecast_horizons) ? job.forecast_horizons : [];
+          setForecastHorizonsText(horizons.length ? horizons.join(", ") : "1, 2, 3");
+          setProblemType("regression");
+          setSplitStrategy("time");
+        }
         setCloneLoaded(true);
       })
       .catch((reason) => {
@@ -385,17 +409,33 @@ export default function JobCreate() {
   }, [datasetId, datasetVersionId, isMultiTarget, primaryTarget, problemType, projectId, targets, versionError, versionsResolved]);
 
   useEffect(() => {
+    if (isForecasting) {
+      if (targets.length > 1) setTargets((current) => current.slice(0, 1));
+      if (problemType !== "regression") setProblemType("regression");
+      if (splitId == null && splitStrategy !== "time") setSplitStrategy("time");
+      if (
+        splitId != null &&
+        selectedSavedSplit &&
+        (selectedSavedSplit.split_strategy || "random") !== "time"
+      ) {
+        setSplitId(null);
+        setSplitStrategy("time");
+      }
+    }
+  }, [isForecasting, problemType, selectedSavedSplit, splitId, splitStrategy, targets.length]);
+
+  useEffect(() => {
     if (!catalog.length) return;
     const filterType = effectiveProblemType;
     if (!filterType || filterType === "auto") return;
-    const allowed = algorithmsForProblemType(catalog, filterType);
+    const allowed = algorithmsForTrainingTask(catalog, filterType, trainingTask);
     if (!allowed.some((item) => item.id === algorithm)) {
       const nextId = defaultAlgorithmId(catalog, filterType);
       const next = catalog.find((item) => item.id === nextId);
       setAlgorithm(nextId);
       if (next) setHyperparameters(formatHyperparameters(next.default_hyperparameters));
     }
-  }, [algorithm, catalog, effectiveProblemType]);
+  }, [algorithm, catalog, effectiveProblemType, trainingTask]);
 
   function onAlgorithmChange(nextId: string) {
     setSubmitError("");
@@ -407,6 +447,9 @@ export default function JobCreate() {
   function toggleTarget(column: string) {
     setSubmitError("");
     setTargets((current) => {
+      if (isForecasting) {
+        return [column];
+      }
       if (current.includes(column)) {
         if (current.length === 1) return current;
         return current.filter((item) => item !== column);
@@ -438,19 +481,40 @@ export default function JobCreate() {
       if (featureColumns.length === 0) {
         throw new Error("Select at least one feature column.");
       }
-      if (splitId == null && splitStrategy === "time" && !timeColumn.trim()) {
+      if (isForecasting && targets.length !== 1) {
+        throw new Error("Forecasting requires exactly one target column.");
+      }
+      const submitSplitStrategy = isForecasting ? "time" : splitStrategy;
+      if (splitId == null && submitSplitStrategy === "time" && !timeColumn.trim()) {
         throw new Error("Select a time column for a time-ordered split.");
       }
-      if (!isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType)) {
+      if (
+        isForecasting &&
+        splitId != null &&
+        selectedSavedSplit &&
+        (selectedSavedSplit.split_strategy || "random") !== "time"
+      ) {
+        throw new Error("Forecasting requires a time-ordered saved split.");
+      }
+      let forecastHorizons: number[] = [];
+      if (isForecasting) {
+        const parsedHorizons = parseForecastHorizonsText(forecastHorizonsText);
+        if (!parsedHorizons.ok) throw new Error(parsedHorizons.message);
+        forecastHorizons = parsedHorizons.value;
+      }
+      if (!isForecasting && !isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType)) {
         throw new Error("Wait for problem type detection to finish before starting training.");
       }
       const filterType = effectiveProblemType;
       if (filterType && selectedAlgorithm && !selectedAlgorithm.problem_types.includes(filterType)) {
         throw new Error(`${selectedAlgorithm.display_name} is not supported for ${filterType}.`);
       }
+      if (isForecasting && selectedAlgorithm && !selectedAlgorithm.supports_forecasting) {
+        throw new Error(`${selectedAlgorithm.display_name} does not support forecasting.`);
+      }
       const parsed = validateHyperparametersText(hyperparameters, selectedAlgorithm);
       if (!parsed.ok) throw new Error(parsed.message);
-      const submitProblemType = isMultiTarget ? "regression" : problemType;
+      const submitProblemType = isForecasting || isMultiTarget ? "regression" : problemType;
       const job = await api<Job>(`/projects/${projectId}/jobs`, {
         method: "POST",
         body: JSON.stringify({
@@ -468,13 +532,16 @@ export default function JobCreate() {
           train_ratio: trainRatio,
           val_ratio: valRatio,
           test_ratio: testRatio,
-          split_strategy: splitId != null ? undefined : splitStrategy,
+          split_strategy: splitId != null ? undefined : submitSplitStrategy,
           time_column:
             splitId != null
               ? undefined
-              : splitStrategy === "time"
+              : submitSplitStrategy === "time"
                 ? timeColumn.trim() || null
                 : null,
+          training_task: trainingTask,
+          forecast_strategy: isForecasting ? "direct_multioutput" : null,
+          forecast_horizons: isForecasting ? forecastHorizons : [],
           max_retries: maxRetries,
         }),
       });
@@ -487,7 +554,8 @@ export default function JobCreate() {
   }
 
   const formReady = !loading && cloneLoaded;
-  const waitingForDetection = !isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType);
+  const waitingForDetection =
+    !isForecasting && !isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType);
 
   return (
     <div>
@@ -501,38 +569,69 @@ export default function JobCreate() {
             <span className="eyebrow">Job details</span>
             <div className="form-grid">
               <label>Job name<input value={name} onChange={(event) => setName(event.target.value)} required data-testid="job-name" /></label>
+              <label>Training task
+                <select
+                  value={trainingTask}
+                  onChange={(event) => {
+                    setSubmitError("");
+                    const next = event.target.value === "forecasting" ? "forecasting" : "tabular";
+                    setTrainingTask(next);
+                    if (next === "forecasting") {
+                      setProblemType("regression");
+                      setSplitStrategy("time");
+                      setTargets((current) => current.slice(0, 1));
+                      if (
+                        splitId != null &&
+                        selectedSavedSplit &&
+                        (selectedSavedSplit.split_strategy || "random") !== "time"
+                      ) {
+                        setSplitId(null);
+                      }
+                    }
+                  }}
+                  data-testid="job-training-task"
+                >
+                  <option value="tabular">Tabular</option>
+                  <option value="forecasting">Forecasting</option>
+                </select>
+              </label>
               <label>Problem type
                 <select
-                  value={isMultiTarget ? "regression" : problemType}
+                  value={isForecasting || isMultiTarget ? "regression" : problemType}
                   onChange={(event) => {
                     setSubmitError("");
                     setProblemType(event.target.value);
                   }}
-                  disabled={isMultiTarget}
+                  disabled={isForecasting || isMultiTarget}
                   data-testid="job-problem-type"
                 >
-                  <option value="auto">Detect automatically</option>
-                  <option value="classification" disabled={isMultiTarget}>Classification</option>
+                  <option value="auto" disabled={isForecasting}>Detect automatically</option>
+                  <option value="classification" disabled={isForecasting || isMultiTarget}>Classification</option>
                   <option value="regression">Regression</option>
                 </select>
               </label>
             </div>
+            {isForecasting && (
+              <p className="form-hint" data-testid="forecasting-task-hint">
+                Forecasting trains direct multi-horizon regression on a single numeric target with a time-ordered split.
+              </p>
+            )}
             {isMultiTarget && (
               <p className="form-hint" data-testid="multi-target-hint">
                 Multiple targets are trained as multi-output regression.
               </p>
             )}
-            {!isMultiTarget && problemType === "auto" && resolvingProblemType && (
+            {!isForecasting && !isMultiTarget && problemType === "auto" && resolvingProblemType && (
               <p className="form-hint" data-testid="detecting-problem-type">
                 Detecting problem type…
               </p>
             )}
-            {!isMultiTarget && problemType === "auto" && !resolvingProblemType && detectedType && (
+            {!isForecasting && !isMultiTarget && problemType === "auto" && !resolvingProblemType && detectedType && (
               <p className="form-hint" data-testid="detected-problem-type">
                 Detected problem type: {titleCaseProblemType(detectedType)}
               </p>
             )}
-            {!isMultiTarget && problemType === "auto" && !resolvingProblemType && problemTypeDetectionError && (
+            {!isForecasting && !isMultiTarget && problemType === "auto" && !resolvingProblemType && problemTypeDetectionError && (
               <p className="form-hint" data-testid="problem-type-detection-error">
                 Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.
               </p>
@@ -565,12 +664,15 @@ export default function JobCreate() {
               </label>
             </div>
             <fieldset className="feature-columns" data-testid="job-targets">
-              <legend>Target columns · {targets.length} selected</legend>
+              <legend>
+                {isForecasting ? "Forecast target" : "Target columns"} · {targets.length} selected
+              </legend>
               <div className="feature-column-list">
                 {availableTargets.map((column) => (
                   <label key={column} className="feature-column-option">
                     <input
-                      type="checkbox"
+                      type={isForecasting ? "radio" : "checkbox"}
+                      name={isForecasting ? "forecast-target" : undefined}
                       checked={targets.includes(column)}
                       onChange={() => toggleTarget(column)}
                       data-testid={`target-${column}`}
@@ -579,8 +681,41 @@ export default function JobCreate() {
                   </label>
                 ))}
               </div>
-              {targets.length === 0 && <p className="form-hint">Select at least one target column.</p>}
+              {targets.length === 0 && (
+                <p className="form-hint">
+                  {isForecasting ? "Select exactly one forecast target." : "Select at least one target column."}
+                </p>
+              )}
+              {isForecasting && (
+                <p className="form-hint" data-testid="forecast-target-hint">
+                  Forecasting supports a single numeric target. Use lag/rolling features prepared in Phase 6-B when historical target context is needed.
+                </p>
+              )}
             </fieldset>
+            {isForecasting ? (
+              <div className="form-grid" data-testid="job-forecast-config">
+                <label>
+                  Forecast strategy
+                  <input value="Direct multi-output" disabled data-testid="job-forecast-strategy" />
+                </label>
+                <label>
+                  Forecast horizons
+                  <input
+                    value={forecastHorizonsText}
+                    onChange={(event) => {
+                      setSubmitError("");
+                      setForecastHorizonsText(event.target.value);
+                    }}
+                    placeholder="1, 2, 3"
+                    data-testid="job-forecast-horizons"
+                    required
+                  />
+                </label>
+                <p className="form-hint" data-testid="job-forecast-horizons-help">
+                  Horizons are future observation steps after chronological ordering, not clock-time durations.
+                </p>
+              </div>
+            ) : null}
             {versionError ? (
               <p className="form-hint" role="alert" data-testid="job-dataset-version-error">
                 {versionError}
@@ -663,7 +798,7 @@ export default function JobCreate() {
                 <option value="">
                   Manual runtime split · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
                 </option>
-                {savedSplits.map((split) => {
+                {selectableSavedSplits.map((split) => {
                   const label =
                     (split.split_strategy || "random") === "time"
                       ? `Time ordered · ${split.time_column || "—"}`
@@ -676,6 +811,11 @@ export default function JobCreate() {
                 })}
               </select>
             </label>
+            {isForecasting ? (
+              <p className="form-hint" data-testid="job-forecast-split-hint">
+                Forecasting requires a time-ordered split. Random saved splits are hidden.
+              </p>
+            ) : null}
             {selectedSavedSplit ? (
               <p className="form-hint" data-testid="job-saved-split-summary">
                 Using saved split #{selectedSavedSplit.id}:{" "}
@@ -692,7 +832,7 @@ export default function JobCreate() {
                 <label>
                   Split strategy
                   <select
-                    value={splitStrategy}
+                    value={isForecasting ? "time" : splitStrategy}
                     onChange={(event) => {
                       setSubmitError("");
                       const next = event.target.value === "time" ? "time" : "random";
@@ -706,13 +846,14 @@ export default function JobCreate() {
                         );
                       }
                     }}
+                    disabled={isForecasting}
                     data-testid="job-split-strategy"
                   >
-                    <option value="random">Random</option>
+                    <option value="random" disabled={isForecasting}>Random</option>
                     <option value="time">Time ordered</option>
                   </select>
                 </label>
-                {splitStrategy === "time" ? (
+                {(isForecasting || splitStrategy === "time") ? (
                   <label>
                     Time column
                     <select
@@ -741,11 +882,11 @@ export default function JobCreate() {
                   </label>
                 ) : null}
                 <p className="form-hint" data-testid="job-runtime-split-summary">
-                  {splitStrategy === "time"
+                  {isForecasting || splitStrategy === "time"
                     ? `Time-ordered runtime split${timeColumn ? ` on ${timeColumn}` : ""}: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test.`
                     : `Random runtime split: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`}
                 </p>
-                {splitStrategy === "time" ? (
+                {isForecasting || splitStrategy === "time" ? (
                   <p className="form-hint" data-testid="job-time-seed-hint">
                     Random seed does not shuffle a time-ordered split; it may still affect model training.
                   </p>

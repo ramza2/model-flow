@@ -33,6 +33,12 @@ def _loads(value: str | None, default: Any) -> Any:
         return default
 
 
+def _source_forecast_horizons(source: TrainingJob) -> list[int]:
+    from app.services.forecasting import loads_forecast_horizons
+
+    return loads_forecast_horizons(getattr(source, "forecast_horizons_json", None))
+
+
 def validate_retrain_source(source: TrainingJob) -> None:
     if source.status != JobStatus.succeeded:
         raise RetrainConfigError(
@@ -74,6 +80,9 @@ def build_job_create_from_source(
         "test_ratio": source.test_ratio,
         "split_strategy": getattr(source, "split_strategy", None) or "random",
         "time_column": getattr(source, "time_column", None),
+        "training_task": getattr(source, "training_task", None) or "tabular",
+        "forecast_strategy": getattr(source, "forecast_strategy", None),
+        "forecast_horizons": _source_forecast_horizons(source),
         "max_retries": source.max_retries,
     }
     values.update(overrides or {})
@@ -111,6 +120,9 @@ def build_retrain_job_create(source: TrainingJob, body: JobRetrainRequest) -> Jo
         test_ratio=source.test_ratio,
         split_strategy=getattr(source, "split_strategy", None) or "random",
         time_column=getattr(source, "time_column", None),
+        training_task=getattr(source, "training_task", None) or "tabular",
+        forecast_strategy=getattr(source, "forecast_strategy", None),
+        forecast_horizons=_source_forecast_horizons(source),
         max_retries=source.max_retries,
     )
 

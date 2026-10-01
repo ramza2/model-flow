@@ -247,14 +247,54 @@ export default function JobDetail() {
                     <dd>{job.training_mode.replaceAll("_", " ")}</dd>
                   </div>
                 )}
+                <div data-testid="job-training-task">
+                  <dt>Task</dt>
+                  <dd>{job.training_task === "forecasting" ? "Forecasting" : "Tabular"}</dd>
+                </div>
                 <div data-testid="job-problem-type">
                   <dt>Problem type</dt>
                   <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
                 </div>
                 <div data-testid="job-target-columns">
-                  <dt>{isMultiOutputJob(job) ? "Targets" : "Target"}</dt>
+                  <dt>
+                    {job.training_task === "forecasting"
+                      ? "Forecast target"
+                      : isMultiOutputJob(job)
+                        ? "Targets"
+                        : "Target"}
+                  </dt>
                   <dd><TargetChips targets={targets} /></dd>
                 </div>
+                {job.training_task === "forecasting" ? (
+                  <>
+                    <div data-testid="job-forecast-strategy">
+                      <dt>Strategy</dt>
+                      <dd>
+                        {job.forecast_strategy === "direct_multioutput"
+                          ? "Direct multi-output"
+                          : job.forecast_strategy || "—"}
+                      </dd>
+                    </div>
+                    <div data-testid="job-forecast-horizons">
+                      <dt>Horizons</dt>
+                      <dd>
+                        {Array.isArray(job.forecast_horizons) && job.forecast_horizons.length
+                          ? job.forecast_horizons.join(", ")
+                          : "—"}
+                      </dd>
+                    </div>
+                    <div data-testid="job-forecast-outputs">
+                      <dt>Outputs</dt>
+                      <dd>
+                        {Array.isArray(job.forecast_output_names) && job.forecast_output_names.length ? (
+                          <TargetChips targets={job.forecast_output_names} />
+                        ) : (
+                          "—"
+                        )}
+                      </dd>
+                    </div>
+                  </>
+                ) : null}
                 <div>
                   <dt>Features</dt>
                   <dd>{job.feature_columns?.length ? `${job.feature_columns.length} columns` : "—"}</dd>

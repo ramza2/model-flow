@@ -468,4 +468,55 @@ describe("JobDetail retrain", () => {
     expect(screen.getByTestId("job-data-split")).toHaveTextContent("Saved split #12");
   });
 
+  it("shows forecasting contract fields on job detail", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          target_column: "sales",
+          target_columns: ["sales"],
+          problem_type: "regression",
+          algorithm: "ridge",
+          metrics: { rmse: 1.2, mae: 0.8, r2: 0.9 },
+          split_strategy: "time",
+          time_column: "event_time",
+          training_task: "forecasting",
+          forecast_strategy: "direct_multioutput",
+          forecast_horizons: [1, 2, 3],
+          forecast_output_names: ["sales__t_plus_1", "sales__t_plus_2", "sales__t_plus_3"],
+          is_retrain: false,
+          retrain_source_job_id: null,
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-training-task")).toHaveTextContent("Forecasting");
+    expect(screen.getByTestId("job-forecast-strategy")).toHaveTextContent("Direct multi-output");
+    expect(screen.getByTestId("job-forecast-horizons")).toHaveTextContent("1, 2, 3");
+    expect(screen.getByTestId("job-forecast-outputs")).toHaveTextContent("sales__t_plus_1");
+    expect(screen.getByTestId("job-target-columns")).toHaveTextContent("sales");
+  });
+
+  it("keeps tabular job detail without forecasting fields", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          training_task: "tabular",
+          forecast_strategy: null,
+          forecast_horizons: [],
+          forecast_output_names: [],
+          is_retrain: false,
+          retrain_source_job_id: null,
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+    expect(await screen.findByTestId("job-training-task")).toHaveTextContent("Tabular");
+    expect(screen.queryByTestId("job-forecast-strategy")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("job-forecast-horizons")).not.toBeInTheDocument();
+  });
+
 });
