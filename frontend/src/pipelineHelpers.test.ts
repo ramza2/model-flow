@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   configSummary,
+  defaultConfigFor,
   edgeBranch,
   filterNodeLibrary,
   lifecycleCoverage,
   lifecycleStageForNodeType,
   nextPipelineNodeId,
+  nodeConfigWarnings,
   parseValidationIssue,
   PIPELINE_LIFECYCLE_STAGES,
   PIPELINE_NODE_LIBRARY,
@@ -95,6 +97,56 @@ describe("pipelineHelpers Phase 3-A", () => {
         algorithm: "ridge",
       }),
     ).toContain("2 targets");
+  });
+
+  it("defaults and summarizes forecasting / time-aware split configs", () => {
+    expect(defaultConfigFor("training")).toMatchObject({
+      training_task: "tabular",
+      forecast_strategy: null,
+      forecast_horizons: [],
+    });
+    expect(defaultConfigFor("split")).toMatchObject({
+      split_strategy: "random",
+      time_column: null,
+    });
+    const forecastSummary = configSummary("training", {
+      training_task: "forecasting",
+      algorithm: "ridge",
+      forecast_horizons: [1, 2, 3],
+      split_strategy: "time",
+      time_column: "event_time",
+    });
+    expect(forecastSummary[0]).toContain("Forecasting · t+1, t+2, t+3");
+    expect(forecastSummary).toContain("ridge");
+    expect(forecastSummary.some((line) => /time ordered · event_time/i.test(line))).toBe(true);
+
+    const warnings = nodeConfigWarnings("training", {
+      training_task: "forecasting",
+      target_column: "",
+      algorithm: "",
+      feature_columns: [],
+      split_strategy: "random",
+      forecast_horizons: [],
+    });
+    expect(warnings).toEqual(
+      expect.arrayContaining([
+        "Exactly one forecast target required",
+        "Time column required",
+        "Forecast horizons required",
+        "Forecasting algorithm required/supported",
+        "Select at least one feature",
+      ]),
+    );
+    expect(
+      nodeConfigWarnings("split", {
+        train_ratio: 0.7,
+        val_ratio: 0.15,
+        test_ratio: 0.15,
+        random_seed: 42,
+        split_strategy: "time",
+        time_column: "",
+      }),
+    ).toContain("Time column required");
   });
 
   it("parses validation issues to node ids when present", () => {

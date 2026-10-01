@@ -444,6 +444,169 @@ describe("NodeConfigForm", () => {
     expect([...targetSelect.options].map((option) => option.value)).not.toContain("event_time");
     expect(screen.getByTestId("node-config-features")).not.toHaveTextContent("event_time");
   });
+
+  it("configures forecasting training with locked regression/time and capability filtering", async () => {
+    apiMock.mockResolvedValue({
+      algorithms: [
+        {
+          id: "sgd_regressor",
+          display_name: "SGD regressor",
+          problem_types: ["regression"],
+          default_hyperparameters: {},
+          supported_hyperparameters: [],
+          hyperparameters: [],
+          supports_forecasting: false,
+          forecasting_strategy: "unsupported",
+        },
+        {
+          id: "ridge",
+          display_name: "Ridge",
+          problem_types: ["regression"],
+          default_hyperparameters: { alpha: 1 },
+          supported_hyperparameters: [],
+          hyperparameters: [],
+          supports_forecasting: true,
+          forecasting_strategy: "direct_multioutput",
+        },
+        {
+          id: "random_forest",
+          display_name: "Random forest",
+          problem_types: ["classification", "regression"],
+          default_hyperparameters: { n_estimators: 10 },
+          supported_hyperparameters: [],
+          hyperparameters: [],
+          supports_forecasting: false,
+          forecasting_strategy: "unsupported",
+        },
+      ],
+    });
+
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        ...defaultConfigFor("training"),
+        target_column: "sales",
+        feature_columns: ["sales_lag_1", "sales_roll_avg_3", "event_time"],
+        algorithm: "random_forest",
+      });
+      return (
+        <div>
+          <pre data-testid="training-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="training"
+            config={config}
+            onChange={setConfig}
+            datasetColumns={["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"]}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await screen.findByTestId("node-config-training-task");
+    expect(screen.getByTestId("node-config-training-task")).toHaveValue("tabular");
+
+    fireEvent.change(screen.getByTestId("node-config-training-task"), {
+      target: { value: "forecasting" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"training_task":"forecasting"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"problem_type":"regression"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"split_strategy":"time"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent(
+        '"forecast_strategy":"direct_multioutput"',
+      );
+    });
+    expect(screen.getByTestId("node-config-problem-type")).toBeDisabled();
+    expect(screen.getByTestId("node-config-split-strategy")).toBeDisabled();
+    expect(screen.getByTestId("node-config-forecast-horizons")).toBeInTheDocument();
+    expect(screen.getByTestId("node-config-forecast-horizons-help")).toHaveTextContent(
+      /observation steps/i,
+    );
+    expect(screen.getByTestId("node-config-forecast-help")).toHaveTextContent(/Lag \/ Rolling/i);
+
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("node-config-algorithm") as HTMLSelectElement;
+      const values = [...algorithm.options].map((option) => option.value);
+      expect(values).toContain("ridge");
+      expect(values).not.toContain("sgd_regressor");
+      expect(values).not.toContain("random_forest");
+    });
+
+    fireEvent.change(screen.getByTestId("node-config-time-column"), {
+      target: { value: "event_time" },
+    });
+    fireEvent.change(screen.getByTestId("node-config-target"), {
+      target: { value: "sales" },
+    });
+    fireEvent.change(screen.getByTestId("node-config-forecast-horizons"), {
+      target: { value: "1, 2, 3" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"forecast_horizons":[1,2,3]');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"time_column":"event_time"');
+    });
+    expect(screen.getByTestId("node-config-features")).toHaveTextContent("sales_lag_1");
+    expect(screen.getByTestId("node-config-features")).toHaveTextContent("sales_roll_avg_3");
+    expect(screen.getByTestId("node-config-features")).not.toHaveTextContent("event_time");
+    const featureLabels = [...screen.getByTestId("node-config-features").querySelectorAll("label")].map(
+      (label) => label.textContent?.trim(),
+    );
+    expect(featureLabels).not.toContain("sales");
+
+    fireEvent.change(screen.getByTestId("node-config-forecast-horizons"), {
+      target: { value: "1, 1, 2" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("node-config-forecast-horizon-error")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByTestId("node-config-training-task"), {
+      target: { value: "tabular" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"training_task":"tabular"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"forecast_strategy":null');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"forecast_horizons":[]');
+    });
+    expect(screen.queryByTestId("node-config-forecast-fields")).not.toBeInTheDocument();
+  });
+
+  it("supports Split node Random / Time ordered UX", () => {
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>(defaultConfigFor("split"));
+      return (
+        <div>
+          <pre data-testid="split-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="split"
+            config={config}
+            onChange={setConfig}
+            datasetColumns={["event_time", "sales"]}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByTestId("node-config-split-strategy")).toHaveValue("random");
+    expect(screen.queryByTestId("node-config-time-column")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("node-config-split-seed-hint")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("node-config-split-strategy"), {
+      target: { value: "time" },
+    });
+    expect(screen.getByTestId("split-config")).toHaveTextContent('"split_strategy":"time"');
+    expect(screen.getByTestId("node-config-time-column")).toBeInTheDocument();
+    expect(screen.getByTestId("node-config-split-time-help")).toHaveTextContent(/chronologically/i);
+    expect(screen.getByTestId("node-config-split-seed-hint")).toHaveTextContent(
+      /does not shuffle/i,
+    );
+    fireEvent.change(screen.getByTestId("node-config-time-column"), {
+      target: { value: "event_time" },
+    });
+    expect(screen.getByTestId("split-config")).toHaveTextContent('"time_column":"event_time"');
+    expect(screen.getByTestId("node-config-seed")).toBeInTheDocument();
+  });
 });
 
 describe("PipelineBuilder", () => {
@@ -464,6 +627,135 @@ describe("PipelineBuilder", () => {
     expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
     expect(await screen.findByTestId("pipeline-step-name")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(/Dataset Load/i);
+  });
+
+  it("preserves forecasting training config across save and reload", async () => {
+    const forecastGraph = {
+      nodes: [
+        {
+          id: "dataset_load-1",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Load",
+            node_type: "dataset_load",
+            config: { dataset_id: 3, dataset_version_id: 11 },
+          },
+        },
+        {
+          id: "training-1",
+          position: { x: 240, y: 0 },
+          data: {
+            label: "Forecast",
+            node_type: "training",
+            config: {
+              training_task: "forecasting",
+              target_column: "sales",
+              problem_type: "regression",
+              algorithm: "ridge",
+              feature_columns: ["sales_lag_1", "sales_roll_avg_3"],
+              hyperparameters: {},
+              split_strategy: "time",
+              time_column: "event_time",
+              forecast_strategy: "direct_multioutput",
+              forecast_horizons: [1, 2, 3],
+            },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "dataset_load-1",
+          target: "training-1",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+      ],
+    };
+    const existing = {
+      ...pipeline,
+      version: { id: 1, version: 1, graph: forecastGraph },
+    };
+    let savedGraph: unknown = null;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") {
+        if (savedGraph) {
+          return {
+            ...existing,
+            latest_version: 2,
+            version: { id: 2, version: 2, graph: savedGraph },
+          };
+        }
+        return existing;
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") {
+        return [
+          {
+            ...datasets[0],
+            columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+          },
+        ];
+      }
+      if (path === "/projects/7/datasets/3/versions") {
+        return [
+          {
+            ...versions[0],
+            columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+          },
+        ];
+      }
+      if (path === "/projects/7/training/algorithms") {
+        return {
+          algorithms: [
+            {
+              id: "ridge",
+              display_name: "Ridge",
+              problem_types: ["regression"],
+              default_hyperparameters: {},
+              supported_hyperparameters: [],
+              hyperparameters: [],
+              supports_forecasting: true,
+              forecasting_strategy: "direct_multioutput",
+            },
+          ],
+        };
+      }
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        const body = JSON.parse(String(init?.body || "{}"));
+        savedGraph = body.graph;
+        return { id: 2, version: 2, graph: body.graph };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-training-1");
+    fireEvent.click(screen.getByTestId("canvas-node-training-1"));
+    await screen.findByTestId("node-config-training-task");
+    expect(screen.getByTestId("node-config-training-task")).toHaveValue("forecasting");
+    expect(screen.getByTestId("node-config-forecast-horizons")).toHaveValue("1, 2, 3");
+    expect(screen.getByTestId("node-config-time-column")).toHaveValue("event_time");
+    expect(screen.getByTestId("node-config-problem-type")).toHaveValue("regression");
+    expect(screen.getByTestId("node-config-split-strategy")).toHaveValue("time");
+
+    fireEvent.click(screen.getByTestId("pipeline-library-notification"));
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-save"));
+    await waitFor(() => expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument());
+    expect(savedGraph).toBeTruthy();
+    const trainingNode = (savedGraph as { nodes: Array<{ id: string; data: { config: Record<string, unknown> } }> })
+      .nodes.find((node) => node.id === "training-1");
+    expect(trainingNode?.data.config).toMatchObject({
+      training_task: "forecasting",
+      forecast_strategy: "direct_multioutput",
+      forecast_horizons: [1, 2, 3],
+      split_strategy: "time",
+      time_column: "event_time",
+      algorithm: "ridge",
+    });
   });
 
   it("keeps new node ids unique against an existing saved graph", async () => {
