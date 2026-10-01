@@ -31,6 +31,8 @@ TRANSFORM_TYPES = frozenset(
         "group_by",
         "unpivot",
         "pivot",
+        "lag",
+        "rolling_window",
     }
 )
 NODE_TYPES = frozenset({"source", "join", "union", "output"}) | TRANSFORM_TYPES
@@ -59,8 +61,13 @@ CAST_TYPES = frozenset({"integer", "float", "string", "boolean", "datetime"})
 DEDUP_KEEP = frozenset({"first", "last"})
 DERIVED_OPS = frozenset({"add", "subtract", "multiply", "divide", "concat"})
 GROUP_BY_OPS = frozenset({"sum", "avg", "min", "max", "count"})
+ROLLING_AGGREGATIONS = frozenset({"avg", "sum", "min", "max"})
 OPERAND_KINDS = frozenset({"column", "literal"})
 JSON_SCALAR_TYPES = (str, int, float, bool)
+
+
+def _is_positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 class PreparationValidationError(Exception):
@@ -902,6 +909,168 @@ def _validate_pivot_config(
     return errors, warnings
 
 
+def _validate_temporal_columns(
+    node_id: str,
+    node_type: str,
+    config: dict[str, Any],
+    *,
+    strict: bool,
+) -> tuple[list[str], list[str], str | None, str | None]:
+    """Shared time_column / source_column checks for lag and rolling_window."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    prefix = f"{node_type} node '{node_id}'"
+
+    time_raw = config.get("time_column")
+    source_raw = config.get("source_column")
+    time_column: str | None = None
+    source_column: str | None = None
+
+    if not isinstance(time_raw, str) or not time_raw.strip():
+        message = f"{prefix}: time_column must be a non-empty string"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    else:
+        time_column = time_raw.strip()
+
+    if not isinstance(source_raw, str) or not source_raw.strip():
+        message = f"{prefix}: source_column must be a non-empty string"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+    else:
+        source_column = source_raw.strip()
+
+    if time_column and source_column and time_column == source_column:
+        errors.append(f"{prefix}: time_column and source_column must be different")
+
+    return errors, warnings, time_column, source_column
+
+
+def _validate_lag_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"lag node '{node_id}': config must be an object"], warnings
+
+    col_errors, col_warnings, _time_column, _source_column = _validate_temporal_columns(
+        node_id, "lag", config, strict=strict
+    )
+    errors.extend(col_errors)
+    warnings.extend(col_warnings)
+
+    lags = config.get("lags")
+    if not isinstance(lags, list):
+        return errors + [f"lag node '{node_id}': lags must be a list"], warnings
+    if not lags:
+        message = f"lag node '{node_id}': lags must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+
+    periods: list[int] = []
+    outputs: list[str] = []
+    for index, row in enumerate(lags):
+        prefix = f"lag node '{node_id}': lags[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        period = row.get("periods")
+        if not _is_positive_int(period):
+            errors.append(f"{prefix}: periods must be a positive integer")
+        else:
+            periods.append(int(period))
+        output = row.get("output")
+        if not isinstance(output, str) or not output.strip():
+            errors.append(f"{prefix}: output must be a non-empty string")
+        else:
+            outputs.append(output.strip())
+
+    if periods and len(periods) != len(set(periods)):
+        errors.append(f"lag node '{node_id}': lag periods must be unique")
+    if outputs and len(outputs) != len(set(outputs)):
+        errors.append(f"lag node '{node_id}': lag outputs must be unique")
+    return errors, warnings
+
+
+def _validate_rolling_window_config(
+    node_id: str, config: dict[str, Any], *, strict: bool
+) -> tuple[list[str], list[str]]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    if not isinstance(config, dict):
+        return [f"rolling_window node '{node_id}': config must be an object"], warnings
+
+    col_errors, col_warnings, _time_column, _source_column = _validate_temporal_columns(
+        node_id, "rolling_window", config, strict=strict
+    )
+    errors.extend(col_errors)
+    warnings.extend(col_warnings)
+
+    windows = config.get("windows")
+    if not isinstance(windows, list):
+        return (
+            errors + [f"rolling_window node '{node_id}': windows must be a list"],
+            warnings,
+        )
+    if not windows:
+        message = f"rolling_window node '{node_id}': windows must not be empty"
+        if strict:
+            errors.append(message)
+        else:
+            warnings.append(message)
+        return errors, warnings
+
+    seen_pairs: list[tuple[int, str]] = []
+    outputs: list[str] = []
+    for index, row in enumerate(windows):
+        prefix = f"rolling_window node '{node_id}': windows[{index}]"
+        if not isinstance(row, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        window = row.get("window")
+        if not _is_positive_int(window):
+            errors.append(f"{prefix}: window must be a positive integer")
+            window_value: int | None = None
+        else:
+            window_value = int(window)
+        aggregation = row.get("aggregation")
+        if aggregation not in ROLLING_AGGREGATIONS:
+            errors.append(
+                f"{prefix}: aggregation must be one of avg, sum, min, max"
+            )
+            aggregation_value: str | None = None
+        else:
+            aggregation_value = str(aggregation)
+        if window_value is not None and aggregation_value is not None:
+            pair = (window_value, aggregation_value)
+            if pair in seen_pairs:
+                errors.append(
+                    f"{prefix}: duplicate window/aggregation "
+                    f"({window_value}, {aggregation_value})"
+                )
+            else:
+                seen_pairs.append(pair)
+        output = row.get("output")
+        if not isinstance(output, str) or not output.strip():
+            errors.append(f"{prefix}: output must be a non-empty string")
+        else:
+            outputs.append(output.strip())
+
+    if outputs and len(outputs) != len(set(outputs)):
+        errors.append(
+            f"rolling_window node '{node_id}': window outputs must be unique"
+        )
+    return errors, warnings
+
+
 def _validate_transform_config(
     node_id: str,
     node_type: str,
@@ -931,6 +1100,10 @@ def _validate_transform_config(
         return _validate_unpivot_config(node_id, config, strict=strict)
     if node_type == "pivot":
         return _validate_pivot_config(node_id, config, strict=strict)
+    if node_type == "lag":
+        return _validate_lag_config(node_id, config, strict=strict)
+    if node_type == "rolling_window":
+        return _validate_rolling_window_config(node_id, config, strict=strict)
     return [], []
 
 def validate_preparation_graph(

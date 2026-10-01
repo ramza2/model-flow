@@ -1713,3 +1713,412 @@ def test_unpivot_then_pivot_chain():
     assert out["id"].tolist() == [1, 2]
     assert out["jan"].tolist() == [10, 30]
     assert out["feb"].tolist() == [20, 40]
+
+
+# ---------------------------------------------------------------------------
+# Phase 6-B: Lag / Rolling Window
+# ---------------------------------------------------------------------------
+
+
+def test_lag_validation_contract():
+    valid, warnings = _validate_transform_config(
+        "l",
+        "lag",
+        {
+            "time_column": "event_time",
+            "source_column": "sales",
+            "lags": [
+                {"periods": 1, "output": "sales_lag_1"},
+                {"periods": 7, "output": "sales_lag_7"},
+            ],
+        },
+        strict=True,
+    )
+    assert valid == []
+    assert warnings == []
+
+    errors, warnings = _validate_transform_config(
+        "l",
+        "lag",
+        {"time_column": "", "source_column": "", "lags": []},
+        strict=False,
+    )
+    assert errors == []
+    assert any("time_column must be a non-empty string" in w for w in warnings)
+    assert any("source_column must be a non-empty string" in w for w in warnings)
+    assert any("lags must not be empty" in w for w in warnings)
+
+    errors, _ = _validate_transform_config(
+        "l",
+        "lag",
+        {"time_column": "", "source_column": "sales", "lags": [{"periods": 1, "output": "x"}]},
+        strict=True,
+    )
+    assert any("time_column must be a non-empty string" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "l",
+        "lag",
+        {
+            "time_column": "sales",
+            "source_column": "sales",
+            "lags": [{"periods": 1, "output": "x"}],
+        },
+        strict=True,
+    )
+    assert any("must be different" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "l",
+        "lag",
+        {"time_column": "t", "source_column": "s", "lags": []},
+        strict=True,
+    )
+    assert any("lags must not be empty" in e for e in errors)
+
+    for bad_period in (0, -1, True, 1.5, "2"):
+        errors, _ = _validate_transform_config(
+            "l",
+            "lag",
+            {
+                "time_column": "t",
+                "source_column": "s",
+                "lags": [{"periods": bad_period, "output": "x"}],
+            },
+            strict=True,
+        )
+        assert any("periods must be a positive integer" in e for e in errors), bad_period
+
+    errors, _ = _validate_transform_config(
+        "l",
+        "lag",
+        {
+            "time_column": "t",
+            "source_column": "s",
+            "lags": [
+                {"periods": 1, "output": "a"},
+                {"periods": 1, "output": "b"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("lag periods must be unique" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "l",
+        "lag",
+        {
+            "time_column": "t",
+            "source_column": "s",
+            "lags": [
+                {"periods": 1, "output": "same"},
+                {"periods": 2, "output": "same"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("lag outputs must be unique" in e for e in errors)
+
+
+def test_rolling_window_validation_contract():
+    valid, warnings = _validate_transform_config(
+        "r",
+        "rolling_window",
+        {
+            "time_column": "event_time",
+            "source_column": "sales",
+            "windows": [
+                {"window": 7, "aggregation": "avg", "output": "sales_roll_avg_7"},
+                {"window": 7, "aggregation": "max", "output": "sales_roll_max_7"},
+            ],
+        },
+        strict=True,
+    )
+    assert valid == []
+    assert warnings == []
+
+    errors, warnings = _validate_transform_config(
+        "r",
+        "rolling_window",
+        {"time_column": "", "source_column": "", "windows": []},
+        strict=False,
+    )
+    assert errors == []
+    assert any("windows must not be empty" in w for w in warnings)
+
+    errors, _ = _validate_transform_config(
+        "r",
+        "rolling_window",
+        {
+            "time_column": "t",
+            "source_column": "s",
+            "windows": [{"window": 3, "aggregation": "median", "output": "x"}],
+        },
+        strict=True,
+    )
+    assert any("aggregation must be one of" in e for e in errors)
+
+    for bad_window in (0, -2, True, 2.5, "3"):
+        errors, _ = _validate_transform_config(
+            "r",
+            "rolling_window",
+            {
+                "time_column": "t",
+                "source_column": "s",
+                "windows": [{"window": bad_window, "aggregation": "avg", "output": "x"}],
+            },
+            strict=True,
+        )
+        assert any("window must be a positive integer" in e for e in errors), bad_window
+
+    errors, _ = _validate_transform_config(
+        "r",
+        "rolling_window",
+        {
+            "time_column": "t",
+            "source_column": "s",
+            "windows": [
+                {"window": 3, "aggregation": "avg", "output": "a"},
+                {"window": 3, "aggregation": "avg", "output": "b"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("duplicate window/aggregation" in e for e in errors)
+
+    errors, _ = _validate_transform_config(
+        "r",
+        "rolling_window",
+        {
+            "time_column": "t",
+            "source_column": "s",
+            "windows": [
+                {"window": 3, "aggregation": "avg", "output": "same"},
+                {"window": 5, "aggregation": "sum", "output": "same"},
+            ],
+        },
+        strict=True,
+    )
+    assert any("window outputs must be unique" in e for e in errors)
+
+
+def test_lag_execution_correctness_and_no_future_leak():
+    # Intentionally shuffled input order.
+    frame = _frame(
+        event_time=[3, 1, 5, 2, 4],
+        sales=[30, 10, 50, 20, 40],
+        label=["c", "a", "e", "b", "d"],
+    )
+    out = _run(
+        "lag",
+        {
+            "time_column": "event_time",
+            "source_column": "sales",
+            "lags": [
+                {"periods": 1, "output": "sales_lag_1"},
+                {"periods": 2, "output": "sales_lag_2"},
+            ],
+        },
+        frame,
+    )
+    assert list(out["event_time"]) == [1, 2, 3, 4, 5]
+    assert list(out["sales"]) == [10, 20, 30, 40, 50]
+    assert list(out["label"]) == ["a", "b", "c", "d", "e"]
+    assert pd.isna(out["sales_lag_1"].iloc[0])
+    assert out["sales_lag_1"].tolist()[1:] == [10, 20, 30, 40]
+    assert pd.isna(out["sales_lag_2"].iloc[0]) and pd.isna(out["sales_lag_2"].iloc[1])
+    assert out["sales_lag_2"].tolist()[2:] == [10, 20, 30]
+    # Future values must never appear in lag columns.
+    assert 50 not in [v for v in out["sales_lag_1"].tolist() if pd.notna(v)]
+    assert 40 not in [v for v in out["sales_lag_2"].tolist() if pd.notna(v)]
+    assert len(out) == 5
+
+
+def test_rolling_past_only_leakage_regression():
+    frame = _frame(event_time=[1, 2, 3, 4, 5], sales=[10, 20, 30, 40, 50])
+    out = _run(
+        "rolling_window",
+        {
+            "time_column": "event_time",
+            "source_column": "sales",
+            "windows": [
+                {"window": 3, "aggregation": "avg", "output": "roll_avg_3"},
+                {"window": 3, "aggregation": "sum", "output": "roll_sum_3"},
+                {"window": 3, "aggregation": "min", "output": "roll_min_3"},
+                {"window": 3, "aggregation": "max", "output": "roll_max_3"},
+            ],
+        },
+        frame,
+    )
+    # Past-only window=3: rows 1-3 null; row4 = f(10,20,30); row5 = f(20,30,40)
+    # If current row leaked, row4 avg would be 30 (20,30,40) instead of 20.
+    assert out["roll_avg_3"].isna().iloc[:3].all()
+    assert float(out["roll_avg_3"].iloc[3]) == 20.0
+    assert float(out["roll_avg_3"].iloc[4]) == 30.0
+    assert float(out["roll_sum_3"].iloc[3]) == 60.0
+    assert float(out["roll_sum_3"].iloc[4]) == 90.0
+    assert float(out["roll_min_3"].iloc[3]) == 10.0
+    assert float(out["roll_max_3"].iloc[3]) == 30.0
+    assert float(out["roll_max_3"].iloc[4]) == 40.0
+    assert len(out) == 5
+    assert list(out["sales"]) == [10, 20, 30, 40, 50]
+
+
+def test_temporal_transforms_time_ordering_and_fail_closed():
+    shuffled = _frame(
+        event_time=["2024-01-03", "2024-01-01", "2024-01-02", "2024-01-02"],
+        sales=[30, 10, 20, 25],
+    )
+    out = _run(
+        "lag",
+        {
+            "time_column": "event_time",
+            "source_column": "sales",
+            "lags": [{"periods": 1, "output": "lag1"}],
+        },
+        shuffled,
+    )
+    assert list(out["event_time"]) == [
+        "2024-01-01",
+        "2024-01-02",
+        "2024-01-02",
+        "2024-01-03",
+    ]
+    # Duplicate timestamps keep original relative order (20 before 25).
+    assert list(out["sales"]) == [10, 20, 25, 30]
+
+    numeric = _frame(t=[3.0, 1.0, 2.0], v=[30, 10, 20])
+    out_num = _run(
+        "lag",
+        {"time_column": "t", "source_column": "v", "lags": [{"periods": 1, "output": "l1"}]},
+        numeric,
+    )
+    assert list(out_num["t"]) == [1.0, 2.0, 3.0]
+
+    with pytest.raises(PreparationExecutionError, match="null"):
+        _run(
+            "lag",
+            {
+                "time_column": "t",
+                "source_column": "v",
+                "lags": [{"periods": 1, "output": "l1"}],
+            },
+            _frame(t=[1, None, 3], v=[10, 20, 30]),
+        )
+    with pytest.raises(PreparationExecutionError, match="unparseable"):
+        _run(
+            "lag",
+            {
+                "time_column": "t",
+                "source_column": "v",
+                "lags": [{"periods": 1, "output": "l1"}],
+            },
+            _frame(t=["2024-01-01", "not-a-date", "2024-01-03"], v=[1, 2, 3]),
+        )
+    with pytest.raises(PreparationExecutionError, match="NaN or infinite"):
+        _run(
+            "lag",
+            {
+                "time_column": "t",
+                "source_column": "v",
+                "lags": [{"periods": 1, "output": "l1"}],
+            },
+            _frame(t=[1.0, float("inf"), 3.0], v=[1, 2, 3]),
+        )
+
+
+def test_rolling_rejects_non_numeric_and_boolean_source():
+    with pytest.raises(PreparationExecutionError, match="must be numeric"):
+        _run(
+            "rolling_window",
+            {
+                "time_column": "t",
+                "source_column": "label",
+                "windows": [{"window": 2, "aggregation": "avg", "output": "x"}],
+            },
+            _frame(t=[1, 2, 3], label=["a", "b", "c"]),
+        )
+    with pytest.raises(PreparationExecutionError, match="must be numeric"):
+        _run(
+            "rolling_window",
+            {
+                "time_column": "t",
+                "source_column": "flag",
+                "windows": [{"window": 2, "aggregation": "sum", "output": "x"}],
+            },
+            _frame(t=[1, 2, 3], flag=[True, False, True]),
+        )
+
+
+def test_lag_rolling_preserves_rows_and_rejects_output_collision():
+    frame = _frame(t=[1, 2, 3, 4], sales=[10, None, 30, 40], keep=["a", "b", "c", "d"])
+    out = _run(
+        "rolling_window",
+        {
+            "time_column": "t",
+            "source_column": "sales",
+            "windows": [{"window": 2, "aggregation": "avg", "output": "roll"}],
+        },
+        frame,
+    )
+    assert len(out) == 4
+    assert list(out["keep"]) == ["a", "b", "c", "d"]
+    # Warm-up nulls preserved; source nulls keep past-only windows null when incomplete.
+    assert pd.isna(out["roll"].iloc[0]) and pd.isna(out["roll"].iloc[1])
+    assert out["roll"].isna().iloc[2] or pd.isna(out["roll"].iloc[2])
+    assert out["roll"].isna().any()
+
+    with pytest.raises(PreparationExecutionError, match="already exists"):
+        _run(
+            "lag",
+            {
+                "time_column": "t",
+                "source_column": "sales",
+                "lags": [{"periods": 1, "output": "keep"}],
+            },
+            frame,
+        )
+
+
+def test_lag_then_rolling_chain_deterministic():
+    frame = _frame(t=[5, 1, 4, 2, 3], sales=[50, 10, 40, 20, 30])
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {"id": "src", "type": "source", "config": {"dataset_id": 1}},
+            {
+                "id": "lag-1",
+                "type": "lag",
+                "config": {
+                    "time_column": "t",
+                    "source_column": "sales",
+                    "lags": [{"periods": 1, "output": "sales_lag_1"}],
+                },
+            },
+            {
+                "id": "roll-1",
+                "type": "rolling_window",
+                "config": {
+                    "time_column": "t",
+                    "source_column": "sales",
+                    "windows": [{"window": 2, "aggregation": "avg", "output": "sales_roll_2"}],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "lag-1"},
+            {"id": "e2", "source": "lag-1", "target": "roll-1"},
+            {"id": "e3", "source": "roll-1", "target": "out"},
+        ],
+    }
+    out = execute_preparation_graph(graph, {"src": frame})
+    assert list(out.columns) == ["t", "sales", "sales_lag_1", "sales_roll_2"]
+    assert list(out["t"]) == [1, 2, 3, 4, 5]
+    assert list(out["sales"]) == [10, 20, 30, 40, 50]
+    assert pd.isna(out["sales_lag_1"].iloc[0])
+    assert out["sales_lag_1"].tolist()[1:] == [10, 20, 30, 40]
+    assert out["sales_roll_2"].isna().iloc[:2].all()
+    assert float(out["sales_roll_2"].iloc[2]) == 15.0  # past-only avg(10,20)
+    assert float(out["sales_roll_2"].iloc[3]) == 25.0  # avg(20,30)
+    assert float(out["sales_roll_2"].iloc[4]) == 35.0  # avg(30,40)

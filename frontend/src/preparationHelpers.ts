@@ -22,6 +22,8 @@ export const PREPARATION_NODE_TYPES = [
   "group_by",
   "unpivot",
   "pivot",
+  "lag",
+  "rolling_window",
   "output",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
@@ -37,9 +39,13 @@ export const PREPARATION_TRANSFORM_TYPES = [
   "group_by",
   "unpivot",
   "pivot",
+  "lag",
+  "rolling_window",
 ] as const satisfies readonly DatasetPreparationNodeType[];
 
 export const GROUP_BY_OPS = ["sum", "avg", "min", "max", "count"] as const;
+
+export const ROLLING_AGGREGATIONS = ["avg", "sum", "min", "max"] as const;
 
 export const FILTER_OPERATORS = [
   "eq",
@@ -168,6 +174,18 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
     label: "Pivot",
     description: "Turn configured row values into aggregate columns.",
     icon: "⟷",
+  },
+  {
+    type: "lag",
+    label: "Lag",
+    description: "Create features from earlier rows in time order.",
+    icon: "⟲",
+  },
+  {
+    type: "rolling_window",
+    label: "Rolling Window",
+    description: "Create past-only rolling aggregate features.",
+    icon: "▥",
   },
 ];
 
@@ -315,6 +333,18 @@ export function defaultConfigForPreparation(
         value_column: "",
         aggregation: "sum",
         pivot_values: [],
+      };
+    case "lag":
+      return {
+        time_column: "",
+        source_column: "",
+        lags: [],
+      };
+    case "rolling_window":
+      return {
+        time_column: "",
+        source_column: "",
+        windows: [],
       };
     case "output":
       return {};
@@ -576,6 +606,28 @@ export function preparationConfigSummary(
         pivotValues.length
           ? `Outputs: ${pivotValues.length}`
           : "No pivot values",
+      );
+      break;
+    }
+    case "lag": {
+      const timeColumn = String(config.time_column || "").trim();
+      const sourceColumn = String(config.source_column || "").trim();
+      const lags = Array.isArray(config.lags) ? config.lags : [];
+      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
+      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
+      lines.push(lags.length ? `${lags.length} lag${lags.length === 1 ? "" : "s"}` : "No lags");
+      break;
+    }
+    case "rolling_window": {
+      const timeColumn = String(config.time_column || "").trim();
+      const sourceColumn = String(config.source_column || "").trim();
+      const windows = Array.isArray(config.windows) ? config.windows : [];
+      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
+      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
+      lines.push(
+        windows.length
+          ? `${windows.length} window${windows.length === 1 ? "" : "s"}`
+          : "No windows",
       );
       break;
     }
@@ -1159,4 +1211,189 @@ export function serializePivotConfig(input: {
     pivot_values,
     errors,
   };
+}
+
+export type LagDraftRow = {
+  periods: string;
+  output: string;
+};
+
+export type RollingWindowDraftRow = {
+  window: string;
+  aggregation: string;
+  output: string;
+};
+
+function isPositiveIntString(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return false;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value > 0;
+}
+
+export function parseLagDrafts(raw: unknown): LagDraftRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const periods =
+      item.periods === undefined || item.periods === null ? "" : String(item.periods);
+    return {
+      periods,
+      output: String(item.output ?? ""),
+    };
+  });
+}
+
+export function parseRollingWindowDrafts(raw: unknown): RollingWindowDraftRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((row) => {
+    const item = row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const window =
+      item.window === undefined || item.window === null ? "" : String(item.window);
+    const aggregation = String(item.aggregation ?? "avg").trim().toLowerCase() || "avg";
+    return {
+      window,
+      aggregation,
+      output: String(item.output ?? ""),
+    };
+  });
+}
+
+export function serializeLagConfig(input: {
+  timeColumn: string;
+  sourceColumn: string;
+  lags: LagDraftRow[];
+}): {
+  time_column: string;
+  source_column: string;
+  lags: Array<{ periods: number; output: string }>;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const time_column = input.timeColumn.trim();
+  const source_column = input.sourceColumn.trim();
+  if (!time_column) {
+    errors.push("Time column is required.");
+  }
+  if (!source_column) {
+    errors.push("Source column is required.");
+  }
+  if (time_column && source_column && time_column === source_column) {
+    errors.push("Time column and source column must be different.");
+  }
+
+  if (input.lags.length === 0) {
+    errors.push("At least one lag is required.");
+  }
+
+  const lags: Array<{ periods: number; output: string }> = [];
+  const periods: number[] = [];
+  const outputs: string[] = [];
+
+  input.lags.forEach((row, index) => {
+    const prefix = `Lag ${index + 1}`;
+    const periodsRaw = row.periods.trim();
+    let periodsValue: number | null = null;
+    if (!periodsRaw) {
+      errors.push(`${prefix}: periods is required.`);
+    } else if (!isPositiveIntString(periodsRaw)) {
+      errors.push(`${prefix}: periods must be a positive integer.`);
+    } else {
+      periodsValue = Number(periodsRaw);
+      periods.push(periodsValue);
+    }
+
+    const output = row.output.trim();
+    if (!output) {
+      errors.push(`${prefix}: output column is required.`);
+    } else {
+      outputs.push(output);
+    }
+
+    if (periodsValue !== null && output) {
+      lags.push({ periods: periodsValue, output });
+    }
+  });
+
+  if (periods.length !== new Set(periods).size) {
+    errors.push("Lag periods must be unique.");
+  }
+  if (outputs.length !== new Set(outputs).size) {
+    errors.push("Lag outputs must be unique.");
+  }
+
+  return { time_column, source_column, lags, errors };
+}
+
+export function serializeRollingWindowConfig(input: {
+  timeColumn: string;
+  sourceColumn: string;
+  windows: RollingWindowDraftRow[];
+}): {
+  time_column: string;
+  source_column: string;
+  windows: Array<{ window: number; aggregation: string; output: string }>;
+  errors: string[];
+} {
+  const errors: string[] = [];
+  const time_column = input.timeColumn.trim();
+  const source_column = input.sourceColumn.trim();
+  if (!time_column) {
+    errors.push("Time column is required.");
+  }
+  if (!source_column) {
+    errors.push("Source column is required.");
+  }
+  if (time_column && source_column && time_column === source_column) {
+    errors.push("Time column and source column must be different.");
+  }
+
+  if (input.windows.length === 0) {
+    errors.push("At least one window is required.");
+  }
+
+  const windows: Array<{ window: number; aggregation: string; output: string }> = [];
+  const pairs: string[] = [];
+  const outputs: string[] = [];
+
+  input.windows.forEach((row, index) => {
+    const prefix = `Window ${index + 1}`;
+    const windowRaw = row.window.trim();
+    let windowValue: number | null = null;
+    if (!windowRaw) {
+      errors.push(`${prefix}: window size is required.`);
+    } else if (!isPositiveIntString(windowRaw)) {
+      errors.push(`${prefix}: window size must be a positive integer.`);
+    } else {
+      windowValue = Number(windowRaw);
+    }
+
+    const aggregation = String(row.aggregation || "").trim().toLowerCase();
+    if (!(ROLLING_AGGREGATIONS as readonly string[]).includes(aggregation)) {
+      errors.push(`${prefix}: aggregation must be AVG, SUM, MIN, or MAX.`);
+    }
+
+    const output = row.output.trim();
+    if (!output) {
+      errors.push(`${prefix}: output column is required.`);
+    } else {
+      outputs.push(output);
+    }
+
+    if (windowValue !== null && (ROLLING_AGGREGATIONS as readonly string[]).includes(aggregation) && output) {
+      const pairKey = `${windowValue}:${aggregation}`;
+      if (pairs.includes(pairKey)) {
+        errors.push(`${prefix}: duplicate window/aggregation.`);
+      } else {
+        pairs.push(pairKey);
+      }
+      windows.push({ window: windowValue, aggregation, output });
+    }
+  });
+
+  if (outputs.length !== new Set(outputs).size) {
+    errors.push("Window outputs must be unique.");
+  }
+
+  return { time_column, source_column, windows, errors };
 }

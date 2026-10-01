@@ -1610,3 +1610,130 @@ def test_pivot_missing_column_no_partial_version(client, auth_headers):
         assert versions == []
         dataset = db.get(Dataset, output_id)
         assert dataset.latest_version == 0
+
+
+def test_lag_rolling_full_materialization_success(client, auth_headers):
+    """Full-data materialization: unordered CSV → chronological lag + past-only rolling."""
+    project_id = _create_project(client, auth_headers)
+    # Intentionally unordered event_time rows in the uploaded artifact.
+    source = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "ts-unordered.csv",
+        b"event_time,sales\n"
+        b"2024-01-05,50\n"
+        b"2024-01-01,10\n"
+        b"2024-01-04,40\n"
+        b"2024-01-02,20\n"
+        b"2024-01-03,30\n",
+    )
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": source["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": source["version"]["id"],
+                },
+            },
+            {
+                "id": "lag-1",
+                "type": "lag",
+                "config": {
+                    "time_column": "event_time",
+                    "source_column": "sales",
+                    "lags": [
+                        {"periods": 1, "output": "sales_lag_1"},
+                        {"periods": 2, "output": "sales_lag_2"},
+                    ],
+                },
+            },
+            {
+                "id": "roll-1",
+                "type": "rolling_window",
+                "config": {
+                    "time_column": "event_time",
+                    "source_column": "sales",
+                    "windows": [
+                        {"window": 3, "aggregation": "avg", "output": "sales_roll_avg_3"},
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "lag-1"},
+            {"id": "e2", "source": "lag-1", "target": "roll-1"},
+            {"id": "e3", "source": "roll-1", "target": "out"},
+        ],
+    }
+    prep = _create_prep(client, auth_headers, project_id, graph, name="LagRollFull")
+    out = _create_output_dataset(
+        client, auth_headers, project_id, prep["id"], "Lag Roll Out"
+    )
+    output_id = out.json()["output_dataset"]["id"]
+    run = _create_run(client, auth_headers, project_id, prep["id"])
+    assert _execute_run(client, auth_headers, project_id, run["id"]).status_code == 202
+    _claim_and_process()
+
+    with TestingSessionLocal() as db:
+        live = db.get(DatasetPreparationRun, run["id"])
+        assert live.status == DatasetPreparationRunStatus.succeeded, live.error_message
+        assert live.output_dataset_version_id is not None
+        version = db.get(DatasetVersion, live.output_dataset_version_id)
+        assert version.format == "parquet"
+        assert version.source_type == "preparation"
+        assert version.row_count == 5
+        columns = __import__("json").loads(version.columns_json)
+        assert columns == [
+            "event_time",
+            "sales",
+            "sales_lag_1",
+            "sales_lag_2",
+            "sales_roll_avg_3",
+        ]
+        frame = pd.read_parquet(__import__("io").BytesIO(artifact_store[version.object_key]))
+        assert list(frame.columns) == columns
+        # Chronological ascending after temporal transforms.
+        times = [str(v)[:10] for v in frame["event_time"].tolist()]
+        assert times == [
+            "2024-01-01",
+            "2024-01-02",
+            "2024-01-03",
+            "2024-01-04",
+            "2024-01-05",
+        ]
+        assert frame["sales"].tolist() == [10, 20, 30, 40, 50]
+        assert pd.isna(frame["sales_lag_1"].iloc[0])
+        assert frame["sales_lag_1"].tolist()[1:] == [10, 20, 30, 40]
+        assert pd.isna(frame["sales_lag_2"].iloc[0]) and pd.isna(frame["sales_lag_2"].iloc[1])
+        assert frame["sales_lag_2"].tolist()[2:] == [10, 20, 30]
+        # Past-only rolling: row4 avg(10,20,30)=20; row5 avg(20,30,40)=30
+        assert frame["sales_roll_avg_3"].isna().iloc[:3].all()
+        assert float(frame["sales_roll_avg_3"].iloc[3]) == 20.0
+        assert float(frame["sales_roll_avg_3"].iloc[4]) == 30.0
+        dataset = db.get(Dataset, output_id)
+        assert dataset.latest_version == version.version == 1
+        version_number = version.version
+        prep_id = prep["id"]
+        run_id = run["id"]
+        source_id = source["id"]
+        source_version_id = source["version"]["id"]
+
+    lineage = client.get(
+        f"/api/v1/projects/{project_id}/datasets/{output_id}/versions/"
+        f"{version_number}/lineage",
+        headers=auth_headers,
+    )
+    assert lineage.status_code == 200, lineage.text
+    upstream = lineage.json()["upstream"]
+    assert upstream is not None
+    assert upstream["preparation"]["id"] == prep_id
+    assert upstream["preparation_run"]["id"] == run_id
+    assert len(upstream["input_versions"]) == 1
+    assert upstream["input_versions"][0]["dataset_id"] == source_id
+    assert upstream["input_versions"][0]["dataset_version_id"] == source_version_id

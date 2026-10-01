@@ -1179,3 +1179,157 @@ def test_pivot_preview_unrelated_path_and_error_normalization(client, auth_heade
     assert "traceback" not in text_l
     assert "dtype" not in text_l
 
+
+
+def test_lag_and_rolling_preview_temporal_warning(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "ts.csv",
+        b"event_time,sales\n"
+        b"2024-01-01,10\n"
+        b"2024-01-02,20\n"
+        b"2024-01-03,30\n"
+        b"2024-01-04,40\n"
+        b"2024-01-05,50\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "lag-1",
+                "type": "lag",
+                "config": {
+                    "time_column": "event_time",
+                    "source_column": "sales",
+                    "lags": [{"periods": 1, "output": "sales_lag_1"}],
+                },
+            },
+            {
+                "id": "roll-1",
+                "type": "rolling_window",
+                "config": {
+                    "time_column": "event_time",
+                    "source_column": "sales",
+                    "windows": [
+                        {"window": 2, "aggregation": "avg", "output": "sales_roll_2"}
+                    ],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "lag-1"},
+            {"id": "e2", "source": "lag-1", "target": "roll-1"},
+            {"id": "e3", "source": "roll-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": graph},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    warnings = body["warnings"]
+    assert any("Temporal feature preview" in w for w in warnings)
+    assert "sales_lag_1" in body["columns"]
+    assert "sales_roll_2" in body["columns"]
+    assert body["sampled"] is True
+
+
+def test_temporal_preview_warning_absent_on_unrelated_path(client, auth_headers):
+    project_id = _create_project(client, auth_headers)
+    dataset = _upload_dataset(
+        client,
+        auth_headers,
+        project_id,
+        "ts2.csv",
+        b"event_time,sales,label\n"
+        b"2024-01-01,10,a\n"
+        b"2024-01-02,20,b\n"
+        b"2024-01-03,30,c\n",
+    )
+    prep = _create_prep(client, auth_headers, project_id)
+    select_graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "select-1",
+                "type": "select",
+                "config": {"columns": ["event_time", "label"]},
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "select-1"},
+            {"id": "e2", "source": "select-1", "target": "out"},
+        ],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": select_graph},
+    )
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert not any("Temporal feature preview" in w for w in warnings)
+
+    lag_graph = {
+        "schema_version": 1,
+        "nodes": [
+            {
+                "id": "src",
+                "type": "source",
+                "config": {
+                    "dataset_id": dataset["id"],
+                    "version_strategy": "fixed",
+                    "dataset_version_id": dataset["version"]["id"],
+                },
+            },
+            {
+                "id": "lag-1",
+                "type": "lag",
+                "config": {
+                    "time_column": "event_time",
+                    "source_column": "sales",
+                    "lags": [{"periods": 1, "output": "sales_lag_1"}],
+                },
+            },
+            {"id": "out", "type": "output", "config": {}},
+        ],
+        "edges": [
+            {"id": "e1", "source": "src", "target": "lag-1"},
+            {"id": "e2", "source": "lag-1", "target": "out"},
+        ],
+    }
+    lag_preview = client.post(
+        f"/api/v1/projects/{project_id}/dataset-preparations/{prep['id']}/preview",
+        headers=auth_headers,
+        json={"graph": lag_graph},
+    )
+    assert lag_preview.status_code == 200, lag_preview.text
+    assert any(
+        "Temporal feature preview" in w for w in lag_preview.json()["warnings"]
+    )

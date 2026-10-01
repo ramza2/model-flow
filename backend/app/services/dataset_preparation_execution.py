@@ -26,14 +26,17 @@ from app.services.dataset_preparation import (
     FILTER_OPERATORS,
     GROUP_BY_OPS,
     JOIN_HOWS,
+    ROLLING_AGGREGATIONS,
     TRANSFORM_TYPES,
     UNION_MODES,
     PreparationValidationError,
     _is_allowed_pivot_value,
+    _is_positive_int,
     graph_to_dict,
     resolve_source_pins,
     validate_preparation_graph,
 )
+from app.services.dataset_splits import order_frame_by_time
 
 JOIN_HOW_PANDAS = {
     "inner": "inner",
@@ -53,6 +56,11 @@ PREVIEW_GROUP_BY_WARNING = (
 PREVIEW_PIVOT_WARNING = (
     "Pivot preview is computed from sampled source rows; "
     "aggregate values and populated cells may differ in a full run."
+)
+PREVIEW_TEMPORAL_FEATURE_WARNING = (
+    "Temporal feature preview uses sampled DatasetVersion rows. "
+    "Lag/rolling values near the sample boundary may differ from full-data "
+    "materialization because earlier history may not be present in the preview sample."
 )
 
 _BOOLEAN_STRING_MAP = {
@@ -767,6 +775,169 @@ def _execute_group_by(node_id: str, config: dict[str, Any], frame: pd.DataFrame)
     return result.loc[:, ordered_columns].reset_index(drop=True)
 
 
+def _order_frame_for_temporal(
+    node_id: str, frame: pd.DataFrame, time_column: str
+) -> pd.DataFrame:
+    try:
+        return order_frame_by_time(frame, time_column)
+    except ValueError as exc:
+        raise PreparationExecutionError(f"Node '{node_id}': {exc}") from exc
+
+
+def _execute_lag(node_id: str, config: dict[str, Any], frame: pd.DataFrame) -> pd.DataFrame:
+    time_column = str(config.get("time_column") or "").strip()
+    source_column = str(config.get("source_column") or "").strip()
+    lags = config.get("lags")
+    if not time_column or not source_column:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': lag requires time_column and source_column."
+        )
+    if time_column == source_column:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': time_column and source_column must be different."
+        )
+    if not isinstance(lags, list) or not lags:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': lag requires a non-empty lags list."
+        )
+
+    _require_column(frame, node_id, time_column)
+    _require_column(frame, node_id, source_column)
+
+    parsed: list[tuple[int, str]] = []
+    seen_periods: set[int] = set()
+    seen_outputs: set[str] = set()
+    for index, row in enumerate(lags):
+        if not isinstance(row, dict):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': lags[{index}] must be an object."
+            )
+        period = row.get("periods")
+        if not _is_positive_int(period):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': lags[{index}] periods must be a positive integer."
+            )
+        output = str(row.get("output") or "").strip()
+        if not output:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': lags[{index}] output must be a non-empty string."
+            )
+        if period in seen_periods:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate lag periods {period}."
+            )
+        if output in seen_outputs:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate lag output '{output}'."
+            )
+        if output in frame.columns:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': output column '{output}' already exists."
+            )
+        seen_periods.add(int(period))
+        seen_outputs.add(output)
+        parsed.append((int(period), output))
+
+    ordered = _order_frame_for_temporal(node_id, frame, time_column)
+    result = ordered.copy()
+    for period, output in parsed:
+        result[output] = result[source_column].shift(period)
+    return result.reset_index(drop=True)
+
+
+def _rolling_source_is_numeric(series: pd.Series) -> bool:
+    if pd.api.types.is_bool_dtype(series):
+        return False
+    if str(series.dtype) == "boolean":
+        return False
+    return bool(pd.api.types.is_numeric_dtype(series))
+
+
+def _execute_rolling_window(
+    node_id: str, config: dict[str, Any], frame: pd.DataFrame
+) -> pd.DataFrame:
+    time_column = str(config.get("time_column") or "").strip()
+    source_column = str(config.get("source_column") or "").strip()
+    windows = config.get("windows")
+    if not time_column or not source_column:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': rolling_window requires time_column and source_column."
+        )
+    if time_column == source_column:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': time_column and source_column must be different."
+        )
+    if not isinstance(windows, list) or not windows:
+        raise PreparationExecutionError(
+            f"Node '{node_id}': rolling_window requires a non-empty windows list."
+        )
+
+    _require_column(frame, node_id, time_column)
+    _require_column(frame, node_id, source_column)
+    if not _rolling_source_is_numeric(frame[source_column]):
+        raise PreparationExecutionError(
+            f"Node '{node_id}': rolling_window source_column '{source_column}' "
+            "must be numeric (boolean is not allowed)."
+        )
+
+    parsed: list[tuple[int, str, str]] = []
+    seen_pairs: set[tuple[int, str]] = set()
+    seen_outputs: set[str] = set()
+    for index, row in enumerate(windows):
+        if not isinstance(row, dict):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': windows[{index}] must be an object."
+            )
+        window = row.get("window")
+        if not _is_positive_int(window):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': windows[{index}] window must be a positive integer."
+            )
+        aggregation = row.get("aggregation")
+        if aggregation not in ROLLING_AGGREGATIONS:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': windows[{index}] aggregation must be one of "
+                "avg, sum, min, max."
+            )
+        output = str(row.get("output") or "").strip()
+        if not output:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': windows[{index}] output must be a non-empty string."
+            )
+        pair = (int(window), str(aggregation))
+        if pair in seen_pairs:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate window/aggregation {pair}."
+            )
+        if output in seen_outputs:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': duplicate rolling output '{output}'."
+            )
+        if output in frame.columns:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': output column '{output}' already exists."
+            )
+        seen_pairs.add(pair)
+        seen_outputs.add(output)
+        parsed.append((int(window), str(aggregation), output))
+
+    ordered = _order_frame_for_temporal(node_id, frame, time_column)
+    result = ordered.copy()
+    # Past-only: exclude current row, then require a full window of prior history.
+    history = result[source_column].shift(1)
+    for window, aggregation, output in parsed:
+        rolled = history.rolling(window=window, min_periods=window)
+        if aggregation == "avg":
+            result[output] = rolled.mean()
+        elif aggregation == "sum":
+            result[output] = rolled.sum()
+        elif aggregation == "min":
+            result[output] = rolled.min()
+        else:
+            result[output] = rolled.max()
+    return result.reset_index(drop=True)
+
+
 def _execute_transform(
     node_id: str,
     node_type: str,
@@ -795,6 +966,10 @@ def _execute_transform(
         return _execute_unpivot(node_id, config, frame)
     if node_type == "pivot":
         return _execute_pivot(node_id, config, frame)
+    if node_type == "lag":
+        return _execute_lag(node_id, config, frame)
+    if node_type == "rolling_window":
+        return _execute_rolling_window(node_id, config, frame)
     raise PreparationExecutionError(
         f"Unsupported transform type '{node_type}' on '{node_id}'."
     )
@@ -1430,6 +1605,18 @@ def preview_preparation_graph(
         "pivot",
     ):
         warnings.append(PREVIEW_PIVOT_WARNING)
+    if _preview_path_includes_node_type(
+        data.get("nodes") or [],
+        data.get("edges") or [],
+        effective_node_id,
+        "lag",
+    ) or _preview_path_includes_node_type(
+        data.get("nodes") or [],
+        data.get("edges") or [],
+        effective_node_id,
+        "rolling_window",
+    ):
+        warnings.append(PREVIEW_TEMPORAL_FEATURE_WARNING)
 
     payload = dataframe_preview_payload(result_frame, limit=limit)
     return {

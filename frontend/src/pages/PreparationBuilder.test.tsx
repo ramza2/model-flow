@@ -2176,5 +2176,173 @@ describe("PreparationBuilder", () => {
     expect(screen.queryByTestId("preparation-pivot-value-remove-0")).not.toBeInTheDocument();
   });
 
+  it("configures Lag and Rolling Window inspectors and gates invalid drafts", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    let previewCalls = 0;
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 5 },
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        previewCalls += 1;
+      }
+      return base(path, init);
+    });
 
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+
+    fireEvent.click(screen.getByTestId("preparation-library-lag"));
+    expect(await screen.findByTestId("preparation-lag-inspector")).toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-lag-errors")).toHaveTextContent(
+      "Time column is required",
+    );
+    expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent(
+      "Lag uses only earlier rows",
+    );
+
+    const previewBefore = previewCalls;
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(previewCalls).toBe(previewBefore);
+
+    fireEvent.change(screen.getByTestId("preparation-lag-time-column"), {
+      target: { value: "event_time" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-source-column"), {
+      target: { value: "sales" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-lag-add"));
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-0"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-0"), {
+      target: { value: "sales_lag_1" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-lag-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-rolling_window"));
+    expect(await screen.findByTestId("preparation-rolling-inspector")).toBeInTheDocument();
+    expect(await screen.findByTestId("preparation-rolling-errors")).toHaveTextContent(
+      "Time column is required",
+    );
+    expect(screen.getByTestId("preparation-rolling-help")).toHaveTextContent(
+      "past rows only",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-rolling-time-column"), {
+      target: { value: "event_time" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-rolling-source-column"), {
+      target: { value: "sales" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-rolling-add"));
+    fireEvent.change(screen.getByTestId("preparation-rolling-window-0"), {
+      target: { value: "7" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-rolling-aggregation-0"), {
+      target: { value: "avg" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-rolling-output-0"), {
+      target: { value: "sales_roll_avg_7" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-rolling-errors")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const nodes = (
+      saved as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } }
+    ).graph!.nodes!;
+    expect(nodes.find((node) => node.id === "lag-1")?.config).toEqual({
+      time_column: "event_time",
+      source_column: "sales",
+      lags: [{ periods: 1, output: "sales_lag_1" }],
+    });
+    expect(nodes.find((node) => node.id === "rolling_window-1")?.config).toEqual({
+      time_column: "event_time",
+      source_column: "sales",
+      windows: [{ window: 7, aggregation: "avg", output: "sales_roll_avg_7" }],
+    });
+  });
+
+  it("keeps Lag and Rolling Window inspectors read-only for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version,
+          graph: {
+            schema_version: 1 as const,
+            nodes: [
+              {
+                id: "source-1",
+                type: "source" as const,
+                config: { dataset_id: 1, version_strategy: "latest" },
+                position: { x: 0, y: 0 },
+              },
+              {
+                id: "lag-1",
+                type: "lag" as const,
+                config: {
+                  time_column: "event_time",
+                  source_column: "sales",
+                  lags: [{ periods: 1, output: "sales_lag_1" }],
+                },
+                position: { x: 220, y: 0 },
+              },
+              {
+                id: "rolling_window-1",
+                type: "rolling_window" as const,
+                config: {
+                  time_column: "event_time",
+                  source_column: "sales",
+                  windows: [{ window: 7, aggregation: "avg", output: "sales_roll_avg_7" }],
+                },
+                position: { x: 440, y: 0 },
+              },
+              {
+                id: "output-1",
+                type: "output" as const,
+                config: {},
+                position: { x: 660, y: 0 },
+              },
+            ],
+            edges: [
+              { id: "e1", source: "source-1", target: "lag-1" },
+              { id: "e2", source: "lag-1", target: "rolling_window-1" },
+              { id: "e3", source: "rolling_window-1", target: "output-1" },
+            ],
+          },
+        },
+      } as typeof preparation,
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-lag-1"));
+    expect(await screen.findByTestId("preparation-lag-time-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-lag-source-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-lag-periods-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-lag-output-0")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-lag-add")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("canvas-node-rolling_window-1"));
+    expect(await screen.findByTestId("preparation-rolling-time-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-rolling-source-column")).toBeDisabled();
+    expect(screen.getByTestId("preparation-rolling-window-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-rolling-aggregation-0")).toBeDisabled();
+    expect(screen.getByTestId("preparation-rolling-output-0")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-rolling-add")).not.toBeInTheDocument();
+  });
 });

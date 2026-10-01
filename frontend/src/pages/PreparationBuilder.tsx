@@ -49,6 +49,7 @@ import {
   GROUP_BY_OPS,
   PREPARATION_FLOW_NODE_TYPE,
   PREPARATION_NODE_LIBRARY_GROUPS,
+  ROLLING_AGGREGATIONS,
   apiGraphToFlow,
   defaultConfigForPreparation,
   flowToApiGraph,
@@ -65,14 +66,18 @@ import {
   parseFilterConditions,
   parseGroupByAggregations,
   parseKeyList,
+  parseLagDrafts,
   parseRenameMapping,
+  parseRollingWindowDrafts,
   preparationConfigSummary,
   serializeCasts,
   serializeFillValues,
   serializeFilterConditions,
   serializeGroupByConfig,
+  serializeLagConfig,
   serializeUnpivotConfig,
   serializePivotConfig,
+  serializeRollingWindowConfig,
   coerceDerivedLiteral,
   formatDerivedLiteralInput,
   inferDerivedLiteralType,
@@ -83,10 +88,12 @@ import {
   type FilterCondition,
   type FilterValueType,
   type GroupByAggregationRow,
+  type LagDraftRow,
   type PivotValueDraft,
   type PivotValueType,
   type PreparationFlowEdge,
   type PreparationFlowNode,
+  type RollingWindowDraftRow,
 } from "../preparationHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 
@@ -1166,6 +1173,24 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "pivot" && (
                 <PivotInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
+                />
+              )}
+              {selectedNode.data.node_type === "lag" && (
+                <LagInspector
+                  key={selectedNode.id}
+                  config={selectedNode.data.config}
+                  canWrite={canWrite}
+                  onChange={updateSelectedConfig}
+                  onValidationChange={setInspectorErrors}
+                />
+              )}
+              {selectedNode.data.node_type === "rolling_window" && (
+                <RollingWindowInspector
                   key={selectedNode.id}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
@@ -3160,6 +3185,344 @@ function PivotInspector({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function LagInspector({
+  config,
+  canWrite,
+  onChange,
+  onValidationChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
+}) {
+  const [timeColumn, setTimeColumn] = useState(() => String(config.time_column ?? ""));
+  const [sourceColumn, setSourceColumn] = useState(() => String(config.source_column ?? ""));
+  const [lags, setLags] = useState<LagDraftRow[]>(() => parseLagDrafts(config.lags));
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function evaluateDraft(
+    nextTimeColumn: string,
+    nextSourceColumn: string,
+    nextLags: LagDraftRow[],
+  ) {
+    return serializeLagConfig({
+      timeColumn: nextTimeColumn,
+      sourceColumn: nextSourceColumn,
+      lags: nextLags,
+    });
+  }
+
+  useEffect(() => {
+    const serialized = evaluateDraft(timeColumn, sourceColumn, lags);
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function commit(
+    nextTimeColumn: string,
+    nextSourceColumn: string,
+    nextLags: LagDraftRow[],
+  ) {
+    setTimeColumn(nextTimeColumn);
+    setSourceColumn(nextSourceColumn);
+    setLags(nextLags);
+    const serialized = evaluateDraft(nextTimeColumn, nextSourceColumn, nextLags);
+    setErrors(serialized.errors);
+    if (serialized.errors.length > 0) {
+      return;
+    }
+    onChange({
+      ...config,
+      time_column: serialized.time_column,
+      source_column: serialized.source_column,
+      lags: serialized.lags,
+    });
+  }
+
+  return (
+    <div className="preparation-inspector-form" data-testid="preparation-lag-inspector">
+      <label>
+        Time column
+        <input
+          data-testid="preparation-lag-time-column"
+          disabled={!canWrite}
+          placeholder="event_time"
+          value={timeColumn}
+          onChange={(event) => commit(event.target.value, sourceColumn, lags)}
+        />
+      </label>
+      <label>
+        Source column
+        <input
+          data-testid="preparation-lag-source-column"
+          disabled={!canWrite}
+          placeholder="sales"
+          value={sourceColumn}
+          onChange={(event) => commit(timeColumn, event.target.value, lags)}
+        />
+      </label>
+      <div className="preparation-inspector-list" data-testid="preparation-lag-rows">
+        <span className="eyebrow">Lag rows</span>
+        {lags.map((row, index) => (
+          <div
+            key={`lag-row-${index}`}
+            className="preparation-inspector-row"
+            data-testid={`preparation-lag-row-${index}`}
+          >
+            <input
+              data-testid={`preparation-lag-periods-${index}`}
+              disabled={!canWrite}
+              placeholder="periods"
+              value={row.periods}
+              onChange={(event) => {
+                const next = [...lags];
+                next[index] = { ...row, periods: event.target.value };
+                commit(timeColumn, sourceColumn, next);
+              }}
+            />
+            <input
+              data-testid={`preparation-lag-output-${index}`}
+              disabled={!canWrite}
+              placeholder="output column"
+              value={row.output}
+              onChange={(event) => {
+                const next = [...lags];
+                next[index] = { ...row, output: event.target.value };
+                commit(timeColumn, sourceColumn, next);
+              }}
+            />
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-lag-remove-${index}`}
+                onClick={() =>
+                  commit(
+                    timeColumn,
+                    sourceColumn,
+                    lags.filter((_, i) => i !== index),
+                  )
+                }
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-lag-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-lag-add"
+          onClick={() =>
+            commit(timeColumn, sourceColumn, [...lags, { periods: "", output: "" }])
+          }
+        >
+          Add lag
+        </button>
+      )}
+      <p className="muted" data-testid="preparation-lag-help">
+        Lag uses only earlier rows after sorting by the selected time column. Initial rows
+        without enough history remain null.
+      </p>
+    </div>
+  );
+}
+
+function RollingWindowInspector({
+  config,
+  canWrite,
+  onChange,
+  onValidationChange,
+}: {
+  config: Record<string, unknown>;
+  canWrite: boolean;
+  onChange: (next: Record<string, unknown>) => void;
+  onValidationChange?: (errors: string[]) => void;
+}) {
+  const [timeColumn, setTimeColumn] = useState(() => String(config.time_column ?? ""));
+  const [sourceColumn, setSourceColumn] = useState(() => String(config.source_column ?? ""));
+  const [windows, setWindows] = useState<RollingWindowDraftRow[]>(() =>
+    parseRollingWindowDrafts(config.windows),
+  );
+  const [errors, setErrors] = useState<string[]>([]);
+
+  function evaluateDraft(
+    nextTimeColumn: string,
+    nextSourceColumn: string,
+    nextWindows: RollingWindowDraftRow[],
+  ) {
+    return serializeRollingWindowConfig({
+      timeColumn: nextTimeColumn,
+      sourceColumn: nextSourceColumn,
+      windows: nextWindows,
+    });
+  }
+
+  useEffect(() => {
+    const serialized = evaluateDraft(timeColumn, sourceColumn, windows);
+    setErrors(serialized.errors);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only; commit() owns later updates
+  }, []);
+
+  useEffect(() => {
+    onValidationChange?.(errors);
+  }, [errors, onValidationChange]);
+
+  function commit(
+    nextTimeColumn: string,
+    nextSourceColumn: string,
+    nextWindows: RollingWindowDraftRow[],
+  ) {
+    setTimeColumn(nextTimeColumn);
+    setSourceColumn(nextSourceColumn);
+    setWindows(nextWindows);
+    const serialized = evaluateDraft(nextTimeColumn, nextSourceColumn, nextWindows);
+    setErrors(serialized.errors);
+    if (serialized.errors.length > 0) {
+      return;
+    }
+    onChange({
+      ...config,
+      time_column: serialized.time_column,
+      source_column: serialized.source_column,
+      windows: serialized.windows,
+    });
+  }
+
+  return (
+    <div
+      className="preparation-inspector-form"
+      data-testid="preparation-rolling-inspector"
+    >
+      <label>
+        Time column
+        <input
+          data-testid="preparation-rolling-time-column"
+          disabled={!canWrite}
+          placeholder="event_time"
+          value={timeColumn}
+          onChange={(event) => commit(event.target.value, sourceColumn, windows)}
+        />
+      </label>
+      <label>
+        Source column
+        <input
+          data-testid="preparation-rolling-source-column"
+          disabled={!canWrite}
+          placeholder="sales"
+          value={sourceColumn}
+          onChange={(event) => commit(timeColumn, event.target.value, windows)}
+        />
+      </label>
+      <div className="preparation-inspector-list" data-testid="preparation-rolling-rows">
+        <span className="eyebrow">Window rows</span>
+        {windows.map((row, index) => (
+          <div
+            key={`rolling-row-${index}`}
+            className="preparation-inspector-row"
+            data-testid={`preparation-rolling-row-${index}`}
+          >
+            <input
+              data-testid={`preparation-rolling-window-${index}`}
+              disabled={!canWrite}
+              placeholder="window size"
+              value={row.window}
+              onChange={(event) => {
+                const next = [...windows];
+                next[index] = { ...row, window: event.target.value };
+                commit(timeColumn, sourceColumn, next);
+              }}
+            />
+            <select
+              data-testid={`preparation-rolling-aggregation-${index}`}
+              disabled={!canWrite}
+              value={row.aggregation}
+              onChange={(event) => {
+                const next = [...windows];
+                next[index] = { ...row, aggregation: event.target.value };
+                commit(timeColumn, sourceColumn, next);
+              }}
+            >
+              {ROLLING_AGGREGATIONS.map((op) => (
+                <option key={op} value={op}>
+                  {op.toUpperCase()}
+                </option>
+              ))}
+            </select>
+            <input
+              data-testid={`preparation-rolling-output-${index}`}
+              disabled={!canWrite}
+              placeholder="output column"
+              value={row.output}
+              onChange={(event) => {
+                const next = [...windows];
+                next[index] = { ...row, output: event.target.value };
+                commit(timeColumn, sourceColumn, next);
+              }}
+            />
+            {canWrite && (
+              <button
+                type="button"
+                className="btn link danger-text"
+                data-testid={`preparation-rolling-remove-${index}`}
+                onClick={() =>
+                  commit(
+                    timeColumn,
+                    sourceColumn,
+                    windows.filter((_, i) => i !== index),
+                  )
+                }
+              >
+                Remove
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {errors.length > 0 && (
+        <ul className="preparation-inspector-errors" data-testid="preparation-rolling-errors">
+          {errors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      )}
+      {canWrite && (
+        <button
+          type="button"
+          className="btn secondary"
+          data-testid="preparation-rolling-add"
+          onClick={() =>
+            commit(timeColumn, sourceColumn, [
+              ...windows,
+              { window: "", aggregation: "avg", output: "" },
+            ])
+          }
+        >
+          Add window
+        </button>
+      )}
+      <p className="muted" data-testid="preparation-rolling-help">
+        Rolling features use past rows only. The current row is excluded. Rows without a full
+        history window remain null.
+      </p>
     </div>
   );
 }
