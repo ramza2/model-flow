@@ -33,7 +33,7 @@ from app.services.batch_features import (
     select_batch_feature_frame,
 )
 from app.services.forecasting import forecast_output_names
-from app.services.training import SklearnTrainingRunner, TrainingJobContext
+from app.services.training import SklearnTrainingRunner
 
 
 engine = create_engine(
