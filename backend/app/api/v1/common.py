@@ -284,6 +284,8 @@ def split_out(row: DatasetSplit) -> dict[str, Any]:
         "val_ratio": row.val_ratio,
         "test_ratio": row.test_ratio,
         "random_seed": row.random_seed,
+        "split_strategy": getattr(row, "split_strategy", None) or "random",
+        "time_column": getattr(row, "time_column", None),
         "config_signature": row.config_signature,
         "object_keys": {
             "train": row.train_object_key,
@@ -331,6 +333,8 @@ def job_out(row: TrainingJob) -> dict[str, Any]:
         "metrics_config": loads(row.metrics_config_json, []),
         "resources": loads(row.resource_json, {}),
         "random_seed": row.random_seed,
+        "split_strategy": getattr(row, "split_strategy", None) or "random",
+        "time_column": getattr(row, "time_column", None),
         "ratios": {
             "train": row.train_ratio,
             "validation": row.val_ratio,

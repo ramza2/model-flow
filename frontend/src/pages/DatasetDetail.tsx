@@ -128,6 +128,8 @@ export default function DatasetDetail() {
   const [splitValRatio, setSplitValRatio] = useState("0.15");
   const [splitTestRatio, setSplitTestRatio] = useState("0.15");
   const [splitSeed, setSplitSeed] = useState("42");
+  const [splitStrategy, setSplitStrategy] = useState<"random" | "time">("random");
+  const [splitTimeColumn, setSplitTimeColumn] = useState("");
   const [splitFormError, setSplitFormError] = useState("");
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -400,7 +402,14 @@ export default function DatasetDetail() {
     }
   }
 
-  function validateSplitForm(): { train: number; val: number; test: number; seed: number } | null {
+  function validateSplitForm(): {
+    train: number;
+    val: number;
+    test: number;
+    seed: number;
+    strategy: "random" | "time";
+    timeColumn: string | null;
+  } | null {
     const train = Number(splitTrainRatio);
     const val = Number(splitValRatio);
     const test = Number(splitTestRatio);
@@ -421,8 +430,23 @@ export default function DatasetDetail() {
       setSplitFormError("Random seed must be an integer.");
       return null;
     }
+    if (splitStrategy === "time") {
+      const column = splitTimeColumn.trim();
+      if (!column) {
+        setSplitFormError("Select a time column for a time-ordered split.");
+        return null;
+      }
+      const version = versions.find((row) => row.id === selectedVersionId);
+      const versionColumns = version?.columns?.length ? version.columns : (ds?.columns ?? []);
+      if (!versionColumns.includes(column)) {
+        setSplitFormError("Time column must be one of the dataset version columns.");
+        return null;
+      }
+      setSplitFormError("");
+      return { train, val, test, seed, strategy: "time", timeColumn: column };
+    }
     setSplitFormError("");
-    return { train, val, test, seed };
+    return { train, val, test, seed, strategy: "random", timeColumn: null };
   }
 
   async function createSplit() {
@@ -443,15 +467,19 @@ export default function DatasetDetail() {
             val_ratio: parsed.val,
             test_ratio: parsed.test,
             random_seed: parsed.seed,
+            split_strategy: parsed.strategy,
+            time_column: parsed.timeColumn,
           }),
         },
       );
       setSplits((rows) => [split, ...rows.filter((row) => row.id !== split.id)]);
       setShowSplitForm(false);
+      const strategyLabel =
+        (split.split_strategy || "random") === "time"
+          ? `Time ordered · ${split.time_column || "—"}`
+          : "Random";
       setSuccess(
-        split.config_signature
-          ? `Saved split #${split.id} ready (${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}, seed ${split.random_seed}).`
-          : `Saved split #${split.id} ready.`,
+        `Saved split #${split.id} ready (${strategyLabel}; ${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}, seed ${split.random_seed}).`,
       );
     } catch (reason) {
       setSplitFormError(reason instanceof Error ? reason.message : "Dataset split could not be created.");
@@ -846,6 +874,8 @@ export default function DatasetDetail() {
                       setSplitValRatio("0.15");
                       setSplitTestRatio("0.15");
                       setSplitSeed("42");
+                      setSplitStrategy("random");
+                      setSplitTimeColumn("");
                     }}
                   >
                     {showSplitForm ? "Cancel" : "Create split"}
@@ -863,6 +893,43 @@ export default function DatasetDetail() {
                         data-testid="split-name"
                       />
                     </label>
+                    <label>
+                      Split strategy
+                      <select
+                        value={splitStrategy}
+                        onChange={(event) => {
+                          setSplitFormError("");
+                          const next = event.target.value === "time" ? "time" : "random";
+                          setSplitStrategy(next);
+                          if (next === "random") setSplitTimeColumn("");
+                        }}
+                        data-testid="split-strategy"
+                      >
+                        <option value="random">Random</option>
+                        <option value="time">Time ordered</option>
+                      </select>
+                    </label>
+                    {splitStrategy === "time" ? (
+                      <label>
+                        Time column
+                        <select
+                          value={splitTimeColumn}
+                          onChange={(event) => {
+                            setSplitFormError("");
+                            setSplitTimeColumn(event.target.value);
+                          }}
+                          data-testid="split-time-column"
+                          required
+                        >
+                          <option value="">Select time column…</option>
+                          {(selected?.columns?.length ? selected.columns : columns).map((column) => (
+                            <option key={column} value={column}>
+                              {column}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                     <label>
                       Train ratio
                       <input
@@ -908,6 +975,11 @@ export default function DatasetDetail() {
                       />
                     </label>
                   </div>
+                  {splitStrategy === "time" ? (
+                    <p className="form-hint" data-testid="split-time-seed-hint">
+                      Rows are ordered by time. The seed does not shuffle this split.
+                    </p>
+                  ) : null}
                   {splitFormError ? (
                     <div className="error" role="alert" data-testid="split-form-error">
                       {splitFormError}
@@ -930,17 +1002,28 @@ export default function DatasetDetail() {
                 <EmptyState title="No saved splits" description="Create a deterministic split for repeatable training." />
               ) : (
                 <div className="activity-list compact" data-testid="saved-splits-list">
-                  {splits.map((split) => (
-                    <div key={split.id} data-testid={`saved-split-${split.id}`}>
-                      <div>
-                        <strong>{split.name}</strong>
-                        <small>#{split.id} · seed {split.random_seed}</small>
+                  {splits.map((split) => {
+                    const strategyLabel =
+                      (split.split_strategy || "random") === "time"
+                        ? `Time ordered · ${split.time_column || "—"}`
+                        : "Random";
+                    return (
+                      <div key={split.id} data-testid={`saved-split-${split.id}`}>
+                        <div>
+                          <strong>{split.name}</strong>
+                          <small>
+                            #{split.id} · {strategyLabel}
+                            {(split.split_strategy || "random") === "random"
+                              ? ` · seed ${split.random_seed}`
+                              : ""}
+                          </small>
+                        </div>
+                        <span>
+                          {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}
+                        </span>
                       </div>
-                      <span>
-                        {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>

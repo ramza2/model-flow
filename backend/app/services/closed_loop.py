@@ -322,6 +322,8 @@ def _create_training_job_from_validated(
         train_ratio=body.train_ratio,
         val_ratio=body.val_ratio,
         test_ratio=body.test_ratio,
+        split_strategy=getattr(body, "split_strategy", None) or "random",
+        time_column=getattr(body, "time_column", None),
         max_retries=body.max_retries,
         status=JobStatus.pending,
         logs="Queued for closed-loop retraining.\n",

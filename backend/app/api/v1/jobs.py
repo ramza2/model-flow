@@ -82,6 +82,8 @@ def _new_job(
         train_ratio=body.train_ratio,
         val_ratio=body.val_ratio,
         test_ratio=body.test_ratio,
+        split_strategy=getattr(body, "split_strategy", None) or "random",
+        time_column=getattr(body, "time_column", None),
         max_retries=body.max_retries,
         status=JobStatus.pending,
         logs="Queued for training.\n",

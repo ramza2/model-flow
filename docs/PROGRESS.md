@@ -2,9 +2,19 @@
 
 ## Current phase
 
-**Enhancement Phase 5.1 — Incremental / Continued Training** is the current implementation phase (Draft PR; not complete on `main` until merge + post-merge CI PASS).
+**Enhancement Phase 6 — Time-series / Multi-step** is the current implementation phase, starting with **Phase 6-A — Time-aware Training Foundation** (Draft until merge + post-merge `main` CI PASS; do not mark 6-A complete yet).
 
-Baseline: `main@b7702144ffdabc94b02ccd323aa460de09e550fa` (Phase 5-D / PR #62; post-merge CI #304 PASS; Alembic head `020_advanced_quality_policy`).
+Baseline: `main@295768f9e2f09e61ba7538d203080365bf6f7559` (Phase 5.1 + dep hotfix; post-hotfix CI #316 PASS; Alembic head `021_continued_training`).
+
+**Enhancement Phase 5.1 — Incremental / Continued Training is complete on `main`.**
+
+Phase 5.1 complete evidence:
+
+- PR #63 merged; merge commit `41cf96daaf8095103da7e47368b147fbf677d041`
+- security follow-up PR #64 merged
+- final baseline `295768f9e2f09e61ba7538d203080365bf6f7559`
+- post-hotfix `main` CI #316 PASS
+- Alembic head: `021_continued_training`
 
 **Enhancement Phase 5 — Closed-loop MLOps is complete on `main`.**
 
@@ -380,17 +390,18 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Complete **Phase 5.1 — Incremental / Continued Training** on a feature branch from `main@b7702144ffdabc94b02ccd323aa460de09e550fa`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 5.1 must not be marked complete until that merge evidence exists.
+Implement **Phase 6-A — Time-aware Training Foundation** on a feature branch from `main@295768f9e2f09e61ba7538d203080365bf6f7559`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 6-A must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 
 ```text
-Full Retrain != Continued Training
+Random split != Time-ordered split
+Time-ordered splits never shuffle; preprocessing fits on train only.
 Closed-loop automation continues to use full retraining only.
-Continued training is manual/explicit and terminates at CANDIDATE when registered.
+Lag / rolling / forecasting / multi-step remain Phase 6-B+.
 ```
 
-See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md) and [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
+See [`phase-6-time-series.md`](./phase-6-time-series.md), [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md), and [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 

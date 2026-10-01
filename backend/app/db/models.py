@@ -286,6 +286,11 @@ class DatasetSplit(Base):
     val_ratio: Mapped[float] = mapped_column(Float, default=0.15)
     test_ratio: Mapped[float] = mapped_column(Float, default=0.15)
     random_seed: Mapped[int] = mapped_column(Integer, default=42)
+    # Phase 6-A: random | time (ordering metadata; not a model feature).
+    split_strategy: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="random", server_default="random"
+    )
+    time_column: Mapped[str | None] = mapped_column(String(200), nullable=True)
     config_signature: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     train_object_key: Mapped[str] = mapped_column(String(500), default="")
     val_object_key: Mapped[str] = mapped_column(String(500), default="")
@@ -319,6 +324,11 @@ class TrainingJob(Base):
     train_ratio: Mapped[float] = mapped_column(Float, default=0.7)
     val_ratio: Mapped[float] = mapped_column(Float, default=0.15)
     test_ratio: Mapped[float] = mapped_column(Float, default=0.15)
+    # Phase 6-A: random | time (ordering metadata; not a model feature).
+    split_strategy: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="random", server_default="random"
+    )
+    time_column: Mapped[str | None] = mapped_column(String(200), nullable=True)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.pending)
     logs: Mapped[str] = mapped_column(Text, default="")
     mlflow_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

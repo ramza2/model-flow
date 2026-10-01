@@ -103,12 +103,23 @@ class SplitCreate(BaseModel):
     val_ratio: float = Field(default=0.15, gt=0, lt=1)
     test_ratio: float = Field(default=0.15, gt=0, lt=1)
     random_seed: int = Field(default=42)
+    split_strategy: Literal["random", "time"] = "random"
+    time_column: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")
     def ratios_sum_to_one(self) -> SplitCreate:
         if abs(self.train_ratio + self.val_ratio + self.test_ratio - 1.0) > 1e-6:
             raise ValueError("train_ratio, val_ratio and test_ratio must total 1")
         return self
+
+    @model_validator(mode="after")
+    def canonicalize_split_strategy(self) -> SplitCreate:
+        if self.split_strategy == "time":
+            column = (self.time_column or "").strip()
+            if not column:
+                raise ValueError("time_column is required when split_strategy is 'time'")
+            return self.model_copy(update={"time_column": column})
+        return self.model_copy(update={"time_column": None})
 
 
 class JobCreate(BaseModel):
@@ -130,6 +141,8 @@ class JobCreate(BaseModel):
     train_ratio: float = Field(default=0.7, gt=0, lt=1)
     val_ratio: float = Field(default=0.15, ge=0, lt=1)
     test_ratio: float = Field(default=0.15, ge=0, lt=1)
+    split_strategy: Literal["random", "time"] = "random"
+    time_column: str | None = Field(default=None, max_length=200)
     max_retries: int = Field(default=1, ge=0, le=10)
 
     @model_validator(mode="after")
@@ -137,6 +150,18 @@ class JobCreate(BaseModel):
         if abs(self.train_ratio + self.val_ratio + self.test_ratio - 1.0) > 1e-6:
             raise ValueError("train_ratio, val_ratio and test_ratio must total 1")
         return self
+
+    @model_validator(mode="after")
+    def canonicalize_split_strategy(self) -> JobCreate:
+        # When a saved split is selected, training_validation overwrites these fields.
+        if self.split_id is not None:
+            return self
+        if self.split_strategy == "time":
+            column = (self.time_column or "").strip()
+            if not column:
+                raise ValueError("time_column is required when split_strategy is 'time'")
+            return self.model_copy(update={"time_column": column})
+        return self.model_copy(update={"time_column": None})
 
     @model_validator(mode="after")
     def canonicalize_targets(self) -> JobCreate:

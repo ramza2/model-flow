@@ -260,13 +260,15 @@ See [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
 
 ## Phase 5.1 — Incremental / Continued Training
 
-**Status:** current
+**Status:** complete
 
 - supported-algorithm-only continued learning (`sgd_classifier` / `sgd_regressor` via `partial_fit`)
 - explicit distinction from full retraining (`continued_from_job_id` vs `retrain_source_job_id`)
 - frozen fitted preprocessing + estimator state update on a newer DatasetVersion of the same Dataset
 - lineage and compatibility gates (no row-level delta inference; no closed-loop auto-continue)
-- Draft implementation — not complete on `main` until merge + post-merge CI PASS
+- PR #63 merged; merge commit `41cf96daaf8095103da7e47368b147fbf677d041`
+- security follow-up PR #64 merged; final baseline `295768f9e2f09e61ba7538d203080365bf6f7559`
+- post-hotfix `main` CI #316 PASS; Alembic head `021_continued_training`
 
 See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md).
 
@@ -276,15 +278,20 @@ See [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md).
 
 ## Phase 6 — Time-series / Multi-step
 
-- time-aware data processing
-- Wide-to-Long transforms where useful
-- lag features
-- rolling windows
-- time-aware train/validation splits
-- time-series forecasting model support
-- multi-step outputs and combinations with multi-output targets where supported
+**Status:** current — Phase 6-A
 
-**Depends on:** Phase 2 data-prep capabilities.
+Slice plan:
+
+1. **6-A — Time-aware Training Foundation** (current) — chronological train/validation/test splits, persisted `split_strategy` / `time_column`, API/UX/MLflow/lineage. Not complete until Draft PR merge + post-merge `main` CI PASS.
+2. **6-B — Lag / Rolling Feature Preparation** — lag and rolling-window transforms (future).
+3. **6-C — Forecasting / Multi-step Training** — horizons and supported forecasters (future).
+4. **6-D — Pipeline / UX / Final Hardening** (future).
+
+Phase 6-A implements time-aware splits only. Lag/rolling, forecasting models, multi-step prediction, panel/entity splits, and walk-forward CV remain later slices. Unpivot already exists from Phase 2-F1.
+
+See [`phase-6-time-series.md`](./phase-6-time-series.md).
+
+**Depends on:** Phase 2 data-prep capabilities and stable training/retrain/continued-training contracts.
 
 ---
 

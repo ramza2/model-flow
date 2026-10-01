@@ -669,6 +669,53 @@ def test_strict_validate_graph_node_configs():
     assert condition_value["valid"] is False
     assert any("value or right" in err for err in condition_value["errors"])
 
+    invalid_strategy = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "training-time-bad",
+                "training",
+                target_column="target",
+                algorithm="random_forest",
+                split_strategy="chronological",
+                time_column="event_time",
+            )
+        ),
+        strict=True,
+    )
+    assert invalid_strategy["valid"] is False
+    assert any("split_strategy" in err for err in invalid_strategy["errors"])
+
+    missing_time = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "training-time-missing",
+                "training",
+                target_column="target",
+                algorithm="random_forest",
+                split_strategy="time",
+            )
+        ),
+        strict=True,
+    )
+    assert missing_time["valid"] is False
+    assert any("time_column" in err for err in missing_time["errors"])
+
+    time_is_target = pipeline_engine.validate_graph(
+        graph(
+            _node(
+                "training-time-target",
+                "training",
+                target_column="event_time",
+                algorithm="random_forest",
+                split_strategy="time",
+                time_column="event_time",
+            )
+        ),
+        strict=True,
+    )
+    assert time_is_target["valid"] is False
+    assert any("time_column cannot be a target" in err for err in time_is_target["errors"])
+
 
 def test_quality_check_rejects_rule_from_other_dataset(pipeline_db):
     import pandas as pd
@@ -726,3 +773,136 @@ def test_quality_check_rejects_rule_from_other_dataset(pipeline_db):
                 "dataset_id": dataset_a.id,
             },
         )
+
+def test_pipeline_time_training_persists_and_excludes_time_feature(pipeline_db, tmp_path, monkeypatch):
+    import pandas as pd
+
+    from app.db.models import Dataset, DatasetVersion, TrainingJob
+    from app.services.training import SklearnTrainingRunner
+
+    pytest.importorskip("mlflow")
+    tracking = tmp_path / "mlruns"
+    tracking.mkdir()
+    monkeypatch.setenv("MLFLOW_ALLOW_FILE_STORE", "true")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "mlflow_tracking_uri", tracking.as_uri())
+
+    project = Project(name="pipeline-time")
+    pipeline_db.add(project)
+    pipeline_db.flush()
+    pipeline = Pipeline(project_id=project.id, name="p")
+    pipeline_db.add(pipeline)
+    pipeline_db.flush()
+    version_row = PipelineVersion(
+        pipeline_id=pipeline.id,
+        project_id=project.id,
+        version=1,
+        graph_json="{}",
+    )
+    pipeline_db.add(version_row)
+    pipeline_db.flush()
+    dataset = Dataset(
+        project_id=project.id,
+        name="timed",
+        object_key="timed.csv",
+        latest_version=1,
+    )
+    pipeline_db.add(dataset)
+    pipeline_db.flush()
+    dataset_version = DatasetVersion(
+        dataset_id=dataset.id,
+        project_id=project.id,
+        version=1,
+        object_key="timed.csv",
+        original_filename="timed.csv",
+        format="csv",
+    )
+    pipeline_db.add(dataset_version)
+    pipeline_db.flush()
+    run = PipelineRun(
+        project_id=project.id,
+        pipeline_id=pipeline.id,
+        pipeline_version_id=version_row.id,
+        status=JobStatus.running,
+    )
+    pipeline_db.add(run)
+    pipeline_db.flush()
+
+    frame = pd.DataFrame(
+        {
+            "event_time": [f"2024-01-{i:02d}" for i in range(1, 11)],
+            "a": list(range(1, 11)),
+            "b": list(range(11, 21)),
+            "target": [0, 1] * 5,
+        }
+    )
+    # Shuffle so chronological ordering is required.
+    frame = frame.sample(frac=1, random_state=0).reset_index(drop=True)
+
+    fit_capture: dict = {}
+    from sklearn.pipeline import Pipeline as SkPipeline
+
+    original_fit = SkPipeline.fit
+
+    def capturing_fit(self, x, y=None, **fit_params):
+        fit_capture["columns"] = list(x.columns)
+        fit_capture["train_a"] = list(x["a"])
+        return original_fit(self, x, y, **fit_params)
+
+    monkeypatch.setattr(SkPipeline, "fit", capturing_fit)
+    monkeypatch.setattr(pipeline_engine, "get_training_runner", lambda: SklearnTrainingRunner())
+
+    with pytest.raises(ValueError, match="Unsupported split_strategy"):
+        pipeline_engine._execute_node(
+            pipeline_db,
+            run,
+            "training",
+            {
+                "target_column": "target",
+                "algorithm": "logistic_regression",
+                "problem_type": "classification",
+                "feature_columns": [],
+                "split_strategy": "chronological",
+                "time_column": "event_time",
+                "train_ratio": 0.6,
+                "val_ratio": 0.2,
+                "test_ratio": 0.2,
+            },
+            {
+                "dataframe": frame,
+                "dataset_id": dataset.id,
+                "dataset_version_id": dataset_version.id,
+            },
+        )
+
+    trained = pipeline_engine._execute_node(
+        pipeline_db,
+        run,
+        "training",
+        {
+            "target_column": "target",
+            "algorithm": "logistic_regression",
+            "problem_type": "classification",
+            "feature_columns": [],
+            "split_strategy": "time",
+            "time_column": "event_time",
+            "train_ratio": 0.6,
+            "val_ratio": 0.2,
+            "test_ratio": 0.2,
+            "hyperparameters": {"max_iter": 200},
+        },
+        {
+            "dataframe": frame,
+            "dataset_id": dataset.id,
+            "dataset_version_id": dataset_version.id,
+        },
+    )
+    pipeline_db.commit()
+    job = pipeline_db.get(TrainingJob, trained["training_job_id"])
+    assert job is not None
+    assert job.split_strategy == "time"
+    assert job.time_column == "event_time"
+    assert "event_time" not in fit_capture["columns"]
+    assert set(fit_capture["columns"]) == {"a", "b"}
+    assert fit_capture["train_a"] == [1, 2, 3, 4, 5, 6]

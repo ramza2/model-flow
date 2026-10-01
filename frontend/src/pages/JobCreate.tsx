@@ -75,6 +75,8 @@ export default function JobCreate() {
   const [valRatio, setValRatio] = useState(0.15);
   const [testRatio, setTestRatio] = useState(0.15);
   const [randomSeed, setRandomSeed] = useState(42);
+  const [splitStrategy, setSplitStrategy] = useState<"random" | "time">("random");
+  const [timeColumn, setTimeColumn] = useState("");
   const [maxRetries, setMaxRetries] = useState(1);
   const [savedSplits, setSavedSplits] = useState<DatasetSplit[]>([]);
   const [splitId, setSplitId] = useState<number | null>(null);
@@ -106,7 +108,23 @@ export default function JobCreate() {
     [catalog, effectiveProblemType],
   );
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
-  const availableFeatures = schemaColumns.filter((column) => !targets.includes(column));
+  const effectiveSplitStrategy =
+    splitId != null
+      ? ((savedSplits.find((row) => row.id === splitId)?.split_strategy || "random") === "time"
+          ? "time"
+          : "random")
+      : splitStrategy;
+  const effectiveTimeColumn =
+    splitId != null
+      ? (savedSplits.find((row) => row.id === splitId)?.time_column || "")
+      : timeColumn;
+  const reservedTimeColumn =
+    effectiveSplitStrategy === "time" && effectiveTimeColumn ? effectiveTimeColumn : "";
+  const availableFeatures = schemaColumns.filter(
+    (column) => !targets.includes(column) && column !== reservedTimeColumn,
+  );
+  const availableTargets = schemaColumns.filter((column) => column !== reservedTimeColumn);
+  const selectedSavedSplit = splitId != null ? savedSplits.find((row) => row.id === splitId) : null;
 
   useEffect(() => {
     Promise.all([
@@ -157,6 +175,8 @@ export default function JobCreate() {
         }
         if (typeof job.random_seed === "number") setRandomSeed(job.random_seed);
         if (typeof job.max_retries === "number") setMaxRetries(job.max_retries);
+        setSplitStrategy(job.split_strategy === "time" ? "time" : "random");
+        setTimeColumn(job.time_column || "");
         setCloneLoaded(true);
       })
       .catch((reason) => {
@@ -263,23 +283,39 @@ export default function JobCreate() {
     if (!versionsResolved || versionError) return;
     if (schemaColumns.length === 0) return;
     if (cloneFrom && !cloneLoaded) return;
-    const validTargets = targets.filter((column) => schemaColumns.includes(column));
+    const validTargets = targets.filter(
+      (column) => schemaColumns.includes(column) && column !== reservedTimeColumn,
+    );
     if (validTargets.length === 0) {
-      if (schemaColumns.includes("target") && !cloneFrom) setTargets(["target"]);
-      else setTargets([schemaColumns[schemaColumns.length - 1] || ""]);
+      const fallbackPool = schemaColumns.filter((column) => column !== reservedTimeColumn);
+      if (fallbackPool.includes("target") && !cloneFrom) setTargets(["target"]);
+      else setTargets([fallbackPool[fallbackPool.length - 1] || ""]);
     } else if (validTargets.length !== targets.length) {
       setTargets(validTargets);
     }
-  }, [cloneFrom, cloneLoaded, schemaColumns, targets, versionError, versionsResolved]);
+  }, [
+    cloneFrom,
+    cloneLoaded,
+    reservedTimeColumn,
+    schemaColumns,
+    targets,
+    versionError,
+    versionsResolved,
+  ]);
 
   useEffect(() => {
     if (!versionsResolved || versionError) return;
     if (schemaColumns.length === 0 || targets.length === 0) return;
     if (cloneFrom && !cloneLoaded) return;
     setFeatureColumns((current) => {
-      const available = schemaColumns.filter((column) => !targets.includes(column));
+      const available = schemaColumns.filter(
+        (column) => !targets.includes(column) && column !== reservedTimeColumn,
+      );
       const kept = current.filter(
-        (column) => !targets.includes(column) && schemaColumns.includes(column),
+        (column) =>
+          !targets.includes(column) &&
+          schemaColumns.includes(column) &&
+          column !== reservedTimeColumn,
       );
       const schemaMismatch = current.some(
         (column) => !schemaColumns.includes(column) && !targets.includes(column),
@@ -287,7 +323,15 @@ export default function JobCreate() {
       if (!current.length || schemaMismatch) return available;
       return kept;
     });
-  }, [cloneFrom, cloneLoaded, schemaColumns, targets, versionError, versionsResolved]);
+  }, [
+    cloneFrom,
+    cloneLoaded,
+    reservedTimeColumn,
+    schemaColumns,
+    targets,
+    versionError,
+    versionsResolved,
+  ]);
 
   useEffect(() => {
     if (!projectId || !datasetId || targets.length === 0 || isMultiTarget) {
@@ -394,6 +438,9 @@ export default function JobCreate() {
       if (featureColumns.length === 0) {
         throw new Error("Select at least one feature column.");
       }
+      if (splitId == null && splitStrategy === "time" && !timeColumn.trim()) {
+        throw new Error("Select a time column for a time-ordered split.");
+      }
       if (!isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType)) {
         throw new Error("Wait for problem type detection to finish before starting training.");
       }
@@ -421,6 +468,13 @@ export default function JobCreate() {
           train_ratio: trainRatio,
           val_ratio: valRatio,
           test_ratio: testRatio,
+          split_strategy: splitId != null ? undefined : splitStrategy,
+          time_column:
+            splitId != null
+              ? undefined
+              : splitStrategy === "time"
+                ? timeColumn.trim() || null
+                : null,
           max_retries: maxRetries,
         }),
       });
@@ -513,7 +567,7 @@ export default function JobCreate() {
             <fieldset className="feature-columns" data-testid="job-targets">
               <legend>Target columns · {targets.length} selected</legend>
               <div className="feature-column-list">
-                {schemaColumns.map((column) => (
+                {availableTargets.map((column) => (
                   <label key={column} className="feature-column-option">
                     <input
                       type="checkbox"
@@ -570,7 +624,7 @@ export default function JobCreate() {
               {featureColumns.length === 0 && <p className="form-hint">Select at least one feature column.</p>}
             </fieldset>
             <label>
-              Data split
+              Saved split
               <select
                 value={splitId ?? ""}
                 onChange={(event) => {
@@ -582,35 +636,122 @@ export default function JobCreate() {
                     setValRatio(0.15);
                     setTestRatio(0.15);
                     setRandomSeed(42);
+                    setSplitStrategy("random");
+                    setTimeColumn("");
                     return;
                   }
                   const nextId = Number(value);
                   setSplitId(nextId);
-                  const selectedSplit = savedSplits.find((row) => row.id === nextId);
-                  if (selectedSplit) {
-                    setTrainRatio(selectedSplit.train_ratio);
-                    setValRatio(selectedSplit.val_ratio);
-                    setTestRatio(selectedSplit.test_ratio);
-                    setRandomSeed(selectedSplit.random_seed);
+                  const nextSplit = savedSplits.find((row) => row.id === nextId);
+                  if (nextSplit) {
+                    setTrainRatio(nextSplit.train_ratio);
+                    setValRatio(nextSplit.val_ratio);
+                    setTestRatio(nextSplit.test_ratio);
+                    setRandomSeed(nextSplit.random_seed);
+                    setSplitStrategy(nextSplit.split_strategy === "time" ? "time" : "random");
+                    setTimeColumn(nextSplit.time_column || "");
+                    const reserved =
+                      nextSplit.split_strategy === "time" ? nextSplit.time_column || "" : "";
+                    if (reserved) {
+                      setTargets((current) => current.filter((column) => column !== reserved));
+                      setFeatureColumns((current) => current.filter((column) => column !== reserved));
+                    }
                   }
                 }}
                 data-testid="job-data-split"
               >
                 <option value="">
-                  Default runtime split · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)} · seed {randomSeed}
+                  Manual runtime split · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
                 </option>
-                {savedSplits.map((split) => (
-                  <option key={split.id} value={split.id}>
-                    {split.name} · {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)} · seed {split.random_seed}
-                  </option>
-                ))}
+                {savedSplits.map((split) => {
+                  const label =
+                    (split.split_strategy || "random") === "time"
+                      ? `Time ordered · ${split.time_column || "—"}`
+                      : "Random";
+                  return (
+                    <option key={split.id} value={split.id}>
+                      {split.name} · {label} · {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}
+                    </option>
+                  );
+                })}
               </select>
             </label>
-            <p className="form-hint">
-              {splitId
-                ? `Using saved split #${splitId}: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`
-                : `Default runtime split: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`}
-            </p>
+            {selectedSavedSplit ? (
+              <p className="form-hint" data-testid="job-saved-split-summary">
+                Using saved split #{selectedSavedSplit.id}:{" "}
+                {(selectedSavedSplit.split_strategy || "random") === "time"
+                  ? `Time ordered · ${selectedSavedSplit.time_column || "—"}`
+                  : "Random"}
+                {` · ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test`}
+                {(selectedSavedSplit.split_strategy || "random") === "random"
+                  ? ` · seed ${randomSeed}`
+                  : ""}
+              </p>
+            ) : (
+              <>
+                <label>
+                  Split strategy
+                  <select
+                    value={splitStrategy}
+                    onChange={(event) => {
+                      setSubmitError("");
+                      const next = event.target.value === "time" ? "time" : "random";
+                      setSplitStrategy(next);
+                      if (next === "random") {
+                        setTimeColumn("");
+                      } else if (timeColumn) {
+                        setTargets((current) => current.filter((column) => column !== timeColumn));
+                        setFeatureColumns((current) =>
+                          current.filter((column) => column !== timeColumn),
+                        );
+                      }
+                    }}
+                    data-testid="job-split-strategy"
+                  >
+                    <option value="random">Random</option>
+                    <option value="time">Time ordered</option>
+                  </select>
+                </label>
+                {splitStrategy === "time" ? (
+                  <label>
+                    Time column
+                    <select
+                      value={timeColumn}
+                      onChange={(event) => {
+                        setSubmitError("");
+                        const next = event.target.value;
+                        setTimeColumn(next);
+                        if (next) {
+                          setTargets((current) => current.filter((column) => column !== next));
+                          setFeatureColumns((current) =>
+                            current.filter((column) => column !== next),
+                          );
+                        }
+                      }}
+                      data-testid="job-time-column"
+                      required
+                    >
+                      <option value="">Select time column…</option>
+                      {schemaColumns.map((column) => (
+                        <option key={column} value={column}>
+                          {column}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <p className="form-hint" data-testid="job-runtime-split-summary">
+                  {splitStrategy === "time"
+                    ? `Time-ordered runtime split${timeColumn ? ` on ${timeColumn}` : ""}: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test.`
+                    : `Random runtime split: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`}
+                </p>
+                {splitStrategy === "time" ? (
+                  <p className="form-hint" data-testid="job-time-seed-hint">
+                    Random seed does not shuffle a time-ordered split; it may still affect model training.
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
           <div className="form-section">
             <span className="eyebrow">Estimator</span>

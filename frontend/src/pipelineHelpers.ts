@@ -242,6 +242,8 @@ export function defaultConfigFor(type: PipelineNodeType): Record<string, unknown
         algorithm: "random_forest",
         feature_columns: [],
         hyperparameters: {},
+        split_strategy: "random",
+        time_column: null,
       };
     case "evaluation":
       return { metric: "accuracy", minimum: 0.8, fail_on_gate: true };
@@ -292,6 +294,13 @@ export function configSummary(
       if (config.algorithm) lines.push(String(config.algorithm).replaceAll("_", " "));
       if (config.problem_type && config.problem_type !== "auto") {
         lines.push(String(config.problem_type));
+      }
+      if (config.split_strategy === "time") {
+        lines.push(
+          config.time_column
+            ? `time ordered · ${String(config.time_column)}`
+            : "time ordered",
+        );
       }
       break;
     }

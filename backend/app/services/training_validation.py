@@ -20,6 +20,12 @@ from app.services.algorithm_catalog import (
     resolve_algorithm,
     validate_hyperparameters,
 )
+from app.services.dataset_splits import (
+    SPLIT_STRATEGY_TIME,
+    coerce_split_fields,
+    validate_frame_time_column,
+    validate_time_column_config,
+)
 from app.services.quality import get_training_quality_blockers
 from app.services.target_columns import (
     effective_target_columns_from_values,
@@ -206,12 +212,15 @@ def validate_training_config(
                 "Dataset split does not belong to the selected version.",
                 "Choose a split created from this dataset version, or clear the split selection.",
             )
+        # Saved split is authoritative for ratios, seed, and time-aware strategy.
         body = body.model_copy(
             update={
                 "train_ratio": split.train_ratio,
                 "val_ratio": split.val_ratio,
                 "test_ratio": split.test_ratio,
                 "random_seed": split.random_seed,
+                "split_strategy": getattr(split, "split_strategy", None) or "random",
+                "time_column": getattr(split, "time_column", None),
                 "dataset_version_id": version.id,
             }
         )
@@ -250,7 +259,30 @@ def validate_training_config(
             f"Available columns: {', '.join(columns)}",
         )
 
+    try:
+        split_strategy, time_column = coerce_split_fields(
+            body.split_strategy, body.time_column
+        )
+    except ValueError as exc:
+        raise TrainingConfigError(422, str(exc)) from exc
+
+    if split_strategy == SPLIT_STRATEGY_TIME:
+        try:
+            time_column = validate_time_column_config(
+                time_column,
+                columns=columns,
+                target_columns=effective_targets,
+                feature_columns=feature_columns,
+            )
+        except ValueError as exc:
+            raise TrainingConfigError(422, str(exc)) from exc
+
     frame = _load_frame(version, dataset)
+    if split_strategy == SPLIT_STRATEGY_TIME:
+        try:
+            validate_frame_time_column(frame, time_column)  # type: ignore[arg-type]
+        except ValueError as exc:
+            raise TrainingConfigError(400, str(exc)) from exc
     try:
         resolved_problem_type = normalize_problem_type_for_targets(
             body.problem_type,
@@ -272,6 +304,8 @@ def validate_training_config(
             "dataset_version_id": version.id if version else body.dataset_version_id,
             "target_column": effective_targets[0],
             "target_columns": effective_targets,
+            "split_strategy": split_strategy,
+            "time_column": time_column,
         }
     )
     return ValidatedTrainingConfig(
