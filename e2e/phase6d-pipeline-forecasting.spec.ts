@@ -191,6 +191,8 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
     .getByTestId("pipeline-step-node")
     .filter({ hasText: "Forecast train" });
   await expect(runTrainingNode).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
+  await runTrainingNode.click();
   await expect(page.getByTestId("pipeline-run-step-training-1")).toBeVisible();
-  await expect(page.getByTestId("pipeline-run-step-model_registration-1")).toBeVisible();
+  await expect(page.getByTestId("pipeline-run-step-training-1")).toContainText(/succeeded/i);
+  await expect(page.locator(".logs")).toContainText(/model_registration-1 \(model_registration\) succeeded/i);
 });
