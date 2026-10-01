@@ -142,8 +142,11 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
 
   await page.goto(`/projects/${projectId}/preparations/${preparationId}`);
   await expect(page.getByTestId("preparation-builder")).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.locator('[data-testid="preparation-step-node"][data-node-type="lag"]'),
+  ).toBeVisible({ timeout: 30_000 });
 
-  await page.getByTestId("canvas-node-lag-1").click();
+  await page.locator('[data-testid="preparation-step-node"][data-node-type="lag"]').click();
   await expect(page.getByTestId("preparation-lag-inspector")).toBeVisible();
   await expect(page.getByTestId("preparation-lag-time-column")).toHaveValue("event_time");
   await expect(page.getByTestId("preparation-lag-source-column")).toHaveValue("sales");
@@ -151,7 +154,9 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
     "Lag uses only earlier rows",
   );
 
-  await page.getByTestId("canvas-node-roll-1").click();
+  await page
+    .locator('[data-testid="preparation-step-node"][data-node-type="rolling_window"]')
+    .click();
   await expect(page.getByTestId("preparation-rolling-inspector")).toBeVisible();
   await expect(page.getByTestId("preparation-rolling-time-column")).toHaveValue("event_time");
   await expect(page.getByTestId("preparation-rolling-help")).toContainText("past rows only");
