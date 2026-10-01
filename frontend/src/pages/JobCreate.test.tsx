@@ -7,9 +7,11 @@ import ModelVersion from "../pages/ModelVersion";
 import Predict from "../pages/Predict";
 import {
   algorithmsForProblemType,
+  algorithmsForTrainingTask,
   buildPredictionSamplePayload,
   defaultAlgorithmId,
   formatHyperparameters,
+  parseForecastHorizonsText,
   validateHyperparametersText,
   type AlgorithmSpec,
 } from "../trainingConfig";
@@ -25,6 +27,8 @@ const catalog: AlgorithmSpec[] = [
       { name: "n_estimators", type: "integer", default: 100, minimum: 1, maximum: 5000 },
       { name: "max_depth", type: "integer", default: 5, minimum: 1, maximum: 100, nullable: true },
     ],
+    supports_forecasting: false,
+    forecasting_strategy: "unsupported",
   },
   {
     id: "logistic_regression",
@@ -36,6 +40,8 @@ const catalog: AlgorithmSpec[] = [
       { name: "C", type: "number", default: 1.0, minimum: 0.0001 },
       { name: "max_iter", type: "integer", default: 1000, minimum: 1 },
     ],
+    supports_forecasting: false,
+    forecasting_strategy: "unsupported",
   },
   {
     id: "gradient_boosting",
@@ -48,6 +54,8 @@ const catalog: AlgorithmSpec[] = [
       { name: "learning_rate", type: "number", default: 0.1 },
       { name: "max_depth", type: "integer", default: 3 },
     ],
+    supports_forecasting: false,
+    forecasting_strategy: "unsupported",
   },
   {
     id: "ridge",
@@ -56,6 +64,8 @@ const catalog: AlgorithmSpec[] = [
     default_hyperparameters: { alpha: 1.0 },
     supported_hyperparameters: ["alpha"],
     hyperparameters: [{ name: "alpha", type: "number", default: 1.0, minimum: 0 }],
+    supports_forecasting: true,
+    forecasting_strategy: "direct_multioutput",
   },
   {
     id: "random_forest_regressor",
@@ -67,6 +77,8 @@ const catalog: AlgorithmSpec[] = [
       { name: "n_estimators", type: "integer", default: 100 },
       { name: "max_depth", type: "integer", default: 5, nullable: true },
     ],
+    supports_forecasting: true,
+    forecasting_strategy: "direct_multioutput",
   },
   {
     id: "gradient_boosting_regressor",
@@ -79,6 +91,21 @@ const catalog: AlgorithmSpec[] = [
       { name: "learning_rate", type: "number", default: 0.1 },
       { name: "max_depth", type: "integer", default: 3 },
     ],
+    supports_forecasting: true,
+    forecasting_strategy: "direct_multioutput",
+  },
+  {
+    id: "sgd_regressor",
+    display_name: "SGD regressor",
+    problem_types: ["regression"],
+    default_hyperparameters: { alpha: 0.0001, max_iter: 1000 },
+    supported_hyperparameters: ["alpha", "max_iter"],
+    hyperparameters: [
+      { name: "alpha", type: "number", default: 0.0001 },
+      { name: "max_iter", type: "integer", default: 1000 },
+    ],
+    supports_forecasting: false,
+    forecasting_strategy: "unsupported",
   },
 ];
 
@@ -102,8 +129,21 @@ describe("trainingConfig helpers", () => {
       "ridge",
       "random_forest_regressor",
       "gradient_boosting_regressor",
+      "sgd_regressor",
     ]);
     expect(defaultAlgorithmId(catalog, "regression")).toBe("ridge");
+  });
+
+  it("filters forecasting-capable algorithms and parses horizons", () => {
+    expect(algorithmsForTrainingTask(catalog, "regression", "forecasting").map((item) => item.id)).toEqual([
+      "ridge",
+      "random_forest_regressor",
+      "gradient_boosting_regressor",
+    ]);
+    expect(parseForecastHorizonsText("3, 1, 2")).toEqual({ ok: true, value: [1, 2, 3] });
+    expect(parseForecastHorizonsText("0").ok).toBe(false);
+    expect(parseForecastHorizonsText("1, 1").ok).toBe(false);
+    expect(parseForecastHorizonsText("").ok).toBe(false);
   });
 
   it("resets and validates hyperparameters", () => {
@@ -1850,6 +1890,223 @@ describe("JobCreate time-aware split", () => {
     );
     expect(screen.queryByTestId("job-split-strategy")).not.toBeInTheDocument();
     expect(screen.queryByTestId("target-event_time")).not.toBeInTheDocument();
+  });
+
+  it("configures forecasting jobs with horizons and capability filtering", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "forecast",
+              columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+              latest_version: 1,
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 55,
+              name: "random-saved",
+              dataset_version_id: 11,
+              train_ratio: 0.7,
+              val_ratio: 0.15,
+              test_ratio: 0.15,
+              random_seed: 42,
+              split_strategy: "random",
+              time_column: null,
+            },
+            {
+              id: 66,
+              name: "time-saved",
+              dataset_version_id: 11,
+              train_ratio: 0.6,
+              val_ratio: 0.2,
+              test_ratio: 0.2,
+              random_seed: 42,
+              split_strategy: "time",
+              time_column: "event_time",
+            },
+          ],
+        };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "forecast.csv",
+              columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+            },
+          ],
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: 777, status: "pending" }) };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("job-training-task");
+    fireEvent.change(screen.getByTestId("job-training-task"), { target: { value: "forecasting" } });
+    expect(screen.getByTestId("job-problem-type")).toBeDisabled();
+    expect(screen.getByTestId("job-problem-type")).toHaveValue("regression");
+    expect(screen.getByTestId("job-split-strategy")).toBeDisabled();
+    expect(screen.getByTestId("job-split-strategy")).toHaveValue("time");
+    expect(screen.getByTestId("job-forecast-horizons")).toBeInTheDocument();
+    expect(screen.getByTestId("job-forecast-horizons-help")).toHaveTextContent(/observation steps/i);
+
+    const algorithmSelect = screen.getByTestId("job-algorithm") as HTMLSelectElement;
+    const algorithmIds = Array.from(algorithmSelect.options).map((option) => option.value);
+    expect(algorithmIds).toEqual([
+      "ridge",
+      "random_forest_regressor",
+      "gradient_boosting_regressor",
+    ]);
+    expect(algorithmIds).not.toContain("sgd_regressor");
+
+    const splitSelect = screen.getByTestId("job-data-split") as HTMLSelectElement;
+    const splitLabels = Array.from(splitSelect.options).map((option) => option.textContent || "");
+    expect(splitLabels.some((label) => label.includes("time-saved"))).toBe(true);
+    expect(splitLabels.some((label) => label.includes("random-saved"))).toBe(false);
+
+    fireEvent.click(screen.getByTestId("target-sales"));
+    fireEvent.change(screen.getByTestId("job-time-column"), { target: { value: "event_time" } });
+    fireEvent.click(screen.getByTestId("feature-sales_lag_1"));
+    fireEvent.click(screen.getByTestId("feature-sales_roll_avg_3"));
+    fireEvent.change(screen.getByTestId("job-forecast-horizons"), { target: { value: "1, 2, 3" } });
+    fireEvent.change(screen.getByTestId("job-algorithm"), { target: { value: "ridge" } });
+
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({
+      training_task: "forecasting",
+      forecast_strategy: "direct_multioutput",
+      forecast_horizons: [1, 2, 3],
+      problem_type: "regression",
+      split_strategy: "time",
+      time_column: "event_time",
+      target_columns: ["sales"],
+      algorithm: "ridge",
+    });
+  });
+
+  it("hydrates forecasting fields when cloning", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo) => {
+      const url = String(input);
+      if (url.includes("/jobs/88")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 88,
+            project_id: 7,
+            dataset_id: 1,
+            dataset_version_id: 11,
+            split_id: null,
+            name: "fc-source",
+            description: "",
+            target_column: "sales",
+            target_columns: ["sales"],
+            problem_type: "regression",
+            algorithm: "ridge",
+            hyperparameters: { alpha: 1.0 },
+            feature_columns: ["sales_lag_1"],
+            ratios: { train: 0.6, validation: 0.2, test: 0.2 },
+            random_seed: 42,
+            split_strategy: "time",
+            time_column: "event_time",
+            training_task: "forecasting",
+            forecast_strategy: "direct_multioutput",
+            forecast_horizons: [1, 2, 3],
+            forecast_output_names: ["sales__t_plus_1", "sales__t_plus_2", "sales__t_plus_3"],
+            status: "succeeded",
+            max_retries: 1,
+          }),
+        };
+      }
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "forecast",
+              columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+              latest_version: 1,
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "forecast.csv",
+              columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+            },
+          ],
+        };
+      }
+      return { ok: false, status: 404, json: async () => ({ detail: url }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new?cloneFrom=88"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("job-training-task")).toHaveValue("forecasting");
+    expect(screen.getByTestId("job-forecast-horizons")).toHaveValue("1, 2, 3");
+    expect(screen.getByTestId("job-split-strategy")).toHaveValue("time");
+    expect(screen.getByTestId("job-time-column")).toHaveValue("event_time");
+    expect(screen.getByTestId("job-problem-type")).toHaveValue("regression");
   });
 });
 

@@ -29,6 +29,7 @@ from app.services.retrain_service import (
     build_job_create_from_source,
     prepare_retrain_job,
 )
+from app.services.forecasting import dumps_forecast_horizons
 from app.services.target_columns import dumps_target_columns
 from app.services.training_validation import (
     TrainingConfigError,
@@ -84,6 +85,11 @@ def _new_job(
         test_ratio=body.test_ratio,
         split_strategy=getattr(body, "split_strategy", None) or "random",
         time_column=getattr(body, "time_column", None),
+        training_task=getattr(body, "training_task", None) or "tabular",
+        forecast_strategy=getattr(body, "forecast_strategy", None),
+        forecast_horizons_json=dumps_forecast_horizons(
+            list(getattr(body, "forecast_horizons", None) or [])
+        ),
         max_retries=body.max_retries,
         status=JobStatus.pending,
         logs="Queued for training.\n",

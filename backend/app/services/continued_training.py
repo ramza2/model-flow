@@ -46,6 +46,14 @@ def _loads(value: str | None, default: Any) -> Any:
 
 
 def validate_continued_source(source: TrainingJob) -> None:
+    from app.services.forecasting import is_forecasting_task
+
+    if is_forecasting_task(getattr(source, "training_task", None)):
+        raise ContinuedTrainingError(
+            422,
+            "Continued training is not supported for forecasting jobs. Use Full Retrain.",
+            "Use Full Retrain instead.",
+        )
     if source.status != JobStatus.succeeded:
         raise ContinuedTrainingError(
             409,

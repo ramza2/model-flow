@@ -50,6 +50,7 @@ from app.services.target_columns import (
     effective_target_columns_from_job,
     resolve_output_target_columns,
 )
+from app.services.forecasting import loads_forecast_horizons
 from app.services.training import TrainingJobContext, get_training_runner
 
 logger = logging.getLogger(__name__)
@@ -455,6 +456,11 @@ def process_job(job: TrainingJob) -> None:
             "random_seed": live.random_seed,
             "split_strategy": getattr(live, "split_strategy", None) or "random",
             "time_column": getattr(live, "time_column", None),
+            "training_task": getattr(live, "training_task", None) or "tabular",
+            "forecast_strategy": getattr(live, "forecast_strategy", None),
+            "forecast_horizons": loads_forecast_horizons(
+                getattr(live, "forecast_horizons_json", None)
+            ),
             "data_format": data_format,
             "dataset_version_id": live.dataset_version_id,
             "retrain_source_job_id": live.retrain_source_job_id,

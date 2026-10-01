@@ -2,9 +2,15 @@
 
 ## Current phase
 
-**Enhancement Phase 6 — Time-series / Multi-step** is the current implementation phase. **Phase 6-A — Time-aware Training Foundation is complete on `main`.** Current slice: **Phase 6-B — Lag / Rolling Feature Preparation** (Draft until merge + post-merge `main` CI PASS; do not mark 6-B complete yet).
+**Enhancement Phase 6 — Time-series / Multi-step** is the current implementation phase. **Phase 6-A and Phase 6-B are complete on `main`.** Current slice: **Phase 6-C — Forecasting / Multi-step Training** (Draft until merge + post-merge `main` CI PASS; do not mark 6-C complete yet). Phase 6-D remains future.
 
-Baseline: `main@9376c5c209f9ebce7e52da15d341707f904bedd7` (Phase 6-A merged; post-merge CI #323 PASS; Alembic head `022_time_series_foundation`).
+Baseline: `main@deb98ed18d6483fdd72adf430ab2cc5b763a3758` (Phase 6-B merged; post-merge CI #329 PASS; Alembic head at merge `022_time_series_foundation`). Phase 6-C Draft adds migration `023_forecasting_training` (not complete until merge + post-merge `main` CI PASS).
+
+Phase 6-B complete evidence:
+
+- PR #66 merged; squash/main commit `deb98ed18d6483fdd72adf430ab2cc5b763a3758`
+- post-merge `main` CI #329 / run `36819635158` PASS
+- Alembic head: `022_time_series_foundation`
 
 Phase 6-A complete evidence:
 
@@ -216,7 +222,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@9376c5c209f9ebce7e52da15d341707f904bedd7`
+- Branch baseline: `main@deb98ed18d6483fdd72adf430ab2cc5b763a3758`
+- Phase 6-B merge (PR #66): `deb98ed18d6483fdd72adf430ab2cc5b763a3758` (post-merge CI #329 PASS; Alembic head `022_time_series_foundation`)
 - Phase 6-A merge (PR #65): `9376c5c209f9ebce7e52da15d341707f904bedd7` (post-merge CI #323 PASS; Alembic head `022_time_series_foundation`)
 - Phase 4 closeout docs (PR #58): `364c0d846a8cbfe81a16cc0d0e16743d43c610f0`
 - Phase 4-E merge (PR #57): `c9483de0ef6d557097abb9340aeee499d68d41bc` (post-merge CI #278 PASS)
@@ -397,16 +404,16 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Implement **Phase 6-B — Lag / Rolling Feature Preparation** on a feature branch from `main@9376c5c209f9ebce7e52da15d341707f904bedd7`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 6-B must not be marked complete until that merge evidence exists.
+Implement **Phase 6-C — Forecasting / Multi-step Training** on a feature branch from `main@deb98ed18d6483fdd72adf430ab2cc5b763a3758`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 6-C must not be marked complete until that merge evidence exists.
 
 Acceptance boundary (non-negotiable):
 
 ```text
-lag / rolling_window preparation transforms only (global single-series).
-Rolling is past-only (current row excluded); positive lag only.
-Reuse Phase 6-A time-order helpers; fail closed on bad timestamps.
-No new Alembic migration; training/Phase 6-A split semantics unchanged.
-Forecasting / multi-step / panel features remain Phase 6-C+.
+direct_multioutput forecasting on sklearn regressors only.
+Partition before shift(-h); no cross-boundary future labels.
+Single numeric base target; time-ordered split required.
+Continued training unsupported for forecasting (Full Retrain).
+Pipeline forecasting authoring / recursive / panel remain Phase 6-D+.
 ```
 
 See [`phase-6-time-series.md`](./phase-6-time-series.md), [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md), and [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).

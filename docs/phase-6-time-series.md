@@ -7,8 +7,8 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 | Slice | Scope | Status |
 |-------|--------|--------|
 | **6-A** | Time-aware training foundation — chronological train/validation/test splits, persisted `split_strategy` / `time_column`, API/UX/MLflow/lineage | **complete** (PR #65 merged; squash/main `9376c5c209f9ebce7e52da15d341707f904bedd7`; post-merge main CI #323 PASS; Alembic head `022_time_series_foundation`) |
-| **6-B** | Lag / rolling-window feature preparation | **current** (Draft until merge + post-merge `main` CI PASS) |
-| **6-C** | Forecasting / multi-step training (horizons, supported forecasters) | future |
+| **6-B** | Lag / rolling-window feature preparation | **complete** (PR #66 merged; squash/main `deb98ed18d6483fdd72adf430ab2cc5b763a3758`; post-merge main CI #329 PASS; Alembic head `022_time_series_foundation`) |
+| **6-C** | Forecasting / multi-step training (horizons, supported forecasters) | **current** (Draft until merge + post-merge `main` CI PASS; Alembic `023_forecasting_training` on feature branch) |
 | **6-D** | Pipeline / UX / final hardening | future |
 
 ```text
@@ -22,8 +22,8 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 ```
 
 **6-A = time-aware foundation (complete).**  
-**6-B = lag / rolling (current).**  
-**6-C = forecasting + multi-step.**  
+**6-B = lag / rolling (complete).**  
+**6-C = forecasting + multi-step (current).**  
 **6-D = integration / hardening.**
 
 Unpivot already exists from Phase 2-F1; Phase 6 must not re-implement it.
@@ -91,6 +91,39 @@ Explicitly out of scope for 6-B:
 - automatic warm-up drop or imputation
 - automatic Preparation → Training split inference
 
+## Phase 6-C goals
+
+Direct multi-horizon forecasting training on the existing sklearn regression stack:
+
+```text
+training_task = forecasting
+forecast_strategy = direct_multioutput
+forecast_horizons = [1, 2, 3]
+```
+
+Contract:
+
+- Additive TrainingJob fields (`training_task`, `forecast_strategy`, `forecast_horizons_json`); Alembic `023_forecasting_training`.
+- Exactly one numeric base target; problem type regression; time-ordered split required.
+- Horizons are chronological observation steps (not clock durations).
+- Output names: `{target}__t_plus_{h}` via shared helper.
+- **Partition before shift(-h):** raw train/validation/test cuts first; future targets built independently inside each partition (no cross-boundary labels).
+- Supported algorithms: `ridge`, `random_forest_regressor`, `gradient_boosting_regressor`.
+- Continued training unsupported for forecasting (Full Retrain only).
+- Reuse Phase 6-A time helpers and existing multi-output metrics/registry/inference naming.
+
+Explicitly out of scope for 6-C:
+
+- ARIMA / SARIMA / Prophet / XGBoost / LSTM / Transformer
+- recursive forecasting / autoregressive rollout
+- calendar-duration horizons (`7D`, `24H`)
+- panel / entity / multi-series forecasting
+- walk-forward / expanding-window CV
+- probabilistic / quantile forecasts
+- automatic lag generation inside TrainingJob
+- forecast-specific closed-loop policies
+- Pipeline forecasting authoring → **6-D**
+
 ## Leakage prevention principles
 
 1. **Time-ordered partitions never shuffle.** Classification does not stratify under time strategy.
@@ -101,6 +134,7 @@ Explicitly out of scope for 6-B:
 6. **Immutable split artifacts.** Existing train/validation/test objects and hashes are not mutated after create.
 7. **Shared helpers only for time semantics.** Random saved-split (`sample` + contiguous cuts) and random direct (`sklearn.train_test_split` + optional stratification) paths remain as-is for regression compatibility.
 8. **Past-only rolling (6-B).** Rolling aggregates must never include the current or future row.
+9. **Partition-before-horizon-shift (6-C).** Never build `shift(-h)` future targets on the full frame before train/validation/test cuts.
 
 ## Time split semantics (6-A)
 
@@ -113,6 +147,7 @@ Explicitly out of scope for 6-B:
 ## Compatibility
 
 - Omitting `split_strategy` / `time_column` keeps **random** behavior identical to pre–6-A clients.
+- Omitting `training_task` / forecast fields keeps **tabular** behavior identical to pre–6-C clients.
 - Random `config_signature` format is unchanged when strategy is random (default).
 - Closed-loop automation continues to enqueue **full retrain** only (never auto-continued training).
 

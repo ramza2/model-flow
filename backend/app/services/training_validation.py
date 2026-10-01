@@ -16,6 +16,7 @@ from app.db.models import (
 from app.schemas.v1 import JobCreate
 from app.services import storage
 from app.services.algorithm_catalog import (
+    get_algorithm,
     normalize_problem_type_for_targets,
     resolve_algorithm,
     validate_hyperparameters,
@@ -25,6 +26,11 @@ from app.services.dataset_splits import (
     coerce_split_fields,
     validate_frame_time_column,
     validate_time_column_config,
+)
+from app.services.forecasting import (
+    ForecastingError,
+    is_forecasting_task,
+    require_numeric_forecast_target,
 )
 from app.services.quality import get_training_quality_blockers
 from app.services.target_columns import (
@@ -283,18 +289,69 @@ def validate_training_config(
             validate_frame_time_column(frame, time_column)  # type: ignore[arg-type]
         except ValueError as exc:
             raise TrainingConfigError(400, str(exc)) from exc
+
+    forecasting = is_forecasting_task(body.training_task)
+    if forecasting:
+        if len(effective_targets) != 1:
+            raise TrainingConfigError(
+                422,
+                "Forecasting requires exactly one base target column.",
+            )
+        if body.problem_type not in {"regression", "auto"}:
+            raise TrainingConfigError(
+                422,
+                "Forecasting requires problem_type 'regression'.",
+            )
+        if split_strategy != SPLIT_STRATEGY_TIME:
+            raise TrainingConfigError(
+                422,
+                "Forecasting requires split_strategy 'time'.",
+                "Select a time-ordered split or clear a random saved split.",
+            )
+        if not time_column:
+            raise TrainingConfigError(
+                422,
+                "Forecasting requires a time_column.",
+            )
+        if not body.forecast_horizons:
+            raise TrainingConfigError(
+                422,
+                "Forecasting requires a non-empty forecast_horizons list.",
+            )
+        try:
+            require_numeric_forecast_target(frame, effective_targets[0])
+        except ForecastingError as exc:
+            raise TrainingConfigError(422, str(exc)) from exc
+
     try:
         resolved_problem_type = normalize_problem_type_for_targets(
-            body.problem_type,
+            "regression" if forecasting else body.problem_type,
             frame,
             effective_targets,
         )
+        if forecasting and resolved_problem_type != "regression":
+            raise ValueError("Forecasting requires a numeric regression target.")
         if is_multi_output(effective_targets) and resolved_problem_type != "regression":
             raise ValueError("Multi-output training requires regression.")
         algorithm = resolve_algorithm(body.algorithm, resolved_problem_type)
         hyperparameters = validate_hyperparameters(algorithm, body.hyperparameters)
     except ValueError as exc:
         raise TrainingConfigError(422, str(exc)) from exc
+
+    if forecasting:
+        spec = get_algorithm(algorithm)
+        if spec is None or not spec.supports_forecasting:
+            raise TrainingConfigError(
+                422,
+                f"Algorithm '{algorithm}' does not support forecasting.",
+                "Choose ridge, random_forest_regressor, or gradient_boosting_regressor.",
+            )
+        if body.forecast_strategy and spec.forecasting_strategy != body.forecast_strategy:
+            raise TrainingConfigError(
+                422,
+                f"Algorithm '{algorithm}' does not support forecast strategy "
+                f"'{body.forecast_strategy}'.",
+            )
 
     updated = body.model_copy(
         update={
@@ -306,6 +363,10 @@ def validate_training_config(
             "target_columns": effective_targets,
             "split_strategy": split_strategy,
             "time_column": time_column,
+            "training_task": "forecasting" if forecasting else "tabular",
+            "forecast_strategy": body.forecast_strategy if forecasting else None,
+            "forecast_horizons": list(body.forecast_horizons or []) if forecasting else [],
+            "problem_type": "regression" if forecasting else body.problem_type,
         }
     )
     return ValidatedTrainingConfig(
