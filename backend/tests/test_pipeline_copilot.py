@@ -26,7 +26,7 @@ from app.db.models import (
     PipelineRun,
     PipelineVersion,
     Project,
-    ProjectMember,
+    ProjectMembership,
     ProjectRole,
     QualityRule,
     TrainingJob,
@@ -34,8 +34,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.main import _rate_windows, app
-from app.services import pipeline_copilot as copilot
-from app.services import storage
+from app.services import mlflow_service, pipeline_copilot as copilot, storage
 from app.services.pipeline_engine import NODE_TYPES
 
 _ORIGINAL_CALL_CHAT = copilot.call_chat_completions
@@ -51,15 +50,22 @@ VIEWER_PASSWORD = secrets.token_urlsafe(24)
 
 
 def _llm_settings(**overrides: Any) -> Settings:
-    base = {
-        "_env_file": None,
-        "llm_base_url": "http://llm.test/v1",
-        "llm_api_key": "secret-test-key",
-        "llm_model": "test-model",
-        "llm_timeout_seconds": 5.0,
+    """Build Settings via env aliases (validation_alias is authoritative)."""
+    values = {
+        "MODELFLOW_LLM_BASE_URL": "http://llm.test/v1",
+        "MODELFLOW_LLM_API_KEY": "secret-test-key",
+        "MODELFLOW_LLM_MODEL": "test-model",
+        "MODELFLOW_LLM_TIMEOUT_SECONDS": 5.0,
     }
-    base.update(overrides)
-    return Settings(**base)
+    field_to_alias = {
+        "llm_base_url": "MODELFLOW_LLM_BASE_URL",
+        "llm_api_key": "MODELFLOW_LLM_API_KEY",
+        "llm_model": "MODELFLOW_LLM_MODEL",
+        "llm_timeout_seconds": "MODELFLOW_LLM_TIMEOUT_SECONDS",
+    }
+    for key, value in overrides.items():
+        values[field_to_alias.get(key, key)] = value
+    return Settings(_env_file=None, **values)
 
 
 def _forecast_graph(dataset_id: int, version_id: int) -> dict[str, Any]:
@@ -162,6 +168,7 @@ def setup_copilot_tests(monkeypatch):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-1")
     monkeypatch.setattr(storage, "ensure_buckets", lambda: None)
     monkeypatch.setattr(
         storage,
@@ -216,7 +223,7 @@ def viewer_headers(client, auth_headers):
     with TestingSessionLocal() as db:
         viewer = db.scalar(select(User).where(User.email == "viewer@example.com"))
         db.add(
-            ProjectMember(
+            ProjectMembership(
                 project_id=project["id"],
                 user_id=viewer.id,
                 role=ProjectRole.VIEWER,
@@ -446,7 +453,9 @@ def test_draft_endpoint_success_no_state_mutation(client, auth_headers, monkeypa
             select(AuditLog).where(AuditLog.action == "pipeline.copilot.draft")
         ).all()
         assert audits
-        payload = json.dumps([row.after_json for row in audits] + [row.before_json for row in audits])
+        payload = json.dumps(
+            [row.after_summary for row in audits] + [row.before_summary for row in audits]
+        )
         assert "secret-test-key" not in payload
         assert "Create a forecasting pipeline" not in payload
         assert "Forecasting pipeline for sales" not in payload
@@ -479,7 +488,7 @@ def test_missing_llm_config_returns_503(client, auth_headers, monkeypatch):
         json={"prompt": "Build a pipeline"},
     )
     assert response.status_code == 503
-    assert "not configured" in response.json()["detail"]["detail"].lower()
+    assert "not configured" in str(response.json()["detail"]).lower()
 
 
 def test_optional_api_key_header_omitted_when_empty(monkeypatch):
