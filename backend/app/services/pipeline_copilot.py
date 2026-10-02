@@ -7,6 +7,7 @@ run, deploy, approve, execute code, or mutate Pipeline state.
 from __future__ import annotations
 
 import json
+import math
 import re
 from typing import Any
 
@@ -359,6 +360,59 @@ def parse_llm_content(content: str) -> dict[str, Any]:
     return {"summary": summary.strip(), "graph": {"nodes": nodes, "edges": edges}}
 
 
+def optional_positive_int(value: Any, field_name: str) -> tuple[int | None, str | None]:
+    """Parse an optional positive int without letting conversion exceptions escape.
+
+    Returns ``(parsed, None)`` on success, ``(None, None)`` when absent, or
+    ``(None, error)`` when present but invalid.
+    """
+    if value is None:
+        return None, None
+    if isinstance(value, bool):
+        return None, f"{field_name} must be a positive integer."
+    if isinstance(value, int):
+        if value <= 0:
+            return None, f"{field_name} must be a positive integer."
+        return value, None
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.isdigit():
+            parsed = int(trimmed)
+            if parsed > 0:
+                return parsed, None
+        return None, f"{field_name} must be a positive integer."
+    # Reject floats (including integral), lists, dicts, and other objects.
+    return None, f"{field_name} must be a positive integer."
+
+
+def _default_position(index: int) -> tuple[float, float]:
+    return float(40 + (index % 4) * 280), float(40 + (index // 4) * 160)
+
+
+def _finite_coord(value: Any, default: float) -> float:
+    if isinstance(value, bool) or value is None:
+        return default
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(number):
+        return default
+    return number
+
+
+def _require_object_field(
+    container: dict[str, Any], key: str, *, label: str
+) -> dict[str, Any] | None:
+    """Return object value, None if absent, or raise CopilotContractError."""
+    if key not in container or container[key] is None:
+        return None
+    value = container[key]
+    if not isinstance(value, dict):
+        raise CopilotContractError(f"{label} must be an object.")
+    return value
+
+
 def canonicalize_graph(graph: dict[str, Any]) -> dict[str, Any]:
     nodes_in = graph.get("nodes") or []
     edges_in = graph.get("edges") or []
@@ -376,21 +430,42 @@ def canonicalize_graph(graph: dict[str, Any]) -> dict[str, Any]:
         if node_id in seen_ids:
             raise CopilotContractError(f"Duplicate node id '{node_id}'.")
         seen_ids.add(node_id)
-        node_type = _node_type(raw)
+
+        # Validate provider shape before Pipeline helpers touch raw structures.
+        data = _require_object_field(raw, "data", label=f"Node '{node_id}' data") or {}
+        if "config" in data and data["config"] is not None and not isinstance(
+            data["config"], dict
+        ):
+            raise CopilotContractError(f"Node '{node_id}' data.config must be an object.")
+        if "config" in raw and raw["config"] is not None and not isinstance(
+            raw["config"], dict
+        ):
+            raise CopilotContractError(f"Node '{node_id}' config must be an object.")
+        position_raw = _require_object_field(
+            raw, "position", label=f"Node '{node_id}' position"
+        )
+
+        safe_node = {
+            "id": node_id,
+            "data": data,
+            **({"config": raw["config"]} if isinstance(raw.get("config"), dict) else {}),
+            **({"type": raw["type"]} if "type" in raw else {}),
+        }
+        node_type = _node_type(safe_node)
         if node_type not in NODE_TYPES:
             raise CopilotContractError(
                 f"Node '{node_id}' has unsupported type '{node_type or raw.get('type')}'."
             )
-        data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
-        config = _node_config(raw)
+        config = _node_config(safe_node)
+        if not isinstance(config, dict):
+            raise CopilotContractError(f"Node '{node_id}' config must be an object.")
         label = data.get("label") or raw.get("label") or node_type.replace("_", " ").title()
-        position = raw.get("position") if isinstance(raw.get("position"), dict) else {}
-        try:
-            x = float(position.get("x"))
-            y = float(position.get("y"))
-        except (TypeError, ValueError):
-            x = float(40 + (index % 4) * 280)
-            y = float(40 + (index // 4) * 160)
+        default_x, default_y = _default_position(index)
+        if position_raw is None:
+            x, y = default_x, default_y
+        else:
+            x = _finite_coord(position_raw.get("x"), default_x)
+            y = _finite_coord(position_raw.get("y"), default_y)
         nodes.append(
             {
                 "id": node_id,
@@ -412,7 +487,7 @@ def canonicalize_graph(graph: dict[str, Any]) -> dict[str, Any]:
         if not source or not target:
             raise CopilotContractError(f"Edge at index {index} requires source and target.")
         edge_id = str(raw.get("id") or f"edge-{index + 1}").strip()
-        data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+        data = _require_object_field(raw, "data", label=f"Edge '{edge_id}' data") or {}
         branch = data.get("branch", raw.get("branch", "always"))
         if isinstance(branch, bool):
             branch = str(branch).lower()
@@ -444,55 +519,96 @@ def validate_project_references(
         node_id = str(node.get("id") or "")
         node_type = _node_type(node)
         config = _node_config(node)
+        if not isinstance(config, dict):
+            errors.append(f"Node '{node_id}' config must be an object.")
+            continue
+
+        gate_config = dict(config)
+        if "gate_policy_id" in gate_config and gate_config["gate_policy_id"] is not None:
+            policy_id, policy_err = optional_positive_int(
+                gate_config["gate_policy_id"], "gate_policy_id"
+            )
+            if policy_err:
+                errors.append(f"Node '{node_id}' {policy_err}")
+                gate_config.pop("gate_policy_id", None)
+            else:
+                gate_config["gate_policy_id"] = policy_id
         try:
-            assert_pipeline_node_gate_config(project_id, node_type, config, db)
+            assert_pipeline_node_gate_config(project_id, node_type, gate_config, db)
         except ValueError as exc:
             errors.append(f"Node '{node_id}' {exc}")
+        except (TypeError, OverflowError):
+            errors.append(f"Node '{node_id}' gate_policy_id must be a positive integer.")
 
         if node_type == "dataset_load":
-            dataset_id = config.get("dataset_id")
-            version_id = config.get("dataset_version_id")
-            if dataset_id is not None:
-                dataset = db.get(Dataset, int(dataset_id))
-                if not dataset or dataset.project_id != project_id:
-                    errors.append(
-                        f"Node '{node_id}' dataset_id {dataset_id} is not in this project."
-                    )
-            if version_id is not None:
-                version = db.get(DatasetVersion, int(version_id))
+            dataset_id, dataset_err = optional_positive_int(
+                config.get("dataset_id"), "dataset_id"
+            )
+            version_id, version_err = optional_positive_int(
+                config.get("dataset_version_id"), "dataset_version_id"
+            )
+            if config.get("dataset_version_id") is None:
+                errors.append(
+                    f"Node '{node_id}' dataset_load requires an exact dataset_version_id."
+                )
+            elif version_err:
+                errors.append(f"Node '{node_id}' {version_err}")
+            else:
+                version = db.get(DatasetVersion, version_id)
                 if not version or version.project_id != project_id:
                     errors.append(
                         f"Node '{node_id}' dataset_version_id {version_id} "
                         "is not in this project."
                     )
-                elif dataset_id is not None and version.dataset_id != int(dataset_id):
+                elif dataset_id is not None and version.dataset_id != dataset_id:
                     errors.append(
                         f"Node '{node_id}' dataset_version_id {version_id} "
                         f"does not belong to dataset_id {dataset_id}."
                     )
+            if config.get("dataset_id") is not None:
+                if dataset_err:
+                    errors.append(f"Node '{node_id}' {dataset_err}")
+                elif dataset_id is not None:
+                    dataset = db.get(Dataset, dataset_id)
+                    if not dataset or dataset.project_id != project_id:
+                        errors.append(
+                            f"Node '{node_id}' dataset_id {dataset_id} "
+                            "is not in this project."
+                        )
 
         if node_type == "batch_prediction":
-            version_id = config.get("dataset_version_id")
-            if version_id is not None:
-                version = db.get(DatasetVersion, int(version_id))
-                if not version or version.project_id != project_id:
-                    errors.append(
-                        f"Node '{node_id}' dataset_version_id {version_id} "
-                        "is not in this project."
-                    )
+            version_id, version_err = optional_positive_int(
+                config.get("dataset_version_id"), "dataset_version_id"
+            )
+            if config.get("dataset_version_id") is not None:
+                if version_err:
+                    errors.append(f"Node '{node_id}' {version_err}")
+                else:
+                    version = db.get(DatasetVersion, version_id)
+                    if not version or version.project_id != project_id:
+                        errors.append(
+                            f"Node '{node_id}' dataset_version_id {version_id} "
+                            "is not in this project."
+                        )
 
         if node_type == "quality_check":
-            rule_id = config.get("quality_rule_id")
-            if rule_id is not None:
-                rule = db.get(QualityRule, int(rule_id))
-                if not rule or rule.project_id != project_id:
-                    errors.append(
-                        f"Node '{node_id}' quality_rule_id {rule_id} is not in this project."
-                    )
-                elif not rule.is_active:
-                    errors.append(
-                        f"Node '{node_id}' quality_rule_id {rule_id} is inactive."
-                    )
+            rule_id, rule_err = optional_positive_int(
+                config.get("quality_rule_id"), "quality_rule_id"
+            )
+            if config.get("quality_rule_id") is not None:
+                if rule_err:
+                    errors.append(f"Node '{node_id}' {rule_err}")
+                else:
+                    rule = db.get(QualityRule, rule_id)
+                    if not rule or rule.project_id != project_id:
+                        errors.append(
+                            f"Node '{node_id}' quality_rule_id {rule_id} "
+                            "is not in this project."
+                        )
+                    elif not rule.is_active:
+                        errors.append(
+                            f"Node '{node_id}' quality_rule_id {rule_id} is inactive."
+                        )
     return errors
 
 
@@ -561,8 +677,15 @@ def draft_pipeline(
     catalog = build_project_catalog(db, project_id)
     messages = build_messages(prompt, catalog)
     content = call_chat_completions(messages=messages, config=cfg, transport=transport)
-    parsed = parse_llm_content(content)
-    graph = canonicalize_graph(parsed["graph"])
+    try:
+        parsed = parse_llm_content(content)
+        graph = canonicalize_graph(parsed["graph"])
+    except CopilotError:
+        raise
+    except (TypeError, ValueError, AttributeError, KeyError, OverflowError) as exc:
+        raise CopilotContractError(
+            "Provider graph failed canonicalization."
+        ) from exc
 
     structural = validate_graph(graph, strict=False)
     if not structural["valid"]:

@@ -14,6 +14,25 @@ from app.services import pipeline_copilot as copilot
 
 router = APIRouter(tags=["pipeline-copilot"])
 
+_STABLE_FAILURE_REASON = "Pipeline Copilot draft failed."
+
+
+def _failure_audit_after(project_id: int, exc: copilot.CopilotError) -> dict:
+    """Bounded audit metadata — never store provider-derived detail/graph/prompt."""
+    model_name = None
+    if not isinstance(exc, copilot.CopilotNotConfiguredError):
+        configured = str(getattr(copilot.settings, "llm_model", "") or "").strip()
+        model_name = configured or None
+    return {
+        "project_id": project_id,
+        "model": model_name,
+        "node_count": 0,
+        "edge_count": 0,
+        "validation_valid": False,
+        "status_code": exc.status_code,
+        "error_type": type(exc).__name__,
+    }
+
 
 @router.post("/projects/{project_id}/pipeline-copilot/draft")
 def draft_pipeline_graph(
@@ -32,16 +51,9 @@ def draft_pipeline_graph(
             "pipeline.copilot.draft",
             "project",
             project_id,
-            after={
-                "project_id": project_id,
-                "model": None,
-                "node_count": 0,
-                "edge_count": 0,
-                "validation_valid": False,
-                "error": exc.detail,
-            },
+            after=_failure_audit_after(project_id, exc),
             success=False,
-            failure_reason=exc.detail,
+            failure_reason=_STABLE_FAILURE_REASON,
         )
         db.commit()
         raise friendly(exc.status_code, exc.detail, exc.hint) from exc

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import secrets
 from typing import Any, Callable
 
@@ -805,3 +806,360 @@ def test_request_cannot_override_server_owned_llm_settings(client, auth_headers,
     assert seen["body"]["model"] == "server-model"
     assert seen["url"].startswith("http://server-owned/v1/chat/completions")
     assert response.json()["model"] == "server-model"
+
+
+def test_optional_positive_int_rules():
+    assert copilot.optional_positive_int(None, "id") == (None, None)
+    assert copilot.optional_positive_int(12, "id") == (12, None)
+    assert copilot.optional_positive_int("34", "id") == (34, None)
+    for bad in (True, False, 0, -1, 1.5, 1.0, [], {}, "abc", ""):
+        parsed, err = copilot.optional_positive_int(bad, "id")
+        assert parsed is None
+        assert err == "id must be a positive integer."
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        {"id": "bad", "data": "not-an-object"},
+        {
+            "id": "bad",
+            "data": {"node_type": "dataset_load", "config": "not-an-object"},
+        },
+        {
+            "id": "bad",
+            "data": {"node_type": "dataset_load", "config": ["list"]},
+        },
+        {
+            "id": "bad",
+            "data": {"node_type": "notification", "config": {}},
+            "config": "top-level-bad",
+        },
+        {
+            "id": "bad",
+            "data": {"node_type": "notification", "config": {}},
+            "position": "not-an-object",
+        },
+    ],
+)
+def test_malformed_node_payloads_return_502_not_500(client, auth_headers, monkeypatch, node):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "malformed-node"},
+    ).json()
+    project_id = project["id"]
+    before = _counts(project_id)
+    payload = {"summary": "bad shape", "graph": {"nodes": [node], "edges": []}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Build anything"},
+    )
+    assert response.status_code == 502, response.text
+    assert response.status_code != 500
+    assert _counts(project_id) == before
+
+
+def test_malformed_resource_ids_fail_validation_not_500(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "bad-ids"},
+    ).json()
+    project_id = project["id"]
+    payload = {
+        "summary": "bad ids",
+        "graph": {
+            "nodes": [
+                {
+                    "id": "dataset_load-1",
+                    "data": {
+                        "node_type": "dataset_load",
+                        "config": {
+                            "dataset_id": "abc",
+                            "dataset_version_id": {},
+                        },
+                    },
+                },
+                {
+                    "id": "quality_check-1",
+                    "data": {
+                        "node_type": "quality_check",
+                        "config": {"quality_rule_id": []},
+                    },
+                },
+                {
+                    "id": "approval_request-1",
+                    "data": {
+                        "node_type": "approval_request",
+                        "config": {"gate_policy_id": "not-an-id"},
+                    },
+                },
+            ],
+            "edges": [],
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    before = _counts(project_id)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Use bad ids"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["validation"]["valid"] is False
+    joined = " ".join(body["validation"]["errors"]).lower()
+    assert "positive integer" in joined or "dataset_version_id" in joined
+    assert _counts(project_id) == before
+
+
+def test_dataset_load_requires_exact_dataset_version_id(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "exact-version"},
+    ).json()
+    project_id = project["id"]
+    with TestingSessionLocal() as db:
+        dataset = Dataset(
+            project_id=project_id,
+            name="sales",
+            columns_json=json.dumps(
+                ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"]
+            ),
+            latest_version=1,
+        )
+        db.add(dataset)
+        db.flush()
+        version = DatasetVersion(
+            dataset_id=dataset.id,
+            project_id=project_id,
+            version=1,
+            object_key="sales.csv",
+            original_filename="sales.csv",
+            columns_json=json.dumps(
+                ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"]
+            ),
+            dtypes_json=json.dumps({"sales": "float64"}),
+        )
+        db.add(version)
+        db.commit()
+        dataset_id, version_id = dataset.id, version.id
+
+    only_dataset_id = {
+        "summary": "missing version",
+        "graph": {
+            "nodes": [
+                {
+                    "id": "dataset_load-1",
+                    "data": {
+                        "node_type": "dataset_load",
+                        "config": {"dataset_id": dataset_id},
+                    },
+                },
+                {
+                    "id": "training-1",
+                    "data": {
+                        "node_type": "training",
+                        "config": {
+                            "training_task": "forecasting",
+                            "target_column": "sales",
+                            "problem_type": "regression",
+                            "algorithm": "ridge",
+                            "feature_columns": ["sales_lag_1", "sales_roll_avg_3"],
+                            "split_strategy": "time",
+                            "time_column": "event_time",
+                            "forecast_strategy": "direct_multioutput",
+                            "forecast_horizons": [1, 2, 3],
+                        },
+                    },
+                },
+            ],
+            "edges": [
+                {
+                    "id": "edge-1",
+                    "source": "dataset_load-1",
+                    "target": "training-1",
+                    "data": {"branch": "always"},
+                }
+            ],
+        },
+    }
+
+    def missing_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(only_dataset_id))
+
+    _patch_provider(monkeypatch, missing_handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Load sales without version"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["validation"]["valid"] is False
+    assert any(
+        "exact dataset_version_id" in err for err in body["validation"]["errors"]
+    )
+
+    exact = _forecast_graph(dataset_id, version_id)
+
+    def exact_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(exact))
+
+    _patch_provider(monkeypatch, exact_handler)
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Load exact sales version"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["validation"]["valid"] is True
+
+
+def test_non_finite_positions_normalized_not_500():
+    graph = copilot.canonicalize_graph(
+        {
+            "nodes": [
+                {
+                    "id": "notification-1",
+                    "position": {"x": float("nan"), "y": float("inf")},
+                    "data": {
+                        "node_type": "notification",
+                        "config": {
+                            "alert_type": "pipeline",
+                            "severity": "info",
+                            "title": "t",
+                            "message": "m",
+                        },
+                    },
+                }
+            ],
+            "edges": [],
+        }
+    )
+    x = graph["nodes"][0]["position"]["x"]
+    y = graph["nodes"][0]["position"]["y"]
+    assert math.isfinite(x) and math.isfinite(y)
+    # Response JSON must serialize without allowing NaN/Infinity.
+    json.dumps(graph)
+
+
+def test_non_finite_position_strings_via_endpoint(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "positions"},
+    ).json()
+    payload = {
+        "summary": "positions",
+        "graph": {
+            "nodes": [
+                {
+                    "id": "notification-1",
+                    "position": {"x": "NaN", "y": "Infinity"},
+                    "data": {
+                        "node_type": "notification",
+                        "config": {
+                            "alert_type": "pipeline",
+                            "severity": "info",
+                            "title": "hi",
+                            "message": "ok",
+                        },
+                    },
+                }
+            ],
+            "edges": [],
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Notify"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    pos = body["graph"]["nodes"][0]["position"]
+    assert math.isfinite(pos["x"]) and math.isfinite(pos["y"])
+
+
+def test_failure_audit_excludes_provider_derived_detail(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "audit-fail"},
+    ).json()
+    project_id = project["id"]
+    marker = "PROVIDER_CONTROLLED_NODE_ID_SHOULD_NOT_AUDIT"
+    payload = {
+        "summary": "contract fail",
+        "graph": {
+            "nodes": [
+                {
+                    "id": marker,
+                    "data": {"node_type": "magic_provider_type", "config": {}},
+                }
+            ],
+            "edges": [],
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(
+        monkeypatch,
+        handler,
+        settings_obj=_llm_settings(llm_api_key="secret-test-key"),
+    )
+    prompt = "Raw user prompt must never appear in failure audit metadata."
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": prompt},
+    )
+    assert response.status_code == 502
+    # Client may still see sanitized contract detail.
+    assert "unsupported type" in response.json()["detail"].lower()
+
+    with TestingSessionLocal() as db:
+        audits = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "pipeline.copilot.draft",
+                AuditLog.success.is_(False),
+            )
+        ).all()
+        assert audits
+        blob = json.dumps(
+            [
+                {
+                    "before": row.before_summary,
+                    "after": row.after_summary,
+                    "failure_reason": row.failure_reason,
+                }
+                for row in audits
+            ]
+        )
+        assert marker not in blob
+        assert prompt not in blob
+        assert "secret-test-key" not in blob
+        assert "magic_provider_type" not in blob
+        assert "You are ModelFlow Pipeline Copilot" not in blob
+        assert "Pipeline Copilot draft failed." in blob
+        assert "CopilotContractError" in blob

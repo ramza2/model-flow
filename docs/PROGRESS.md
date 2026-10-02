@@ -11,6 +11,7 @@ Baseline for Phase 7-A work: `main@aa8e077bd82a33278fea9e492c27e3aa9d99277b` (Ph
 Phase 6 closeout evidence:
 
 - PR #69 merged; squash/main commit `aa8e077bd82a33278fea9e492c27e3aa9d99277b`
+- post-merge main CI #340 / run `36954705944` PASS
 - Alembic head: `023_forecasting_training`
 
 Phase 6-D complete baseline (pre-closeout tip): `main@1b723e83ab7734822d867ebe42adb698612087c3` (PR #68; post-merge CI #338 PASS; Alembic head `023_forecasting_training`).
@@ -245,7 +246,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 ## Current baseline
 
 - Branch baseline: `main@aa8e077bd82a33278fea9e492c27e3aa9d99277b`
-- Phase 6 docs closeout (PR #69): `aa8e077bd82a33278fea9e492c27e3aa9d99277b` (Alembic head `023_forecasting_training`)
+- Phase 6 docs closeout (PR #69): `aa8e077bd82a33278fea9e492c27e3aa9d99277b` (post-merge main CI #340 / run `36954705944` PASS; Alembic head `023_forecasting_training`)
 - Phase 6-D merge (PR #68): `1b723e83ab7734822d867ebe42adb698612087c3` (post-merge CI #338 / run `36950409425` PASS; Alembic head `023_forecasting_training`)
 - Phase 6-C merge (PR #67): `abc738a5da390f62a5aade4691fcc640531c5d53` (post-merge CI #333 PASS; Alembic head `023_forecasting_training`)
 - Phase 6-B merge (PR #66): `deb98ed18d6483fdd72adf430ab2cc5b763a3758` (post-merge CI #329 PASS; Alembic head `022_time_series_foundation`)
