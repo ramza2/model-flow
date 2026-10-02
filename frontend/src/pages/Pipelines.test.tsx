@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { useEffect, useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError } from "../api";
+import { ApiRequestError, type PipelineCopilotDraftResponse } from "../api";
 import { NodeConfigForm } from "../pipelineForms";
 import { defaultConfigFor } from "../pipelineHelpers";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./Pipelines";
@@ -1174,7 +1174,7 @@ describe("Pipeline contextual scheduling gates", () => {
   });
 });
 
-const forecastCopilotDraft = {
+const forecastCopilotDraft: PipelineCopilotDraftResponse = {
   summary: "Forecasting pipeline for sales",
   model: "test-model",
   warnings: [],
@@ -1225,7 +1225,7 @@ const forecastCopilotDraft = {
 };
 
 function stubBuilderApiWithCopilot(options?: {
-  draft?: typeof forecastCopilotDraft | (() => typeof forecastCopilotDraft);
+  draft?: PipelineCopilotDraftResponse | (() => PipelineCopilotDraftResponse);
   draftError?: ApiRequestError;
 }) {
   stubBuilderApi();
