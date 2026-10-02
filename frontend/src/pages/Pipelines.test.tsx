@@ -1538,7 +1538,7 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
   });
 
   it("ignores a Copilot response after the Drawer is closed mid-flight", async () => {
-    let resolveDraft: ((value: PipelineCopilotDraftResponse) => void) | null = null;
+    let resolveDraft!: (value: PipelineCopilotDraftResponse) => void;
     const pending = new Promise<PipelineCopilotDraftResponse>((resolve) => {
       resolveDraft = resolve;
     });
@@ -1566,7 +1566,7 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
       expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
     });
 
-    resolveDraft?.({
+    resolveDraft({
       ...forecastCopilotDraft,
       summary: "Stale draft after close",
     });
