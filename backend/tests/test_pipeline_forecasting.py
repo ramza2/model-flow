@@ -645,8 +645,8 @@ def test_pipeline_endpoint_uses_authoritative_feature_schema(pipeline_db, monkey
             {
                 "target_columns": forecast_output_names("sales", [1, 2, 3]),
                 "feature_schema": [
-                    {"name": "sales_lag_1", "required": True},
-                    {"name": "sales_roll_avg_3", "required": True},
+                    {"name": "sales_lag_1", "dtype": "float64", "required": True},
+                    {"name": "sales_roll_avg_3", "dtype": "float64", "required": True},
                 ],
             }
         ),
@@ -668,9 +668,18 @@ def test_pipeline_endpoint_uses_authoritative_feature_schema(pipeline_db, monkey
     endpoint = pipeline_db.get(Endpoint, out["endpoint_id"])
     assert endpoint is not None
     schema = json.loads(endpoint.feature_schema_json)
-    names = [item["name"] for item in schema]
-    assert names == ["sales_lag_1", "sales_roll_avg_3"]
-    assert "sales__t_plus_1" not in names
+    by_name = {item["name"]: item for item in schema}
+    assert list(by_name) == ["sales_lag_1", "sales_roll_avg_3"]
+    assert "sales__t_plus_1" not in by_name
+    assert by_name["sales_lag_1"]["dtype"] == "float64"
+    assert by_name["sales_roll_avg_3"]["dtype"] == "float64"
+    assert by_name["sales_lag_1"]["required"] is True
+
+    with pytest.raises(ValueError, match="must match type"):
+        inference.validate_instances(
+            [{"sales_lag_1": "not-a-number", "sales_roll_avg_3": 1.0}],
+            schema,
+        )
 
 
 def test_tabular_batch_still_drops_targets_when_no_schema(pipeline_db, monkeypatch):

@@ -68,6 +68,45 @@ def resolve_feature_column_names(
     return columns
 
 
+def _schema_payload_from_value(value: Any) -> list[dict[str, Any]]:
+    """Normalize a schema source into Endpoint feature_schema entries.
+
+    Structured dict entries preserve name / required / dtype (and type when that
+    is the source representation). Name-only sources become name + required.
+    """
+    schema: Any = value
+    if isinstance(value, str):
+        try:
+            schema = json.loads(value or "[]")
+        except (TypeError, json.JSONDecodeError):
+            return []
+    if isinstance(schema, dict):
+        schema = schema.get("features", schema.get("columns", []))
+    if not isinstance(schema, list) or not schema:
+        return []
+
+    if all(isinstance(item, dict) for item in schema):
+        payload: list[dict[str, Any]] = []
+        for item in schema:
+            name = item.get("name")
+            if not name:
+                continue
+            entry: dict[str, Any] = {
+                "name": str(name),
+                "required": bool(item.get("required", True)),
+            }
+            dtype = item.get("dtype")
+            if isinstance(dtype, str) and dtype:
+                entry["dtype"] = dtype
+            type_name = item.get("type")
+            if "dtype" not in entry and isinstance(type_name, str) and type_name:
+                entry["type"] = type_name
+            payload.append(entry)
+        return payload
+
+    return [{"name": name, "required": True} for name in schema_columns(schema)]
+
+
 def resolve_feature_schema_payload(
     db: Session,
     *,
@@ -76,43 +115,42 @@ def resolve_feature_schema_payload(
     training_job: TrainingJob | None = None,
     incoming: Any = None,
 ) -> list[dict[str, Any]]:
-    """Build a JSON-serializable feature schema list for Endpoint persistence."""
-    incoming_columns = schema_columns(incoming)
-    if incoming_columns:
-        return [{"name": name, "required": True} for name in incoming_columns]
+    """Build a JSON-serializable feature schema list for Endpoint persistence.
 
-    columns = resolve_feature_column_names(
-        db,
-        endpoint=endpoint,
-        model_version=model_version,
-        training_job=training_job,
-    )
-    if columns:
-        return [{"name": name, "required": True} for name in columns]
+    Priority matches feature-column resolution:
 
+    1. explicit incoming schema
+    2. Endpoint.feature_schema
+    3. ModelVersion metadata feature_schema / features
+    4. TrainingJob.feature_columns
+    """
+    payload = _schema_payload_from_value(incoming)
+    if payload:
+        return payload
+
+    if endpoint is not None:
+        payload = _schema_payload_from_value(endpoint.feature_schema_json)
+        if payload:
+            return payload
+
+    resolved_job = training_job
     if model_version is not None:
         try:
             metadata = json.loads(model_version.metadata_json or "{}")
         except json.JSONDecodeError:
             metadata = {}
-        schema = metadata.get("feature_schema")
-        normalized = schema_columns(schema)
-        if normalized:
-            return [{"name": name, "required": True} for name in normalized]
-        if isinstance(schema, list) and schema and all(isinstance(item, dict) for item in schema):
-            return [
-                {
-                    "name": str(item["name"]),
-                    "required": bool(item.get("required", True)),
-                    **(
-                        {"dtype": item["dtype"]}
-                        if isinstance(item.get("dtype"), str)
-                        else {}
-                    ),
-                }
-                for item in schema
-                if item.get("name")
-            ]
+        payload = _schema_payload_from_value(
+            metadata.get("feature_schema", metadata.get("features", []))
+        )
+        if payload:
+            return payload
+        if resolved_job is None and model_version.training_job_id:
+            resolved_job = db.get(TrainingJob, model_version.training_job_id)
+
+    if resolved_job is not None:
+        payload = _schema_payload_from_value(resolved_job.feature_columns_json)
+        if payload:
+            return payload
     return []
 
 
