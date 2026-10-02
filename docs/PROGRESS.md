@@ -2,9 +2,16 @@
 
 ## Current phase
 
-**Enhancement Phase 6 — Time-series / Multi-step** is the current implementation phase. **Phase 6-A, Phase 6-B, and Phase 6-C are complete on `main`.** Current slice: **Phase 6-D — Pipeline / UX / Final Hardening** (Draft until merge + post-merge `main` CI PASS; do not mark 6-D or Phase 6 complete yet).
+**Enhancement Phase 6 — Time-series / Multi-step is complete on `main`.** All slices are complete: **6-A**, **6-B**, **6-C**, and **6-D**.
 
-Baseline: `main@abc738a5da390f62a5aade4691fcc640531c5d53` (Phase 6-C merged; post-merge CI #333 PASS; Alembic head `023_forecasting_training`).
+Baseline: `main@1b723e83ab7734822d867ebe42adb698612087c3` (Phase 6-D merged; post-merge CI #338 PASS; Alembic head `023_forecasting_training`).
+
+Phase 6-D complete evidence:
+
+- PR #68 merged; squash/main commit `1b723e83ab7734822d867ebe42adb698612087c3`
+- pre-merge exact HEAD CI #337 / run `36948403362` PASS
+- post-merge `main` CI #338 / run `36950409425` PASS
+- Alembic head: `023_forecasting_training`
 
 Phase 6-C complete evidence:
 
@@ -228,7 +235,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@abc738a5da390f62a5aade4691fcc640531c5d53`
+- Branch baseline: `main@1b723e83ab7734822d867ebe42adb698612087c3`
+- Phase 6-D merge (PR #68): `1b723e83ab7734822d867ebe42adb698612087c3` (post-merge CI #338 / run `36950409425` PASS; Alembic head `023_forecasting_training`)
 - Phase 6-C merge (PR #67): `abc738a5da390f62a5aade4691fcc640531c5d53` (post-merge CI #333 PASS; Alembic head `023_forecasting_training`)
 - Phase 6-B merge (PR #66): `deb98ed18d6483fdd72adf430ab2cc5b763a3758` (post-merge CI #329 PASS; Alembic head `022_time_series_foundation`)
 - Phase 6-A merge (PR #65): `9376c5c209f9ebce7e52da15d341707f904bedd7` (post-merge CI #323 PASS; Alembic head `022_time_series_foundation`)
@@ -411,17 +419,21 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-Implement **Phase 6-D — Pipeline / UX / Final Hardening** on a feature branch from `main@abc738a5da390f62a5aade4691fcc640531c5d53`, then merge only after Draft PR verification and post-merge `main` CI PASS. Phase 6-D (and Phase 6 as a whole) must not be marked complete until that merge evidence exists.
+Start **Phase 7 — LLM Pipeline Copilot** on a feature branch from `main@1b723e83ab7734822d867ebe42adb698612087c3` after this Phase 6 docs-only closeout is merged.
 
-Acceptance boundary (non-negotiable):
+Roadmap scope (do not expand yet):
 
 ```text
-Pipeline forecasting authoring + runtime contract on 6-C helpers.
-Time-aware Pipeline Split node; shared prediction feature-schema selection.
-No new forecasting algorithms, migrations, or recursive/panel forecasting.
+natural language → pipeline draft
+pipeline schema validation against ModelFlow definitions
+visual preview before apply
+user confirmation gate
+natural-language modification via graph patch
+LLM generates ModelFlow Pipeline Definition only
+no arbitrary code execution
 ```
 
-See [`phase-6-time-series.md`](./phase-6-time-series.md), [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md), and [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md).
+See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) Phase 7, [`phase-6-time-series.md`](./phase-6-time-series.md), and [`phase-6d-verification.md`](./phase-6d-verification.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
