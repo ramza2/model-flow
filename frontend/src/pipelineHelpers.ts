@@ -234,7 +234,14 @@ export function edgeBranch(edge: {
 export function defaultConfigFor(type: PipelineNodeType): Record<string, unknown> {
   switch (type) {
     case "split":
-      return { train_ratio: 0.7, val_ratio: 0.15, test_ratio: 0.15, random_seed: 42 };
+      return {
+        train_ratio: 0.7,
+        val_ratio: 0.15,
+        test_ratio: 0.15,
+        random_seed: 42,
+        split_strategy: "random",
+        time_column: null,
+      };
     case "training":
       return {
         target_column: "target",
@@ -244,6 +251,9 @@ export function defaultConfigFor(type: PipelineNodeType): Record<string, unknown
         hyperparameters: {},
         split_strategy: "random",
         time_column: null,
+        training_task: "tabular",
+        forecast_strategy: null,
+        forecast_horizons: [],
       };
     case "evaluation":
       return { metric: "accuracy", minimum: 0.8, fail_on_gate: true };
@@ -281,26 +291,54 @@ export function configSummary(
       lines.push(
         `${Math.round(Number(config.train_ratio ?? 0.7) * 100)}/${Math.round(Number(config.val_ratio ?? 0.15) * 100)}/${Math.round(Number(config.test_ratio ?? 0.15) * 100)}`,
       );
-      lines.push(`seed ${config.random_seed ?? 42}`);
-      break;
-    case "training": {
-      const targets = Array.isArray(config.target_columns)
-        ? (config.target_columns as unknown[]).map(String).filter(Boolean)
-        : config.target_column
-          ? [String(config.target_column)]
-          : [];
-      if (targets.length > 1) lines.push(`${targets.length} targets`);
-      else if (targets.length === 1) lines.push(`target: ${targets[0]}`);
-      if (config.algorithm) lines.push(String(config.algorithm).replaceAll("_", " "));
-      if (config.problem_type && config.problem_type !== "auto") {
-        lines.push(String(config.problem_type));
-      }
       if (config.split_strategy === "time") {
         lines.push(
           config.time_column
             ? `time ordered · ${String(config.time_column)}`
             : "time ordered",
         );
+      } else {
+        lines.push(`seed ${config.random_seed ?? 42}`);
+      }
+      break;
+    case "training": {
+      const isForecasting = config.training_task === "forecasting";
+      const targets = Array.isArray(config.target_columns)
+        ? (config.target_columns as unknown[]).map(String).filter(Boolean)
+        : config.target_column
+          ? [String(config.target_column)]
+          : [];
+      if (isForecasting) {
+        const horizons = Array.isArray(config.forecast_horizons)
+          ? (config.forecast_horizons as unknown[])
+              .map((value) => Number(value))
+              .filter((value) => Number.isFinite(value) && value > 0)
+          : [];
+        lines.push(
+          horizons.length
+            ? `Forecasting · ${horizons.map((h) => `t+${h}`).join(", ")}`
+            : "Forecasting",
+        );
+        if (config.algorithm) lines.push(String(config.algorithm).replaceAll("_", " "));
+        lines.push(
+          config.time_column
+            ? `time ordered · ${String(config.time_column)}`
+            : "time ordered",
+        );
+      } else {
+        if (targets.length > 1) lines.push(`${targets.length} targets`);
+        else if (targets.length === 1) lines.push(`target: ${targets[0]}`);
+        if (config.algorithm) lines.push(String(config.algorithm).replaceAll("_", " "));
+        if (config.problem_type && config.problem_type !== "auto") {
+          lines.push(String(config.problem_type));
+        }
+        if (config.split_strategy === "time") {
+          lines.push(
+            config.time_column
+              ? `time ordered · ${String(config.time_column)}`
+              : "time ordered",
+          );
+        }
       }
       break;
     }
@@ -352,11 +390,26 @@ export function nodeConfigWarnings(
       if (!config.dataset_version_id) warnings.push("Dataset version required");
       break;
     case "training": {
-      const hasTargets =
-        (typeof config.target_column === "string" && config.target_column.trim() !== "") ||
-        (Array.isArray(config.target_columns) && config.target_columns.length > 0);
-      if (!hasTargets) warnings.push("Target column required");
-      if (!config.algorithm) warnings.push("Algorithm required");
+      const isForecasting = config.training_task === "forecasting";
+      const targets = Array.isArray(config.target_columns)
+        ? (config.target_columns as unknown[]).map(String).filter(Boolean)
+        : typeof config.target_column === "string" && config.target_column.trim() !== ""
+          ? [String(config.target_column)]
+          : [];
+      if (isForecasting) {
+        if (targets.length !== 1) warnings.push("Exactly one forecast target required");
+        if (config.split_strategy !== "time" || !String(config.time_column || "").trim()) {
+          warnings.push("Time column required");
+        }
+        const horizons = Array.isArray(config.forecast_horizons)
+          ? config.forecast_horizons
+          : [];
+        if (horizons.length === 0) warnings.push("Forecast horizons required");
+        if (!config.algorithm) warnings.push("Forecasting algorithm required/supported");
+      } else {
+        if (targets.length === 0) warnings.push("Target column required");
+        if (!config.algorithm) warnings.push("Algorithm required");
+      }
       if (!Array.isArray(config.feature_columns) || config.feature_columns.length === 0) {
         warnings.push("Select at least one feature");
       }
@@ -373,6 +426,9 @@ export function nodeConfigWarnings(
       }
       if (!Number.isInteger(Number(config.random_seed))) {
         warnings.push("Seed must be an integer");
+      }
+      if (config.split_strategy === "time" && !String(config.time_column || "").trim()) {
+        warnings.push("Time column required");
       }
       break;
     }

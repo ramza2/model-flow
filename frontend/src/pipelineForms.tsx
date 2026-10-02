@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type Dataset, type DatasetVersion, type QualityRule } from "./api";
 import { validateSplitRatios } from "./pipelineHelpers";
 import {
-  algorithmsForProblemType,
+  algorithmsForTrainingTask,
   defaultAlgorithmId,
   formatHyperparameters,
+  parseForecastHorizonsText,
   validateHyperparametersText,
   type AlgorithmSpec,
 } from "./trainingConfig";
@@ -223,11 +224,14 @@ function QualityCheckForm({
 function SplitForm({
   config,
   onChange,
-}: Pick<NodeConfigFormProps, "config" | "onChange">) {
+  datasetColumns = [],
+}: Pick<NodeConfigFormProps, "config" | "onChange" | "datasetColumns">) {
   const train = asNumber(config.train_ratio, 0.7);
   const val = asNumber(config.val_ratio, 0.15);
   const test = asNumber(config.test_ratio, 0.15);
   const seed = asNumber(config.random_seed, 42);
+  const splitStrategy = asString(config.split_strategy, "random") === "time" ? "time" : "random";
+  const timeColumn = asString(config.time_column, "");
   const localError = validateSplitRatios(train, val, test, seed);
 
   function patch(partial: Record<string, unknown>) {
@@ -236,6 +240,45 @@ function SplitForm({
 
   return (
     <div className="node-config-form" data-testid="node-config-split">
+      <label>
+        Split strategy
+        <select
+          data-testid="node-config-split-strategy"
+          value={splitStrategy}
+          onChange={(event) => {
+            const next = event.target.value === "time" ? "time" : "random";
+            patch({
+              split_strategy: next,
+              time_column: next === "time" ? timeColumn || null : null,
+            });
+          }}
+        >
+          <option value="random">Random</option>
+          <option value="time">Time ordered</option>
+        </select>
+      </label>
+      {splitStrategy === "time" ? (
+        <>
+          <label>
+            Time column
+            <select
+              data-testid="node-config-time-column"
+              value={timeColumn}
+              onChange={(event) => patch({ split_strategy: "time", time_column: event.target.value || null })}
+            >
+              <option value="">Select time column…</option>
+              {datasetColumns.map((column) => (
+                <option key={column} value={column}>
+                  {column}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="form-hint" data-testid="node-config-split-time-help">
+            Rows are ordered chronologically before contiguous train / validation / test partitions are created.
+          </p>
+        </>
+      ) : null}
       <label>
         Train ratio
         <input
@@ -282,6 +325,11 @@ function SplitForm({
           onChange={(event) => patch({ random_seed: Number(event.target.value) })}
         />
       </label>
+      {splitStrategy === "time" ? (
+        <p className="form-hint" data-testid="node-config-split-seed-hint">
+          Random seed does not shuffle a time-ordered split.
+        </p>
+      ) : null}
       {localError && (
         <p className="error" data-testid="node-config-split-error">
           {localError}
@@ -302,24 +350,37 @@ function TrainingForm({
     formatHyperparameters((config.hyperparameters as Record<string, unknown>) || {}),
   );
   const [hyperError, setHyperError] = useState("");
-  const problemType = asString(config.problem_type, "auto");
-  const algorithm = asString(config.algorithm, "random_forest");
+  const [horizonError, setHorizonError] = useState("");
+  const trainingTask =
+    asString(config.training_task, "tabular") === "forecasting" ? "forecasting" : "tabular";
+  const isForecasting = trainingTask === "forecasting";
+  const problemType = isForecasting ? "regression" : asString(config.problem_type, "auto");
+  const algorithm = asString(config.algorithm, isForecasting ? "ridge" : "random_forest");
   const target = asString(config.target_column, "target");
   const features = Array.isArray(config.feature_columns)
     ? (config.feature_columns as string[])
     : [];
+  const forecastHorizonsText = Array.isArray(config.forecast_horizons)
+    ? (config.forecast_horizons as unknown[]).join(", ")
+    : asString(config.forecast_horizons_text, "1, 2, 3");
+  const [horizonsText, setHorizonsText] = useState(forecastHorizonsText || "1, 2, 3");
   const visibleAlgorithms = useMemo(
-    () => algorithmsForProblemType(catalog, problemType),
-    [catalog, problemType],
+    () => algorithmsForTrainingTask(catalog, problemType, trainingTask),
+    [catalog, problemType, trainingTask],
   );
   const selectedAlgorithm = catalog.find((item) => item.id === algorithm);
-  const splitStrategy = asString(config.split_strategy, "random") === "time" ? "time" : "random";
+  const splitStrategy = isForecasting
+    ? "time"
+    : asString(config.split_strategy, "random") === "time"
+      ? "time"
+      : "random";
   const timeColumn = asString(config.time_column, "");
   const targetChoices = datasetColumns.filter(
     (column) => !(splitStrategy === "time" && timeColumn && column === timeColumn),
   );
   const featureChoices = datasetColumns.filter(
-    (column) => column !== target && !(splitStrategy === "time" && column === timeColumn),
+    (column) =>
+      column !== target && !(splitStrategy === "time" && timeColumn && column === timeColumn),
   );
 
   function pickAlternateTarget(reserved: string, currentTarget: string): string {
@@ -347,7 +408,66 @@ function TrainingForm({
     setHyperText(formatHyperparameters((config.hyperparameters as Record<string, unknown>) || {}));
   }, [config.hyperparameters, algorithm]);
 
+  useEffect(() => {
+    if (Array.isArray(config.forecast_horizons) && config.forecast_horizons.length) {
+      setHorizonsText((config.forecast_horizons as unknown[]).join(", "));
+    }
+  }, [config.forecast_horizons]);
+
+  useEffect(() => {
+    if (!catalog.length || !problemType || problemType === "auto") return;
+    if (visibleAlgorithms.some((item) => item.id === algorithm)) return;
+    const chosen =
+      visibleAlgorithms.find((item) => item.id === defaultAlgorithmId(catalog, problemType)) ||
+      visibleAlgorithms[0];
+    if (!chosen) return;
+    onChange({
+      ...config,
+      algorithm: chosen.id,
+      hyperparameters: chosen.default_hyperparameters || {},
+    });
+    setHyperText(formatHyperparameters(chosen.default_hyperparameters || {}));
+    // Intentionally omit config/onChange from deps to avoid update loops when normalizing algorithm.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [algorithm, catalog, problemType, trainingTask, visibleAlgorithms]);
+
+  function setTrainingTask(next: "tabular" | "forecasting") {
+    if (next === "forecasting") {
+      const nextAlgorithm =
+        visibleAlgorithms.find((item) => item.id === algorithm)?.id ||
+        algorithmsForTrainingTask(catalog, "regression", "forecasting")[0]?.id ||
+        "ridge";
+      const spec = catalog.find((item) => item.id === nextAlgorithm);
+      const parsed = parseForecastHorizonsText(horizonsText || "1, 2, 3");
+      onChange({
+        ...config,
+        training_task: "forecasting",
+        problem_type: "regression",
+        split_strategy: "time",
+        time_column: timeColumn || null,
+        forecast_strategy: "direct_multioutput",
+        forecast_horizons: parsed.ok ? parsed.value : [1, 2, 3],
+        algorithm: nextAlgorithm,
+        hyperparameters: spec?.default_hyperparameters || config.hyperparameters || {},
+        feature_columns: features.filter(
+          (column) => column !== target && !(timeColumn && column === timeColumn),
+        ),
+      });
+      if (spec) setHyperText(formatHyperparameters(spec.default_hyperparameters));
+      setHorizonError(parsed.ok ? "" : parsed.message);
+      return;
+    }
+    onChange({
+      ...config,
+      training_task: "tabular",
+      forecast_strategy: null,
+      forecast_horizons: [],
+    });
+    setHorizonError("");
+  }
+
   function setProblem(next: string) {
+    if (isForecasting) return;
     const nextAlgorithm = defaultAlgorithmId(catalog, next);
     const spec = catalog.find((item) => item.id === nextAlgorithm);
     onChange({
@@ -387,10 +507,45 @@ function TrainingForm({
     onChange({ ...config, hyperparameters: parsed.value });
   }
 
+  function applyHorizons(text: string) {
+    setHorizonsText(text);
+    const parsed = parseForecastHorizonsText(text);
+    if (!parsed.ok) {
+      setHorizonError(parsed.message);
+      onChange({ ...config, forecast_horizons: [] });
+      return;
+    }
+    setHorizonError("");
+    onChange({
+      ...config,
+      training_task: "forecasting",
+      forecast_strategy: "direct_multioutput",
+      forecast_horizons: parsed.value,
+    });
+  }
+
   return (
     <div className="node-config-form" data-testid="node-config-training">
       <label>
-        Target column
+        Training task
+        <select
+          data-testid="node-config-training-task"
+          value={trainingTask}
+          onChange={(event) =>
+            setTrainingTask(event.target.value === "forecasting" ? "forecasting" : "tabular")
+          }
+        >
+          <option value="tabular">Tabular</option>
+          <option value="forecasting">Forecasting</option>
+        </select>
+      </label>
+      {isForecasting ? (
+        <p className="form-hint" data-testid="node-config-forecast-help">
+          Use Lag / Rolling features from Dataset Preparation when historical target context is required.
+        </p>
+      ) : null}
+      <label>
+        {isForecasting ? "Forecast target" : "Target column"}
         {datasetColumns.length > 0 ? (
           <select
             data-testid="node-config-target"
@@ -426,13 +581,39 @@ function TrainingForm({
         <select
           data-testid="node-config-problem-type"
           value={problemType}
+          disabled={isForecasting}
           onChange={(event) => setProblem(event.target.value)}
         >
-          <option value="auto">Auto</option>
-          <option value="classification">Classification</option>
+          <option value="auto" disabled={isForecasting}>Auto</option>
+          <option value="classification" disabled={isForecasting}>Classification</option>
           <option value="regression">Regression</option>
         </select>
       </label>
+      {isForecasting ? (
+        <div data-testid="node-config-forecast-fields">
+          <label>
+            Forecast strategy
+            <input value="Direct multi-output" disabled data-testid="node-config-forecast-strategy" />
+          </label>
+          <label>
+            Forecast horizons
+            <input
+              data-testid="node-config-forecast-horizons"
+              value={horizonsText}
+              onChange={(event) => applyHorizons(event.target.value)}
+              placeholder="1, 2, 3"
+            />
+          </label>
+          <p className="form-hint" data-testid="node-config-forecast-horizons-help">
+            Horizons are future observation steps after chronological ordering, not clock-time durations.
+          </p>
+          {horizonError ? (
+            <p className="error" data-testid="node-config-forecast-horizon-error">
+              {horizonError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <label>
         Algorithm
         <select
@@ -467,6 +648,7 @@ function TrainingForm({
         <select
           data-testid="node-config-split-strategy"
           value={splitStrategy}
+          disabled={isForecasting}
           onChange={(event) => {
             const next = event.target.value === "time" ? "time" : "random";
             const reserved = next === "time" ? timeColumn : "";
@@ -483,7 +665,7 @@ function TrainingForm({
             });
           }}
         >
-          <option value="random">Random</option>
+          <option value="random" disabled={isForecasting}>Random</option>
           <option value="time">Time ordered</option>
         </select>
       </label>
@@ -885,7 +1067,9 @@ export function NodeConfigForm({
       );
       break;
     case "split":
-      body = <SplitForm config={config} onChange={onChange} />;
+      body = (
+        <SplitForm config={config} onChange={onChange} datasetColumns={datasetColumns} />
+      );
       break;
     case "training":
       body = (

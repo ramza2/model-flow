@@ -41,7 +41,21 @@ from app.services.target_columns import (
     resolve_output_target_columns,
 )
 from app.services.alerts import create_alert
-from app.services.algorithm_catalog import canonicalize_algorithm, resolve_algorithm
+from app.services.algorithm_catalog import (
+    canonicalize_algorithm,
+    get_algorithm,
+    resolve_algorithm,
+)
+from app.services.batch_features import (
+    resolve_feature_schema_payload,
+    select_batch_feature_frame,
+)
+from app.services.forecasting import (
+    coerce_forecast_fields,
+    dumps_forecast_horizons,
+    is_forecasting_task,
+    require_numeric_forecast_target,
+)
 from app.services.training import TrainingJobContext, get_training_runner
 
 NODE_TYPES = {
@@ -171,11 +185,67 @@ def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str,
             )
         except ValueError as exc:
             errors.append(f"Node '{node_id}' {exc}")
+            strategy, time_col = "random", None
         else:
             if strategy == "time" and time_col and time_col in targets:
                 errors.append(
                     f"Node '{node_id}' time_column cannot be a target column."
                 )
+        try:
+            training_task, forecast_strategy, forecast_horizons = coerce_forecast_fields(
+                config.get("training_task"),
+                config.get("forecast_strategy"),
+                config.get("forecast_horizons"),
+            )
+        except ValueError as exc:
+            errors.append(f"Node '{node_id}' {exc}")
+            training_task = "tabular"
+            forecast_strategy = None
+            forecast_horizons = []
+        if is_forecasting_task(training_task):
+            if len(targets) != 1:
+                errors.append(
+                    f"Node '{node_id}' forecasting requires exactly one target column."
+                )
+            if problem_type not in {"regression", "auto"}:
+                errors.append(
+                    f"Node '{node_id}' forecasting requires problem_type 'regression'."
+                )
+            if strategy != "time":
+                errors.append(
+                    f"Node '{node_id}' forecasting requires a time-ordered split."
+                )
+            if not time_col:
+                errors.append(
+                    f"Node '{node_id}' forecasting requires a time_column."
+                )
+            if not forecast_horizons:
+                errors.append(
+                    f"Node '{node_id}' forecasting requires non-empty forecast_horizons."
+                )
+            if algorithm:
+                try:
+                    resolved = (
+                        canonicalize_algorithm(algorithm)
+                        if problem_type == "auto"
+                        else resolve_algorithm(algorithm, "regression")
+                    )
+                except ValueError as exc:
+                    errors.append(f"Node '{node_id}' {exc}")
+                else:
+                    spec = get_algorithm(resolved)
+                    if spec is None or not spec.supports_forecasting:
+                        errors.append(
+                            f"Node '{node_id}' algorithm '{resolved}' does not support forecasting."
+                        )
+                    elif (
+                        forecast_strategy
+                        and spec.forecasting_strategy != forecast_strategy
+                    ):
+                        errors.append(
+                            f"Node '{node_id}' algorithm '{resolved}' does not support "
+                            f"forecast strategy '{forecast_strategy}'."
+                        )
     elif node_type == "split":
         try:
             train_ratio = float(config.get("train_ratio", 0.7))
@@ -206,6 +276,20 @@ def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str,
                     raise ValueError
             except (TypeError, ValueError):
                 errors.append(f"Node '{node_id}' requires random_seed to be an integer.")
+        try:
+            from app.services.dataset_splits import coerce_split_fields
+
+            split_strategy, time_column = coerce_split_fields(
+                config.get("split_strategy", "random"),
+                config.get("time_column"),
+            )
+        except ValueError as exc:
+            errors.append(f"Node '{node_id}' {exc}")
+        else:
+            if split_strategy == "time" and not time_column:
+                errors.append(
+                    f"Node '{node_id}' requires time_column when split_strategy is 'time'."
+                )
     elif node_type == "evaluation":
         metric = config.get("metric")
         if metric is None or str(metric).strip() == "":
@@ -481,14 +565,38 @@ def _execute_node(
         if not abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-9:
             raise ValueError("Split ratios must sum to 1.")
         seed = int(config.get("random_seed", 42))
-        shuffled = frame.sample(frac=1, random_state=seed)
-        train_end = int(len(frame) * train_ratio)
-        val_end = train_end + int(len(frame) * val_ratio)
-        splits = {
-            "train": shuffled.iloc[:train_end].copy(),
-            "val": shuffled.iloc[train_end:val_end].copy(),
-            "test": shuffled.iloc[val_end:].copy(),
-        }
+        from app.services.dataset_splits import (
+            coerce_split_fields,
+            order_frame_by_time,
+            time_partition_boundaries,
+        )
+
+        split_strategy, time_column = coerce_split_fields(
+            config.get("split_strategy", "random"),
+            config.get("time_column"),
+        )
+        if split_strategy == "time":
+            if not time_column:
+                raise ValueError("time_column is required when split_strategy is 'time'.")
+            ordered = order_frame_by_time(frame, time_column)
+            train_end, val_end = time_partition_boundaries(
+                len(ordered), train_ratio, val_ratio, test_ratio
+            )
+            splits = {
+                "train": ordered.iloc[:train_end].copy(),
+                "val": ordered.iloc[train_end:val_end].copy(),
+                "test": ordered.iloc[val_end:].copy(),
+            }
+        else:
+            # Preserve exact legacy random shuffle path.
+            shuffled = frame.sample(frac=1, random_state=seed)
+            train_end = int(len(frame) * train_ratio)
+            val_end = train_end + int(len(frame) * val_ratio)
+            splits = {
+                "train": shuffled.iloc[:train_end].copy(),
+                "val": shuffled.iloc[train_end:val_end].copy(),
+                "test": shuffled.iloc[val_end:].copy(),
+            }
         # In-memory only: do not create DatasetSplit rows (no Saved Split artifacts).
         return {
             **(incoming if isinstance(incoming, dict) else {}),
@@ -500,6 +608,8 @@ def _execute_node(
                 "val_ratio": val_ratio,
                 "test_ratio": test_ratio,
                 "random_seed": seed,
+                "split_strategy": split_strategy,
+                "time_column": time_column,
             },
         }
 
@@ -543,6 +653,34 @@ def _execute_node(
             raise ValueError(str(exc)) from exc
         if time_column and time_column in target_columns:
             raise ValueError("time_column cannot be a target column.")
+        try:
+            training_task, forecast_strategy, forecast_horizons = coerce_forecast_fields(
+                config.get("training_task"),
+                config.get("forecast_strategy"),
+                config.get("forecast_horizons"),
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+        problem_type = str(config.get("problem_type", "auto"))
+        algorithm = str(config.get("algorithm", "random_forest"))
+        if is_forecasting_task(training_task):
+            if len(target_columns) != 1:
+                raise ValueError("Forecasting training requires exactly one target column.")
+            if problem_type not in {"regression", "auto"}:
+                raise ValueError("Forecasting training requires problem_type 'regression'.")
+            if split_strategy != "time" or not time_column:
+                raise ValueError("Forecasting training requires a time-ordered split.")
+            require_numeric_forecast_target(frame, primary_target)
+            problem_type = "regression"
+            try:
+                algorithm = resolve_algorithm(algorithm, "regression")
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+            spec = get_algorithm(algorithm)
+            if spec is None or not spec.supports_forecasting:
+                raise ValueError(
+                    f"Algorithm '{algorithm}' does not support forecasting."
+                )
         job = TrainingJob(
             project_id=run.project_id,
             dataset_id=dataset_id,
@@ -551,8 +689,8 @@ def _execute_node(
             name=str(config.get("name", f"pipeline-{run.id}-training")),
             target_column=primary_target,
             target_columns_json=dumps_target_columns(target_columns),
-            problem_type=str(config.get("problem_type", "auto")),
-            algorithm=str(config.get("algorithm", "random_forest")),
+            problem_type=problem_type,
+            algorithm=algorithm,
             hyperparameters_json=json.dumps(config.get("hyperparameters", {})),
             preprocessing_json=json.dumps(preprocessing),
             feature_columns_json=json.dumps(config.get("feature_columns", [])),
@@ -562,6 +700,9 @@ def _execute_node(
             test_ratio=float(config.get("test_ratio", split_config.get("test_ratio", 0.15))),
             split_strategy=split_strategy,
             time_column=time_column,
+            training_task=training_task,
+            forecast_strategy=forecast_strategy,
+            forecast_horizons_json=dumps_forecast_horizons(forecast_horizons),
             status=JobStatus.running,
             started_at=datetime.now(timezone.utc),
             created_by=run.created_by,
@@ -590,6 +731,10 @@ def _execute_node(
                 random_seed=job.random_seed,
                 split_strategy=split_strategy,
                 time_column=time_column,
+                training_task=training_task,
+                forecast_strategy=forecast_strategy,
+                forecast_horizons=forecast_horizons,
+                dataset_version_id=job.dataset_version_id,
             )
         )
         job.status = JobStatus.succeeded
@@ -695,6 +840,15 @@ def _execute_node(
         if model.lifecycle not in {ModelLifecycle.APPROVED, ModelLifecycle.PRODUCTION}:
             raise ValueError("Model must be approved before endpoint deployment.")
         inference.load_model(model.model_uri)
+        training_job = (
+            db.get(TrainingJob, model.training_job_id) if model.training_job_id else None
+        )
+        feature_schema = resolve_feature_schema_payload(
+            db,
+            model_version=model,
+            training_job=training_job,
+            incoming=_find(incoming, "feature_schema"),
+        )
         endpoint = Endpoint(
             project_id=run.project_id,
             name=str(config.get("name", f"{model.name}-endpoint")),
@@ -703,7 +857,7 @@ def _execute_node(
             model_version_id=model.id,
             model_uri=model.model_uri,
             status="ready",
-            feature_schema_json=json.dumps(_json_safe(_find(incoming, "feature_schema") or [])),
+            feature_schema_json=json.dumps(_json_safe(feature_schema)),
             created_by=run.created_by,
         )
         db.add(endpoint)
@@ -732,8 +886,12 @@ def _execute_node(
         )
         if not output_targets:
             _, output_targets = _pipeline_target_columns(config)
-        drop_columns = [column for column in output_targets if column in frame.columns]
-        features = frame.drop(columns=drop_columns) if drop_columns else frame
+        features = select_batch_feature_frame(
+            db,
+            frame,
+            model_version=model if isinstance(model, ModelVersion) else None,
+            training_job=training_job,
+        )
         predictions = inference.load_model(model_uri).predict(features)
         serialized = serialize_predictions(predictions, target_columns=output_targets or None)
         result_frame = assign_batch_prediction_columns(

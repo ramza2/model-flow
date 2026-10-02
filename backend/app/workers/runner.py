@@ -630,54 +630,20 @@ def process_pipeline_run(run: PipelineRun) -> None:
         db.close()
 
 
-def _schema_columns(value: str | None) -> list[str]:
-    try:
-        schema = json.loads(value or "[]")
-    except (TypeError, json.JSONDecodeError):
-        return []
-    if isinstance(schema, dict):
-        schema = schema.get("features", schema.get("columns", []))
-    if not isinstance(schema, list):
-        return []
-    return [
-        str(item["name"] if isinstance(item, dict) else item)
-        for item in schema
-        if (isinstance(item, str) and item) or (isinstance(item, dict) and item.get("name"))
-    ]
-
-
 def _batch_features(
     db: Session,
     frame: pd.DataFrame,
     endpoint: Endpoint | None,
     model_version: ModelVersion | None,
 ) -> pd.DataFrame:
-    columns = _schema_columns(endpoint.feature_schema_json if endpoint else None)
-    if not columns and model_version is not None:
-        try:
-            metadata = json.loads(model_version.metadata_json or "{}")
-        except json.JSONDecodeError:
-            metadata = {}
-        schema = metadata.get("feature_schema", metadata.get("features", []))
-        columns = _schema_columns(json.dumps(schema))
-    training_job = (
-        db.get(TrainingJob, model_version.training_job_id)
-        if model_version is not None and model_version.training_job_id
-        else None
+    from app.services.batch_features import select_batch_feature_frame
+
+    return select_batch_feature_frame(
+        db,
+        frame,
+        endpoint=endpoint,
+        model_version=model_version,
     )
-    if not columns and training_job is not None:
-        columns = _schema_columns(training_job.feature_columns_json)
-    if columns:
-        missing = sorted(set(columns) - set(map(str, frame.columns)))
-        if missing:
-            raise ValueError(f"Batch dataset is missing model features: {missing}")
-        return frame.loc[:, columns]
-    if training_job is not None:
-        target_columns = effective_target_columns_from_job(training_job)
-        drop_columns = [column for column in target_columns if column in frame.columns]
-        if drop_columns:
-            return frame.drop(columns=drop_columns)
-    return frame
 
 
 def _encode_batch_result(frame: pd.DataFrame, result_format: str) -> tuple[bytes, str]:
