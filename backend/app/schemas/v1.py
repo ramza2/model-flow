@@ -282,6 +282,24 @@ class PipelineImportRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class PipelineCopilotDraftRequest(BaseModel):
+    """Phase 7-A: natural language → PipelineGraph proposal (no persist)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_must_be_non_empty(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("prompt must be a non-empty string.")
+        if len(trimmed) > 4000:
+            raise ValueError("prompt must be at most 4000 characters.")
+        return trimmed
+
+
 class ModelRegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

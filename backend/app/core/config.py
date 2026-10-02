@@ -68,6 +68,26 @@ class Settings(BaseSettings):
     retention_batch_results_days: int = 30
     retention_archived_models_days: int = 180
 
+    # Phase 7-A — OpenAI-compatible LLM Pipeline Copilot (optional; empty = disabled)
+    llm_base_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_LLM_BASE_URL", "LLM_BASE_URL"),
+    )
+    llm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_LLM_API_KEY", "LLM_API_KEY"),
+    )
+    llm_model: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_LLM_MODEL", "LLM_MODEL"),
+    )
+    llm_timeout_seconds: float = Field(
+        default=60.0,
+        validation_alias=AliasChoices(
+            "MODELFLOW_LLM_TIMEOUT_SECONDS", "LLM_TIMEOUT_SECONDS"
+        ),
+    )
+
 
 settings = Settings()
 
