@@ -310,12 +310,14 @@ Slices:
 
 | Slice | Scope | Status |
 |-------|--------|--------|
-| **7-A** | Copilot Backend Foundation | **current / Draft** |
-| **7-B** | Builder Preview / Apply | planned |
+| **7-A** | Copilot Backend Foundation | **complete** (PR #70; `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`; CI #345 PASS) |
+| **7-B** | Builder Preview / Apply | **current / Draft** |
 | **7-C** | Natural-language Graph Patch | planned |
 | **7-D** | Final Hardening / Browser Regression | planned |
 
 7-A invariants: LLM proposes only; no automatic save/publish/run/deploy/code execution; `validate_graph` is authoritative; project resource IDs are validated server-side; no raw dataset rows in the LLM catalog; provider credentials are server-owned.
+
+7-B invariants: Preview does not mutate Builder; Apply requires explicit confirmation; Apply is in-memory only and marks dirty; no auto-save/publish/run; invalid draft cannot Apply; graph replacement only (no patch yet).
 
 See [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
 

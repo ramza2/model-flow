@@ -32,6 +32,7 @@ import {
   type Dataset,
   type DatasetVersion,
   type Pipeline,
+  type PipelineCopilotDraftResponse,
   type PipelineGraph,
   type PipelineRun,
   type PipelineVersion,
@@ -46,6 +47,7 @@ import {
   SuccessNotice,
   formatDate,
 } from "../components";
+import { Drawer } from "../Drawer";
 import { NodeConfigForm } from "../pipelineForms";
 import {
   PIPELINE_NODE_LIBRARY,
@@ -401,11 +403,82 @@ export function PipelineBuilder() {
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [upstreamColumns, setUpstreamColumns] = useState<string[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotPrompt, setCopilotPrompt] = useState("");
+  const [copilotDraft, setCopilotDraft] = useState<PipelineCopilotDraftResponse | null>(null);
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const [copilotError, setCopilotError] = useState("");
+  const [copilotConfirming, setCopilotConfirming] = useState(false);
+  const copilotRequestIdRef = useRef(0);
   const flowInstanceRef = useRef<{
     setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
     getZoom: () => number;
   } | null>(null);
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+
+  const copilotPreviewNodes = useMemo(
+    () => (copilotDraft ? toStepNodes(copilotDraft.graph.nodes) : []),
+    [copilotDraft],
+  );
+  const copilotPreviewEdges = useMemo(
+    () =>
+      copilotDraft ? toDisplayEdges(copilotDraft.graph.edges, copilotPreviewNodes) : [],
+    [copilotDraft, copilotPreviewNodes],
+  );
+
+  const closeCopilotDrawer = useCallback(() => {
+    // Invalidate any in-flight Copilot response so it cannot restore discarded preview state.
+    copilotRequestIdRef.current += 1;
+    setCopilotOpen(false);
+    setCopilotConfirming(false);
+    setCopilotDraft(null);
+    setCopilotError("");
+    setCopilotLoading(false);
+  }, []);
+
+  const generateCopilotDraft = useCallback(async () => {
+    const prompt = copilotPrompt.trim();
+    if (!prompt || !projectId || copilotLoading) return;
+    const requestId = ++copilotRequestIdRef.current;
+    setCopilotLoading(true);
+    setCopilotError("");
+    setCopilotConfirming(false);
+    try {
+      const draft = await api<PipelineCopilotDraftResponse>(
+        `/projects/${projectId}/pipeline-copilot/draft`,
+        { method: "POST", body: JSON.stringify({ prompt }) },
+      );
+      if (requestId !== copilotRequestIdRef.current) return;
+      setCopilotDraft(draft);
+    } catch (reason) {
+      if (requestId !== copilotRequestIdRef.current) return;
+      setCopilotDraft(null);
+      setCopilotError(
+        reason instanceof Error ? reason.message : "Pipeline Copilot request failed.",
+      );
+    } finally {
+      if (requestId === copilotRequestIdRef.current) {
+        setCopilotLoading(false);
+      }
+    }
+  }, [copilotLoading, copilotPrompt, projectId]);
+
+  const confirmApplyCopilotDraft = useCallback(() => {
+    if (!copilotDraft?.validation.valid) return;
+    const nextNodes = toStepNodes(copilotDraft.graph.nodes);
+    const nextEdges = toDisplayEdges(copilotDraft.graph.edges, nextNodes);
+    setNodes(nextNodes);
+    setEdges(nextEdges);
+    setSelectedId("");
+    setDirty(true);
+    setValidationErrors([]);
+    setHighlightedNodeIds([]);
+    setValidationVisible(false);
+    setJsonError("");
+    setError("");
+    setSuccess("Copilot draft applied to the Builder. Save a version when you are ready.");
+    closeCopilotDrawer();
+  }, [closeCopilotDrawer, copilotDraft]);
 
   const load = useCallback(async () => {
     try {
@@ -951,6 +1024,22 @@ export function PipelineBuilder() {
       >
         {canWrite && (
           <aside className="pipeline-node-library panel">
+            <div className="pipeline-copilot-entry" data-testid="pipeline-copilot-entry">
+              <strong>AI Pipeline Copilot</strong>
+              <p className="form-hint">Describe the workflow you want to build.</p>
+              <button
+                type="button"
+                className="btn secondary"
+                data-testid="pipeline-copilot-open"
+                onClick={() => {
+                  setCopilotOpen(true);
+                  setCopilotConfirming(false);
+                  setCopilotError("");
+                }}
+              >
+                Generate with Copilot
+              </button>
+            </div>
             <span className="eyebrow">Node library</span>
             <p className="form-hint">Click a step type to add it to the canvas.</p>
             <label className="pipeline-library-search">
@@ -1211,6 +1300,177 @@ export function PipelineBuilder() {
           </div>
         )}
       </section>
+
+      {canWrite && (
+        <Drawer
+          open={copilotOpen}
+          title="Pipeline Copilot"
+          size="large"
+          testId="pipeline-copilot-drawer"
+          onClose={closeCopilotDrawer}
+          footer={
+            copilotConfirming ? (
+              <div className="pipeline-copilot-confirm-actions">
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="pipeline-copilot-confirm-back"
+                  onClick={() => setCopilotConfirming(false)}
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="pipeline-copilot-confirm-apply"
+                  onClick={confirmApplyCopilotDraft}
+                >
+                  Confirm apply
+                </button>
+              </div>
+            ) : undefined
+          }
+        >
+          <div className="pipeline-copilot-form">
+            <label htmlFor="pipeline-copilot-prompt">
+              Describe the pipeline you want to draft
+            </label>
+            <textarea
+              id="pipeline-copilot-prompt"
+              data-testid="pipeline-copilot-prompt"
+              data-drawer-initial-focus
+              value={copilotPrompt}
+              maxLength={4000}
+              rows={5}
+              placeholder="Example: Create a forecasting pipeline for sales with ridge regression and time-ordered splitting."
+              disabled={copilotLoading}
+              onChange={(event) => setCopilotPrompt(event.target.value)}
+            />
+            <div className="pipeline-copilot-form-actions">
+              <button
+                type="button"
+                className="btn"
+                data-testid="pipeline-copilot-generate"
+                disabled={copilotLoading || !copilotPrompt.trim()}
+                aria-busy={copilotLoading}
+                onClick={() => void generateCopilotDraft()}
+              >
+                {copilotLoading ? "Generating…" : "Generate"}
+              </button>
+              <span className="muted">{copilotPrompt.trim().length}/4000</span>
+            </div>
+            {copilotLoading && (
+              <p className="form-hint" data-testid="pipeline-copilot-loading" role="status">
+                Generating a draft proposal. The Builder canvas is unchanged until you confirm Apply.
+              </p>
+            )}
+            {copilotError && (
+              <div data-testid="pipeline-copilot-error">
+                <ErrorNotice message={copilotError} />
+              </div>
+            )}
+          </div>
+
+          {copilotDraft && !copilotConfirming && (
+            <div className="pipeline-copilot-preview" data-testid="pipeline-copilot-preview">
+              <div className="pipeline-copilot-meta">
+                <p data-testid="pipeline-copilot-summary">
+                  <strong>Summary.</strong> {copilotDraft.summary}
+                </p>
+                <p
+                  className={
+                    copilotDraft.validation.valid
+                      ? "pipeline-copilot-validation is-valid"
+                      : "pipeline-copilot-validation is-invalid"
+                  }
+                  data-testid="pipeline-copilot-validation-status"
+                  role="status"
+                >
+                  {copilotDraft.validation.valid ? "Valid draft" : "Invalid draft"}
+                  {" · "}
+                  {copilotDraft.graph.nodes.length} nodes · {copilotDraft.graph.edges.length}{" "}
+                  edges
+                  {copilotDraft.model ? ` · Generated by ${copilotDraft.model}` : ""}
+                </p>
+                {(copilotDraft.warnings || []).length > 0 && (
+                  <ul data-testid="pipeline-copilot-warnings">
+                    {copilotDraft.warnings.map((warning) => (
+                      <li key={warning}>{warning}</li>
+                    ))}
+                  </ul>
+                )}
+                {!copilotDraft.validation.valid && (
+                  <>
+                    <p className="form-hint" data-testid="pipeline-copilot-apply-blocked">
+                      This draft cannot be applied yet. Revise the prompt and generate another
+                      draft.
+                    </p>
+                    <ul data-testid="pipeline-copilot-validation-errors">
+                      {(copilotDraft.validation.errors || []).map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+              <div
+                className="pipeline-copilot-preview-canvas"
+                data-testid="pipeline-copilot-preview-canvas"
+                aria-label="Read-only Copilot draft preview"
+              >
+                <ReactFlow
+                  nodes={copilotPreviewNodes}
+                  edges={copilotPreviewEdges}
+                  nodeTypes={nodeTypes}
+                  fitView
+                  nodesDraggable={false}
+                  nodesConnectable={false}
+                  elementsSelectable={false}
+                  edgesReconnectable={false}
+                  deleteKeyCode={null}
+                  panOnDrag
+                  zoomOnScroll
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
+              </div>
+              <div className="pipeline-copilot-preview-actions">
+                <button
+                  type="button"
+                  className="btn"
+                  data-testid="pipeline-copilot-apply"
+                  disabled={!copilotDraft.validation.valid}
+                  title={
+                    copilotDraft.validation.valid
+                      ? "Review confirmation before replacing the Builder graph"
+                      : "This draft cannot be applied yet. Revise the prompt and generate another draft."
+                  }
+                  onClick={() => setCopilotConfirming(true)}
+                >
+                  Apply to builder
+                </button>
+              </div>
+            </div>
+          )}
+
+          {copilotDraft && copilotConfirming && (
+            <div className="pipeline-copilot-confirm" data-testid="pipeline-copilot-confirm">
+              <h3>Apply this Copilot draft?</h3>
+              <p>
+                This replaces the current in-memory Builder graph with the proposed complete
+                graph. It does not save a PipelineVersion, publish, or run anything.
+              </p>
+              {dirty && (
+                <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
+                  You have unsaved Builder changes. Confirming will replace those unsaved
+                  changes. The last saved PipelineVersion is not affected.
+                </p>
+              )}
+            </div>
+          )}
+        </Drawer>
+      )}
     </div>
   );
 }

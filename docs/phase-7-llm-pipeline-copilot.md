@@ -1,15 +1,15 @@
 # Phase 7 — LLM Pipeline Copilot
 
-Phase 7 adds a natural-language path to ModelFlow Pipeline drafts. The LLM may propose a `PipelineGraph`; it must never save, publish, run, deploy, approve, execute code, or mutate Pipeline state.
+Phase 7 adds a natural-language path to ModelFlow Pipeline drafts. The LLM may propose a `PipelineGraph` only. A user-gated action may apply that proposal to the in-memory Builder. Copilot never automatically saves, publishes, runs, deploys, approves, or executes code. Explicit confirmation authorizes in-memory Apply only; Save, Publish, and Run remain the existing separate Builder actions.
 
 ## Slice boundary
 
 | Slice | Scope | Status |
 |-------|--------|--------|
-| **7-A** | Copilot Backend Foundation — OpenAI-compatible client, draft endpoint, catalog, parse/canonicalize, `validate_graph`, project-reference checks, audit, backend tests | **current / Draft** |
-| **7-B** | Builder Preview / Apply — visual preview, confirmation gate, apply into Builder (still user-gated; no auto-run) | planned |
+| **7-A** | Copilot Backend Foundation — OpenAI-compatible client, draft endpoint, catalog, parse/canonicalize, `validate_graph`, project-reference checks, audit, backend tests | **complete** (PR #70; squash/main `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`; post-merge CI #345 / run `36972237806` PASS; Alembic `023_forecasting_training`) |
+| **7-B** | Builder Preview / Apply — Drawer UX, read-only visual preview, validation review, explicit confirmation, in-memory Apply | **current / Draft** |
 | **7-C** | Natural-language Graph Patch — modify an existing graph via structured patch (not free-form execution) | planned |
-| **7-D** | Final Hardening / Browser Regression — E2E, hardening, docs closeout | planned |
+| **7-D** | Final Hardening / Browser Regression — E2E hardening, docs closeout | planned |
 
 ```text
 7-A Copilot Backend Foundation
@@ -22,7 +22,8 @@ Phase 7 adds a natural-language path to ModelFlow Pipeline drafts. The LLM may p
 ```
 
 **Phase 7 = current.**
-**Phase 7-A = current / Draft** (not marked complete in this feature PR).
+**Phase 7-A = complete.**
+**Phase 7-B = current / Draft** (not marked complete in this feature PR).
 
 ## Roadmap contract
 
@@ -36,7 +37,18 @@ LLM generates ModelFlow Pipeline Definition only
 no arbitrary code execution
 ```
 
-## Phase 7-A invariants
+## Central UX boundary
+
+```text
+Generate != Apply
+Apply != Save
+Save != Publish
+Publish != Run
+```
+
+No step may collapse these boundaries.
+
+## Phase 7-A invariants (complete)
 
 ```text
 LLM proposes only
@@ -50,99 +62,38 @@ no raw dataset rows are sent
 provider credentials are server-owned
 ```
 
-Additional 7-A boundaries:
+Endpoint: `POST /api/v1/projects/{project_id}/pipeline-copilot/draft` with `{ "prompt": "..." }` only.
+Requires `PIPELINE_WRITE`. Response: `{ summary, graph, validation, warnings, model }`.
 
-- Endpoint is **stateless** with respect to Pipeline state (allowed side effect: normal audit logging only).
-- Must not create or modify `Pipeline`, `PipelineVersion`, `PipelineRun`, `TrainingJob`, `ModelVersion`, `Endpoint`, `Dataset`, `DatasetVersion`, or `AutomationSchedule`.
-- Copilot generation must not call `_save_version()`, `save_graph`, `publish_pipeline`, `run_pipeline`, pipeline-engine execution, or job factories.
-- No frontend / Playwright / Builder UI in 7-A.
-- No `current_graph` / patch / JSON Patch input in 7-A (that is 7-C).
-- No new Pipeline node types.
-- No new Python dependency; reuse existing `httpx`.
-- Alembic head remains `023_forecasting_training` (no migration).
-
-## LLM configuration (OpenAI-compatible)
-
-Server-owned settings (backend only; optional in Compose/CI):
-
-| Setting | Env | Default |
-|---------|-----|---------|
-| `llm_base_url` | `MODELFLOW_LLM_BASE_URL` | `""` |
-| `llm_api_key` | `MODELFLOW_LLM_API_KEY` | `""` |
-| `llm_model` | `MODELFLOW_LLM_MODEL` | `""` |
-| `llm_timeout_seconds` | `MODELFLOW_LLM_TIMEOUT_SECONDS` | `60` |
-
-Empty `base_url` or `model` means Copilot is not configured → HTTP 503.
-
-URL resolution tolerates bases ending in `/`, `/v1`, or `/v1/chat/completions` and always targets chat completions. Optional API key becomes `Authorization: Bearer …` only when non-empty. Temperature is fixed at `0`. Request clients cannot override base URL, API key, model, system prompt, or temperature.
-
-Provider-neutral: do not hardcode vendor URLs, model names, or company hostnames.
-
-## API
+## Phase 7-B invariants (current / Draft)
 
 ```text
-POST /api/v1/projects/{project_id}/pipeline-copilot/draft
-Permission: PIPELINE_WRITE
+Preview does not mutate Builder
+Apply requires explicit confirmation
+Apply is in-memory only
+Apply marks dirty
+no auto-save
+no auto-publish
+no auto-run
+invalid draft cannot Apply
+graph replacement only
+no graph patch yet
 ```
 
-Request:
+7-B UX:
 
-```json
-{ "prompt": "..." }
-```
+1. Writer-only Copilot entry in the Builder Node library.
+2. Existing `Drawer` hosts prompt → Generate → read-only ReactFlow preview → validation review.
+3. Draft state is separate from live Builder `nodes` / `edges` / `dirty`.
+4. Invalid drafts (`validation.valid === false`) are previewable but Apply is disabled.
+5. Valid drafts require `Apply to builder` then in-Drawer `Confirm apply`.
+6. Confirm Apply replaces the in-memory graph via existing `toStepNodes` / `toDisplayEdges`, sets `dirty=true`, clears live validation highlights, and does **not** call Save/Publish/Run APIs.
+7. Closing the Drawer before Confirm discards preview state without mutating the Builder.
 
-(`extra` forbidden; trimmed non-empty; max 4000 characters.)
+## Out of scope for 7-B
 
-Response (shape):
+Natural-language editing of an existing graph, `current_graph` in the request, graph merge/diff/patch, chat history, streaming, tool calling, auto-save/publish/run/deploy, LLM settings UI, new node types, backend changes, Phase 8/9 work.
 
-```json
-{
-  "summary": "...",
-  "graph": { "nodes": [], "edges": [] },
-  "validation": { "valid": true, "errors": [], "order": [] },
-  "warnings": [],
-  "model": "configured-model"
-}
-```
+## Next slice (7-C)
 
-Never returns system prompt, provider URL, API key, or raw provider HTTP bodies.
-
-## Validation pipeline
-
-1. **Canonical shape** — reject invalid top-level shape, non-array nodes/edges, oversize graphs (max 50 nodes / 100 edges), unsupported types, duplicate/missing ids.
-2. **Structural** — `validate_graph(graph, strict=False)`; failure → provider contract error (502), not an applicable draft.
-3. **Strict + project refs** — `validate_graph(graph, strict=True)` plus project-scoped checks for `dataset_load`, `batch_prediction`, `quality_check` (and existing gate-policy helper). Config/ref errors may return `validation.valid = false` without saving.
-
-No silent “repair” to latest resources or substitute algorithms.
-
-## Project catalog
-
-Bounded, non-secret authoring metadata only:
-
-- Datasets: id, name, exact latest `dataset_version_id`, version number, column names, dtypes (no preview rows, stats samples, object keys, DSNs, secrets).
-- Quality rules: id, name, dataset_id, block_training_on_fail, active.
-- Algorithms: reuse `list_algorithms()` metadata only.
-
-## Audit
-
-Action: `pipeline.copilot.draft`
-
-May include: `project_id`, configured model name, `node_count`, `edge_count`, `validation_valid`.
-
-Must not include: API key, raw user prompt, raw LLM response, system prompt, Authorization headers. Audit must not persist the graph as a `PipelineVersion`.
-
-## Error semantics
-
-| Case | Status |
-|------|--------|
-| Copilot not configured | 503 |
-| Upstream / malformed provider output / contract failure | 502 |
-| Provider timeout | 504 |
-
-## Out of scope for 7-A
-
-Frontend Copilot UI, visual preview, Apply, confirmation dialog, auto-save/publish/run/deploy, graph patch, conversation history, Copilot DB tables, streaming, tool/function calling, agents, MCP, RAG, embeddings, arbitrary code/SQL execution, new node types, Phase 8/9 work.
-
-## Next slice (7-B)
-
-Builder Preview / Apply: present the draft graph visually, require an explicit user confirmation gate, and apply into the Builder editor without auto-run/publish/deploy.
+Natural-language Graph Patch: accept a base graph and produce structured patch operations for modification (still with preview + confirmation; still no auto-run/publish/deploy).
