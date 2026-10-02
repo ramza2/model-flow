@@ -480,6 +480,22 @@ export type PipelineGraph = {
   }>;
 };
 
+/** Phase 7-A/7-B: Copilot draft validation payload (server-authoritative). */
+export type PipelineCopilotValidation = {
+  valid: boolean;
+  errors: string[];
+  order?: string[];
+};
+
+/** Phase 7-A/7-B: response from POST …/pipeline-copilot/draft. */
+export type PipelineCopilotDraftResponse = {
+  summary: string;
+  graph: PipelineGraph;
+  validation: PipelineCopilotValidation;
+  warnings: string[];
+  model: string;
+};
+
 export type PipelineVersion = {
   id: number;
   pipeline_id: number;

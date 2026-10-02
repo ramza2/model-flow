@@ -1,7 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "../api";
 import { NodeConfigForm } from "../pipelineForms";
 import { defaultConfigFor } from "../pipelineHelpers";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./Pipelines";
@@ -1170,5 +1171,369 @@ describe("Pipeline contextual scheduling gates", () => {
       "title",
       expect.stringContaining("Save your changes before scheduling"),
     );
+  });
+});
+
+const forecastCopilotDraft = {
+  summary: "Forecasting pipeline for sales",
+  model: "test-model",
+  warnings: [],
+  validation: { valid: true, errors: [], order: ["dataset_load-1", "training-1"] },
+  graph: {
+    nodes: [
+      {
+        id: "dataset_load-1",
+        position: { x: 40, y: 40 },
+        data: {
+          label: "Load sales",
+          node_type: "dataset_load",
+          config: { dataset_id: 3, dataset_version_id: 11 },
+        },
+      },
+      {
+        id: "training-1",
+        position: { x: 320, y: 40 },
+        data: {
+          label: "Forecast train",
+          node_type: "training",
+          config: {
+            training_task: "forecasting",
+            target_column: "sales",
+            problem_type: "regression",
+            algorithm: "ridge",
+            feature_columns: ["sales_lag_1", "sales_roll_avg_3"],
+            hyperparameters: {},
+            split_strategy: "time",
+            time_column: "event_time",
+            forecast_strategy: "direct_multioutput",
+            forecast_horizons: [1, 2, 3],
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: "edge-1",
+        source: "dataset_load-1",
+        target: "training-1",
+        sourceHandle: "data",
+        targetHandle: "data",
+        data: { branch: "always" },
+      },
+    ],
+  },
+};
+
+function stubBuilderApiWithCopilot(options?: {
+  draft?: typeof forecastCopilotDraft | (() => typeof forecastCopilotDraft);
+  draftError?: ApiRequestError;
+}) {
+  stubBuilderApi();
+  const base = apiMock.getMockImplementation();
+  apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    const method = (init?.method || "GET").toUpperCase();
+    if (path === "/projects/7/pipeline-copilot/draft" && method === "POST") {
+      if (options?.draftError) throw options.draftError;
+      const draft =
+        typeof options?.draft === "function"
+          ? options.draft()
+          : options?.draft || forecastCopilotDraft;
+      return draft;
+    }
+    if (path === "/projects/7/training/algorithms") {
+      return {
+        algorithms: [
+          {
+            id: "ridge",
+            display_name: "Ridge",
+            problem_types: ["regression"],
+            default_hyperparameters: {},
+            supported_hyperparameters: [],
+            hyperparameters: [],
+            supports_forecasting: true,
+            forecasting_strategy: "direct_multioutput",
+          },
+        ],
+      };
+    }
+    if (path === "/projects/7/datasets") {
+      return [
+        {
+          ...datasets[0],
+          columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+        },
+      ];
+    }
+    if (path === "/projects/7/datasets/3/versions") {
+      return [
+        {
+          ...versions[0],
+          columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+        },
+      ];
+    }
+    if (path === "/projects/7/datasets/3/versions/11") {
+      return {
+        ...versions[0],
+        columns: ["event_time", "sales", "sales_lag_1", "sales_roll_avg_3"],
+      };
+    }
+    return base?.(path, init);
+  });
+}
+
+describe("Pipeline Copilot (Phase 7-B)", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    navigateMock.mockReset();
+    canWriteRef.value = true;
+    stubBuilderApiWithCopilot();
+  });
+
+  it("shows Copilot entry for writers and hides it for read-only users", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-copilot-entry");
+    expect(screen.getByTestId("pipeline-copilot-open")).toBeInTheDocument();
+    cleanup();
+
+    canWriteRef.value = false;
+    renderBuilder();
+    await screen.findByTestId("pipeline-builder-layout");
+    expect(screen.queryByTestId("pipeline-copilot-entry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-copilot-open")).not.toBeInTheDocument();
+  });
+
+  it("disables Generate for a blank trimmed prompt and sends only {prompt}", async () => {
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    const generate = await screen.findByTestId("pipeline-copilot-generate");
+    expect(generate).toBeDisabled();
+    fireEvent.change(screen.getByTestId("pipeline-copilot-prompt"), {
+      target: { value: "   " },
+    });
+    expect(generate).toBeDisabled();
+    fireEvent.change(screen.getByTestId("pipeline-copilot-prompt"), {
+      target: { value: "  Create a forecasting pipeline  " },
+    });
+    expect(generate).not.toBeDisabled();
+    fireEvent.click(generate);
+    await screen.findByTestId("pipeline-copilot-preview");
+    const draftCall = apiMock.mock.calls.find(
+      ([path, init]) =>
+        path === "/projects/7/pipeline-copilot/draft" &&
+        (init?.method || "GET").toUpperCase() === "POST",
+    );
+    expect(draftCall).toBeTruthy();
+    expect(JSON.parse(String(draftCall?.[1]?.body))).toEqual({
+      prompt: "Create a forecasting pipeline",
+    });
+  });
+
+  it("renders preview metadata without mutating Builder or dirty state", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-copilot-open");
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']")).toHaveLength(0);
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Create a forecasting pipeline" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent(
+      /Forecasting pipeline for sales/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/Valid draft/i);
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/2 nodes/i);
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/test-model/i);
+    expect(
+      within(screen.getByTestId("pipeline-copilot-preview-canvas")).getByTestId(
+        "canvas-node-training-1",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']")).toHaveLength(0);
+    expect(screen.getByTestId("pipeline-publish")).not.toBeDisabled();
+  });
+
+  it("closing Preview without Apply leaves Builder unchanged", async () => {
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Draft something" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await screen.findByTestId("pipeline-copilot-preview");
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']")).toHaveLength(0);
+  });
+
+  it("blocks Apply for invalid drafts and shows validation errors", async () => {
+    stubBuilderApiWithCopilot({
+      draft: {
+        ...forecastCopilotDraft,
+        validation: {
+          valid: false,
+          errors: ["Node 'dataset_load-1' dataset_load requires an exact dataset_version_id."],
+          order: [],
+        },
+        warnings: ["Draft is structurally safe but failed strict ModelFlow validation."],
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Incomplete draft" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-apply-blocked")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-copilot-validation-errors")).toHaveTextContent(
+      /exact dataset_version_id/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-warnings")).toHaveTextContent(
+      /failed strict ModelFlow validation/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-apply")).toBeDisabled();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation, warns when dirty, and applies without Save/Publish/Run", async () => {
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-library-dataset_load"));
+    expect(await screen.findByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    const versionPostsBefore = apiMock.mock.calls.filter(
+      ([path, init]) =>
+        path === "/projects/7/pipelines/9/versions" &&
+        (init?.method || "").toUpperCase() === "POST",
+    ).length;
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Create a forecasting pipeline" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await screen.findByTestId("pipeline-copilot-apply");
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    expect(await screen.findByTestId("pipeline-copilot-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-copilot-dirty-warning")).toHaveTextContent(
+      /unsaved Builder changes/i,
+    );
+    fireEvent.click(screen.getByTestId("pipeline-copilot-confirm-back"));
+    expect(screen.queryByTestId("pipeline-copilot-confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-confirm-apply"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-publish")).toBeDisabled();
+    expect(screen.getByTestId("pipeline-run")).toBeDisabled();
+    expect(await screen.findByTestId("canvas-node-training-1")).toBeInTheDocument();
+    expect(screen.getByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("canvas-node-training-1"));
+    expect(await screen.findByTestId("pipeline-step-name")).toHaveValue("Forecast train");
+    await waitFor(() => {
+      expect(screen.getByTestId("node-config-training-task")).toHaveValue("forecasting");
+      expect(screen.getByTestId("node-config-target")).toHaveValue("sales");
+      expect(screen.getByTestId("node-config-algorithm")).toHaveValue("ridge");
+      expect(screen.getByTestId("node-config-forecast-horizons")).toHaveValue("1, 2, 3");
+    });
+
+    const versionPostsAfter = apiMock.mock.calls.filter(
+      ([path, init]) =>
+        path === "/projects/7/pipelines/9/versions" &&
+        (init?.method || "").toUpperCase() === "POST",
+    ).length;
+    expect(versionPostsAfter).toBe(versionPostsBefore);
+    expect(
+      apiMock.mock.calls.some(
+        ([path, init]) =>
+          path === "/projects/7/pipelines/9/publish" &&
+          (init?.method || "").toUpperCase() === "POST",
+      ),
+    ).toBe(false);
+    expect(
+      apiMock.mock.calls.some(
+        ([path, init]) =>
+          path === "/projects/7/pipelines/9/run" &&
+          (init?.method || "").toUpperCase() === "POST",
+      ),
+    ).toBe(false);
+
+    fireEvent.click(screen.getByTestId("pipeline-save"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    });
+    const saveCall = apiMock.mock.calls.find(
+      ([path, init]) =>
+        path === "/projects/7/pipelines/9/versions" &&
+        (init?.method || "").toUpperCase() === "POST",
+    );
+    const savedGraph = JSON.parse(String(saveCall?.[1]?.body)).graph;
+    expect(savedGraph.nodes[1].data.config.training_task).toBe("forecasting");
+    expect(savedGraph.nodes[1].data.config.forecast_horizons).toEqual([1, 2, 3]);
+    expect(savedGraph.nodes[0].data.config.dataset_version_id).toBe(11);
+  });
+
+  it("leaves graph and dirty unchanged on Copilot 503 errors", async () => {
+    stubBuilderApiWithCopilot({
+      draftError: new ApiRequestError(
+        503,
+        "Pipeline Copilot is not configured.",
+        "Set MODELFLOW_LLM_BASE_URL and MODELFLOW_LLM_MODEL on the backend.",
+      ),
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Anything" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-error")).toHaveTextContent(
+      /not configured/i,
+    );
+    expect(screen.queryByTestId("pipeline-copilot-preview")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']")).toHaveLength(0);
+  });
+
+  it("Generate-again replaces preview only and resets confirmation", async () => {
+    let call = 0;
+    stubBuilderApiWithCopilot({
+      draft: () => {
+        call += 1;
+        return {
+          ...forecastCopilotDraft,
+          summary: call === 1 ? "First draft" : "Second draft",
+          model: call === 1 ? "model-a" : "model-b",
+        };
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "First" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent("First draft");
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    expect(await screen.findByTestId("pipeline-copilot-confirm")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Second" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-copilot-summary")).toHaveTextContent("Second draft");
+    });
+    expect(screen.queryByTestId("pipeline-copilot-confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent("model-b");
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
   });
 });

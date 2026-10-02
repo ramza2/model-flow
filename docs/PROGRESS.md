@@ -2,9 +2,15 @@
 
 ## Current phase
 
-**Enhancement Phase 7 — LLM Pipeline Copilot is current.** Slice **7-A — Copilot Backend Foundation** is in progress (Draft).
+**Enhancement Phase 7 — LLM Pipeline Copilot is current.** Slice **7-A — Copilot Backend Foundation is complete on `main`.** Slice **7-B — Builder Preview / Apply** is in progress (Draft).
 
-Baseline for Phase 7-A work: `main@aa8e077bd82a33278fea9e492c27e3aa9d99277b` (Phase 6 docs closeout PR #69; Alembic head `023_forecasting_training`).
+Baseline for Phase 7-B work: `main@e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62` (Phase 7-A merge; Alembic head `023_forecasting_training`).
+
+Phase 7-A complete evidence:
+
+- PR #70 merged; squash/main commit `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`
+- post-merge main CI #345 / run `36972237806` PASS
+- Alembic head: `023_forecasting_training`
 
 **Enhancement Phase 6 — Time-series / Multi-step is complete on `main`.** All slices are complete: **6-A**, **6-B**, **6-C**, and **6-D**.
 
@@ -245,7 +251,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@aa8e077bd82a33278fea9e492c27e3aa9d99277b`
+- Branch baseline: `main@e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`
+- Phase 7-A merge (PR #70): `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62` (post-merge main CI #345 / run `36972237806` PASS; Alembic head `023_forecasting_training`)
 - Phase 6 docs closeout (PR #69): `aa8e077bd82a33278fea9e492c27e3aa9d99277b` (post-merge main CI #340 / run `36954705944` PASS; Alembic head `023_forecasting_training`)
 - Phase 6-D merge (PR #68): `1b723e83ab7734822d867ebe42adb698612087c3` (post-merge CI #338 / run `36950409425` PASS; Alembic head `023_forecasting_training`)
 - Phase 6-C merge (PR #67): `abc738a5da390f62a5aade4691fcc640531c5d53` (post-merge CI #333 PASS; Alembic head `023_forecasting_training`)
@@ -430,7 +437,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 7-A — Copilot Backend Foundation** is in Draft on a feature branch from `main@aa8e077bd82a33278fea9e492c27e3aa9d99277b`. Do not mark 7-A complete until the Draft PR is reviewed and merged.
+**Phase 7-B — Builder Preview / Apply** is in Draft on a feature branch from `main@e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`. Do not mark 7-B complete until the Draft PR is reviewed and merged.
 
 Phase 7 roadmap contract:
 
@@ -444,7 +451,7 @@ LLM generates ModelFlow Pipeline Definition only
 no arbitrary code execution
 ```
 
-After 7-A merges: start **7-B — Builder Preview / Apply** (visual preview + confirmation gate; still no auto-run/publish/deploy).
+After 7-B merges: start **7-C — Natural-language Graph Patch** (structured patch of an existing graph; still preview + confirmation; still no auto-run/publish/deploy).
 
 See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) Phase 7 and [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
 
