@@ -9,7 +9,7 @@ from typing import Any, Callable
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,16 +20,10 @@ from app.db.models import (
     Base,
     Dataset,
     DatasetVersion,
-    Endpoint,
-    ModelVersion,
-    Pipeline,
-    PipelineRun,
-    PipelineVersion,
     Project,
     ProjectMembership,
     ProjectRole,
     QualityRule,
-    TrainingJob,
     User,
 )
 from app.db.session import get_db
