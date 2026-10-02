@@ -9,7 +9,7 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 | **6-A** | Time-aware training foundation — chronological train/validation/test splits, persisted `split_strategy` / `time_column`, API/UX/MLflow/lineage | **complete** (PR #65 merged; squash/main `9376c5c209f9ebce7e52da15d341707f904bedd7`; post-merge main CI #323 PASS; Alembic head `022_time_series_foundation`) |
 | **6-B** | Lag / rolling-window feature preparation | **complete** (PR #66 merged; squash/main `deb98ed18d6483fdd72adf430ab2cc5b763a3758`; post-merge main CI #329 PASS; Alembic head `022_time_series_foundation`) |
 | **6-C** | Forecasting / multi-step training (horizons, supported forecasters) | **complete** (PR #67 merged; squash/main `abc738a5da390f62a5aade4691fcc640531c5d53`; post-merge main CI #333 PASS; Alembic head `023_forecasting_training`) |
-| **6-D** | Pipeline / UX / final hardening | **current** (Draft until merge + post-merge `main` CI PASS) |
+| **6-D** | Pipeline / UX / final hardening | **complete** (PR #68 merged; squash/main `1b723e83ab7734822d867ebe42adb698612087c3`; post-merge main CI #338 PASS; Alembic head `023_forecasting_training`) |
 
 ```text
 6-A Time-aware Training Foundation
@@ -21,10 +21,11 @@ Phase 6 adds time-aware training capabilities on top of ModelFlow’s existing t
 6-D Pipeline / UX / Final Hardening
 ```
 
-**6-A = time-aware foundation (complete).**  
-**6-B = lag / rolling (complete).**  
-**6-C = forecasting + multi-step (complete).**  
-**6-D = Pipeline / UX / final hardening (current).**
+**6-A = time-aware foundation (complete).**
+**6-B = lag / rolling (complete).**
+**6-C = forecasting + multi-step (complete).**
+**6-D = Pipeline / UX / final hardening (complete).**
+**Phase 6 = complete.**
 
 Unpivot already exists from Phase 2-F1; Phase 6 must not re-implement it.
 
@@ -122,7 +123,42 @@ Explicitly out of scope for 6-C:
 - probabilistic / quantile forecasts
 - automatic lag generation inside TrainingJob
 - forecast-specific closed-loop policies
-- Pipeline forecasting authoring → **6-D**
+- Pipeline forecasting authoring → **6-D** (complete)
+
+## Phase 6-D delivered
+
+Pipeline forecasting authoring/runtime connecting 6-A/6-B/6-C contracts (no new forecasting algorithms):
+
+```text
+Pipeline Training forecasting authoring/runtime
+Pipeline time-aware Split mode
+6-C SklearnTrainingRunner reuse
+no Pipeline-specific horizon shift semantics
+shared Phase 6-A chronological helpers
+forecast TrainingJob persistence
+forecast output-name preservation through Registry
+shared prediction feature-schema resolution
+Pipeline batch prediction exact feature selection/order
+missing feature fail-closed
+Endpoint authoritative feature schema
+structured Endpoint schema dtype preservation
+legacy tabular Pipeline/Batch compatibility
+```
+
+No new migration in 6-D; Alembic remains `023_forecasting_training`.
+
+Explicitly not delivered in Phase 6 (remain later / out of scope):
+
+```text
+recursive forecasting
+panel/entity forecasting
+walk-forward CV
+calendar-duration horizons
+probabilistic forecasting
+ARIMA / Prophet / LSTM / Transformer
+```
+
+See [`phase-6d-verification.md`](./phase-6d-verification.md).
 
 ## Leakage prevention principles
 
@@ -155,5 +191,6 @@ Explicitly out of scope for 6-C:
 
 - [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md)
 - [`PROGRESS.md`](./PROGRESS.md)
+- [`phase-6d-verification.md`](./phase-6d-verification.md)
 - [`phase-5.1-continued-training.md`](./phase-5.1-continued-training.md)
 - [`phase-5-closed-loop-mlops.md`](./phase-5-closed-loop-mlops.md)
