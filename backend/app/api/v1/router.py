@@ -13,11 +13,13 @@ from app.api.v1 import (
     endpoints,
     experiments,
     feedback,
+    gate_policies,
     health,
     inference,
     jobs,
     model_quality,
     monitoring,
+    pipeline_copilot,
     pipelines,
     projects,
     quality,
@@ -27,7 +29,6 @@ from app.api.v1 import (
     service_api_keys,
     splits,
     users,
-    gate_policies,
 )
 
 router = APIRouter()
@@ -45,6 +46,7 @@ for child_router in (
     jobs.router,
     experiments.router,
     pipelines.router,
+    pipeline_copilot.router,
     registry.router,
     gate_policies.router,
     endpoints.router,

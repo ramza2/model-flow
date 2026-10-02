@@ -297,7 +297,7 @@ See [`phase-6-time-series.md`](./phase-6-time-series.md) and [`phase-6d-verifica
 
 ## Phase 7 — LLM Pipeline Copilot
 
-Next enhancement phase after Phase 6 closeout.
+**Current enhancement phase** after Phase 6 closeout.
 
 - natural language → pipeline draft
 - pipeline schema validation against ModelFlow definitions
@@ -305,6 +305,19 @@ Next enhancement phase after Phase 6 closeout.
 - user confirmation gate
 - natural-language modification via graph patch, not free-form execution
 - LLM generates ModelFlow Pipeline Definition only; it does not run arbitrary code
+
+Slices:
+
+| Slice | Scope | Status |
+|-------|--------|--------|
+| **7-A** | Copilot Backend Foundation | **current / Draft** |
+| **7-B** | Builder Preview / Apply | planned |
+| **7-C** | Natural-language Graph Patch | planned |
+| **7-D** | Final Hardening / Browser Regression | planned |
+
+7-A invariants: LLM proposes only; no automatic save/publish/run/deploy/code execution; `validate_graph` is authoritative; project resource IDs are validated server-side; no raw dataset rows in the LLM catalog; provider credentials are server-owned.
+
+See [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
 
 **Depends on:** stable pipeline schema and UX.
 
