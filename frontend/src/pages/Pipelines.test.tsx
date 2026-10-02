@@ -1536,4 +1536,131 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent("model-b");
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
   });
+
+  it("ignores a Copilot response after the Drawer is closed mid-flight", async () => {
+    let resolveDraft: ((value: PipelineCopilotDraftResponse) => void) | null = null;
+    const pending = new Promise<PipelineCopilotDraftResponse>((resolve) => {
+      resolveDraft = resolve;
+    });
+    stubBuilderApi();
+    const base = apiMock.getMockImplementation();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipeline-copilot/draft" && method === "POST") {
+        return pending;
+      }
+      return base?.(path, init);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Create a forecasting pipeline" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-loading")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-copilot-generate")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+
+    resolveDraft?.({
+      ...forecastCopilotDraft,
+      summary: "Stale draft after close",
+    });
+    await Promise.resolve();
+
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    expect(await screen.findByTestId("pipeline-copilot-drawer")).toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-copilot-preview")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Stale draft after close/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-copilot-loading")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-copilot-error")).not.toBeInTheDocument();
+    // Prompt is preserved for editing, but stale loading/error/preview must not return.
+    expect(screen.getByTestId("pipeline-copilot-generate")).not.toBeDisabled();
+    expect(screen.getByTestId("pipeline-copilot-generate")).toHaveTextContent(/^Generate$/);
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']"),
+    ).toHaveLength(0);
+    expect(
+      apiMock.mock.calls.some(
+        ([path, init]) =>
+          (path === "/projects/7/pipelines/9/versions" ||
+            path === "/projects/7/pipelines/9/publish" ||
+            path === "/projects/7/pipelines/9/run") &&
+          (init?.method || "").toUpperCase() === "POST",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not let an older Copilot response overwrite a newer generation", async () => {
+    type Deferred = {
+      promise: Promise<PipelineCopilotDraftResponse>;
+      resolve: (value: PipelineCopilotDraftResponse) => void;
+    };
+    const deferreds: Deferred[] = [];
+    stubBuilderApi();
+    const base = apiMock.getMockImplementation();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipeline-copilot/draft" && method === "POST") {
+        let resolve!: (value: PipelineCopilotDraftResponse) => void;
+        const promise = new Promise<PipelineCopilotDraftResponse>((res) => {
+          resolve = res;
+        });
+        deferreds.push({ promise, resolve });
+        return promise;
+      }
+      return base?.(path, init);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "First" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await waitFor(() => expect(deferreds.length).toBe(1));
+    expect(screen.getByTestId("pipeline-copilot-loading")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Second" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await waitFor(() => expect(deferreds.length).toBe(2));
+    expect(screen.getByTestId("pipeline-copilot-loading")).toBeInTheDocument();
+
+    deferreds[1].resolve({
+      ...forecastCopilotDraft,
+      summary: "Second draft",
+      model: "model-b",
+    });
+    expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent("Second draft");
+    expect(screen.queryByTestId("pipeline-copilot-loading")).not.toBeInTheDocument();
+
+    deferreds[0].resolve({
+      ...forecastCopilotDraft,
+      summary: "First draft",
+      model: "model-a",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.getByTestId("pipeline-copilot-summary")).toHaveTextContent("Second draft");
+    expect(screen.queryByText(/First draft/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent("model-b");
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']"),
+    ).toHaveLength(0);
+  });
 });

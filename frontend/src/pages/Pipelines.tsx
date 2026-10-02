@@ -409,6 +409,7 @@ export function PipelineBuilder() {
   const [copilotLoading, setCopilotLoading] = useState(false);
   const [copilotError, setCopilotError] = useState("");
   const [copilotConfirming, setCopilotConfirming] = useState(false);
+  const copilotRequestIdRef = useRef(0);
   const flowInstanceRef = useRef<{
     setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
     getZoom: () => number;
@@ -426,6 +427,8 @@ export function PipelineBuilder() {
   );
 
   const closeCopilotDrawer = useCallback(() => {
+    // Invalidate any in-flight Copilot response so it cannot restore discarded preview state.
+    copilotRequestIdRef.current += 1;
     setCopilotOpen(false);
     setCopilotConfirming(false);
     setCopilotDraft(null);
@@ -436,6 +439,7 @@ export function PipelineBuilder() {
   const generateCopilotDraft = useCallback(async () => {
     const prompt = copilotPrompt.trim();
     if (!prompt || !projectId || copilotLoading) return;
+    const requestId = ++copilotRequestIdRef.current;
     setCopilotLoading(true);
     setCopilotError("");
     setCopilotConfirming(false);
@@ -444,14 +448,18 @@ export function PipelineBuilder() {
         `/projects/${projectId}/pipeline-copilot/draft`,
         { method: "POST", body: JSON.stringify({ prompt }) },
       );
+      if (requestId !== copilotRequestIdRef.current) return;
       setCopilotDraft(draft);
     } catch (reason) {
+      if (requestId !== copilotRequestIdRef.current) return;
       setCopilotDraft(null);
       setCopilotError(
         reason instanceof Error ? reason.message : "Pipeline Copilot request failed.",
       );
     } finally {
-      setCopilotLoading(false);
+      if (requestId === copilotRequestIdRef.current) {
+        setCopilotLoading(false);
+      }
     }
   }, [copilotLoading, copilotPrompt, projectId]);
 

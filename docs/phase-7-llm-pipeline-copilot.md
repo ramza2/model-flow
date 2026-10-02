@@ -1,6 +1,6 @@
 # Phase 7 — LLM Pipeline Copilot
 
-Phase 7 adds a natural-language path to ModelFlow Pipeline drafts. The LLM may propose a `PipelineGraph`; it must never save, publish, run, deploy, approve, execute code, or mutate Pipeline state without an explicit user-gated Builder action.
+Phase 7 adds a natural-language path to ModelFlow Pipeline drafts. The LLM may propose a `PipelineGraph` only. A user-gated action may apply that proposal to the in-memory Builder. Copilot never automatically saves, publishes, runs, deploys, approves, or executes code. Explicit confirmation authorizes in-memory Apply only; Save, Publish, and Run remain the existing separate Builder actions.
 
 ## Slice boundary
 
