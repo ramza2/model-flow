@@ -33,6 +33,8 @@ import {
   type DatasetVersion,
   type Pipeline,
   type PipelineCopilotDraftResponse,
+  type PipelineCopilotPatchOperation,
+  type PipelineCopilotPatchResponse,
   type PipelineGraph,
   type PipelineRun,
   type PipelineVersion,
@@ -404,8 +406,11 @@ export function PipelineBuilder() {
   const [upstreamColumns, setUpstreamColumns] = useState<string[]>([]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotMode, setCopilotMode] = useState<"draft" | "patch">("draft");
   const [copilotPrompt, setCopilotPrompt] = useState("");
-  const [copilotDraft, setCopilotDraft] = useState<PipelineCopilotDraftResponse | null>(null);
+  const [copilotDraft, setCopilotDraft] = useState<
+    PipelineCopilotDraftResponse | PipelineCopilotPatchResponse | null
+  >(null);
   const [copilotLoading, setCopilotLoading] = useState(false);
   const [copilotError, setCopilotError] = useState("");
   const [copilotConfirming, setCopilotConfirming] = useState(false);
@@ -415,6 +420,15 @@ export function PipelineBuilder() {
     getZoom: () => number;
   } | null>(null);
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+
+  const copilotPatchOps =
+    copilotMode === "patch" && copilotDraft && "patch" in copilotDraft
+      ? copilotDraft.patch.operations
+      : [];
+  const copilotIsNoop = copilotMode === "patch" && copilotPatchOps.length === 0;
+  const copilotCanApply = Boolean(
+    copilotDraft?.validation.valid && !(copilotMode === "patch" && copilotIsNoop),
+  );
 
   const copilotPreviewNodes = useMemo(
     () => (copilotDraft ? toStepNodes(copilotDraft.graph.nodes) : []),
@@ -426,6 +440,17 @@ export function PipelineBuilder() {
     [copilotDraft, copilotPreviewNodes],
   );
 
+  const openCopilotDrawer = useCallback((mode: "draft" | "patch") => {
+    copilotRequestIdRef.current += 1;
+    setCopilotMode(mode);
+    setCopilotOpen(true);
+    setCopilotConfirming(false);
+    setCopilotDraft(null);
+    setCopilotError("");
+    setCopilotLoading(false);
+    // Preserve prompt so close mid-flight / reopen keeps the typed request.
+  }, []);
+
   const closeCopilotDrawer = useCallback(() => {
     // Invalidate any in-flight Copilot response so it cannot restore discarded preview state.
     copilotRequestIdRef.current += 1;
@@ -436,20 +461,66 @@ export function PipelineBuilder() {
     setCopilotLoading(false);
   }, []);
 
-  const generateCopilotDraft = useCallback(async () => {
+  const generateCopilotProposal = useCallback(async () => {
     const prompt = copilotPrompt.trim();
     if (!prompt || !projectId || copilotLoading) return;
     const requestId = ++copilotRequestIdRef.current;
+    const modeAtRequest = copilotMode;
     setCopilotLoading(true);
     setCopilotError("");
     setCopilotConfirming(false);
     try {
-      const draft = await api<PipelineCopilotDraftResponse>(
-        `/projects/${projectId}/pipeline-copilot/draft`,
-        { method: "POST", body: JSON.stringify({ prompt }) },
-      );
+      const proposal =
+        modeAtRequest === "patch"
+          ? await api<PipelineCopilotPatchResponse>(
+              `/projects/${projectId}/pipeline-copilot/patch`,
+              {
+                method: "POST",
+                body: JSON.stringify({
+                  prompt,
+                  current_graph: {
+                    nodes: nodes.map((node) => ({
+                      id: node.id,
+                      type: node.type,
+                      position: node.position,
+                      data: {
+                        label: node.data.label,
+                        node_type: node.data.node_type,
+                        config: node.data.config,
+                      },
+                    })),
+                    edges: edges.map((edge) => {
+                      const source = nodes.find((node) => node.id === edge.source);
+                      const isCondition = source?.data.node_type === "condition";
+                      const branch = isCondition ? edgeBranch(edge) : undefined;
+                      return {
+                        id: edge.id,
+                        source: edge.source,
+                        target: edge.target,
+                        ...(edge.sourceHandle || branch
+                          ? { sourceHandle: edge.sourceHandle || branch }
+                          : {}),
+                        ...(edge.targetHandle ? { targetHandle: edge.targetHandle } : {}),
+                        ...(branch
+                          ? { label: branch, data: { branch } }
+                          : edge.label
+                            ? { label: String(edge.label) }
+                            : {}),
+                        ...(!branch && edge.data
+                          ? { data: edge.data as PipelineGraph["edges"][number]["data"] }
+                          : {}),
+                      };
+                    }),
+                  },
+                }),
+              },
+            )
+          : await api<PipelineCopilotDraftResponse>(
+              `/projects/${projectId}/pipeline-copilot/draft`,
+              { method: "POST", body: JSON.stringify({ prompt }) },
+            );
       if (requestId !== copilotRequestIdRef.current) return;
-      setCopilotDraft(draft);
+      setCopilotDraft(proposal);
     } catch (reason) {
       if (requestId !== copilotRequestIdRef.current) return;
       setCopilotDraft(null);
@@ -461,24 +532,34 @@ export function PipelineBuilder() {
         setCopilotLoading(false);
       }
     }
-  }, [copilotLoading, copilotPrompt, projectId]);
+  }, [copilotLoading, copilotMode, copilotPrompt, edges, nodes, projectId]);
 
-  const confirmApplyCopilotDraft = useCallback(() => {
+  const confirmApplyCopilotProposal = useCallback(() => {
     if (!copilotDraft?.validation.valid) return;
+    if (copilotMode === "patch" && "patch" in copilotDraft && copilotDraft.patch.operations.length === 0) {
+      return;
+    }
     const nextNodes = toStepNodes(copilotDraft.graph.nodes);
     const nextEdges = toDisplayEdges(copilotDraft.graph.edges, nextNodes);
+    const stillExists = selectedId
+      ? nextNodes.some((node) => node.id === selectedId)
+      : false;
     setNodes(nextNodes);
     setEdges(nextEdges);
-    setSelectedId("");
+    if (!stillExists) setSelectedId("");
     setDirty(true);
     setValidationErrors([]);
     setHighlightedNodeIds([]);
     setValidationVisible(false);
     setJsonError("");
     setError("");
-    setSuccess("Copilot draft applied to the Builder. Save a version when you are ready.");
+    setSuccess(
+      copilotMode === "patch"
+        ? "Copilot changes applied to the Builder. Save a version when you are ready."
+        : "Copilot draft applied to the Builder. Save a version when you are ready.",
+    );
     closeCopilotDrawer();
-  }, [closeCopilotDrawer, copilotDraft]);
+  }, [closeCopilotDrawer, copilotDraft, copilotMode, selectedId]);
 
   const load = useCallback(async () => {
     try {
@@ -1026,19 +1107,25 @@ export function PipelineBuilder() {
           <aside className="pipeline-node-library panel">
             <div className="pipeline-copilot-entry" data-testid="pipeline-copilot-entry">
               <strong>AI Pipeline Copilot</strong>
-              <p className="form-hint">Describe the workflow you want to build.</p>
-              <button
-                type="button"
-                className="btn secondary"
-                data-testid="pipeline-copilot-open"
-                onClick={() => {
-                  setCopilotOpen(true);
-                  setCopilotConfirming(false);
-                  setCopilotError("");
-                }}
-              >
-                Generate with Copilot
-              </button>
+              <p className="form-hint">Draft a new graph or modify the current Builder graph.</p>
+              <div className="pipeline-copilot-entry-actions">
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="pipeline-copilot-open"
+                  onClick={() => openCopilotDrawer("draft")}
+                >
+                  Draft new pipeline
+                </button>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="pipeline-copilot-patch-open"
+                  onClick={() => openCopilotDrawer("patch")}
+                >
+                  Modify current pipeline
+                </button>
+              </div>
             </div>
             <span className="eyebrow">Node library</span>
             <p className="form-hint">Click a step type to add it to the canvas.</p>
@@ -1304,7 +1391,11 @@ export function PipelineBuilder() {
       {canWrite && (
         <Drawer
           open={copilotOpen}
-          title="Pipeline Copilot"
+          title={
+            copilotMode === "patch"
+              ? "Pipeline Copilot — Modify"
+              : "Pipeline Copilot — Draft"
+          }
           size="large"
           testId="pipeline-copilot-drawer"
           onClose={closeCopilotDrawer}
@@ -1323,7 +1414,7 @@ export function PipelineBuilder() {
                   type="button"
                   className="btn"
                   data-testid="pipeline-copilot-confirm-apply"
-                  onClick={confirmApplyCopilotDraft}
+                  onClick={confirmApplyCopilotProposal}
                 >
                   Confirm apply
                 </button>
@@ -1333,7 +1424,9 @@ export function PipelineBuilder() {
         >
           <div className="pipeline-copilot-form">
             <label htmlFor="pipeline-copilot-prompt">
-              Describe the pipeline you want to draft
+              {copilotMode === "patch"
+                ? "Describe how to modify the current pipeline"
+                : "Describe the pipeline you want to draft"}
             </label>
             <textarea
               id="pipeline-copilot-prompt"
@@ -1342,7 +1435,11 @@ export function PipelineBuilder() {
               value={copilotPrompt}
               maxLength={4000}
               rows={5}
-              placeholder="Example: Create a forecasting pipeline for sales with ridge regression and time-ordered splitting."
+              placeholder={
+                copilotMode === "patch"
+                  ? "Example: Change the training algorithm to ridge and rename it Sales Forecast Training."
+                  : "Example: Create a forecasting pipeline for sales with ridge regression and time-ordered splitting."
+              }
               disabled={copilotLoading}
               onChange={(event) => setCopilotPrompt(event.target.value)}
             />
@@ -1353,7 +1450,7 @@ export function PipelineBuilder() {
                 data-testid="pipeline-copilot-generate"
                 disabled={copilotLoading || !copilotPrompt.trim()}
                 aria-busy={copilotLoading}
-                onClick={() => void generateCopilotDraft()}
+                onClick={() => void generateCopilotProposal()}
               >
                 {copilotLoading ? "Generating…" : "Generate"}
               </button>
@@ -1361,7 +1458,9 @@ export function PipelineBuilder() {
             </div>
             {copilotLoading && (
               <p className="form-hint" data-testid="pipeline-copilot-loading" role="status">
-                Generating a draft proposal. The Builder canvas is unchanged until you confirm Apply.
+                {copilotMode === "patch"
+                  ? "Generating a modification proposal. The Builder canvas is unchanged until you confirm Apply."
+                  : "Generating a draft proposal. The Builder canvas is unchanged until you confirm Apply."}
               </p>
             )}
             {copilotError && (
@@ -1386,12 +1485,37 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-validation-status"
                   role="status"
                 >
-                  {copilotDraft.validation.valid ? "Valid draft" : "Invalid draft"}
+                  {copilotMode === "patch"
+                    ? copilotDraft.validation.valid
+                      ? "Valid proposal"
+                      : "Invalid proposal"
+                    : copilotDraft.validation.valid
+                      ? "Valid draft"
+                      : "Invalid draft"}
                   {" · "}
+                  {copilotMode === "patch" ? `${copilotPatchOps.length} ops · ` : ""}
                   {copilotDraft.graph.nodes.length} nodes · {copilotDraft.graph.edges.length}{" "}
                   edges
                   {copilotDraft.model ? ` · Generated by ${copilotDraft.model}` : ""}
                 </p>
+                {copilotMode === "patch" && (
+                  <div data-testid="pipeline-copilot-operations">
+                    <strong>Proposed changes</strong>
+                    {copilotIsNoop ? (
+                      <p className="form-hint" data-testid="pipeline-copilot-noop">
+                        No graph changes were proposed.
+                      </p>
+                    ) : (
+                      <ul className="pipeline-copilot-op-list">
+                        {copilotPatchOps.map((operation, index) => (
+                          <li key={`${operation.op}-${index}`}>
+                            {describeCopilotPatchOperation(operation)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
                 {(copilotDraft.warnings || []).length > 0 && (
                   <ul data-testid="pipeline-copilot-warnings">
                     {copilotDraft.warnings.map((warning) => (
@@ -1402,8 +1526,9 @@ export function PipelineBuilder() {
                 {!copilotDraft.validation.valid && (
                   <>
                     <p className="form-hint" data-testid="pipeline-copilot-apply-blocked">
-                      This draft cannot be applied yet. Revise the prompt and generate another
-                      draft.
+                      {copilotMode === "patch"
+                        ? "The proposed changes do not produce a valid ModelFlow pipeline. Revise the request and generate another proposal."
+                        : "This draft cannot be applied yet. Revise the prompt and generate another draft."}
                     </p>
                     <ul data-testid="pipeline-copilot-validation-errors">
                       {(copilotDraft.validation.errors || []).map((issue) => (
@@ -1412,11 +1537,20 @@ export function PipelineBuilder() {
                     </ul>
                   </>
                 )}
+                {copilotDraft.validation.valid && copilotIsNoop && (
+                  <p className="form-hint" data-testid="pipeline-copilot-apply-blocked">
+                    No graph changes were proposed. Apply is disabled.
+                  </p>
+                )}
               </div>
               <div
                 className="pipeline-copilot-preview-canvas"
                 data-testid="pipeline-copilot-preview-canvas"
-                aria-label="Read-only Copilot draft preview"
+                aria-label={
+                  copilotMode === "patch"
+                    ? "Read-only Copilot patch preview"
+                    : "Read-only Copilot draft preview"
+                }
               >
                 <ReactFlow
                   nodes={copilotPreviewNodes}
@@ -1440,15 +1574,19 @@ export function PipelineBuilder() {
                   type="button"
                   className="btn"
                   data-testid="pipeline-copilot-apply"
-                  disabled={!copilotDraft.validation.valid}
+                  disabled={!copilotCanApply}
                   title={
-                    copilotDraft.validation.valid
-                      ? "Review confirmation before replacing the Builder graph"
-                      : "This draft cannot be applied yet. Revise the prompt and generate another draft."
+                    copilotCanApply
+                      ? "Review confirmation before updating the Builder graph"
+                      : copilotIsNoop
+                        ? "No graph changes were proposed."
+                        : copilotMode === "patch"
+                          ? "The proposed changes do not produce a valid ModelFlow pipeline."
+                          : "This draft cannot be applied yet. Revise the prompt and generate another draft."
                   }
                   onClick={() => setCopilotConfirming(true)}
                 >
-                  Apply to builder
+                  Apply {copilotMode === "patch" ? "changes" : "to builder"}
                 </button>
               </div>
             </div>
@@ -1456,16 +1594,36 @@ export function PipelineBuilder() {
 
           {copilotDraft && copilotConfirming && (
             <div className="pipeline-copilot-confirm" data-testid="pipeline-copilot-confirm">
-              <h3>Apply this Copilot draft?</h3>
-              <p>
-                This replaces the current in-memory Builder graph with the proposed complete
-                graph. It does not save a PipelineVersion, publish, or run anything.
-              </p>
-              {dirty && (
-                <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
-                  You have unsaved Builder changes. Confirming will replace those unsaved
-                  changes. The last saved PipelineVersion is not affected.
-                </p>
+              {copilotMode === "patch" ? (
+                <>
+                  <h3>Apply these Copilot changes?</h3>
+                  <p>
+                    This replaces the current in-memory Builder graph with the validated
+                    proposed result. It does not save a PipelineVersion, publish, schedule, or
+                    run anything.
+                  </p>
+                  {dirty && (
+                    <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
+                      The proposal was generated from your current unsaved Builder graph.
+                      Confirming keeps the resulting graph unsaved until you explicitly Save
+                      version.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3>Apply this Copilot draft?</h3>
+                  <p>
+                    This replaces the current in-memory Builder graph with the proposed complete
+                    graph. It does not save a PipelineVersion, publish, or run anything.
+                  </p>
+                  {dirty && (
+                    <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
+                      You have unsaved Builder changes. Confirming will replace those unsaved
+                      changes. The last saved PipelineVersion is not affected.
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -1473,6 +1631,57 @@ export function PipelineBuilder() {
       )}
     </div>
   );
+}
+
+function describeCopilotPatchOperation(operation: PipelineCopilotPatchOperation): string {
+  switch (operation.op) {
+    case "add_node":
+      return `Add node ${operation.node.id}`;
+    case "update_node": {
+      const parts: string[] = [`Update node ${operation.node_id}`];
+      if (operation.label) parts.push(`label → ${operation.label}`);
+      if (operation.config_patch) {
+        for (const [key, value] of Object.entries(operation.config_patch)) {
+          parts.push(`${key} → ${formatCopilotPatchValue(value)}`);
+        }
+      }
+      if (operation.position) {
+        parts.push(`position → (${operation.position.x}, ${operation.position.y})`);
+      }
+      return parts.join(" · ");
+    }
+    case "remove_node":
+      return `Remove node ${operation.node_id}`;
+    case "add_edge":
+      return `Add edge ${operation.edge.id || `${operation.edge.source}→${operation.edge.target}`}`;
+    case "update_edge": {
+      const parts: string[] = [`Update edge ${operation.edge_id}`];
+      if (operation.branch) parts.push(`branch → ${operation.branch}`);
+      if ("sourceHandle" in operation) {
+        parts.push(`sourceHandle → ${String(operation.sourceHandle)}`);
+      }
+      if ("targetHandle" in operation) {
+        parts.push(`targetHandle → ${String(operation.targetHandle)}`);
+      }
+      return parts.join(" · ");
+    }
+    case "remove_edge":
+      return `Remove edge ${operation.edge_id}`;
+    default:
+      return "Proposed change";
+  }
+}
+
+function formatCopilotPatchValue(value: unknown): string {
+  if (value === null) return "null";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    const text = JSON.stringify(value);
+    return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  } catch {
+    return String(value);
+  }
 }
 
 function artifactSnippet(value: unknown): string {

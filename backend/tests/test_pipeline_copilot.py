@@ -1163,3 +1163,956 @@ def test_failure_audit_excludes_provider_derived_detail(client, auth_headers, mo
         assert "You are ModelFlow Pipeline Copilot" not in blob
         assert "Pipeline Copilot draft failed." in blob
         assert "CopilotContractError" in blob
+
+
+# ---------------------------------------------------------------------------
+# Phase 7-C — natural-language graph patch
+# ---------------------------------------------------------------------------
+
+
+def _simple_base_graph(
+    *,
+    algorithm: str = "ridge",
+    target_column: str | None = "sales",
+    include_notification: bool = True,
+    dataset_id: int = 1,
+    dataset_version_id: int = 1,
+) -> dict[str, Any]:
+    train_config: dict[str, Any] = {
+        "algorithm": algorithm,
+        "problem_type": "regression",
+        "feature_columns": [],
+        "hyperparameters": {},
+        "training_task": "tabular",
+    }
+    if target_column is not None:
+        train_config["target_column"] = target_column
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": "dataset_load-1",
+            "position": {"x": 0, "y": 40},
+            "data": {
+                "label": "Load",
+                "node_type": "dataset_load",
+                "config": {
+                    "dataset_id": dataset_id,
+                    "dataset_version_id": dataset_version_id,
+                },
+            },
+        },
+        {
+            "id": "training-1",
+            "position": {"x": 280, "y": 40},
+            "data": {
+                "label": "Train",
+                "node_type": "training",
+                "config": train_config,
+            },
+        },
+    ]
+    edges: list[dict[str, Any]] = [
+        {
+            "id": "edge-load-train",
+            "source": "dataset_load-1",
+            "target": "training-1",
+            "data": {"branch": "always"},
+        }
+    ]
+    if include_notification:
+        nodes.append(
+            {
+                "id": "notification-1",
+                "position": {"x": 560, "y": 40},
+                "data": {
+                    "label": "Notify",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "done",
+                        "message": "ok",
+                    },
+                },
+            }
+        )
+        edges.append(
+            {
+                "id": "edge-train-notify",
+                "source": "training-1",
+                "target": "notification-1",
+                "data": {"branch": "always"},
+            }
+        )
+    return {"nodes": nodes, "edges": edges}
+
+
+def _patch_provider_payload(
+    summary: str,
+    operations: list[dict[str, Any]],
+    *,
+    as_fence: bool = False,
+) -> dict[str, Any]:
+    return _provider_response(
+        {"summary": summary, "patch": {"operations": operations}},
+        as_fence=as_fence,
+    )
+
+
+def test_patch_request_prompt_trim_and_extra_forbidden(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "patch-schema"},
+    ).json()
+    _patch_provider(
+        monkeypatch,
+        lambda request: httpx.Response(
+            200,
+            json=_patch_provider_payload("noop", []),
+        ),
+        settings_obj=_llm_settings(),
+    )
+    base = _simple_base_graph(include_notification=False)
+    ok = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "  Change algorithm  ", "current_graph": base},
+    )
+    assert ok.status_code == 200, ok.text
+
+    forbidden = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={
+            "prompt": "x",
+            "current_graph": base,
+            "pipeline_id": 1,
+            "model": "gpt",
+        },
+    )
+    assert forbidden.status_code == 422
+
+    blank = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "   ", "current_graph": base},
+    )
+    assert blank.status_code == 422
+
+
+def test_patch_base_graph_bounds_and_serialized_size(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "patch-bounds"},
+    ).json()
+    _patch_provider(
+        monkeypatch,
+        lambda request: httpx.Response(200, json=_patch_provider_payload("noop", [])),
+        settings_obj=_llm_settings(),
+    )
+    too_many_nodes = {
+        "nodes": [
+            {
+                "id": f"notification-{i}",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": f"n{i}",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "t",
+                        "message": "m",
+                    },
+                },
+            }
+            for i in range(51)
+        ],
+        "edges": [],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "trim", "current_graph": too_many_nodes},
+    )
+    assert response.status_code == 502
+    assert "max nodes" in response.json()["detail"].lower()
+
+    # Oversized serialized graph rejected before provider call.
+    huge = {
+        "nodes": [
+            {
+                "id": "notification-1",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": "n",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "t",
+                        "message": "x" * (copilot.MAX_GRAPH_JSON_CHARS),
+                    },
+                },
+            }
+        ],
+        "edges": [],
+    }
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "trim", "current_graph": huge},
+    )
+    assert response.status_code == 502
+    assert "serialized" in response.json()["detail"].lower()
+
+
+def test_parse_llm_patch_content_fence_and_rejects():
+    ok = copilot.parse_llm_patch_content(
+        '```json\n{"summary":"ok","patch":{"operations":[]}}\n```'
+    )
+    assert ok["summary"] == "ok"
+    assert ok["patch"]["operations"] == []
+
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            '```json\n{"summary":"a","patch":{"operations":[]}}\n```\n```json\n{}\n```'
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            'Here is JSON:\n{"summary":"a","patch":{"operations":[]}}'
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            json.dumps(
+                {
+                    "summary": "bad",
+                    "patch": {
+                        "operations": [
+                            {"op": "update_node", "node_id": "x"}
+                            for _ in range(copilot.MAX_PATCH_OPERATIONS + 1)
+                        ]
+                    },
+                }
+            )
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            json.dumps(
+                {
+                    "summary": "bad",
+                    "graph": {"nodes": [], "edges": []},
+                    "patch": {"operations": []},
+                }
+            )
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            json.dumps(
+                {
+                    "summary": "bad",
+                    "patch": {
+                        "operations": [{"op": "replace_graph", "graph": {}}]
+                    },
+                }
+            )
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.parse_llm_patch_content(
+            json.dumps(
+                {
+                    "summary": "bad",
+                    "patch": {
+                        "operations": [
+                            {"op": "update_node", "path": "/nodes/0", "value": {}}
+                        ]
+                    },
+                }
+            )
+        )
+
+
+def test_apply_patch_operations_core_behaviors():
+    base = copilot.canonicalize_graph(_simple_base_graph())
+
+    updated = copilot.apply_patch_operations(
+        base,
+        [
+            {
+                "op": "update_node",
+                "node_id": "training-1",
+                "label": "Sales Forecast Training",
+                "config_patch": {"algorithm": "ridge"},
+                "position": {"x": 100, "y": 120},
+            }
+        ],
+    )
+    train = next(n for n in updated["nodes"] if n["id"] == "training-1")
+    assert train["data"]["label"] == "Sales Forecast Training"
+    assert train["data"]["config"]["algorithm"] == "ridge"
+    assert train["data"]["config"]["target_column"] == "sales"
+    assert train["data"]["node_type"] == "training"
+    assert train["position"] == {"x": 100.0, "y": 120.0}
+
+    removed = copilot.apply_patch_operations(
+        base, [{"op": "remove_node", "node_id": "notification-1"}]
+    )
+    assert [n["id"] for n in removed["nodes"]] == ["dataset_load-1", "training-1"]
+    assert not any(e["id"] == "edge-train-notify" for e in removed["edges"])
+    assert any(e["id"] == "edge-load-train" for e in removed["edges"])
+
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base, [{"op": "add_node", "node": base["nodes"][0]}]
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base, [{"op": "update_node", "node_id": "training-1"}]
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base,
+            [
+                {
+                    "op": "update_node",
+                    "node_id": "training-1",
+                    "node_type": "evaluation",
+                    "label": "x",
+                }
+            ],
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base,
+            [
+                {
+                    "op": "update_edge",
+                    "edge_id": "edge-train-notify",
+                    "source": "training-1",
+                    "target": "training-1",
+                }
+            ],
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base, [{"op": "remove_node", "node_id": "missing"}]
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base, [{"op": "remove_edge", "edge_id": "missing"}]
+        )
+    with pytest.raises(copilot.CopilotContractError):
+        copilot.apply_patch_operations(
+            base, [{"op": "update_node", "node_id": "training-1", "config_patch": []}]
+        )
+
+    # Operation ordering: add then connect.
+    ordered = copilot.apply_patch_operations(
+        copilot.canonicalize_graph(_simple_base_graph(include_notification=False)),
+        [
+            {
+                "op": "add_node",
+                "node": {
+                    "id": "evaluation-1",
+                    "position": {"x": 400, "y": 40},
+                    "data": {
+                        "label": "Evaluate",
+                        "node_type": "evaluation",
+                        "config": {"metric": "rmse", "minimum": 0},
+                    },
+                },
+            },
+            {
+                "op": "add_edge",
+                "edge": {
+                    "id": "edge-train-eval",
+                    "source": "training-1",
+                    "target": "evaluation-1",
+                    "data": {"branch": "always"},
+                },
+            },
+            {
+                "op": "update_edge",
+                "edge_id": "edge-train-eval",
+                "branch": "always",
+                "sourceHandle": "data",
+                "targetHandle": None,
+            },
+            {"op": "remove_edge", "edge_id": "edge-train-eval"},
+        ],
+    )
+    assert any(n["id"] == "evaluation-1" for n in ordered["nodes"])
+    assert [e["id"] for e in ordered["edges"]] == ["edge-load-train"]
+    assert not any(e["id"] == "edge-train-eval" for e in ordered["edges"])
+
+
+def test_patch_endpoint_update_and_noop(client, auth_headers, monkeypatch):
+    project_id, dataset_id, version_id = _seed_sales_project()
+    base = _simple_base_graph(
+        include_notification=False,
+        dataset_id=dataset_id,
+        dataset_version_id=version_id,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Changed the training algorithm to ridge.",
+                [
+                    {
+                        "op": "update_node",
+                        "node_id": "training-1",
+                        "label": "Sales Forecast Training",
+                        "config_patch": {"algorithm": "ridge"},
+                    }
+                ],
+                as_fence=True,
+            ),
+        )
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    before = None
+    with TestingSessionLocal() as db:
+        before = copilot.count_project_entities(db, project_id)
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "Change training algorithm to ridge", "current_graph": base},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"].startswith("Changed")
+    assert body["patch"]["operations"][0]["op"] == "update_node"
+    train = next(n for n in body["graph"]["nodes"] if n["id"] == "training-1")
+    assert train["data"]["config"]["algorithm"] == "ridge"
+    assert train["data"]["label"] == "Sales Forecast Training"
+    assert body["validation"]["valid"] is True, body["validation"]
+    assert body["model"] == "test-model"
+
+    with TestingSessionLocal() as db:
+        after = copilot.count_project_entities(db, project_id)
+        assert after == before
+        audits = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "pipeline.copilot.patch",
+                AuditLog.success.is_(True),
+            )
+        ).all()
+        assert audits
+        blob = json.dumps(
+            [{"before": a.before_summary, "after": a.after_summary} for a in audits]
+        )
+        assert "Change training algorithm" not in blob
+        assert "secret-test-key" not in blob
+        assert "operation_count" in blob
+
+    # Empty patch → no-op warning, Apply-blocking signal via empty ops.
+    def noop_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_patch_provider_payload("Nothing to change.", []))
+
+    _patch_provider(monkeypatch, noop_handler, settings_obj=_llm_settings())
+    noop = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "Do nothing", "current_graph": base},
+    )
+    assert noop.status_code == 200
+    assert noop.json()["patch"]["operations"] == []
+    assert any("no graph changes" in w.lower() for w in noop.json()["warnings"])
+
+
+def test_patch_base_strict_invalid_can_become_valid(client, auth_headers, monkeypatch):
+    project_id, dataset_id, version_id = _seed_sales_project()
+    # Missing target_column → strictly invalid, but canonicalizable.
+    base = _simple_base_graph(
+        target_column=None,
+        include_notification=False,
+        dataset_id=dataset_id,
+        dataset_version_id=version_id,
+    )
+    base["nodes"][1]["data"]["config"].pop("target_column", None)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode())
+        user = body["messages"][1]["content"]
+        assert "current_graph_validation_errors" in user
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Set target to sales.",
+                [
+                    {
+                        "op": "update_node",
+                        "node_id": "training-1",
+                        "config_patch": {"target_column": "sales"},
+                    }
+                ],
+            ),
+        )
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "target을 sales로 설정해줘", "current_graph": base},
+    )
+    assert response.status_code == 200, response.text
+    train = next(n for n in response.json()["graph"]["nodes"] if n["id"] == "training-1")
+    assert train["data"]["config"]["target_column"] == "sales"
+    assert response.json()["validation"]["valid"] is True
+
+
+def test_patch_result_strict_invalid_and_structural_fail(
+    client, auth_headers, monkeypatch
+):
+    project_id, dataset_id, version_id = _seed_sales_project()
+    base = _simple_base_graph(
+        include_notification=False,
+        dataset_id=dataset_id,
+        dataset_version_id=version_id,
+    )
+
+    def strict_fail(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Clear target",
+                [
+                    {
+                        "op": "update_node",
+                        "node_id": "training-1",
+                        "config_patch": {"target_column": None},
+                    }
+                ],
+            ),
+        )
+
+    _patch_provider(monkeypatch, strict_fail, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "clear target", "current_graph": base},
+    )
+    assert response.status_code == 200
+    assert response.json()["validation"]["valid"] is False
+    assert response.json()["validation"]["errors"]
+
+    def unknown_op(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Bad",
+                [{"op": "explode", "node_id": "training-1"}],
+            ),
+        )
+
+    _patch_provider(monkeypatch, unknown_op, settings_obj=_llm_settings())
+    bad = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "explode", "current_graph": base},
+    )
+    assert bad.status_code == 502
+
+
+def test_patch_project_reference_and_dataset_version_preservation(
+    client, auth_headers, monkeypatch
+):
+    project_id, dataset_id, version_id = _seed_sales_project()
+    base = {
+        "nodes": [
+            {
+                "id": "dataset_load-1",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": "Load",
+                    "node_type": "dataset_load",
+                    "config": {
+                        "dataset_id": dataset_id,
+                        "dataset_version_id": version_id,
+                    },
+                },
+            }
+        ],
+        "edges": [],
+    }
+
+    def preserve(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Rename load",
+                [
+                    {
+                        "op": "update_node",
+                        "node_id": "dataset_load-1",
+                        "label": "Load sales data",
+                    }
+                ],
+            ),
+        )
+
+    _patch_provider(monkeypatch, preserve, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "rename", "current_graph": base},
+    )
+    assert response.status_code == 200
+    cfg = response.json()["graph"]["nodes"][0]["data"]["config"]
+    assert cfg["dataset_version_id"] == version_id
+    assert cfg["dataset_id"] == dataset_id
+    assert response.json()["validation"]["valid"] is True
+
+    def invent(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "Invent version",
+                [
+                    {
+                        "op": "update_node",
+                        "node_id": "dataset_load-1",
+                        "config_patch": {"dataset_version_id": 999999},
+                    }
+                ],
+            ),
+        )
+
+    _patch_provider(monkeypatch, invent, settings_obj=_llm_settings())
+    bad_ref = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "use latest", "current_graph": base},
+    )
+    assert bad_ref.status_code == 200
+    assert bad_ref.json()["validation"]["valid"] is False
+
+
+def test_patch_rbac_and_not_configured(client, auth_headers, viewer_headers, monkeypatch):
+    project_id = viewer_headers["project_id"]
+    headers = {"Authorization": viewer_headers["Authorization"]}
+    base = _simple_base_graph(include_notification=False)
+    denied = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=headers,
+        json={"prompt": "change", "current_graph": base},
+    )
+    assert denied.status_code in {401, 403}
+
+    monkeypatch.setattr(
+        copilot,
+        "settings",
+        _llm_settings(llm_base_url="", llm_model=""),
+    )
+    missing = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "change", "current_graph": base},
+    )
+    # Admin still has write on viewer project via system admin; expect 503 not configured.
+    assert missing.status_code == 503
+
+
+def test_patch_failure_audit_excludes_secrets(client, auth_headers, monkeypatch):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "patch-audit-fail"},
+    ).json()
+    project_id = project["id"]
+    marker = "PROVIDER_PATCH_SECRET_NODE"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=_patch_provider_payload(
+                "bad",
+                [{"op": "remove_node", "node_id": marker}],
+            ),
+        )
+
+    _patch_provider(
+        monkeypatch,
+        handler,
+        settings_obj=_llm_settings(llm_api_key="secret-test-key"),
+    )
+    prompt = "Raw patch prompt must never appear in failure audit."
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={
+            "prompt": prompt,
+            "current_graph": _simple_base_graph(include_notification=False),
+        },
+    )
+    assert response.status_code == 502
+
+    with TestingSessionLocal() as db:
+        audits = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "pipeline.copilot.patch",
+                AuditLog.success.is_(False),
+            )
+        ).all()
+        assert audits
+        blob = json.dumps(
+            [
+                {
+                    "before": row.before_summary,
+                    "after": row.after_summary,
+                    "failure_reason": row.failure_reason,
+                }
+                for row in audits
+            ]
+        )
+        assert marker not in blob
+        assert prompt not in blob
+        assert "secret-test-key" not in blob
+        assert "Pipeline Copilot patch failed." in blob
+
+
+def _two_node_notification_graph(*, edges: list[dict[str, Any]]) -> dict[str, Any]:
+    """Minimal canonicalizable graph for edge-id collision regressions."""
+    return {
+        "nodes": [
+            {
+                "id": "notification-a",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": "A",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "a",
+                        "message": "a",
+                    },
+                },
+            },
+            {
+                "id": "notification-b",
+                "position": {"x": 200, "y": 0},
+                "data": {
+                    "label": "B",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "b",
+                        "message": "b",
+                    },
+                },
+            },
+            {
+                "id": "notification-c",
+                "position": {"x": 400, "y": 0},
+                "data": {
+                    "label": "C",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "c",
+                        "message": "c",
+                    },
+                },
+            },
+        ],
+        "edges": edges,
+    }
+
+
+def test_canonicalize_rejects_duplicate_explicit_edge_ids():
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-1",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "id": "edge-1",
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    with pytest.raises(copilot.CopilotContractError, match="Duplicate edge id"):
+        copilot.canonicalize_graph(graph)
+
+
+def test_canonicalize_rejects_auto_generated_edge_id_collision():
+    # Second edge has no id → defaults to edge-2; first already uses edge-2 explicitly.
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-2",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    with pytest.raises(copilot.CopilotContractError, match="Duplicate edge id"):
+        copilot.canonicalize_graph(graph)
+
+
+def test_canonicalize_accepts_unique_edge_ids():
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-ab",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    canonical = copilot.canonicalize_graph(graph)
+    assert [edge["id"] for edge in canonical["edges"]] == ["edge-ab", "edge-2"]
+
+
+def test_patch_current_graph_duplicate_edge_ids_rejected_before_provider(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-patch"},
+    ).json()
+    project_id = project["id"]
+    provider_calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        provider_calls["count"] += 1
+        return httpx.Response(200, json=_patch_provider_payload("should not run", []))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    before = None
+    with TestingSessionLocal() as db:
+        before = copilot.count_project_entities(db, project_id)
+
+    bad_graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-1",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "id": "edge-1",
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "rename something", "current_graph": bad_graph},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()
+    assert provider_calls["count"] == 0
+
+    with TestingSessionLocal() as db:
+        assert copilot.count_project_entities(db, project_id) == before
+
+
+def test_patch_current_graph_auto_id_collision_rejected_before_provider(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-auto"},
+    ).json()
+    provider_calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        provider_calls["count"] += 1
+        return httpx.Response(200, json=_patch_provider_payload("should not run", []))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    bad_graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-2",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "noop", "current_graph": bad_graph},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()
+    assert provider_calls["count"] == 0
+
+
+def test_draft_provider_duplicate_edge_ids_contract_failure(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-draft"},
+    ).json()
+    payload = {
+        "summary": "Duplicate edges",
+        "graph": _two_node_notification_graph(
+            edges=[
+                {
+                    "id": "edge-1",
+                    "source": "notification-a",
+                    "target": "notification-b",
+                    "data": {"branch": "always"},
+                },
+                {
+                    "id": "edge-1",
+                    "source": "notification-b",
+                    "target": "notification-c",
+                    "data": {"branch": "always"},
+                },
+            ]
+        ),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Notify a to b to c"},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()

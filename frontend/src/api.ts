@@ -480,7 +480,7 @@ export type PipelineGraph = {
   }>;
 };
 
-/** Phase 7-A/7-B: Copilot draft validation payload (server-authoritative). */
+/** Phase 7-A/7-B/7-C: Copilot validation payload (server-authoritative). */
 export type PipelineCopilotValidation = {
   valid: boolean;
   errors: string[];
@@ -490,6 +490,37 @@ export type PipelineCopilotValidation = {
 /** Phase 7-A/7-B: response from POST …/pipeline-copilot/draft. */
 export type PipelineCopilotDraftResponse = {
   summary: string;
+  graph: PipelineGraph;
+  validation: PipelineCopilotValidation;
+  warnings: string[];
+  model: string;
+};
+
+/** Phase 7-C: allowlisted structured patch operations (server-applied). */
+export type PipelineCopilotPatchOperation =
+  | { op: "add_node"; node: PipelineGraph["nodes"][number] }
+  | {
+      op: "update_node";
+      node_id: string;
+      label?: string;
+      config_patch?: Record<string, unknown>;
+      position?: { x: number; y: number };
+    }
+  | { op: "remove_node"; node_id: string }
+  | { op: "add_edge"; edge: PipelineGraph["edges"][number] }
+  | {
+      op: "update_edge";
+      edge_id: string;
+      branch?: "true" | "false" | "always";
+      sourceHandle?: string | null;
+      targetHandle?: string | null;
+    }
+  | { op: "remove_edge"; edge_id: string };
+
+/** Phase 7-C: response from POST …/pipeline-copilot/patch. */
+export type PipelineCopilotPatchResponse = {
+  summary: string;
+  patch: { operations: PipelineCopilotPatchOperation[] };
   graph: PipelineGraph;
   validation: PipelineCopilotValidation;
   warnings: string[];

@@ -767,7 +767,19 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   background: var(--bg-soft);
 }
 .pipeline-copilot-entry strong { font-size: .9rem; }
+.pipeline-copilot-entry-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+}
 .pipeline-copilot-entry .btn { justify-self: start; }
+.pipeline-copilot-op-list {
+  margin: .35rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: .2rem;
+  font-size: .85rem;
+}
 .pipeline-copilot-form {
   display: grid;
   gap: .55rem;
