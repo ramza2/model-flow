@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { useEffect, useState, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiRequestError, type PipelineCopilotDraftResponse } from "../api";
+import { ApiRequestError, type PipelineCopilotDraftResponse, type PipelineCopilotPatchResponse } from "../api";
 import { NodeConfigForm } from "../pipelineForms";
 import { defaultConfigFor } from "../pipelineHelpers";
 import { PipelineBuilder, PipelineRunDetail, Pipelines } from "./Pipelines";
@@ -1224,9 +1224,71 @@ const forecastCopilotDraft: PipelineCopilotDraftResponse = {
   },
 };
 
+const forecastCopilotPatch: PipelineCopilotPatchResponse = {
+  summary: "Changed the training algorithm to ridge.",
+  model: "test-model",
+  warnings: [],
+  validation: { valid: true, errors: [], order: ["dataset_load-1", "training-1"] },
+  patch: {
+    operations: [
+      {
+        op: "update_node",
+        node_id: "training-1",
+        label: "Sales Forecast Training",
+        config_patch: { algorithm: "ridge" },
+      },
+    ],
+  },
+  graph: {
+    nodes: [
+      {
+        id: "dataset_load-1",
+        position: { x: 40, y: 40 },
+        data: {
+          label: "Load sales",
+          node_type: "dataset_load",
+          config: { dataset_id: 3, dataset_version_id: 11 },
+        },
+      },
+      {
+        id: "training-1",
+        position: { x: 320, y: 40 },
+        data: {
+          label: "Sales Forecast Training",
+          node_type: "training",
+          config: {
+            training_task: "forecasting",
+            target_column: "sales",
+            problem_type: "regression",
+            algorithm: "ridge",
+            feature_columns: ["sales_lag_1", "sales_roll_avg_3"],
+            hyperparameters: {},
+            split_strategy: "time",
+            time_column: "event_time",
+            forecast_strategy: "direct_multioutput",
+            forecast_horizons: [1, 2, 3],
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: "edge-1",
+        source: "dataset_load-1",
+        target: "training-1",
+        sourceHandle: "data",
+        targetHandle: "data",
+        data: { branch: "always" },
+      },
+    ],
+  },
+};
+
 function stubBuilderApiWithCopilot(options?: {
   draft?: PipelineCopilotDraftResponse | (() => PipelineCopilotDraftResponse);
   draftError?: ApiRequestError;
+  patch?: PipelineCopilotPatchResponse | (() => PipelineCopilotPatchResponse);
+  patchError?: ApiRequestError;
 }) {
   stubBuilderApi();
   const base = apiMock.getMockImplementation();
@@ -1239,6 +1301,14 @@ function stubBuilderApiWithCopilot(options?: {
           ? options.draft()
           : options?.draft || forecastCopilotDraft;
       return draft;
+    }
+    if (path === "/projects/7/pipeline-copilot/patch" && method === "POST") {
+      if (options?.patchError) throw options.patchError;
+      const patch =
+        typeof options?.patch === "function"
+          ? options.patch()
+          : options?.patch || forecastCopilotPatch;
+      return patch;
     }
     if (path === "/projects/7/training/algorithms") {
       return {
@@ -1662,5 +1732,385 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(
       screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']"),
     ).toHaveLength(0);
+  });
+});
+
+describe("Pipeline Copilot patch (Phase 7-C)", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    navigateMock.mockReset();
+    canWriteRef.value = true;
+    stubBuilderApiWithCopilot();
+  });
+
+  it("keeps Draft new flow and shows Modify for writers only", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-copilot-entry");
+    expect(screen.getByTestId("pipeline-copilot-open")).toHaveTextContent(/Draft new pipeline/i);
+    expect(screen.getByTestId("pipeline-copilot-patch-open")).toHaveTextContent(
+      /Modify current pipeline/i,
+    );
+    cleanup();
+
+    canWriteRef.value = false;
+    renderBuilder();
+    await screen.findByTestId("pipeline-builder-layout");
+    expect(screen.queryByTestId("pipeline-copilot-patch-open")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-copilot-open")).not.toBeInTheDocument();
+  });
+
+  it("sends prompt + exact in-memory current_graph including unsaved edits", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-training");
+    fireEvent.click(screen.getByTestId("pipeline-library-training"));
+    await screen.findByTestId("canvas-node-training-1");
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Change training algorithm to ridge" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await screen.findByTestId("pipeline-copilot-preview");
+
+    const patchCall = apiMock.mock.calls.find(
+      ([path, init]) =>
+        path === "/projects/7/pipeline-copilot/patch" &&
+        (init?.method || "GET").toUpperCase() === "POST",
+    );
+    expect(patchCall).toBeTruthy();
+    const body = JSON.parse(String(patchCall?.[1]?.body || "{}"));
+    expect(Object.keys(body).sort()).toEqual(["current_graph", "prompt"]);
+    expect(body.prompt).toBe("Change training algorithm to ridge");
+    expect(body.pipeline_id).toBeUndefined();
+    expect(body.model).toBeUndefined();
+    expect(body.current_graph.nodes.some((n: { id: string }) => n.id === "training-1")).toBe(
+      true,
+    );
+    // Generate must not clear dirty or mutate live graph before Apply.
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid='canvas-node-training-1']"),
+    ).toHaveLength(1);
+  });
+
+  it("renders proposed operations and blocks Apply for invalid or empty patches", async () => {
+    stubBuilderApiWithCopilot({
+      patch: {
+        ...forecastCopilotPatch,
+        validation: { valid: false, errors: ["target_column is required"], order: [] },
+        warnings: ["Proposed changes failed strict validation"],
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Broken change" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-operations")).toHaveTextContent(
+      /Update node training-1/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-apply-blocked")).toHaveTextContent(
+      /do not produce a valid ModelFlow pipeline/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-apply")).toBeDisabled();
+
+    cleanup();
+    stubBuilderApiWithCopilot({
+      patch: {
+        ...forecastCopilotPatch,
+        summary: "Nothing changed",
+        patch: { operations: [] },
+        warnings: ["Copilot proposed no graph changes."],
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Do nothing" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-noop")).toHaveTextContent(
+      /No graph changes were proposed/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-apply")).toBeDisabled();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+  });
+
+  it("requires confirmation and Apply uses response.graph without Save/Publish/Run", async () => {
+    const seeded = {
+      ...pipeline,
+      version: {
+        id: 1,
+        version: 1,
+        graph: {
+          nodes: [
+            {
+              id: "dataset_load-1",
+              position: { x: 40, y: 40 },
+              data: {
+                label: "Load sales",
+                node_type: "dataset_load",
+                config: { dataset_id: 3, dataset_version_id: 11 },
+              },
+            },
+            {
+              id: "training-1",
+              position: { x: 320, y: 40 },
+              data: {
+                label: "Forecast train",
+                node_type: "training",
+                config: {
+                  training_task: "forecasting",
+                  target_column: "sales",
+                  problem_type: "regression",
+                  algorithm: "random_forest",
+                  feature_columns: ["sales_lag_1"],
+                  hyperparameters: {},
+                  split_strategy: "time",
+                  time_column: "event_time",
+                  forecast_strategy: "direct_multioutput",
+                  forecast_horizons: [1, 2, 3],
+                },
+              },
+            },
+            {
+              id: "notification-1",
+              position: { x: 600, y: 40 },
+              data: {
+                label: "Notify",
+                node_type: "notification",
+                config: {
+                  alert_type: "pipeline",
+                  severity: "info",
+                  title: "done",
+                  message: "ok",
+                },
+              },
+            },
+          ],
+          edges: [
+            {
+              id: "edge-1",
+              source: "dataset_load-1",
+              target: "training-1",
+              data: { branch: "always" },
+            },
+            {
+              id: "edge-2",
+              source: "training-1",
+              target: "notification-1",
+              data: { branch: "always" },
+            },
+          ],
+        },
+      },
+    };
+    stubBuilderApi();
+    const base = apiMock.getMockImplementation();
+    let versionPosts = 0;
+    let publishPosts = 0;
+    let runPosts = 0;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return seeded;
+      if (path === "/projects/7/pipeline-copilot/patch" && method === "POST") {
+        return {
+          ...forecastCopilotPatch,
+          patch: {
+            operations: [
+              {
+                op: "update_node",
+                node_id: "training-1",
+                label: "Sales Forecast Training",
+                config_patch: { algorithm: "ridge" },
+              },
+              { op: "remove_node", node_id: "notification-1" },
+              {
+                op: "add_node",
+                node: {
+                  id: "evaluation-1",
+                  position: { x: 600, y: 40 },
+                  data: {
+                    label: "Evaluate",
+                    node_type: "evaluation",
+                    config: { metric: "rmse", minimum: 0 },
+                  },
+                },
+              },
+            ],
+          },
+          graph: {
+            nodes: [
+              forecastCopilotPatch.graph.nodes[0],
+              forecastCopilotPatch.graph.nodes[1],
+              {
+                id: "evaluation-1",
+                position: { x: 600, y: 40 },
+                data: {
+                  label: "Evaluate",
+                  node_type: "evaluation",
+                  config: { metric: "rmse", minimum: 0 },
+                },
+              },
+            ],
+            edges: [forecastCopilotPatch.graph.edges[0]],
+          },
+        } satisfies PipelineCopilotPatchResponse;
+      }
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        versionPosts += 1;
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      if (path === "/projects/7/pipelines/9/publish" && method === "POST") {
+        publishPosts += 1;
+        return { ...seeded, status: "published" };
+      }
+      if (path === "/projects/7/pipelines/9/run" && method === "POST") {
+        runPosts += 1;
+        throw new Error("run should not be called");
+      }
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return { valid: true, errors: [], order: [] };
+      }
+      if (path === "/projects/7/training/algorithms") {
+        return { algorithms: [{ id: "ridge", display_name: "Ridge", problem_types: ["regression"] }] };
+      }
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") return versions;
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      return base?.(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-training-1");
+    expect(screen.getByTestId("canvas-node-notification-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Change algorithm to ridge and remove notification" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await screen.findByTestId("pipeline-copilot-preview");
+    expect(screen.getByTestId("pipeline-copilot-operations")).toHaveTextContent(/Remove node notification-1/i);
+    // Live canvas unchanged before Apply.
+    expect(screen.getByTestId("canvas-node-notification-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    expect(await screen.findByTestId("pipeline-copilot-confirm")).toHaveTextContent(
+      /Apply these Copilot changes/i,
+    );
+    fireEvent.click(screen.getByTestId("pipeline-copilot-confirm-back"));
+    expect(screen.queryByTestId("pipeline-copilot-confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("canvas-node-notification-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-confirm-apply"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-publish")).toBeDisabled();
+    expect(screen.getByTestId("pipeline-run")).toBeDisabled();
+    expect(
+      within(screen.getByTestId("pipeline-canvas")).queryByTestId("canvas-node-notification-1"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("pipeline-canvas")).getByTestId("canvas-node-evaluation-1"),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("pipeline-canvas")).getByTestId("canvas-node-training-1"),
+    ).toHaveTextContent(/Sales Forecast Training/i);
+    expect(versionPosts).toBe(0);
+    expect(publishPosts).toBe(0);
+    expect(runPosts).toBe(0);
+
+    fireEvent.click(screen.getByTestId("pipeline-save"));
+    await waitFor(() => expect(versionPosts).toBe(1));
+    await waitFor(() => expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument());
+  });
+
+  it("ignores stale patch responses and does not cross-contaminate draft mode", async () => {
+    type Deferred = {
+      promise: Promise<PipelineCopilotPatchResponse>;
+      resolve: (value: PipelineCopilotPatchResponse) => void;
+    };
+    const deferreds: Deferred[] = [];
+    stubBuilderApi();
+    const base = apiMock.getMockImplementation();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipeline-copilot/patch" && method === "POST") {
+        let resolve!: (value: PipelineCopilotPatchResponse) => void;
+        const promise = new Promise<PipelineCopilotPatchResponse>((res) => {
+          resolve = res;
+        });
+        deferreds.push({ promise, resolve });
+        return promise;
+      }
+      if (path === "/projects/7/pipeline-copilot/draft" && method === "POST") {
+        return { ...forecastCopilotDraft, summary: "Draft must not leak into patch" };
+      }
+      return base?.(path, init);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "First patch" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await waitFor(() => expect(deferreds.length).toBe(1));
+
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Second patch" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    await waitFor(() => expect(deferreds.length).toBe(2));
+
+    deferreds[1].resolve({
+      ...forecastCopilotPatch,
+      summary: "Second patch result",
+    });
+    expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent(
+      "Second patch result",
+    );
+
+    deferreds[0].resolve({
+      ...forecastCopilotPatch,
+      summary: "Stale first patch",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.getByTestId("pipeline-copilot-summary")).toHaveTextContent("Second patch result");
+    expect(screen.queryByText(/Stale first patch/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Draft must not leak/i)).not.toBeInTheDocument();
+  });
+
+  it("leaves graph unchanged on patch 503/502 errors", async () => {
+    stubBuilderApiWithCopilot({
+      patchError: new ApiRequestError(503, "Pipeline Copilot is not configured."),
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-library-training"));
+    await screen.findByTestId("canvas-node-training-1");
+    fireEvent.click(screen.getByTestId("pipeline-copilot-patch-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "Anything" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-error")).toHaveTextContent(/not configured/i);
+    expect(
+      within(screen.getByTestId("pipeline-canvas")).getByTestId("canvas-node-training-1"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
   });
 });

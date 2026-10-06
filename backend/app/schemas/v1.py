@@ -300,6 +300,32 @@ class PipelineCopilotDraftRequest(BaseModel):
         return trimmed
 
 
+class PipelineCopilotPatchRequest(BaseModel):
+    """Phase 7-C: natural language + current graph → structured patch proposal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str = Field(min_length=1, max_length=4000)
+    current_graph: dict[str, Any]
+
+    @field_validator("prompt")
+    @classmethod
+    def prompt_must_be_non_empty(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("prompt must be a non-empty string.")
+        if len(trimmed) > 4000:
+            raise ValueError("prompt must be at most 4000 characters.")
+        return trimmed
+
+    @field_validator("current_graph")
+    @classmethod
+    def current_graph_must_be_object(cls, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            raise ValueError("current_graph must be an object.")
+        return value
+
+
 class ModelRegisterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
