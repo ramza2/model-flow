@@ -1873,3 +1873,246 @@ def test_patch_failure_audit_excludes_secrets(client, auth_headers, monkeypatch)
         assert prompt not in blob
         assert "secret-test-key" not in blob
         assert "Pipeline Copilot patch failed." in blob
+
+
+def _two_node_notification_graph(*, edges: list[dict[str, Any]]) -> dict[str, Any]:
+    """Minimal canonicalizable graph for edge-id collision regressions."""
+    return {
+        "nodes": [
+            {
+                "id": "notification-a",
+                "position": {"x": 0, "y": 0},
+                "data": {
+                    "label": "A",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "a",
+                        "message": "a",
+                    },
+                },
+            },
+            {
+                "id": "notification-b",
+                "position": {"x": 200, "y": 0},
+                "data": {
+                    "label": "B",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "b",
+                        "message": "b",
+                    },
+                },
+            },
+            {
+                "id": "notification-c",
+                "position": {"x": 400, "y": 0},
+                "data": {
+                    "label": "C",
+                    "node_type": "notification",
+                    "config": {
+                        "alert_type": "pipeline",
+                        "severity": "info",
+                        "title": "c",
+                        "message": "c",
+                    },
+                },
+            },
+        ],
+        "edges": edges,
+    }
+
+
+def test_canonicalize_rejects_duplicate_explicit_edge_ids():
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-1",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "id": "edge-1",
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    with pytest.raises(copilot.CopilotContractError, match="Duplicate edge id"):
+        copilot.canonicalize_graph(graph)
+
+
+def test_canonicalize_rejects_auto_generated_edge_id_collision():
+    # Second edge has no id → defaults to edge-2; first already uses edge-2 explicitly.
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-2",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    with pytest.raises(copilot.CopilotContractError, match="Duplicate edge id"):
+        copilot.canonicalize_graph(graph)
+
+
+def test_canonicalize_accepts_unique_edge_ids():
+    graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-ab",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    canonical = copilot.canonicalize_graph(graph)
+    assert [edge["id"] for edge in canonical["edges"]] == ["edge-ab", "edge-2"]
+
+
+def test_patch_current_graph_duplicate_edge_ids_rejected_before_provider(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-patch"},
+    ).json()
+    project_id = project["id"]
+    provider_calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        provider_calls["count"] += 1
+        return httpx.Response(200, json=_patch_provider_payload("should not run", []))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    before = None
+    with TestingSessionLocal() as db:
+        before = copilot.count_project_entities(db, project_id)
+
+    bad_graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-1",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "id": "edge-1",
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    response = client.post(
+        f"/api/v1/projects/{project_id}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "rename something", "current_graph": bad_graph},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()
+    assert provider_calls["count"] == 0
+
+    with TestingSessionLocal() as db:
+        assert copilot.count_project_entities(db, project_id) == before
+
+
+def test_patch_current_graph_auto_id_collision_rejected_before_provider(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-auto"},
+    ).json()
+    provider_calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        provider_calls["count"] += 1
+        return httpx.Response(200, json=_patch_provider_payload("should not run", []))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    bad_graph = _two_node_notification_graph(
+        edges=[
+            {
+                "id": "edge-2",
+                "source": "notification-a",
+                "target": "notification-b",
+                "data": {"branch": "always"},
+            },
+            {
+                "source": "notification-b",
+                "target": "notification-c",
+                "data": {"branch": "always"},
+            },
+        ]
+    )
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/patch",
+        headers=auth_headers,
+        json={"prompt": "noop", "current_graph": bad_graph},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()
+    assert provider_calls["count"] == 0
+
+
+def test_draft_provider_duplicate_edge_ids_contract_failure(
+    client, auth_headers, monkeypatch
+):
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "dup-edge-draft"},
+    ).json()
+    payload = {
+        "summary": "Duplicate edges",
+        "graph": _two_node_notification_graph(
+            edges=[
+                {
+                    "id": "edge-1",
+                    "source": "notification-a",
+                    "target": "notification-b",
+                    "data": {"branch": "always"},
+                },
+                {
+                    "id": "edge-1",
+                    "source": "notification-b",
+                    "target": "notification-c",
+                    "data": {"branch": "always"},
+                },
+            ]
+        ),
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=_provider_response(payload))
+
+    _patch_provider(monkeypatch, handler, settings_obj=_llm_settings())
+    response = client.post(
+        f"/api/v1/projects/{project['id']}/pipeline-copilot/draft",
+        headers=auth_headers,
+        json={"prompt": "Notify a to b to c"},
+    )
+    assert response.status_code == 502
+    assert "duplicate edge" in response.json()["detail"].lower()

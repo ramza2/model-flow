@@ -904,6 +904,7 @@ def canonicalize_graph(graph: dict[str, Any]) -> dict[str, Any]:
         )
 
     edges: list[dict[str, Any]] = []
+    seen_edge_ids: set[str] = set()
     for index, raw in enumerate(edges_in):
         if not isinstance(raw, dict):
             raise CopilotContractError(f"Edge at index {index} must be an object.")
@@ -912,6 +913,11 @@ def canonicalize_graph(graph: dict[str, Any]) -> dict[str, Any]:
         if not source or not target:
             raise CopilotContractError(f"Edge at index {index} requires source and target.")
         edge_id = str(raw.get("id") or f"edge-{index + 1}").strip()
+        if not edge_id:
+            raise CopilotContractError(f"Edge at index {index} is missing id.")
+        if edge_id in seen_edge_ids:
+            raise CopilotContractError(f"Duplicate edge id '{edge_id}'.")
+        seen_edge_ids.add(edge_id)
         data = _require_object_field(raw, "data", label=f"Edge '{edge_id}' data") or {}
         branch = data.get("branch", raw.get("branch", "always"))
         if isinstance(branch, bool):
