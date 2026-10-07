@@ -2,9 +2,15 @@
 
 ## Current phase
 
-**Enhancement Phase 7 — LLM Pipeline Copilot is current.** Slices **7-A — Copilot Backend Foundation** and **7-B — Builder Preview / Apply** are **complete on `main`.** Slice **7-C — Natural-language Graph Patch** is in progress (Draft).
+**Enhancement Phase 7 — LLM Pipeline Copilot is current.** Slices **7-A**, **7-B**, and **7-C** are **complete on `main`.** Slice **7-D — Final Hardening / Browser Regression** is in progress (Draft).
 
-Baseline for Phase 7-C work: `main@b8e94f5ff87450f48c12add980bd243fe88ee3a8` (Phase 7-B merge; Alembic head `023_forecasting_training`).
+Baseline for Phase 7-D work: `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1` (Phase 7-C merge; Alembic head `023_forecasting_training`).
+
+Phase 7-C complete evidence:
+
+- PR #72 merged; squash/main commit `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`
+- post-merge main CI #353 / run `37409599810` SUCCESS
+- Alembic head: `023_forecasting_training`
 
 Phase 7-B complete evidence:
 
@@ -258,7 +264,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@b8e94f5ff87450f48c12add980bd243fe88ee3a8`
+- Branch baseline: `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`
+- Phase 7-C merge (PR #72): `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1` (post-merge main CI #353 / run `37409599810` SUCCESS; Alembic head `023_forecasting_training`)
 - Phase 7-B merge (PR #71): `b8e94f5ff87450f48c12add980bd243fe88ee3a8` (post-merge main CI #350 / run `37392846125` attempt 2 PASS; Alembic head `023_forecasting_training`)
 - Phase 7-A merge (PR #70): `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62` (post-merge main CI #345 / run `36972237806` PASS; Alembic head `023_forecasting_training`)
 - Phase 6 docs closeout (PR #69): `aa8e077bd82a33278fea9e492c27e3aa9d99277b` (post-merge main CI #340 / run `36954705944` PASS; Alembic head `023_forecasting_training`)
@@ -445,7 +452,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 7-C — Natural-language Graph Patch** is in Draft on a feature branch from `main@b8e94f5ff87450f48c12add980bd243fe88ee3a8`. Do not mark 7-C complete until the Draft PR is reviewed and merged.
+**Phase 7-D — Final Hardening / Browser Regression** is in Draft on a feature branch from `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`. Do not mark 7-D or Phase 7 overall complete until the Draft PR is reviewed and merged.
 
 Phase 7 roadmap contract:
 
@@ -459,9 +466,7 @@ LLM generates ModelFlow Pipeline Definition only
 no arbitrary code execution
 ```
 
-Phase 7 status: **7-A = complete**, **7-B = complete**, **7-C = current / Draft**, **7-D = planned**.
-
-After 7-C merges: start **7-D — Final Hardening / Browser Regression**.
+Phase 7 status: **7-A = complete**, **7-B = complete**, **7-C = complete**, **7-D = current / Draft**. Phase 7 overall remains open until 7-D closeout.
 
 See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) Phase 7 and [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
 
