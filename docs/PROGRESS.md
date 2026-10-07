@@ -2,9 +2,19 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** Active implementation slice: **8-A — Inference Runtime Separation (current / Draft)**. Slices **8-B–8-F** remain planned. Do not mark 8-A or Phase 8 complete until 8-A merges and later slices finish as documented.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A — Inference Runtime Separation is complete on `main`.** The next implementation slice is **8-B — Worker Scale-out & Runner Profiles**. Slices **8-C–8-F** remain planned.
 
-Phase 8 planning baseline: `main@7dbb45ff0b7acac9594aea5bd51adc7e8221ed51` (Phase 8 planning PR #75; post-merge main CI #360 / run `37564335089` SUCCESS; Alembic head `023_forecasting_training`).
+Phase 8-A completion baseline: `main@933ce3dc2b47fb50aaa28d3e727d6b827d26a38c` (PR #76; exact PR HEAD `6ed6a964d20d11c06d4cd67d30697150f09b25ca`; exact-head CI #362 / run `37572306127` PASS; post-merge main CI #363 / run `37574052970` PASS; Alembic head `023_forecasting_training`).
+
+Phase 8-A delivered:
+
+- dedicated internal `inference-runtime` service for model load/predict
+- backend/worker/pipeline/registry model execution delegated through `inference_client`
+- server-owned inference service credential; no user JWT reuse
+- online prediction control-plane contracts preserved
+- batch inference uses bounded chunking (default 256) with row-order preservation
+- runtime remains internal-only under Compose/Traefik
+- internal HTTP client ignores ambient HTTP(S)/ALL proxy configuration (`trust_env=False`)
 
 Phase 7 closeout evidence:
 
@@ -469,7 +479,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8 — Enterprise / Scale planning is current.** After the planning PR is reviewed and merged, start **8-A — Inference Runtime Separation** only.
+**Phase 8-A is complete.** Start **8-B — Worker Scale-out & Runner Profiles** from the current `main`. Keep 8-C+ scope out of the 8-B PR.
 
 Phase 8 slice plan:
 
