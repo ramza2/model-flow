@@ -60,7 +60,8 @@ def _client() -> httpx.Client:
     base = _runtime_base_url()
     if not base:
         raise InferenceRuntimeError("Inference runtime is not configured.")
-    return httpx.Client(base_url=base, timeout=_timeout())
+    # Internal service-to-service calls must never honor HTTP(S)_PROXY / ALL_PROXY.
+    return httpx.Client(base_url=base, timeout=_timeout(), trust_env=False)
 
 
 def _raise_for_response(response: httpx.Response, *, action: str) -> None:

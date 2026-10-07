@@ -219,6 +219,20 @@ def test_client_hides_connection_details(runtime_settings, monkeypatch):
     assert settings.inference_service_token not in message
 
 
+def test_client_disables_environment_proxy_trust(runtime_settings):
+    """Internal runtime calls must ignore HTTP(S)_PROXY / ALL_PROXY env settings."""
+
+    client = inference_client._client()
+    try:
+        assert client.trust_env is False
+        assert str(client.base_url).rstrip("/") == settings.inference_runtime_url.rstrip(
+            "/"
+        )
+        assert client.timeout == inference_client._timeout()
+    finally:
+        client.close()
+
+
 def test_control_plane_modules_do_not_call_local_model_execution():
     root = Path(__file__).resolve().parents[1] / "app"
     forbidden_files = [
