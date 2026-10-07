@@ -54,6 +54,28 @@ These rules apply to all new enhancement work unless a task explicitly overrides
 - Update roadmap/progress/decision/verification docs when the implementation changes the documented architecture or phase status.
 - Current phase/status must come from repository docs (especially `docs/PROGRESS.md` and `docs/ENHANCEMENT_ROADMAP.md`), not from stale assumptions in prompts.
 
+### Phase 8 enterprise / scale
+
+For Phase 8 work, read these first:
+
+- `docs/phase-8-enterprise-scale.md`
+- `docs/ENHANCEMENT_ROADMAP.md`
+- `docs/PROGRESS.md`
+- current architecture/deployment docs relevant to the slice
+
+Phase 8 rules:
+
+- Follow the slice order and keep PRs narrow; do not pull 8-B+ work into 8-A.
+- Preserve existing public API routes/payloads, project RBAC, audit, lifecycle, lineage, and frontend behavior unless the active slice explicitly changes a contract.
+- The backend remains the control-plane authority for user/project authorization and durable governance records.
+- Internal inference/worker interfaces are private implementation surfaces, not new public APIs; do not expose them through Traefik/Ingress by default.
+- Compose + Traefik local/current production deployment must remain supported while Kubernetes is added later.
+- Multi-replica claims must remain atomic; scheduler/maintenance singleton behavior must not rely on there being one worker process.
+- GPU runner profiles are scheduling/capability metadata only unless a workload explicitly supports GPU execution; never silently change sklearn execution semantics.
+- External secret work must preserve current local `.env` support and must not leak secrets into logs, audit, API responses, frontend state, images, or committed manifests.
+- Kubernetes/HA work must distinguish stateless replica HA from stateful storage HA; do not claim HA for a single embedded PostgreSQL or MinIO instance.
+- Phase 9 visual redesign remains out of Phase 8.
+
 ### Data-source connector architecture
 
 Phase 4 establishes the reusable Data Source connector architecture. Read these before connector work:

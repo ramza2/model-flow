@@ -2,9 +2,17 @@
 
 ## Current phase
 
-**Enhancement Phase 7 — LLM Pipeline Copilot is complete on `main`.** All slices **7-A**, **7-B**, **7-C**, and **7-D** are complete.
+**Enhancement Phase 8 — Enterprise / Scale is current / planning.** Phase 8 implementation has not started; the next implementation slice is **8-A — Inference Runtime Separation** after the Phase 8 planning PR is reviewed and merged.
 
-Final Phase 7 implementation baseline: `main@483db3859558570c499114ba774bf62b491234e1` (PR #73; post-merge main CI #356 / run `37555997629` SUCCESS; Alembic head `023_forecasting_training`).
+Phase 8 planning baseline: `main@93b8878971d69a926c8f1dc93c02bad04665f4b1` (Phase 7 closeout PR #74; post-merge main CI #358 / run `37559456232` SUCCESS; Alembic head `023_forecasting_training`).
+
+Phase 7 closeout evidence:
+
+- PR #74 merged; squash/main commit `93b8878971d69a926c8f1dc93c02bad04665f4b1`
+- post-merge main CI #358 / run `37559456232` SUCCESS
+- Phase 7 implementation baseline before docs closeout: `483db3859558570c499114ba774bf62b491234e1`
+- Alembic head: `023_forecasting_training`
+- Phase 7 verification: [`phase-7d-verification.md`](./phase-7d-verification.md)
 
 Phase 7-D complete evidence:
 
@@ -272,7 +280,8 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
-- Branch baseline: `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`
+- Branch baseline: `main@93b8878971d69a926c8f1dc93c02bad04665f4b1` (Phase 7 closeout PR #74; post-merge CI #358 / run `37559456232` SUCCESS; Alembic head `023_forecasting_training`)
+- Phase 7-D implementation merge (PR #73): `483db3859558570c499114ba774bf62b491234e1` (post-merge CI #356 / run `37555997629` SUCCESS)
 - Phase 7-C merge (PR #72): `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1` (post-merge main CI #353 / run `37409599810` SUCCESS; Alembic head `023_forecasting_training`)
 - Phase 7-B merge (PR #71): `b8e94f5ff87450f48c12add980bd243fe88ee3a8` (post-merge main CI #350 / run `37392846125` attempt 2 PASS; Alembic head `023_forecasting_training`)
 - Phase 7-A merge (PR #70): `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62` (post-merge main CI #345 / run `36972237806` PASS; Alembic head `023_forecasting_training`)
@@ -460,23 +469,29 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Enhancement Phase 7 — LLM Pipeline Copilot is complete.** The next roadmap phase is **Phase 8 — Enterprise / Scale**. No Phase 8 implementation is started by this closeout.
+**Phase 8 — Enterprise / Scale planning is current.** After the planning PR is reviewed and merged, start **8-A — Inference Runtime Separation** only.
 
-Phase 7 roadmap contract:
+Phase 8 slice plan:
 
 ```text
-natural language → pipeline draft
-pipeline schema validation against ModelFlow definitions
-visual preview before apply
-user confirmation gate
-natural-language modification via graph patch
-LLM generates ModelFlow Pipeline Definition only
-no arbitrary code execution
+8-A Inference Runtime Separation
+8-B Worker Scale-out & Runner Profiles
+8-C Enterprise Identity — OIDC / SSO
+8-D External Secret Management
+8-E Kubernetes / HA Deployment
+8-F Final Hardening / Scale Regression
 ```
 
-Phase 7 status: **7-A = complete**, **7-B = complete**, **7-C = complete**, **7-D = complete**. **Phase 7 overall = complete.**
+Ordering constraints:
 
-See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) Phase 7 and [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
+- separate inference execution before Kubernetes/HA
+- make multi-worker execution and singleton scheduler behavior safe before worker replica scaling
+- preserve existing public API/RBAC/audit contracts while adding OIDC
+- add vendor-neutral external secret delivery before Kubernetes production manifests
+- do not claim HA for single embedded PostgreSQL/MinIO state
+- GPU runner profiles are capability/routing infrastructure only; existing sklearn workloads do not become GPU workloads automatically
+
+See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md) and [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md).
 
 Known limitation retained from Phase 2-C: Pandas in-memory preparation execution only (no Spark/Dask/distributed/chunked processing).
 
