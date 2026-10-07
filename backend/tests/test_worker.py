@@ -124,12 +124,14 @@ def test_process_batch_job_uses_training_target_and_writes_csv(monkeypatch):
         lambda _: frame,
     )
 
-    class Model:
-        def predict(self, features):
-            assert list(features.columns) == ["feature"]
-            return [1, 0]
+    def fake_predict_dataframe(model_uri, features, *, feature_schema=None, target_columns=None, chunk_size=None):
+        assert list(features.columns) == ["feature"]
+        assert chunk_size is not None
+        return [1, 0]
 
-    monkeypatch.setattr(runner.inference, "load_model", lambda _: Model())
+    monkeypatch.setattr(
+        runner.inference_client, "predict_dataframe", fake_predict_dataframe
+    )
     monkeypatch.setattr(runner.storage, "ensure_buckets", lambda: None)
     monkeypatch.setattr(
         runner.storage,

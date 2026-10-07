@@ -37,6 +37,7 @@ from app.schemas.v1 import (
     PredictRequest,
 )
 from app.services import inference
+from app.services import inference_client
 from app.services.target_columns import resolve_output_target_columns
 
 logger = logging.getLogger(__name__)
@@ -112,13 +113,16 @@ def _record_prediction(
     started = time.perf_counter()
     try:
         target_columns = _output_target_columns(db, endpoint)
-        predictions = inference.predict(
+        predictions = inference_client.predict(
             endpoint.model_uri,
             body.instances,
             endpoint.feature_schema_json,
             target_columns=target_columns or None,
         )
-    except inference.PredictionInputError as exc:
+    except (
+        inference.PredictionInputError,
+        inference_client.InferenceRuntimeInputError,
+    ) as exc:
         raise friendly(
             422,
             "Prediction payload does not match the deployed model schema.",
@@ -255,7 +259,7 @@ def create_endpoint(
     auth, _, _ = access
     model = _deployable_model(db, project_id, body.model_version_id)
     try:
-        inference.load_model(model.model_uri)
+        inference_client.check_model_loadable(model.model_uri)
     except Exception as exc:
         raise friendly(502, "The model could not be loaded for inference.") from exc
     endpoint = Endpoint(
@@ -316,7 +320,7 @@ def start_endpoint(
 ):
     endpoint = _authorize_endpoint(db, endpoint_id, auth, Permission.DEPLOY_WRITE)
     try:
-        inference.load_model(endpoint.model_uri)
+        inference_client.check_model_loadable(endpoint.model_uri)
     except Exception as exc:
         endpoint.status = "error"
         db.commit()
@@ -350,7 +354,7 @@ def swap_endpoint(
     endpoint = _authorize_endpoint(db, endpoint_id, auth, Permission.DEPLOY_WRITE)
     model = _deployable_model(db, endpoint.project_id, body.model_version_id)
     try:
-        inference.load_model(model.model_uri)
+        inference_client.check_model_loadable(model.model_uri)
     except Exception as exc:
         raise friendly(502, "The replacement model could not be loaded.") from exc
     endpoint.previous_model_version = endpoint.model_version
@@ -383,7 +387,7 @@ def rollback_endpoint(
     if not endpoint.previous_model_uri or not endpoint.previous_model_version:
         raise friendly(409, "This endpoint does not have a rollback version.")
     try:
-        inference.load_model(endpoint.previous_model_uri)
+        inference_client.check_model_loadable(endpoint.previous_model_uri)
     except Exception as exc:
         raise friendly(502, "The rollback model could not be loaded.") from exc
     endpoint.model_version, endpoint.previous_model_version = (

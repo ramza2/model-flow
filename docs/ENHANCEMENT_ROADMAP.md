@@ -331,11 +331,11 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 
 ## Phase 8 — Enterprise / Scale
 
-**Status:** current / planning. Implementation begins with 8-A only after the Phase 8 planning PR is reviewed and merged.
+**Status:** current. Active slice **8-A — Inference Runtime Separation** is current / Draft. Slices **8-B–8-F** remain planned.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| **8-A** | Inference Runtime Separation | planned |
+| **8-A** | Inference Runtime Separation | current / Draft |
 | **8-B** | Worker Scale-out & Runner Profiles | planned |
 | **8-C** | Enterprise Identity — OIDC / SSO | planned |
 | **8-D** | External Secret Management | planned |

@@ -37,15 +37,21 @@ from app.db.models import (
 )
 from app.db.session import SessionLocal
 from app.core.audit import write_audit
-from app.services import closed_loop, datasets, drift, feedback_materialization, inference, pipeline_engine, scheduler, storage
+from app.services import (
+    closed_loop,
+    datasets,
+    drift,
+    feedback_materialization,
+    inference_client,
+    pipeline_engine,
+    scheduler,
+    storage,
+)
 from app.services import model_quality as quality_service
 from app.services.alerts import create_alert
 from app.services.dataset_preparation_materialization import execute_claimed_preparation_run
 from app.services.dataset_splits import content_sha256
-from app.services.prediction_serialization import (
-    assign_batch_prediction_columns,
-    serialize_predictions,
-)
+from app.services.prediction_serialization import assign_batch_prediction_columns
 from app.services.target_columns import (
     effective_target_columns_from_job,
     resolve_output_target_columns,
@@ -692,14 +698,18 @@ def process_batch_job(job: BatchInferenceJob) -> None:
         )
         frame = datasets.load_dataset_version_dataframe(version)
         features = _batch_features(db, frame, endpoint, model_version)
-        predictions = inference.load_model(model_uri).predict(features)
-        if len(predictions) != len(frame):
-            raise RuntimeError("Model returned a different number of predictions than input rows.")
         target_columns = resolve_output_target_columns(
             metadata=json.loads(model_version.metadata_json or "{}") if model_version else {},
             job=training_job,
         )
-        serialized = serialize_predictions(predictions, target_columns=target_columns or None)
+        serialized = inference_client.predict_dataframe(
+            model_uri,
+            features,
+            target_columns=target_columns or None,
+            chunk_size=settings.inference_batch_chunk_size,
+        )
+        if len(serialized) != len(frame):
+            raise RuntimeError("Model returned a different number of predictions than input rows.")
         result_frame = assign_batch_prediction_columns(
             frame,
             serialized,

@@ -40,6 +40,11 @@ services:
     ports: !reset []
     restart: unless-stopped
 
+  inference-runtime:
+    # Never publish a host port and never attach Traefik labels.
+    ports: !reset []
+    restart: unless-stopped
+
   worker:
     restart: unless-stopped
 

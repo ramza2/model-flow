@@ -6,14 +6,12 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-import numpy as np
-import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.db.models import DatasetVersion, ModelLifecycle, ModelVersion, TrainingJob
-from app.services import inference, mlflow_service
+from app.services import inference, inference_client, mlflow_service
 from app.services.target_columns import (
     effective_target_columns_from_job,
     is_multi_output,
@@ -495,21 +493,22 @@ def _generated_value(field: dict[str, Any]) -> Any:
     return ""
 
 
-def _signature_sample(loaded_model: Any) -> dict[str, Any] | None:
-    """Build a single input row from an MLflow model signature when available."""
+def _signature_sample(
+    input_features: list[dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    """Build a single input row from runtime-reported model input features."""
 
+    if not input_features:
+        return None
     try:
-        metadata = getattr(loaded_model, "metadata", None)
-        signature = getattr(metadata, "signature", None) if metadata is not None else None
-        inputs = getattr(signature, "inputs", None) if signature is not None else None
-        if inputs is None:
-            return None
         sample: dict[str, Any] = {}
-        for column in inputs:
-            name = getattr(column, "name", None)
+        for column in input_features:
+            if not isinstance(column, dict):
+                continue
+            name = column.get("name")
             if not name:
                 continue
-            type_name = str(getattr(column, "type", "")).lower()
+            type_name = str(column.get("dtype") or column.get("type") or "").lower()
             sample[str(name)] = _generated_value(
                 {"name": str(name), "dtype": type_name}
             )
@@ -523,7 +522,7 @@ def _test_sample(
     version: DatasetVersion | None,
     configured: dict[str, Any] | None,
     *,
-    loaded_model: Any = None,
+    input_features: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     names = [str(field["name"]) for field in schema]
     required = [
@@ -550,7 +549,7 @@ def _test_sample(
             {str(field["name"]): _generated_value(field) for field in schema},
             "schema",
         )
-    signature_sample = _signature_sample(loaded_model)
+    signature_sample = _signature_sample(input_features)
     if signature_sample is not None:
         if not names:
             return signature_sample, "signature"
@@ -764,10 +763,10 @@ def evaluate_gates(
             )
         )
 
-    loaded_model: Any = None
+    load_info: dict[str, Any] | None = None
     load_error: Exception | None = None
     try:
-        loaded_model = inference.load_model(row.model_uri)
+        load_info = inference_client.check_model_loadable(row.model_uri)
     except Exception as exc:
         load_error = exc
     if config.get("require_model_load", True):
@@ -798,15 +797,20 @@ def evaluate_gates(
             )
         )
 
+    input_features = (
+        load_info.get("input_features") if isinstance(load_info, dict) else None
+    )
+    if not isinstance(input_features, list):
+        input_features = None
     sample, sample_source = _test_sample(
-        schema, version, None, loaded_model=loaded_model
+        schema, version, None, input_features=input_features
     )
 
     prediction: Any = None
     latency_ms: float | None = None
     prediction_error: Exception | None = None
     if config.get("require_test_inference", True):
-        if loaded_model is None:
+        if load_error is not None or load_info is None:
             prediction_error = ValueError("Model was not loaded.")
         elif not sample:
             prediction_error = ValueError("No test instance could be created.")
@@ -814,10 +818,13 @@ def evaluate_gates(
             try:
                 inference.validate_instances([sample], schema)
                 started = time.perf_counter()
-                prediction = loaded_model.predict(pd.DataFrame([sample]))
+                prediction = inference_client.predict(
+                    row.model_uri,
+                    [sample],
+                    schema,
+                )
                 latency_ms = (time.perf_counter() - started) * 1000
-                prediction_rows = np.asarray(prediction).shape[0]
-                if prediction_rows != 1:
+                if len(prediction) != 1:
                     raise ValueError("Model did not return exactly one prediction row.")
             except Exception as exc:
                 prediction_error = exc
