@@ -150,7 +150,7 @@ test("Phase 7-D: stale draft response after close and 502 leave Builder unchange
   expect(runPosts).toBe(0);
 });
 
-test("Phase 7-D: newer patch Generate wins; cancel confirm keeps live graph and no Save/Publish/Run", async ({
+test("Phase 7-D: stale patch after close is ignored; cancel confirm and Apply stay in-memory only", async ({
   page,
 }) => {
   const projectName = `e2e-copilot-7d-patch-${Date.now()}`;
@@ -172,7 +172,13 @@ test("Phase 7-D: newer patch Generate wins; cancel confirm keeps live graph and 
     patchCalls += 1;
     const body = route.request().postDataJSON() as {
       prompt?: string;
-      current_graph?: { nodes: Array<{ id: string; data?: { label?: string; node_type?: string; config?: Record<string, unknown> } }>; edges: unknown[] };
+      current_graph?: {
+        nodes: Array<{
+          id: string;
+          data?: { label?: string; node_type?: string; config?: Record<string, unknown> };
+        }>;
+        edges: unknown[];
+      };
     };
     expect(Object.keys(body || {}).sort()).toEqual(["current_graph", "prompt"]);
 
@@ -244,6 +250,7 @@ test("Phase 7-D: newer patch Generate wins; cancel confirm keeps live graph and 
       });
     };
 
+    // First in-flight request is held until after Drawer close + newer Generate.
     if (patchCalls === 1) {
       await new Promise<void>((resolve) => {
         releaseFirst = resolve;
@@ -269,7 +276,12 @@ test("Phase 7-D: newer patch Generate wins; cancel confirm keeps live graph and 
   await page.getByTestId("pipeline-copilot-generate").click();
   await expect(page.getByTestId("pipeline-copilot-loading")).toBeVisible();
 
-  await page.getByTestId("pipeline-copilot-prompt").fill("Second faster modification");
+  // Close invalidates in-flight response; reopen + Generate is the practical "newer request".
+  await page.getByTestId("drawer-close").click();
+  await expect(page.getByTestId("pipeline-copilot-drawer")).toHaveCount(0);
+
+  await page.getByTestId("pipeline-copilot-patch-open").click();
+  await page.getByTestId("pipeline-copilot-prompt").fill("Second modification after close");
   await page.getByTestId("pipeline-copilot-generate").click();
   await expect(page.getByTestId("pipeline-copilot-summary")).toContainText(/SECOND_PATCH_WINS/i, {
     timeout: 15_000,
