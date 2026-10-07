@@ -29,7 +29,7 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| **8-A** | Inference Runtime Separation | planned |
+| **8-A** | Inference Runtime Separation | current / Draft |
 | **8-B** | Worker Scale-out & Runner Profiles | planned |
 | **8-C** | Enterprise Identity — OIDC / SSO | planned |
 | **8-D** | External Secret Management | planned |
@@ -118,6 +118,27 @@ Batch Worker
 ### Explicitly out of 8-A
 
 OIDC/SSO, Kubernetes, autoscaling, GPU scheduling, external secret manager SDKs, new model algorithms, new public serving protocol, gRPC migration, Phase 9 UI redesign.
+
+### 8-A implementation notes (Draft)
+
+Internal boundary delivered in the 8-A Draft PR:
+
+```text
+backend / worker
+  └─ app.services.inference_client  (MODELFLOW_INFERENCE_SERVICE_TOKEN)
+         ↓ HTTP (Compose network only)
+   inference-runtime :8080
+  ├─ GET  /health, /ready
+  ├─ POST /v1/models/load-check
+  └─ POST /v1/models/predict
+         ↓
+   app.services.inference (load/cache/normalize/predict)
+```
+
+- Compose service `inference-runtime` has no host port publish and no Traefik labels.
+- Public Endpoint routes, RBAC, audit, `PredictionObservation`, and `InferenceStat` remain in the backend.
+- Batch inference chunks feature rows (`MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE`, default `256`) and preserves row order.
+- Status remains **current / Draft** until review, exact-HEAD CI, and merge; do not mark 8-A or Phase 8 complete from this slice alone.
 
 ---
 
@@ -241,6 +262,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-After this planning document is reviewed and merged, start **8-A — Inference Runtime Separation** from the then-current `main`.
-
-Do not start 8-B+ work inside the 8-A PR.
+**8-A — Inference Runtime Separation** is the active Draft implementation slice. Do not start 8-B+ work inside the 8-A PR.

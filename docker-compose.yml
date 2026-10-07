@@ -234,6 +234,40 @@ services:
       retries: 30
       start_period: 20s
 
+  inference-runtime:
+    build:
+      context: ./backend
+    depends_on:
+      minio:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      MINIO_SECURE: "false"
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+      AWS_DEFAULT_REGION: us-east-1
+      MODELFLOW_INFERENCE_SERVICE_TOKEN: ${MODELFLOW_INFERENCE_SERVICE_TOKEN:?MODELFLOW_INFERENCE_SERVICE_TOKEN is required}
+      MODELFLOW_GIT_SHA: ${MODELFLOW_GIT_SHA:-unknown}
+    # Internal only — no host ports, no Traefik labels.
+    expose:
+      - "8080"
+    command: >
+      uvicorn app.inference_runtime:app --host 0.0.0.0 --port 8080
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ready || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+
   backend:
     build:
       context: ./backend
@@ -246,6 +280,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      inference-runtime:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -262,6 +298,10 @@ services:
       MODELFLOW_BOOTSTRAP_ADMIN_EMAIL: ${MODELFLOW_BOOTSTRAP_ADMIN_EMAIL:?MODELFLOW_BOOTSTRAP_ADMIN_EMAIL is required}
       MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD: ${MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD:?MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD is required}
       MODELFLOW_ENCRYPTION_KEY: ${MODELFLOW_ENCRYPTION_KEY:?MODELFLOW_ENCRYPTION_KEY is required}
+      MODELFLOW_INFERENCE_RUNTIME_URL: http://inference-runtime:8080
+      MODELFLOW_INFERENCE_SERVICE_TOKEN: ${MODELFLOW_INFERENCE_SERVICE_TOKEN:?MODELFLOW_INFERENCE_SERVICE_TOKEN is required}
+      MODELFLOW_INFERENCE_TIMEOUT_SECONDS: ${MODELFLOW_INFERENCE_TIMEOUT_SECONDS:-60}
+      MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE: ${MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE:-256}
       MODELFLOW_GIT_SHA: ${MODELFLOW_GIT_SHA:-unknown}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-120}
       MODELFLOW_LLM_BASE_URL: ${MODELFLOW_LLM_BASE_URL:-}
@@ -312,6 +352,8 @@ services:
         condition: service_healthy
       mlflow:
         condition: service_healthy
+      inference-runtime:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?POSTGRES_USER is required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB is required}
       MLFLOW_TRACKING_URI: http://mlflow:5000
@@ -328,6 +370,10 @@ services:
       WORKER_HEARTBEAT_MAX_AGE_SECONDS: "30"
       MODELFLOW_SECRET_KEY: ${MODELFLOW_SECRET_KEY:?MODELFLOW_SECRET_KEY is required}
       MODELFLOW_ENCRYPTION_KEY: ${MODELFLOW_ENCRYPTION_KEY:?MODELFLOW_ENCRYPTION_KEY is required}
+      MODELFLOW_INFERENCE_RUNTIME_URL: http://inference-runtime:8080
+      MODELFLOW_INFERENCE_SERVICE_TOKEN: ${MODELFLOW_INFERENCE_SERVICE_TOKEN:?MODELFLOW_INFERENCE_SERVICE_TOKEN is required}
+      MODELFLOW_INFERENCE_TIMEOUT_SECONDS: ${MODELFLOW_INFERENCE_TIMEOUT_SECONDS:-60}
+      MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE: ${MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE:-256}
       MODELFLOW_GIT_SHA: ${MODELFLOW_GIT_SHA:-unknown}
     command: python -m app.workers.runner
     healthcheck:

@@ -17,7 +17,7 @@ NODE_IMAGE="node:22.17-alpine"
 NODE_AUDIT_IMAGE="node:24.8-alpine"
 PLAYWRIGHT_IMAGE="mcr.microsoft.com/playwright:v1.62.1-noble"
 PYTHON_IMAGE="python:3.11-slim"
-REQUIRED_SERVICES=(frontend backend worker postgres mlflow minio)
+REQUIRED_SERVICES=(frontend backend worker inference-runtime postgres mlflow minio)
 
 VERIFY_EXIT=0
 VERIFY_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -129,7 +129,7 @@ collect_diagnostics() {
 
   if [[ "$ec" -ne 0 ]]; then
     info "Collecting service logs after failure (exit=${ec})"
-    for svc in postgres minio mlflow backend worker frontend minio-init; do
+    for svc in postgres minio mlflow inference-runtime backend worker frontend minio-init; do
       modelflow_compose logs --no-color --tail=200 "$svc" \
         > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
         echo "(no logs for ${svc})" > "artifacts/verify/logs-${svc}.txt"

@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current / planning.** Phase 8 implementation has not started; the next implementation slice is **8-A — Inference Runtime Separation** after the Phase 8 planning PR is reviewed and merged.
+**Enhancement Phase 8 — Enterprise / Scale is current.** Active implementation slice: **8-A — Inference Runtime Separation (current / Draft)**. Slices **8-B–8-F** remain planned. Do not mark 8-A or Phase 8 complete until 8-A merges and later slices finish as documented.
 
-Phase 8 planning baseline: `main@93b8878971d69a926c8f1dc93c02bad04665f4b1` (Phase 7 closeout PR #74; post-merge main CI #358 / run `37559456232` SUCCESS; Alembic head `023_forecasting_training`).
+Phase 8 planning baseline: `main@7dbb45ff0b7acac9594aea5bd51adc7e8221ed51` (Phase 8 planning PR #75; post-merge main CI #360 / run `37564335089` SUCCESS; Alembic head `023_forecasting_training`).
 
 Phase 7 closeout evidence:
 

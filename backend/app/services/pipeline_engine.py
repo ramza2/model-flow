@@ -29,11 +29,8 @@ from app.db.models import (
     TrainingJob,
 )
 from app.services import datasets as dataset_service
-from app.services import inference, quality, storage
-from app.services.prediction_serialization import (
-    assign_batch_prediction_columns,
-    serialize_predictions,
-)
+from app.services import inference_client, quality, storage
+from app.services.prediction_serialization import assign_batch_prediction_columns
 from app.services.target_columns import (
     TargetColumnError,
     canonicalize_job_targets,
@@ -839,7 +836,7 @@ def _execute_node(
             raise ValueError("endpoint_deployment requires a registered model.")
         if model.lifecycle not in {ModelLifecycle.APPROVED, ModelLifecycle.PRODUCTION}:
             raise ValueError("Model must be approved before endpoint deployment.")
-        inference.load_model(model.model_uri)
+        inference_client.check_model_loadable(model.model_uri)
         training_job = (
             db.get(TrainingJob, model.training_job_id) if model.training_job_id else None
         )
@@ -892,8 +889,12 @@ def _execute_node(
             model_version=model if isinstance(model, ModelVersion) else None,
             training_job=training_job,
         )
-        predictions = inference.load_model(model_uri).predict(features)
-        serialized = serialize_predictions(predictions, target_columns=output_targets or None)
+        serialized = inference_client.predict_dataframe(
+            model_uri,
+            features,
+            target_columns=output_targets or None,
+            chunk_size=settings.inference_batch_chunk_size,
+        )
         result_frame = assign_batch_prediction_columns(
             frame,
             serialized,

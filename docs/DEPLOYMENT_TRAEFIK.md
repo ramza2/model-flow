@@ -12,7 +12,7 @@ Internet → Traefik (web / websecure, letsencrypt)
               ├─ /      → React static assets
               └─ /api/* → backend:8000/api/*
                     ↓
-            PostgreSQL / MinIO / MLflow / worker
+            PostgreSQL / MinIO / MLflow / worker / inference-runtime
 ```
 
 Traefik labels route HTTPS traffic to `frontend:80`. The frontend nginx config already proxies `/api/*` to the backend.
@@ -153,7 +153,7 @@ docker compose \
 
 ## Compose overlay summary (`docker-compose.traefik.yml`)
 
-- Removes host port publishing from: `postgres`, `postgres-source`, `minio`, `mlflow`, `backend`, `frontend` via `ports: !reset []`
+- Removes host port publishing from: `postgres`, `postgres-source`, `minio`, `mlflow`, `backend`, `frontend`, `inference-runtime` via `ports: !reset []`
 - Adds `restart: unless-stopped` to long-running services (not `minio-init`)
 - Connects `frontend` to `default` + external `traefik_proxy`
 - Traefik labels on `frontend` only (`modelflow-*` prefix):
@@ -165,7 +165,7 @@ docker compose \
 
 | Exposed via Traefik | Internal only |
 |---------------------|---------------|
-| `frontend` (port 80 on Docker network) | `backend`, `worker`, `postgres`, `postgres-source`, `minio`, `mlflow` |
+| `frontend` (port 80 on Docker network) | `backend`, `worker`, `inference-runtime`, `postgres`, `postgres-source`, `minio`, `mlflow` |
 
 ## Environment variables
 

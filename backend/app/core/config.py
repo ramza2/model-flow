@@ -88,6 +88,32 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Phase 8-A — Internal inference runtime (server-owned; never a user JWT)
+    inference_runtime_url: str = Field(
+        default="http://inference-runtime:8080",
+        validation_alias=AliasChoices(
+            "MODELFLOW_INFERENCE_RUNTIME_URL", "INFERENCE_RUNTIME_URL"
+        ),
+    )
+    inference_service_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MODELFLOW_INFERENCE_SERVICE_TOKEN", "INFERENCE_SERVICE_TOKEN"
+        ),
+    )
+    inference_timeout_seconds: float = Field(
+        default=60.0,
+        validation_alias=AliasChoices(
+            "MODELFLOW_INFERENCE_TIMEOUT_SECONDS", "INFERENCE_TIMEOUT_SECONDS"
+        ),
+    )
+    inference_batch_chunk_size: int = Field(
+        default=256,
+        validation_alias=AliasChoices(
+            "MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE", "INFERENCE_BATCH_CHUNK_SIZE"
+        ),
+    )
+
 
 settings = Settings()
 

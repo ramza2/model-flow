@@ -22,7 +22,7 @@ from app.schemas import (
     RegisterModelRequest,
     SystemStatus,
 )
-from app.services import inference, mlflow_service, storage
+from app.services import inference_client, mlflow_service, storage
 
 router = APIRouter()
 
@@ -344,7 +344,7 @@ def create_endpoint(project_id: int, body: EndpointCreate, db: Session = Depends
         ) from exc
     uri = f"models:/{body.model_name}/{body.model_version}"
     try:
-        inference.load_model(uri)
+        inference_client.check_model_loadable(uri)
     except Exception as exc:
         raise _friendly(
             400,
@@ -379,7 +379,7 @@ def predict(endpoint_id: int, body: PredictRequest, db: Session = Depends(get_db
     if not ep:
         raise _friendly(404, f"Endpoint {endpoint_id} was not found.")
     try:
-        preds = inference.predict(ep.model_uri, body.instances, ep.feature_schema_json)
+        preds = inference_client.predict(ep.model_uri, body.instances, ep.feature_schema_json)
     except Exception as exc:
         raise _friendly(
             400,

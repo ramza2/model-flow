@@ -8,15 +8,19 @@
 │ React / Vite │     │  Auth · RBAC · Services  │     │  modelflow │
 └──────────────┘     └────────────┬─────────────┘     └────────────┘
                                   │
-                    ┌─────────────┼─────────────┐
-                    ▼             ▼             ▼
-               ┌────────┐   ┌────────┐   ┌────────────┐
-               │ MinIO  │   │ MLflow │   │ Worker(s)  │
-               │datasets│   │track+  │   │ train /    │
-               │batch   │   │registry│   │ pipeline / │
-               │artifacts    └────────┘   │ batch /    │
-               └────────┘                 │ drift      │
-                                          └────────────┘
+                    ┌─────────────┼──────────────────────┐
+                    ▼             ▼                      ▼
+               ┌────────┐   ┌────────┐         ┌──────────────────┐
+               │ MinIO  │   │ MLflow │◀────────│ Inference Runtime│
+               │datasets│   │track+  │ artifacts│ (internal only) │
+               │batch   │   │registry│         │ load / predict   │
+               │artifacts    └────────┘         └────────▲─────────┘
+               └────────┘                                │
+                                          ┌──────────────┴───┐
+                                          │ Worker(s)        │
+                                          │ train/pipeline/  │
+                                          │ batch/drift/...  │
+                                          └──────────────────┘
 ```
 
 ## Services (Docker Compose)
@@ -24,8 +28,9 @@
 | Service | Role |
 |---------|------|
 | `frontend` | React SPA (nginx); `/api` proxied to backend |
-| `backend` | FastAPI `/api/v1`; migrations on start; bootstrap admin |
-| `worker` | Claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`); heartbeat |
+| `backend` | FastAPI `/api/v1`; migrations on start; bootstrap admin; delegates model execution |
+| `inference-runtime` | Internal FastAPI model load/predict; service-token auth; no public ingress |
+| `worker` | Claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`); heartbeat; batch predict via runtime |
 | `postgres` | App DB `modelflow` + MLflow DB `mlflow` |
 | `mlflow` | Tracking + Model Registry; artifacts on MinIO |
 | `minio` | Datasets, batch results, MLflow artifacts |
@@ -74,8 +79,8 @@ Unified `work_items` / domain job tables claimed by worker:
 ## Registry & serving
 
 - App-owned `model_versions` table mirrors MLflow artifacts with lifecycle states and gates.
-- Endpoints load models into process cache; Ready only after successful load.
-- Batch jobs write results to MinIO; download via authenticated API.
+- Online and batch model execution run in the internal `inference-runtime` (Phase 8-A). Backend/worker call it with `MODELFLOW_INFERENCE_SERVICE_TOKEN`; public Endpoint contracts stay on the control plane.
+- Endpoint Ready requires a successful runtime load-check. Batch jobs chunk feature rows to the runtime and write results to MinIO; download via authenticated API.
 
 ## Storage
 
