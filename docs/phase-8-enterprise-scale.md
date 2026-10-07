@@ -29,7 +29,7 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| **8-A** | Inference Runtime Separation | current / Draft |
+| **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
 | **8-B** | Worker Scale-out & Runner Profiles | planned |
 | **8-C** | Enterprise Identity — OIDC / SSO | planned |
 | **8-D** | External Secret Management | planned |
@@ -119,7 +119,7 @@ Batch Worker
 
 OIDC/SSO, Kubernetes, autoscaling, GPU scheduling, external secret manager SDKs, new model algorithms, new public serving protocol, gRPC migration, Phase 9 UI redesign.
 
-### 8-A implementation notes (Draft)
+### 8-A completion evidence
 
 Internal boundary delivered in the 8-A Draft PR:
 
@@ -138,7 +138,11 @@ backend / worker
 - Compose service `inference-runtime` has no host port publish and no Traefik labels.
 - Public Endpoint routes, RBAC, audit, `PredictionObservation`, and `InferenceStat` remain in the backend.
 - Batch inference chunks feature rows (`MODELFLOW_INFERENCE_BATCH_CHUNK_SIZE`, default `256`) and preserves row order.
-- Status remains **current / Draft** until review, exact-HEAD CI, and merge; do not mark 8-A or Phase 8 complete from this slice alone.
+- PR #76 exact final HEAD `6ed6a964d20d11c06d4cd67d30697150f09b25ca`; exact-head CI #362 / run `37572306127` PASS.
+- Squash merge to `main`: `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`.
+- Post-merge `main` CI #363 / run `37574052970` PASS.
+- Alembic head remains `023_forecasting_training`; no migration.
+- Final security hardening disables ambient HTTP(S)/ALL proxy inheritance on the internal inference client (`trust_env=False`).
 
 ---
 
@@ -262,4 +266,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-**8-A — Inference Runtime Separation** is the active Draft implementation slice. Do not start 8-B+ work inside the 8-A PR.
+**8-A — Inference Runtime Separation is complete on `main`.** The next implementation slice is **8-B — Worker Scale-out & Runner Profiles**. Start 8-B from the then-current `main`; do not pull 8-C+ scope into the 8-B PR.
