@@ -331,15 +331,24 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 
 ## Phase 8 — Enterprise / Scale
 
-**Status:** planned / next roadmap phase.
+**Status:** current / planning. Implementation begins with 8-A only after the Phase 8 planning PR is reviewed and merged.
 
-- inference service separation from API/worker
-- OIDC / SSO
-- external secret management integration
-- Kubernetes deployment and HA patterns
-- worker scale-out and GPU runner profiles
+| Slice | Scope | Status |
+|-------|-------|--------|
+| **8-A** | Inference Runtime Separation | planned |
+| **8-B** | Worker Scale-out & Runner Profiles | planned |
+| **8-C** | Enterprise Identity — OIDC / SSO | planned |
+| **8-D** | External Secret Management | planned |
+| **8-E** | Kubernetes / HA Deployment | planned |
+| **8-F** | Final Hardening / Scale Regression | planned |
 
-**Depends on:** production hardening feedback from earlier phases.
+Ordering is deliberate: first remove online/batch inference execution from the API/worker processes, then make worker execution safely multi-replica, then add enterprise identity and secret delivery, and only then deploy those separated stateless roles to Kubernetes/HA.
+
+Phase-wide constraints: preserve public API/RBAC/audit contracts; internal runtimes are not public APIs; Compose + Traefik remains supported; stateful HA requires shared/external PostgreSQL and object storage; GPU profiles must not imply GPU acceleration for unsupported sklearn workloads.
+
+See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
+
+**Depends on:** completed Phase 7 and production hardening feedback from earlier phases.
 
 ---
 
