@@ -2,9 +2,17 @@
 
 ## Current phase
 
-**Enhancement Phase 7 — LLM Pipeline Copilot is current.** Slices **7-A**, **7-B**, and **7-C** are **complete on `main`.** Slice **7-D — Final Hardening / Browser Regression** is in progress (Draft).
+**Enhancement Phase 7 — LLM Pipeline Copilot is complete on `main`.** All slices **7-A**, **7-B**, **7-C**, and **7-D** are complete.
 
-Baseline for Phase 7-D work: `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1` (Phase 7-C merge; Alembic head `023_forecasting_training`).
+Final Phase 7 implementation baseline: `main@483db3859558570c499114ba774bf62b491234e1` (PR #73; post-merge main CI #356 / run `37555997629` SUCCESS; Alembic head `023_forecasting_training`).
+
+Phase 7-D complete evidence:
+
+- PR #73 merged; squash/main commit `483db3859558570c499114ba774bf62b491234e1`
+- final PR HEAD `a8084555779e2d68b0ffeec6ddcb668e6e5c0d12`; exact-head CI #355 / run `37553991815` SUCCESS
+- post-merge main CI #356 / run `37555997629` SUCCESS
+- Alembic head: `023_forecasting_training`
+- Verification details: [`phase-7d-verification.md`](./phase-7d-verification.md)
 
 Phase 7-C complete evidence:
 
@@ -452,7 +460,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 7-D — Final Hardening / Browser Regression** is in Draft on a feature branch from `main@0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`. Do not mark 7-D or Phase 7 overall complete until the Draft PR is reviewed and merged.
+**Enhancement Phase 7 — LLM Pipeline Copilot is complete.** The next roadmap phase is **Phase 8 — Enterprise / Scale**. No Phase 8 implementation is started by this closeout.
 
 Phase 7 roadmap contract:
 
@@ -466,7 +474,7 @@ LLM generates ModelFlow Pipeline Definition only
 no arbitrary code execution
 ```
 
-Phase 7 status: **7-A = complete**, **7-B = complete**, **7-C = complete**, **7-D = current / Draft**. Phase 7 overall remains open until 7-D closeout.
+Phase 7 status: **7-A = complete**, **7-B = complete**, **7-C = complete**, **7-D = complete**. **Phase 7 overall = complete.**
 
 See [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md) Phase 7 and [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
 

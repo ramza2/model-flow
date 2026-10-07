@@ -297,7 +297,7 @@ See [`phase-6-time-series.md`](./phase-6-time-series.md) and [`phase-6d-verifica
 
 ## Phase 7 — LLM Pipeline Copilot
 
-**Current enhancement phase** after Phase 6 closeout.
+**Status:** complete (Phase 7-D merged via PR #73; `main@483db3859558570c499114ba774bf62b491234e1`; post-merge CI #356 PASS).
 
 - natural language → pipeline draft
 - pipeline schema validation against ModelFlow definitions
@@ -313,7 +313,7 @@ Slices:
 | **7-A** | Copilot Backend Foundation | **complete** (PR #70; `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`; CI #345 PASS) |
 | **7-B** | Builder Preview / Apply | **complete** (PR #71; `b8e94f5ff87450f48c12add980bd243fe88ee3a8`; CI #350 attempt 2 PASS) |
 | **7-C** | Natural-language Graph Patch | **complete** (PR #72; `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`; CI #353 PASS) |
-| **7-D** | Final Hardening / Browser Regression | **current / Draft** |
+| **7-D** | Final Hardening / Browser Regression | **complete** (PR #73; `483db3859558570c499114ba774bf62b491234e1`; CI #356 PASS) |
 
 7-A invariants: LLM proposes only; no automatic save/publish/run/deploy/code execution; `validate_graph` is authoritative; project resource IDs are validated server-side; no raw dataset rows in the LLM catalog; provider credentials are server-owned.
 
@@ -323,13 +323,15 @@ Slices:
 
 7-D invariants: hardening and browser regression only; no new Copilot features; prompt/graph text remain untrusted; no tools/functions; secrets stay server-owned; stale Copilot responses must not contaminate Builder; Generate/Modify ≠ Apply ≠ Save ≠ Publish ≠ Run.
 
-See [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md).
+Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7-llm-pipeline-copilot.md) and [`phase-7d-verification.md`](./phase-7d-verification.md).
 
 **Depends on:** stable pipeline schema and UX.
 
 ---
 
 ## Phase 8 — Enterprise / Scale
+
+**Status:** planned / next roadmap phase.
 
 - inference service separation from API/worker
 - OIDC / SSO

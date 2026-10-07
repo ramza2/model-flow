@@ -9,7 +9,7 @@ Phase 7 adds a natural-language path to ModelFlow Pipeline drafts and modificati
 | **7-A** | Copilot Backend Foundation — OpenAI-compatible client, draft endpoint, catalog, parse/canonicalize, `validate_graph`, project-reference checks, audit, backend tests | **complete** (PR #70; squash/main `e1927c5f72e0673a96b53a4cb4e2b5d2d422ed62`; post-merge CI #345 / run `36972237806` PASS; Alembic `023_forecasting_training`) |
 | **7-B** | Builder Preview / Apply — Drawer UX, read-only visual preview, validation review, explicit confirmation, in-memory Apply | **complete** (PR #71; squash/main `b8e94f5ff87450f48c12add980bd243fe88ee3a8`; post-merge CI #350 / run `37392846125` attempt 2 PASS; Alembic `023_forecasting_training`) |
 | **7-C** | Natural-language Graph Patch — modify an existing graph via structured patch (not free-form execution) | **complete** (PR #72; squash/main `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1`; post-merge CI #353 / run `37409599810` SUCCESS; Alembic `023_forecasting_training`) |
-| **7-D** | Final Hardening / Browser Regression — security contract regressions, stale-response E2E, docs closeout prep | **current / Draft** |
+| **7-D** | Final Hardening / Browser Regression — security contract regressions, stale-response E2E, docs closeout prep | **complete** (PR #73; final PR HEAD `a8084555779e2d68b0ffeec6ddcb668e6e5c0d12`; exact-head CI #355 PASS; squash/main `483db3859558570c499114ba774bf62b491234e1`; post-merge CI #356 / run `37555997629` SUCCESS; Alembic `023_forecasting_training`) |
 
 ```text
 7-A Copilot Backend Foundation
@@ -21,12 +21,11 @@ Phase 7 adds a natural-language path to ModelFlow Pipeline drafts and modificati
 7-D Final Hardening / Browser Regression
 ```
 
-**Phase 7 = current.**
+**Phase 7 = complete.**
 **Phase 7-A = complete.**
 **Phase 7-B = complete.**
 **Phase 7-C = complete.**
-**Phase 7-D = current / Draft** (not marked complete in this feature PR).
-Phase 7 overall remains open until 7-D closeout.
+**Phase 7-D = complete.**
 
 Phase 7-B closeout note: CI #350 attempt 1 had a transient MySQL import E2E timeout; no code change; identical tree SHA `d64be8fc401aeb985d5da4ecb2fb87662df5301a` passed PR CI #349 and CI #350 attempt 2.
 
@@ -128,7 +127,7 @@ Base graph may be strict-invalid; result must pass structural validation (`stric
 6. Valid non-empty patch → Apply changes → Confirm apply → in-memory replace + dirty.
 7. Same stale-response protection as 7-B for draft and patch.
 
-## Phase 7-D invariants (current / Draft)
+## Phase 7-D invariants (complete)
 
 ```text
 hardening and browser regression only — no new Copilot features
@@ -146,4 +145,26 @@ Generate/Modify != Apply != Save != Publish != Run
 
 ## Out of scope for 7-D
 
-New Copilot features, multi-turn chat history, streaming, tool calling, MCP, RAG, embeddings, automatic save/publish/run/deploy, LLM settings UI, new node types, Phase 8, Phase 9 redesign, marking Phase 7 overall complete before 7-D merge.
+New Copilot features, multi-turn chat history, streaming, tool calling, MCP, RAG, embeddings, automatic save/publish/run/deploy, LLM settings UI, new node types, Phase 8 enterprise/scale work, and Phase 9 redesign remain outside the completed Phase 7 scope.
+
+## Final status
+
+```text
+Phase 7-D: complete
+Enhancement Phase 7: complete
+Final Phase 7 implementation baseline:
+main@483db3859558570c499114ba774bf62b491234e1
+
+Post-merge main CI:
+#356
+run 37555997629
+SUCCESS
+
+Alembic:
+023_forecasting_training
+
+Next roadmap phase:
+Phase 8 — Enterprise / Scale
+```
+
+See [`phase-7d-verification.md`](./phase-7d-verification.md).
