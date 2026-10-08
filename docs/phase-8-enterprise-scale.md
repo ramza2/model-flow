@@ -31,7 +31,7 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 |-------|-------|--------|
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
 | **8-B** | Worker Scale-out & Runner Profiles | **complete** (PR #79; `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37`; post-merge CI #373 PASS) |
-| **8-C** | Enterprise Identity — OIDC / SSO | planned |
+| **8-C** | Enterprise Identity — OIDC / SSO | **current / Draft** (PR #81) |
 | **8-D** | External Secret Management | planned |
 | **8-E** | Kubernetes / HA Deployment | planned |
 | **8-F** | Final Hardening / Scale Regression | planned |
@@ -209,6 +209,16 @@ Add standards-based enterprise sign-in without replacing ModelFlow's existing au
 
 SAML, SCIM provisioning, automatic group-to-project-role synchronization, multi-IdP brokering, IdP administration console redesign.
 
+### Draft implementation notes
+
+- Authorization Code + PKCE S256 with server-side `OidcLoginTransaction` (encrypted nonce/verifier; hashed state + one-time exchange code).
+- Durable binding table `external_identities` keyed by `UNIQUE(issuer, subject)` (+ one binding per user/issuer).
+- Verified-email first link to existing local users; JIT provision only when `MODELFLOW_OIDC_AUTO_PROVISION=true` and never grants `SYSTEM_ADMIN`.
+- Existing local login / bootstrap break-glass preserved; OIDC JIT users have `local_login_enabled=false`.
+- Public `GET /api/v1/auth/methods`; frontend SSO button + `/login/oidc/callback` exchange; ModelFlow HS256 access tokens unchanged for RBAC.
+- OIDC disabled by default; client secret only on backend Compose service.
+- Security hardenings: `SELECT … FOR UPDATE` atomic claim for callback `state` and one-time exchange codes; provider `error=` callbacks require valid/unconsumed state; issuer identity is exact-string (no trailing-slash normalization); `OIDC_ENABLED=true` fails closed at startup if issuer/client/secret/redirect missing; ID-token allowlist is RSA-only (`RS256`/`RS384`/`RS512`).
+
 ---
 
 ## 8-D — External Secret Management
@@ -284,4 +294,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-**8-A — Inference Runtime Separation and 8-B — Worker Scale-out & Runner Profiles are complete on `main`.** The next implementation slice is **8-C — Enterprise Identity — OIDC / SSO**. Start 8-C from the then-current `main`; do not pull 8-D+ scope into the 8-C PR.
+**8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is the current Draft slice.** Do not pull 8-D+ scope into the 8-C PR.

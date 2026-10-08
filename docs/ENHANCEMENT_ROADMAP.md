@@ -331,13 +331,13 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 
 ## Phase 8 — Enterprise / Scale
 
-**Status:** current. **8-A — Inference Runtime Separation and 8-B — Worker Scale-out & Runner Profiles are complete on `main`.** The next slice is **8-C — Enterprise Identity — OIDC / SSO**; **8-C–8-F** remain planned.
+**Status:** current. **8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is current / Draft**; **8-D–8-F** remain planned.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
 | **8-B** | Worker Scale-out & Runner Profiles | **complete** (PR #79; `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37`; post-merge CI #373 PASS) |
-| **8-C** | Enterprise Identity — OIDC / SSO | planned |
+| **8-C** | Enterprise Identity — OIDC / SSO | **current / Draft** (PR #81) |
 | **8-D** | External Secret Management | planned |
 | **8-E** | Kubernetes / HA Deployment | planned |
 | **8-F** | Final Hardening / Scale Regression | planned |
