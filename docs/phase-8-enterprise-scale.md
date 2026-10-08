@@ -30,7 +30,7 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 | Slice | Scope | Status |
 |-------|-------|--------|
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
-| **8-B** | Worker Scale-out & Runner Profiles | planned |
+| **8-B** | Worker Scale-out & Runner Profiles | **current / Draft** |
 | **8-C** | Enterprise Identity — OIDC / SSO | planned |
 | **8-D** | External Secret Management | planned |
 | **8-E** | Kubernetes / HA Deployment | planned |
@@ -167,6 +167,14 @@ Make the existing Postgres-backed execution model safe and observable with multi
 
 New CUDA algorithms, distributed training frameworks, Ray/Spark adoption, Kubernetes autoscaling implementation, queue-system replacement, Kafka/Redis requirement.
 
+### Draft implementation notes
+
+- Worker identity: explicit `WORKER_ID` / `MODELFLOW_WORKER_ID`, else container hostname (`resolve_worker_id()` shared by runner + healthcheck). Compose no longer pins `WORKER_ID: default`.
+- Profiles: `WORKER_PROFILE=general|gpu` with capabilities `cpu` / `cpu,gpu`. All current workloads require `general`; mismatch and unknown profiles fail closed (GPU workers do not claim sklearn/general jobs).
+- Heartbeat `status_json` records profile, capabilities, `max_concurrent_jobs`, `git_sha` (no secrets).
+- Scheduler / stale-recovery / cancel-honor run only while holding a Postgres session advisory lock (`SCHEDULER_MAINTENANCE_LOCK_KEY`); non-leaders continue normal job claims.
+- Compose verification: `scripts/verify-worker-scale.sh` (`--scale worker=2`) is part of `./scripts/verify.sh`.
+
 ---
 
 ## 8-C — Enterprise Identity — OIDC / SSO
@@ -266,4 +274,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-**8-A — Inference Runtime Separation is complete on `main`.** The next implementation slice is **8-B — Worker Scale-out & Runner Profiles**. Start 8-B from the then-current `main`; do not pull 8-C+ scope into the 8-B PR.
+**8-A — Inference Runtime Separation is complete on `main`.** **8-B — Worker Scale-out & Runner Profiles is the current Draft slice.** Do not pull 8-C+ scope into the 8-B PR.

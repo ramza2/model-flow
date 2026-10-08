@@ -30,7 +30,7 @@
 | `frontend` | React SPA (nginx); `/api` proxied to backend |
 | `backend` | FastAPI `/api/v1`; migrations on start; bootstrap admin; delegates model execution |
 | `inference-runtime` | Internal FastAPI model load/predict; service-token auth; no public ingress |
-| `worker` | Claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`); heartbeat; batch predict via runtime |
+| `worker` | Claims jobs from Postgres (`FOR UPDATE SKIP LOCKED`); hostname worker identity (optional `WORKER_ID`); profile `general`/`gpu`; scheduler/maintenance via Postgres advisory lock; heartbeat; batch predict via runtime |
 | `postgres` | App DB `modelflow` + MLflow DB `mlflow` |
 | `mlflow` | Tracking + Model Registry; artifacts on MinIO |
 | `minio` | Datasets, batch results, MLflow artifacts |
@@ -43,7 +43,7 @@
 - `app/db` — SQLAlchemy models / session
 - `app/schemas` — Pydantic request/response models
 - `app/services` — business logic (storage, training, pipeline, registry, serving, drift, …)
-- `app/workers` — unified job runner + healthcheck
+- `app/workers` — unified job runner + healthcheck (identity, leadership, profile-aware claims)
 - Alembic migrations for app schema
 
 ## Auth & tenancy

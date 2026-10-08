@@ -18,7 +18,15 @@ class Settings(BaseSettings):
     minio_batch_bucket: str = "batch-results"
     minio_artifacts_bucket: str = "artifacts"
     worker_poll_seconds: float = 2.0
-    worker_id: str = "default"
+    # Empty default → hostname fallback via resolve_worker_id() (Phase 8-B).
+    worker_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("WORKER_ID", "MODELFLOW_WORKER_ID"),
+    )
+    worker_profile: str = Field(
+        default="general",
+        validation_alias=AliasChoices("WORKER_PROFILE", "MODELFLOW_WORKER_PROFILE"),
+    )
     worker_heartbeat_max_age_seconds: int = 30
     worker_max_concurrent_jobs: int = 2
     pipeline_max_parallel_nodes: int = 4

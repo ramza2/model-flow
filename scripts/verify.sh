@@ -471,6 +471,11 @@ modelflow_compose exec -T backend ruff check app tests
 modelflow_compose exec -T backend pytest -q
 pass "backend lint/tests"
 
+info "5b) Worker scale-out (Phase 8-B)"
+bash "$ROOT/scripts/verify-worker-scale.sh"
+pass "worker scale-out"
+assert_services_healthy
+
 info "6) Frontend lint/typecheck/test (Node container)"
 docker run --rm \
   -v "$ROOT/frontend:/app" \
