@@ -57,28 +57,59 @@ from app.services.target_columns import (
     resolve_output_target_columns,
 )
 from app.services.forecasting import loads_forecast_horizons
+from app.services.runner_profiles import (
+    DEFAULT_REQUIRED_PROFILE,
+    required_profile_for_workload,
+    worker_can_claim,
+)
 from app.services.training import TrainingJobContext, get_training_runner
+from app.workers.identity import (
+    resolve_worker_capabilities,
+    resolve_worker_id,
+    resolve_worker_profile,
+    worker_status_payload,
+)
+from app.workers.leadership import (
+    release_scheduler_leadership,
+    try_acquire_scheduler_leadership,
+)
 
 logger = logging.getLogger(__name__)
 PENDING_STATUSES = (JobStatus.pending, JobStatus.queued)
 STALE_TRAINING_AGE = timedelta(hours=1)
 
 
+def _profile_allows_claim(workload: str | None = None) -> bool:
+    required = required_profile_for_workload(workload)
+    return worker_can_claim(required, resolve_worker_profile())
+
+
 def beat() -> None:
+    worker_id = resolve_worker_id()
+    status_json = json.dumps(worker_status_payload(), separators=(",", ":"))
     db = SessionLocal()
     try:
         now = datetime.now(timezone.utc)
-        row = db.get(WorkerHeartbeat, settings.worker_id)
+        row = db.get(WorkerHeartbeat, worker_id)
         if row is None:
-            db.add(WorkerHeartbeat(worker_id=settings.worker_id, last_seen_at=now))
+            db.add(
+                WorkerHeartbeat(
+                    worker_id=worker_id,
+                    last_seen_at=now,
+                    status_json=status_json,
+                )
+            )
         else:
             row.last_seen_at = now
+            row.status_json = status_json
         db.commit()
     finally:
         db.close()
 
 
-def _claim_next(model, *conditions):
+def _claim_next(model, *conditions, workload: str | None = None):
+    if not _profile_allows_claim(workload):
+        return None
     db = SessionLocal()
     try:
         job = db.scalar(
@@ -118,6 +149,8 @@ def claim_pipeline_runs(limit: int) -> list[PipelineRun]:
     """Atomically claim at most ``limit`` pipeline runs that are due."""
 
     if limit <= 0:
+        return []
+    if not _profile_allows_claim("pipeline"):
         return []
     now = datetime.now(timezone.utc)
     db = SessionLocal()
@@ -162,6 +195,8 @@ def claim_next_import_job() -> DataImportJob | None:
 
 def claim_next_preparation_run() -> DatasetPreparationRun | None:
     """Claim the next queued preparation run (not JobStatus-based)."""
+    if not _profile_allows_claim("dataset_preparation"):
+        return None
     db = SessionLocal()
     try:
         run = db.scalar(
@@ -916,9 +951,57 @@ def _wait_for_database() -> None:
     raise RuntimeError("Database did not become ready for the worker.")
 
 
+def _run_scheduler_and_maintenance() -> None:
+    """Run scheduler/maintenance only while holding the advisory leadership lock."""
+
+    db = SessionLocal()
+    acquired = False
+    try:
+        acquired = try_acquire_scheduler_leadership(db)
+        if not acquired:
+            logger.debug(
+                "scheduler leadership skip worker_id=%s", resolve_worker_id()
+            )
+            return
+        logger.debug(
+            "scheduler leadership acquired worker_id=%s", resolve_worker_id()
+        )
+        try:
+            scheduler.scheduler_tick(db)
+        except Exception:
+            logger.exception("Scheduler tick failed")
+            db.rollback()
+        recovered = recover_stale_training_jobs()
+        cancelled = honor_cancel_requested_training_jobs()
+        if recovered:
+            logger.warning("Recovered %s stale training job(s)", recovered)
+        if cancelled:
+            logger.info("Cancelled %s training job(s)", cancelled)
+    finally:
+        if acquired:
+            release_scheduler_leadership(db)
+        db.close()
+
+
 def run_forever() -> None:
     _wait_for_database()
-    logger.info("ModelFlow worker started worker_id=%s", settings.worker_id)
+    worker_id = resolve_worker_id()
+    profile = resolve_worker_profile()
+    capabilities = ",".join(resolve_worker_capabilities())
+    logger.info(
+        "ModelFlow worker started worker_id=%s profile=%s capabilities=%s "
+        "max_concurrent_jobs=%s",
+        worker_id,
+        profile,
+        capabilities,
+        settings.worker_max_concurrent_jobs,
+    )
+    if profile != DEFAULT_REQUIRED_PROFILE:
+        logger.info(
+            "Worker profile %s will not claim general workloads "
+            "(fail-closed profile routing)",
+            profile,
+        )
     pipeline_executor = ThreadPoolExecutor(
         max_workers=max(1, settings.worker_max_concurrent_jobs),
         thread_name_prefix="pipeline-run",
@@ -928,14 +1011,7 @@ def run_forever() -> None:
         processed = False
         try:
             beat()
-            db = SessionLocal()
-            try:
-                scheduler.scheduler_tick(db)
-            except Exception:
-                logger.exception("Scheduler tick failed")
-                db.rollback()
-            finally:
-                db.close()
+            _run_scheduler_and_maintenance()
             completed = [future for future in pipeline_futures if future.done()]
             for future in completed:
                 run_id = pipeline_futures.pop(future)
@@ -981,12 +1057,6 @@ def run_forever() -> None:
                 logger.info("Processing %s id=%s", label, item.id)
                 process(item)
                 beat()
-            recovered = recover_stale_training_jobs()
-            cancelled = honor_cancel_requested_training_jobs()
-            if recovered:
-                logger.warning("Recovered %s stale training job(s)", recovered)
-            if cancelled:
-                logger.info("Cancelled %s training job(s)", cancelled)
         except Exception:
             logger.exception("Worker poll cycle failed")
         if not processed:
