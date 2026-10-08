@@ -62,15 +62,16 @@ is_frontend_path() {
 }
 
 # Explicit infra/config paths — never docs-only.
+# May overlap with backend/* or frontend/* (e.g. Dockerfile, lockfiles).
 is_infra_path() {
   case "$1" in
     .github/*|scripts/*|infra/*|samples/*) return 0 ;;
     docker-compose.yml|docker-compose.*.yml) return 0 ;;
     .env|.env.*|.env.example) return 0 ;;
-    */Dockerfile|Dockerfile|*/Dockerfile.*) return 0 ;;
+    Dockerfile|*/Dockerfile|Dockerfile.*|*/Dockerfile.*) return 0 ;;
     *.yml|*.yaml) return 0 ;;
-    package-lock.json|frontend/package-lock.json) return 0 ;;
-    backend/requirements.txt|requirements.txt) return 0 ;;
+    package-lock.json|*/package-lock.json) return 0 ;;
+    requirements.txt|*/requirements.txt) return 0 ;;
     .cursor/*|.dockerignore|.gitignore|.gitattributes|Makefile|pyproject.toml) return 0 ;;
   esac
   return 1
@@ -95,19 +96,25 @@ if ((${#CHANGED[@]} == 0)); then
   docs_only="true"
 else
   for path in "${CHANGED[@]}"; do
+    # Categories are intentionally non-exclusive: packaging/Dockerfile paths
+    # under backend/ or frontend/ must enable both product and infra gates.
+    matched="false"
     if is_backend_path "$path"; then
       backend="true"
       docs_only="false"
-      continue
+      matched="true"
     fi
     if is_frontend_path "$path"; then
       frontend="true"
       docs_only="false"
-      continue
+      matched="true"
     fi
     if is_infra_path "$path"; then
       infra="true"
       docs_only="false"
+      matched="true"
+    fi
+    if [[ "${matched}" == "true" ]]; then
       continue
     fi
     if is_docs_path "$path"; then
@@ -119,10 +126,6 @@ else
     docs_only="false"
   done
 fi
-
-# Mixed product changes should still exercise compose/script sanity when
-# workflow or packaging files did not change, but docs-only stays pure.
-# (No automatic infra bump for backend/frontend-only.)
 
 echo "=== PR change classification ==="
 echo "base: ${BASE_SHA}"

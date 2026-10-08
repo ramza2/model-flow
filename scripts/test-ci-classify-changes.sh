@@ -20,7 +20,10 @@ echo base >README.md
 mkdir -p docs backend/app frontend/src scripts .github/workflows
 echo doc >docs/a.md
 echo py >backend/app/x.py
+echo req >backend/requirements.txt
+echo from >backend/Dockerfile
 echo ts >frontend/src/x.ts
+echo lock >frontend/package-lock.json
 echo sh >scripts/x.sh
 echo yml >.github/workflows/ci.yml
 echo compose >docker-compose.yml
@@ -92,6 +95,36 @@ classify "$BASE" "$HEAD" >/dev/null
 [[ "${docs_only}" == "false" && "${backend}" == "true" && "${frontend}" == "true" && "${infra}" == "false" ]] \
   || fail "mixed mismatch"
 pass "mixed backend+frontend classification"
+
+# --- overlap: backend Dockerfile → backend + infra ---
+git reset -q --hard "$BASE"
+echo change >backend/Dockerfile
+git add -A && git commit -q -m backend-dockerfile
+HEAD="$(git rev-parse HEAD)"
+classify "$BASE" "$HEAD" >/dev/null
+[[ "${docs_only}" == "false" && "${backend}" == "true" && "${infra}" == "true" && "${frontend}" == "false" ]] \
+  || fail "backend/Dockerfile overlap mismatch (docs=${docs_only} backend=${backend} frontend=${frontend} infra=${infra})"
+pass "backend/Dockerfile enables backend+infra"
+
+# --- overlap: backend requirements → backend + infra ---
+git reset -q --hard "$BASE"
+echo change >backend/requirements.txt
+git add -A && git commit -q -m backend-requirements
+HEAD="$(git rev-parse HEAD)"
+classify "$BASE" "$HEAD" >/dev/null
+[[ "${docs_only}" == "false" && "${backend}" == "true" && "${infra}" == "true" && "${frontend}" == "false" ]] \
+  || fail "backend/requirements.txt overlap mismatch"
+pass "backend/requirements.txt enables backend+infra"
+
+# --- overlap: frontend lockfile → frontend + infra ---
+git reset -q --hard "$BASE"
+echo change >frontend/package-lock.json
+git add -A && git commit -q -m frontend-lock
+HEAD="$(git rev-parse HEAD)"
+classify "$BASE" "$HEAD" >/dev/null
+[[ "${docs_only}" == "false" && "${frontend}" == "true" && "${infra}" == "true" && "${backend}" == "false" ]] \
+  || fail "frontend/package-lock.json overlap mismatch"
+pass "frontend/package-lock.json enables frontend+infra"
 
 # --- .github is never docs-only even for markdown ---
 git reset -q --hard "$BASE"
