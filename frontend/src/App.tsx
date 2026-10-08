@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import AppShell from "./AppShell";
-import { LoginPage, ProtectedRoute, useAuth } from "./AuthContext";
+import { LoginPage, OidcCallbackPage, ProtectedRoute, useAuth } from "./AuthContext";
 import { ProjectProvider } from "./ProjectContext";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
@@ -88,6 +88,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/login/oidc/callback" element={<OidcCallbackPage />} />
       <Route path="/*" element={
         <ProtectedRoute>
           <ProjectProvider>

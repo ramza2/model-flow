@@ -122,6 +122,75 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Phase 8-C — Enterprise OIDC / SSO (disabled by default; env-only secret)
+    oidc_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("MODELFLOW_OIDC_ENABLED", "OIDC_ENABLED"),
+    )
+    oidc_issuer: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_OIDC_ISSUER", "OIDC_ISSUER"),
+    )
+    oidc_client_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("MODELFLOW_OIDC_CLIENT_ID", "OIDC_CLIENT_ID"),
+    )
+    oidc_client_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET"
+        ),
+    )
+    oidc_redirect_uri: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_REDIRECT_URI", "OIDC_REDIRECT_URI"
+        ),
+    )
+    oidc_display_name: str = Field(
+        default="Company SSO",
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_DISPLAY_NAME", "OIDC_DISPLAY_NAME"
+        ),
+    )
+    oidc_scopes: str = Field(
+        default="openid profile email",
+        validation_alias=AliasChoices("MODELFLOW_OIDC_SCOPES", "OIDC_SCOPES"),
+    )
+    oidc_auto_provision: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_AUTO_PROVISION", "OIDC_AUTO_PROVISION"
+        ),
+    )
+    oidc_http_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_HTTP_TIMEOUT_SECONDS", "OIDC_HTTP_TIMEOUT_SECONDS"
+        ),
+    )
+    oidc_transaction_ttl_seconds: int = Field(
+        default=600,
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_TRANSACTION_TTL_SECONDS",
+            "OIDC_TRANSACTION_TTL_SECONDS",
+        ),
+    )
+    oidc_exchange_ttl_seconds: int = Field(
+        default=120,
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_EXCHANGE_TTL_SECONDS", "OIDC_EXCHANGE_TTL_SECONDS"
+        ),
+    )
+    # Frontend path that receives the one-time exchange code (relative).
+    oidc_frontend_callback_path: str = Field(
+        default="/login/oidc/callback",
+        validation_alias=AliasChoices(
+            "MODELFLOW_OIDC_FRONTEND_CALLBACK_PATH",
+            "OIDC_FRONTEND_CALLBACK_PATH",
+        ),
+    )
+
 
 settings = Settings()
 

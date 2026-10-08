@@ -108,6 +108,7 @@ export type User = {
   full_name: string;
   is_active: boolean;
   is_system_admin: boolean;
+  local_login_enabled?: boolean;
   created_at: string;
   updated_at: string;
 };
