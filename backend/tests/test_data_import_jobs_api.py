@@ -21,6 +21,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.main import _rate_windows, app
+from app.services import mlflow_service
 
 
 engine = create_engine(
@@ -36,6 +37,8 @@ TEST_ADMIN_PASSWORD = secrets.token_urlsafe(24)
 def setup_db(monkeypatch):
     Base.metadata.create_all(engine)
     _rate_windows.clear()
+    # Fast Gate host pytest has no MLflow; project create calls ensure_experiment.
+    monkeypatch.setattr(mlflow_service, "ensure_experiment", lambda name: "exp-1")
 
     def override_get_db():
         db = TestingSessionLocal()
