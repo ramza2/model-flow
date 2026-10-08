@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is the current Draft slice.** Slices **8-D–8-F** remain planned.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is the current Draft slice** (Draft PR #81). Slices **8-D–8-F** remain planned.
 
 Phase 8-B completion baseline: `main@4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37` (PR #79; final PR HEAD `30482b854f198f4a7fdaf12019b611521328feec`; exact-head Fast Gate #372 / run `37730164986` PASS; post-merge Full Gate #373 / run `37734775244` PASS; Alembic head `023_forecasting_training`; no migration).
 
