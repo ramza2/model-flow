@@ -16,8 +16,221 @@ permissions:
   checks: write
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Pull requests — Fast Gate (no full Compose stack)
+  # ---------------------------------------------------------------------------
+  classify:
+    name: Classify PR changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+      infra: ${{ steps.classify.outputs.infra }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: classify
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-classify-changes.sh
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "Classifying ${BASE_SHA}...${HEAD_SHA}"
+          git diff --check "${BASE_SHA}...${HEAD_SHA}" || {
+            echo "git diff --check reported whitespace/conflict marker issues" >&2
+            exit 1
+          }
+          ./scripts/ci-classify-changes.sh "${BASE_SHA}" "${HEAD_SHA}"
+
+  docs-check:
+    name: Docs-only lightweight gate
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.classify.outputs.docs_only == 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Docs-only validation
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          echo "docs-only PR detected — skipping Python/Node/Docker full stack"
+          echo "base=${BASE_SHA}"
+          echo "head=${HEAD_SHA}"
+          git diff --check "${BASE_SHA}...${HEAD_SHA}"
+          chmod +x scripts/ci-classify-changes.sh
+          ./scripts/ci-classify-changes.sh "${BASE_SHA}" "${HEAD_SHA}"
+          echo "Docs-only lightweight gate OK"
+
+  backend-fast:
+    name: Backend lint and unit tests
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.classify.outputs.backend == 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5.6.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ruff
+        run: ruff check app tests
+
+      - name: Pytest
+        run: pytest -q
+
+  frontend-fast:
+    name: Frontend lint typecheck and tests
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.classify.outputs.frontend == 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test
+
+  infra-fast:
+    name: Infra and config checks
+    if: >
+      github.event_name == 'pull_request' &&
+      needs.classify.outputs.infra == 'true'
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Confirm Docker and Compose
+        run: |
+          set -euo pipefail
+          docker version
+          docker compose version
+          command -v bash
+          command -v curl
+
+      - name: Shell syntax (scripts)
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(find scripts -type f -name '*.sh' | sort)
+          for script in "${scripts[@]}"; do
+            bash -n "$script"
+          done
+          echo "bash -n OK for ${#scripts[@]} scripts"
+
+      - name: CI classify / aggregate unit checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-ci-classify-changes.sh scripts/ci-classify-changes.sh scripts/ci-pr-fast-gate-aggregate.sh
+          ./scripts/test-ci-classify-changes.sh
+
+      - name: Env preservation unit checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-env-preservation.sh scripts/init-env.sh
+          ./scripts/test-env-preservation.sh --unit-only
+
+      - name: MSYS Docker path helper unit checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-lib-msys.sh
+          ./scripts/test-lib-msys.sh
+
+      - name: Compose host-port config regressions
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-compose-host-ports.sh scripts/init-env.sh
+          ./scripts/test-compose-host-ports.sh
+
+  pr-fast-gate:
+    name: PR fast gate
+    if: always() && github.event_name == 'pull_request'
+    needs:
+      - classify
+      - docs-check
+      - backend-fast
+      - frontend-fast
+      - infra-fast
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4.4.0
+
+      - name: Aggregate conditional job results
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          DOCS_ONLY: ${{ needs.classify.outputs.docs_only }}
+          DOCS_CHECK_RESULT: ${{ needs.docs-check.result }}
+          BACKEND_NEEDED: ${{ needs.classify.outputs.backend }}
+          BACKEND_RESULT: ${{ needs.backend-fast.result }}
+          FRONTEND_NEEDED: ${{ needs.classify.outputs.frontend }}
+          FRONTEND_RESULT: ${{ needs.frontend-fast.result }}
+          INFRA_NEEDED: ${{ needs.classify.outputs.infra }}
+          INFRA_RESULT: ${{ needs.infra-fast.result }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci-pr-fast-gate-aggregate.sh
+          ./scripts/ci-pr-fast-gate-aggregate.sh
+
+  # ---------------------------------------------------------------------------
+  # main push + workflow_dispatch — Full verification gate (unchanged scope)
+  # ---------------------------------------------------------------------------
   verify:
     name: Full verification gate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -69,7 +282,7 @@ jobs:
             docker compose -p modelflow-verify ps -a --format 'table {{.Name}}\t{{.Service}}\t{{.Status}}\t{{.Health}}' || true
           } | tee artifacts/verify/compose-ps-ci.txt
 
-          for svc in postgres minio mlflow backend worker frontend; do
+          for svc in postgres minio mlflow inference-runtime backend worker frontend; do
             docker compose -p modelflow-verify logs --no-color --tail=200 "$svc" \
               > "artifacts/verify/logs-${svc}.txt" 2>&1 || \
               echo "(no logs for $svc)" > "artifacts/verify/logs-${svc}.txt"

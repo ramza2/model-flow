@@ -61,7 +61,7 @@ docker compose --profile source down -v --remove-orphans
 
 ## Full verification
 
-Local and CI use the **same** gate:
+Local completion and **main** CI use the same full gate:
 
 ```bash
 chmod +x scripts/verify.sh
@@ -83,8 +83,10 @@ The script builds the stack with clean volumes, waits for the bootstrap administ
 checks health, runs Alembic / lint / tests, and exercises the authenticated `/api/v1`
 data-quality, training, registry, serving, batch, drift, and audit flow. It then runs
 Playwright E2E in the official Playwright container. On failure it writes Compose status
-and service logs under `artifacts/verify/`. CI runs this gate on non-default host ports
-and also asserts default-port Compose config rendering.
+and service logs under `artifacts/verify/`. On `main` (and `workflow_dispatch`), GitHub
+Actions runs this gate on non-default host ports and also asserts default-port Compose
+config rendering. Pull requests use a faster Fast Gate instead (see below); run
+`./scripts/verify.sh` locally before opening or updating a Draft PR.
 
 ## Authentication and bootstrap
 
@@ -152,20 +154,18 @@ Reset local development to clean volumes and wait for healthy services:
 
 Workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 
-Runs on:
-
-- Pull requests targeting `main`
-- Pushes to `main`
-- Manual `workflow_dispatch`
+| Event | Gate | What runs |
+|-------|------|-----------|
+| Pull request → `main` | **PR Fast Gate** | Changed-file classification; docs-only lightweight checks; conditional parallel backend lint/pytest, frontend lint/typecheck/test, and infra/config checks; aggregate job **`PR fast gate`** |
+| Push to `main` | **Full verification gate** | `./scripts/verify.sh` end-to-end (Compose, source DBs, training, inference, batch, drift, pipeline, backup/restore, dependency audit, Playwright) |
+| `workflow_dispatch` | **Full verification gate** | Same as main push |
 
 Behavior:
 
-- `ubuntu-latest` + Docker / Compose
 - Cancels superseded runs for the same ref (`concurrency`)
 - Least-privilege token permissions (`contents: read`, `checks: write`)
-- 60-minute job timeout
-- Executes `./scripts/verify.sh` end-to-end on **non-default host ports** (and asserts default-port Compose config)
-- On failure, uploads `artifacts/verify/` and `artifacts/screenshots/` (plus Compose `ps` / service logs collected in the workflow)
+- PR Fast Gate does **not** start the full Compose stack; local `./scripts/verify.sh` remains required before considering work complete
+- Full gate failure artifacts: `artifacts/verify/` and `artifacts/screenshots/` (plus Compose `ps` / service logs)
 
 ### CI Badge
 
