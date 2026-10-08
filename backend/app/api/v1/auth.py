@@ -202,14 +202,30 @@ def oidc_callback(
     error: str | None = None,
 ):
     if error:
-        _audit_oidc(
-            db,
-            action="auth.oidc.login",
-            request=request,
-            success=False,
-            failure_reason="provider_error",
-        )
-        db.commit()
+        # Never echo raw provider error/detail/token material to the client.
+        try:
+            oidc_service.handle_provider_error_callback(db, state=state)
+            _audit_oidc(
+                db,
+                action="auth.oidc.login",
+                request=request,
+                success=False,
+                failure_reason="provider_error",
+            )
+            db.commit()
+        except OidcError as exc:
+            _audit_oidc(
+                db,
+                action="auth.oidc.login",
+                request=request,
+                success=False,
+                failure_reason=exc.category,
+            )
+            db.commit()
+            return RedirectResponse(
+                url="/login?oidc_error=" + quote(exc.public_message),
+                status_code=302,
+            )
         return RedirectResponse(
             url="/login?oidc_error=" + quote("Sign-in was cancelled or denied."),
             status_code=302,

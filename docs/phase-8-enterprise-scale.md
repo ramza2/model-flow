@@ -217,6 +217,7 @@ SAML, SCIM provisioning, automatic group-to-project-role synchronization, multi-
 - Existing local login / bootstrap break-glass preserved; OIDC JIT users have `local_login_enabled=false`.
 - Public `GET /api/v1/auth/methods`; frontend SSO button + `/login/oidc/callback` exchange; ModelFlow HS256 access tokens unchanged for RBAC.
 - OIDC disabled by default; client secret only on backend Compose service.
+- Security hardenings: `SELECT … FOR UPDATE` atomic claim for callback `state` and one-time exchange codes; provider `error=` callbacks require valid/unconsumed state; issuer identity is exact-string (no trailing-slash normalization); `OIDC_ENABLED=true` fails closed at startup if issuer/client/secret/redirect missing; ID-token allowlist is RSA-only (`RS256`/`RS384`/`RS512`).
 
 ---
 

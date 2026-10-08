@@ -94,14 +94,16 @@ def oidc_db(monkeypatch, rsa_keys):
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path.endswith("/.well-known/openid-configuration"):
+        issuer = settings.oidc_issuer.strip()
+        endpoint_base = issuer[:-1] if issuer.endswith("/") else issuer
+        if path.endswith("openid-configuration"):
             return httpx.Response(
                 200,
                 json={
-                    "issuer": ISSUER,
-                    "authorization_endpoint": f"{ISSUER}/authorize",
-                    "token_endpoint": f"{ISSUER}/token",
-                    "jwks_uri": f"{ISSUER}/jwks",
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{endpoint_base}/authorize",
+                    "token_endpoint": f"{endpoint_base}/token",
+                    "jwks_uri": f"{endpoint_base}/jwks",
                 },
             )
         if path.endswith("/jwks"):
@@ -650,3 +652,194 @@ def test_external_return_rejected_on_start(client, oidc_db):
         follow_redirects=False,
     )
     assert response.status_code == 400
+
+
+def test_provider_error_requires_valid_state(client, oidc_db):
+    missing = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"error": "access_denied"},
+        follow_redirects=False,
+    )
+    assert missing.status_code == 302
+    assert "oidc_error=" in missing.headers["location"]
+    # Sanitized — no raw provider error echoed.
+    assert "access_denied" not in missing.headers["location"]
+
+    wrong = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"error": "access_denied", "state": "not-a-real-state"},
+        follow_redirects=False,
+    )
+    assert wrong.status_code == 302
+    assert "oidc_error=" in wrong.headers["location"]
+
+    start = client.get("/api/v1/auth/oidc/start", follow_redirects=False)
+    state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]
+    ok = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"error": "access_denied", "state": state},
+        follow_redirects=False,
+    )
+    assert ok.status_code == 302
+    assert "cancelled or denied" in parse_qs(urlparse(ok.headers["location"]).query).get(
+        "oidc_error", [""]
+    )[0].lower() or "cancelled" in ok.headers["location"].lower()
+
+    # Consumed state cannot be reused (provider error or success).
+    replay = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"error": "access_denied", "state": state},
+        follow_redirects=False,
+    )
+    assert replay.status_code == 302
+    assert "oidc_error=" in replay.headers["location"]
+
+
+def test_sequential_callback_replay_rejected(client, oidc_db, monkeypatch):
+    SessionLocal, private_pem = oidc_db
+    user_id = _seed_local_user(SessionLocal, email="replay@example.com")
+    with SessionLocal() as db:
+        db.add(
+            ExternalIdentity(
+                user_id=user_id,
+                issuer=ISSUER,
+                subject="sub-replay",
+                email_at_link="replay@example.com",
+            )
+        )
+        db.commit()
+    start = client.get("/api/v1/auth/oidc/start", follow_redirects=False)
+    query = parse_qs(urlparse(start.headers["location"]).query)
+    state, nonce = query["state"][0], query["nonce"][0]
+    token = _mint_id_token(
+        private_pem, sub="sub-replay", nonce=nonce, email="replay@example.com"
+    )
+    monkeypatch.setattr(
+        oidc_service,
+        "exchange_authorization_code",
+        lambda **kwargs: {"id_token": token, "access_token": "atk"},
+    )
+    first = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    assert first.status_code == 302
+    assert "/login/oidc/callback" in first.headers["location"]
+    second = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    assert second.status_code == 302
+    assert "/login?" in second.headers["location"]
+    assert "oidc_error=" in second.headers["location"]
+
+
+def test_exact_issuer_trailing_slash_success(client, oidc_db, monkeypatch):
+    SessionLocal, private_pem = oidc_db
+    slash_issuer = "https://idp.test.example/"
+    monkeypatch.setattr(settings, "oidc_issuer", slash_issuer)
+    user_id = _seed_local_user(SessionLocal, email="slash@example.com")
+    with SessionLocal() as db:
+        db.add(
+            ExternalIdentity(
+                user_id=user_id,
+                issuer=slash_issuer,
+                subject="sub-slash",
+                email_at_link="slash@example.com",
+            )
+        )
+        db.commit()
+    start = client.get("/api/v1/auth/oidc/start", follow_redirects=False)
+    query = parse_qs(urlparse(start.headers["location"]).query)
+    state, nonce = query["state"][0], query["nonce"][0]
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-slash",
+        nonce=nonce,
+        email="slash@example.com",
+        iss=slash_issuer,
+    )
+    monkeypatch.setattr(
+        oidc_service,
+        "exchange_authorization_code",
+        lambda **kwargs: {"id_token": token, "access_token": "atk"},
+    )
+    callback = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"code": "c", "state": state},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 302
+    assert "/login/oidc/callback" in callback.headers["location"]
+
+
+def test_configured_discovered_issuer_slash_mismatch_fails(oidc_db, monkeypatch):
+    """Configured issuer without trailing slash must not match discovered with slash."""
+
+    monkeypatch.setattr(settings, "oidc_issuer", "https://idp.test.example")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("openid-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://idp.test.example/",
+                    "authorization_endpoint": "https://idp.test.example/authorize",
+                    "token_endpoint": "https://idp.test.example/token",
+                    "jwks_uri": "https://idp.test.example/jwks",
+                },
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+
+    def client_factory() -> httpx.Client:
+        return httpx.Client(
+            transport=transport,
+            timeout=2.0,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
+    monkeypatch.setattr(oidc_service, "_http_client", client_factory)
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.fetch_discovery()
+    assert exc.value.category == "issuer_mismatch"
+
+
+def test_id_token_iss_slash_mismatch_fails(oidc_db, rsa_keys, monkeypatch):
+    _, private_pem = oidc_db
+    monkeypatch.setattr(settings, "oidc_issuer", "https://idp.test.example")
+    discovery = {
+        "issuer": "https://idp.test.example",
+        "authorization_endpoint": "https://idp.test.example/authorize",
+        "token_endpoint": "https://idp.test.example/token",
+        "jwks_uri": "https://idp.test.example/jwks",
+    }
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-1",
+        nonce="n",
+        iss="https://idp.test.example/",
+    )
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.validate_id_token(token, nonce="n", discovery=discovery)
+    assert exc.value.category == "issuer_mismatch"
+
+
+def test_es_algorithms_not_in_allowlist():
+    assert "ES256" not in oidc_service.ALLOWED_ID_TOKEN_ALGS
+    assert oidc_service.ALLOWED_ID_TOKEN_ALGS == ("RS256", "RS384", "RS512")
+
+
+def test_discovery_url_construction_preserves_issuer_identity():
+    assert (
+        oidc_service.discovery_document_url("https://idp.example.com")
+        == "https://idp.example.com/.well-known/openid-configuration"
+    )
+    assert (
+        oidc_service.discovery_document_url("https://idp.example.com/")
+        == "https://idp.example.com/.well-known/openid-configuration"
+    )

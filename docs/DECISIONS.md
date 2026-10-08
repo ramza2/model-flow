@@ -275,3 +275,9 @@ Historical; see D-016.
 - **Choice:** Store validated per-instance `PredictionObservation.input_json` for new predictions only (legacy rows remain non-materializable). GroundTruthFeedback starts `PENDING` and only `APPROVED` rows with an input snapshot may be reserved into a `FeedbackMaterializationRun`. Materialization appends onto the latest compatible base DatasetVersion to create a new immutable version (`source_type=feedback_materialization`); existing versions are never overwritten. Materialization does not enqueue TrainingJobs; Phase 5-A newer-version discovery remains the retrain path. Automation still stops at CANDIDATE.
 - **Consequences:** Operators explicitly curate training evidence. Cumulative materializations preserve prior feedback rows. Failed runs release reservations; successful links are immutable.
 
+## D-046: OIDC issuer exact match + atomic login transaction claims
+
+- **Context:** Phase 8-C adds Authorization Code + PKCE SSO. Concurrent callback/exchange races, provider-error callbacks without state binding, trailing-slash issuer normalization, and enabled-but-misconfigured startup could weaken one-time code and issuer trust boundaries.
+- **Choice:** Claim `OidcLoginTransaction` rows with PostgreSQL `SELECT … FOR UPDATE` before consuming callback `state` or one-time exchange codes. Provider `error=` callbacks require the same state validation/consume path. Compare configured, discovered, and ID-token `iss` values as exact strings (whitespace trim only). When `MODELFLOW_OIDC_ENABLED=true`, startup validation requires issuer, client_id, client_secret, and redirect_uri. Allow only RSA ID-token algorithms (`RS256`/`RS384`/`RS512`) matching the JWKS resolver.
+- **Consequences:** Concurrent replay cannot mint two ModelFlow access tokens from one exchange code; `/auth/methods` cannot advertise enabled OIDC when required settings are missing; slash-variant issuers fail closed.
+

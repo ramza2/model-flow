@@ -30,7 +30,8 @@ from app.db.models import ExternalIdentity, OidcLoginTransaction, User
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_ID_TOKEN_ALGS = ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512")
+# RSA-only: JWKS resolver supports RSA keys; EC algorithms are out of scope.
+ALLOWED_ID_TOKEN_ALGS = ("RS256", "RS384", "RS512")
 
 
 class OidcError(Exception):
@@ -54,6 +55,20 @@ class OidcClaims:
 
 def oidc_is_enabled() -> bool:
     return bool(settings.oidc_enabled)
+
+
+def configured_issuer() -> str:
+    """Configured issuer identity — whitespace-trimmed only (exact match, no slash norm)."""
+
+    return (settings.oidc_issuer or "").strip()
+
+
+def discovery_document_url(issuer: str) -> str:
+    """Build discovery URL without altering issuer identity comparison semantics."""
+
+    if issuer.endswith("/"):
+        return f"{issuer}.well-known/openid-configuration"
+    return f"{issuer}/.well-known/openid-configuration"
 
 
 def require_oidc_configured() -> None:
@@ -140,10 +155,10 @@ def _http_client() -> httpx.Client:
 
 
 def fetch_discovery(issuer: str | None = None) -> dict[str, Any]:
-    issuer_url = (issuer or settings.oidc_issuer).rstrip("/")
+    issuer_url = configured_issuer() if issuer is None else str(issuer).strip()
     if not issuer_url:
         raise OidcError("Identity provider is unavailable.", category="discovery_failed")
-    url = f"{issuer_url}/.well-known/openid-configuration"
+    url = discovery_document_url(issuer_url)
     try:
         with _http_client() as client:
             response = client.get(url)
@@ -158,7 +173,8 @@ def fetch_discovery(issuer: str | None = None) -> dict[str, Any]:
         raise OidcError(
             "Identity provider is unavailable.", category="discovery_malformed"
         )
-    discovered_issuer = str(doc.get("issuer") or "").rstrip("/")
+    # Exact issuer string match — do not normalize trailing slashes.
+    discovered_issuer = str(doc.get("issuer") or "")
     if discovered_issuer != issuer_url:
         raise OidcError(
             "Identity provider is unavailable.", category="issuer_mismatch"
@@ -233,13 +249,21 @@ def begin_login_transaction(
     return authorize_url, row
 
 
-def _load_transaction_by_state(db: Session, state: str) -> OidcLoginTransaction:
+def _claim_transaction_by_state(
+    db: Session, state: str, *, mark_consumed: bool = True
+) -> OidcLoginTransaction:
+    """Atomically claim a login transaction by state (FOR UPDATE + consume).
+
+    Concurrent callbacks / provider-error handlers serialize on the row lock so
+    only one request may consume a given state.
+    """
+
     if not state:
         raise OidcError("Sign-in could not be completed.", category="state_missing")
     row = db.scalar(
-        select(OidcLoginTransaction).where(
-            OidcLoginTransaction.state_hash == _sha256_hex(state)
-        )
+        select(OidcLoginTransaction)
+        .where(OidcLoginTransaction.state_hash == _sha256_hex(state))
+        .with_for_update()
     )
     if row is None:
         raise OidcError("Sign-in could not be completed.", category="state_mismatch")
@@ -251,7 +275,18 @@ def _load_transaction_by_state(db: Session, state: str) -> OidcLoginTransaction:
         raise OidcError("Sign-in session expired.", category="transaction_expired")
     if row.consumed_at is not None:
         raise OidcError("Sign-in could not be completed.", category="callback_replay")
+    if mark_consumed:
+        # Consume under the row lock before network I/O so waiters fail closed.
+        row.consumed_at = now
+        db.flush()
     return row
+
+
+def handle_provider_error_callback(db: Session, *, state: str | None) -> None:
+    """Validate/consume state for IdP error callbacks (no raw provider details)."""
+
+    require_oidc_configured()
+    _claim_transaction_by_state(db, state or "", mark_consumed=True)
 
 
 def exchange_authorization_code(
@@ -360,12 +395,13 @@ def validate_id_token(
         signing_key = _signing_key_from_jwks(
             jwks, kid=header.get("kid"), alg=alg
         )
+        expected_issuer = configured_issuer()
         claims = jwt.decode(
             id_token,
             signing_key,
             algorithms=list(ALLOWED_ID_TOKEN_ALGS),
-            audience=settings.oidc_client_id,
-            issuer=settings.oidc_issuer.rstrip("/"),
+            audience=settings.oidc_client_id.strip(),
+            issuer=expected_issuer,
             options={
                 "require": ["exp", "iat", "iss", "sub", "aud"],
                 "verify_aud": True,
@@ -398,8 +434,9 @@ def validate_id_token(
         raise OidcError("Sign-in could not be completed.", category="nonce_mismatch")
 
     subject = str(claims.get("sub") or "").strip()
-    issuer = str(claims.get("iss") or "").rstrip("/")
-    if not subject or issuer != settings.oidc_issuer.rstrip("/"):
+    # Persist / compare the exact validated iss string (no slash normalization).
+    issuer = str(claims.get("iss") or "")
+    if not subject or issuer != configured_issuer():
         raise OidcError("Sign-in could not be completed.", category="issuer_mismatch")
 
     email_raw = claims.get("email")
@@ -548,7 +585,8 @@ def complete_callback(
     """
 
     require_oidc_configured()
-    row = _load_transaction_by_state(db, state)
+    # Atomic state claim before token exchange / user mapping.
+    row = _claim_transaction_by_state(db, state, mark_consumed=True)
     nonce = decrypt_secret(row.nonce_encrypted)
     verifier = decrypt_secret(row.code_verifier_encrypted)
     discovery = fetch_discovery()
@@ -561,7 +599,6 @@ def complete_callback(
     )
     user, kind = resolve_or_provision_user(db, claims)
     now = datetime.now(timezone.utc)
-    row.consumed_at = now
     row.user_id = user.id
     exchange_code = _b64url_no_pad(secrets.token_bytes(32))
     row.exchange_code_hash = _sha256_hex(exchange_code)
@@ -577,9 +614,9 @@ def consume_exchange_code(db: Session, code: str) -> User:
     if not code or not str(code).strip():
         raise OidcError("Sign-in could not be completed.", category="exchange_missing")
     row = db.scalar(
-        select(OidcLoginTransaction).where(
-            OidcLoginTransaction.exchange_code_hash == _sha256_hex(code.strip())
-        )
+        select(OidcLoginTransaction)
+        .where(OidcLoginTransaction.exchange_code_hash == _sha256_hex(code.strip()))
+        .with_for_update()
     )
     if row is None or row.user_id is None:
         raise OidcError("Sign-in could not be completed.", category="exchange_invalid")

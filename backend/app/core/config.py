@@ -212,3 +212,20 @@ def validate_security_settings(config: Settings = settings) -> None:
             "MODELFLOW_SECRET_KEY is missing or uses a known insecure default. "
             "Run scripts/init-env.sh before starting ModelFlow."
         )
+    if config.oidc_enabled:
+        missing = [
+            name
+            for name, value in (
+                ("MODELFLOW_OIDC_ISSUER", config.oidc_issuer),
+                ("MODELFLOW_OIDC_CLIENT_ID", config.oidc_client_id),
+                ("MODELFLOW_OIDC_CLIENT_SECRET", config.oidc_client_secret),
+                ("MODELFLOW_OIDC_REDIRECT_URI", config.oidc_redirect_uri),
+            )
+            if not str(value or "").strip()
+        ]
+        if missing:
+            # Do not log or raise the secret value itself.
+            raise RuntimeError(
+                "MODELFLOW_OIDC_ENABLED is true but required OIDC settings are "
+                f"missing: {', '.join(missing)}."
+            )
