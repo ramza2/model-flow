@@ -2,7 +2,20 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A — Inference Runtime Separation is complete on `main`.** **8-B — Worker Scale-out & Runner Profiles is the current Draft slice** (Draft PR #79; hostname worker identity, runner profiles, Postgres advisory-lock scheduler leadership, Compose `--scale worker=2`). Slices **8-C–8-F** remain planned.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A — Inference Runtime Separation and 8-B — Worker Scale-out & Runner Profiles are complete on `main`.** The next implementation slice is **8-C — Enterprise Identity — OIDC / SSO**. Slices **8-C–8-F** remain planned.
+
+Phase 8-B completion baseline: `main@4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37` (PR #79; final PR HEAD `30482b854f198f4a7fdaf12019b611521328feec`; exact-head Fast Gate #372 / run `37730164986` PASS; post-merge Full Gate #373 / run `37734775244` PASS; Alembic head `023_forecasting_training`; no migration).
+
+Phase 8-B delivered:
+
+- unique per-replica worker identity via explicit `WORKER_ID` / `MODELFLOW_WORKER_ID` or container hostname fallback
+- worker profiles `general` / `gpu` with fail-closed routing; all current workloads remain `general`
+- heartbeat operational metadata for profile, capabilities, max concurrency, and git SHA
+- PostgreSQL session advisory-lock leadership for scheduler / stale recovery / cancellation maintenance
+- existing `FOR UPDATE SKIP LOCKED` durable job claims preserved with PostgreSQL no-double-claim regression
+- Compose `--scale worker=2` verification with distinct healthy worker heartbeats
+- GPU profile remains routing foundation only; no sklearn/CUDA execution semantic change
+- Verification details: [`phase-8b-verification.md`](./phase-8b-verification.md)
 
 Phase 8-A completion baseline: `main@933ce3dc2b47fb50aaa28d3e727d6b827d26a38c` (PR #76; exact PR HEAD `6ed6a964d20d11c06d4cd67d30697150f09b25ca`; exact-head CI #362 / run `37572306127` PASS; post-merge main CI #363 / run `37574052970` PASS; Alembic head `023_forecasting_training`).
 
@@ -290,6 +303,7 @@ The implementation strategy was direct incremental refactoring of the existing R
 
 ## Current baseline
 
+- Phase 8-B implementation merge (PR #79): `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37` (final PR HEAD `30482b854f198f4a7fdaf12019b611521328feec`; exact-head CI #372 PASS; post-merge main CI #373 PASS; Alembic head `023_forecasting_training`)
 - Branch baseline: `main@93b8878971d69a926c8f1dc93c02bad04665f4b1` (Phase 7 closeout PR #74; post-merge CI #358 / run `37559456232` SUCCESS; Alembic head `023_forecasting_training`)
 - Phase 7-D implementation merge (PR #73): `483db3859558570c499114ba774bf62b491234e1` (post-merge CI #356 / run `37555997629` SUCCESS)
 - Phase 7-C merge (PR #72): `0673366d2c67c11b2b1f84bf41ca7176b8cb17d1` (post-merge main CI #353 / run `37409599810` SUCCESS; Alembic head `023_forecasting_training`)
