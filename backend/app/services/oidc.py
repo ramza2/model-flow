@@ -373,6 +373,41 @@ def _signing_key_from_jwks(jwks: dict[str, Any], *, kid: str | None, alg: str):
         ) from exc
 
 
+def _assert_exact_audience(claims: dict[str, Any], expected_client_id: str) -> None:
+    """Require aud to be exactly the configured client_id (string or one-element list).
+
+    Multi-audience tokens are rejected in Phase 8-C — no additional trusted
+    audiences and azp cannot relax this rule.
+    """
+
+    aud = claims.get("aud")
+    if isinstance(aud, str):
+        if aud != expected_client_id:
+            raise OidcError(
+                "Sign-in could not be completed.", category="audience_mismatch"
+            )
+        return
+    if isinstance(aud, (list, tuple)):
+        if len(aud) != 1 or not isinstance(aud[0], str) or aud[0] != expected_client_id:
+            raise OidcError(
+                "Sign-in could not be completed.", category="audience_mismatch"
+            )
+        return
+    raise OidcError("Sign-in could not be completed.", category="audience_mismatch")
+
+
+def _assert_authorized_party(claims: dict[str, Any], expected_client_id: str) -> None:
+    """When azp is present it must equal the configured client_id."""
+
+    if "azp" not in claims:
+        return
+    azp = claims.get("azp")
+    if not isinstance(azp, str) or azp != expected_client_id:
+        raise OidcError(
+            "Sign-in could not be completed.", category="authorized_party_mismatch"
+        )
+
+
 def validate_id_token(
     id_token: str, *, nonce: str, discovery: dict[str, Any]
 ) -> OidcClaims:
@@ -390,6 +425,7 @@ def validate_id_token(
     if alg.lower() == "none" or alg not in ALLOWED_ID_TOKEN_ALGS:
         raise OidcError("Sign-in could not be completed.", category="invalid_algorithm")
     jwks_uri = str(discovery.get("jwks_uri") or "")
+    expected_client_id = settings.oidc_client_id.strip()
     try:
         jwks = _fetch_jwks(jwks_uri)
         signing_key = _signing_key_from_jwks(
@@ -400,7 +436,7 @@ def validate_id_token(
             id_token,
             signing_key,
             algorithms=list(ALLOWED_ID_TOKEN_ALGS),
-            audience=settings.oidc_client_id.strip(),
+            audience=expected_client_id,
             issuer=expected_issuer,
             options={
                 "require": ["exp", "iat", "iss", "sub", "aud"],
@@ -415,6 +451,16 @@ def validate_id_token(
         raise OidcError(
             "Sign-in could not be completed.", category="audience_mismatch"
         ) from exc
+    except jwt.MissingRequiredClaimError as exc:
+        # Empty / absent aud is reported as missing by PyJWT — fail closed as audience.
+        claim = getattr(exc, "claim", None) or str(exc)
+        if "aud" in str(claim):
+            raise OidcError(
+                "Sign-in could not be completed.", category="audience_mismatch"
+            ) from exc
+        raise OidcError(
+            "Sign-in could not be completed.", category="invalid_id_token"
+        ) from exc
     except jwt.InvalidIssuerError as exc:
         raise OidcError(
             "Sign-in could not be completed.", category="issuer_mismatch"
@@ -428,6 +474,10 @@ def validate_id_token(
         raise OidcError(
             "Sign-in could not be completed.", category="invalid_signature"
         ) from exc
+
+    # PyJWT accepts multi-aud tokens that merely include our client_id; tighten.
+    _assert_exact_audience(claims, expected_client_id)
+    _assert_authorized_party(claims, expected_client_id)
 
     token_nonce = str(claims.get("nonce") or "")
     if not token_nonce or not secrets.compare_digest(token_nonce, nonce):

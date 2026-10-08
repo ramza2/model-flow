@@ -150,8 +150,9 @@ def _mint_id_token(
     nonce: str,
     email: str | None = "user@example.com",
     email_verified: bool = True,
-    aud: str = CLIENT_ID,
+    aud: str | list | int | dict = CLIENT_ID,
     iss: str = ISSUER,
+    azp: str | None = None,
     exp_delta: int = 300,
     extra: dict | None = None,
 ) -> str:
@@ -165,6 +166,8 @@ def _mint_id_token(
         "nonce": nonce,
         "name": "SSO User",
     }
+    if azp is not None:
+        payload["azp"] = azp
     if email is not None:
         payload["email"] = email
         payload["email_verified"] = email_verified
@@ -176,6 +179,15 @@ def _mint_id_token(
         algorithm="RS256",
         headers={"kid": "test-key-1"},
     )
+
+
+def _discovery() -> dict:
+    return {
+        "issuer": ISSUER,
+        "authorization_endpoint": f"{ISSUER}/authorize",
+        "token_endpoint": f"{ISSUER}/token",
+        "jwks_uri": f"{ISSUER}/jwks",
+    }
 
 
 def _seed_local_user(SessionLocal, **overrides):
@@ -843,3 +855,110 @@ def test_discovery_url_construction_preserves_issuer_identity():
         oidc_service.discovery_document_url("https://idp.example.com/")
         == "https://idp.example.com/.well-known/openid-configuration"
     )
+
+
+def test_id_token_audience_string_client_id_passes(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem, sub="sub-aud", nonce="n", aud=CLIENT_ID
+    )
+    claims = oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert claims.subject == "sub-aud"
+
+
+def test_id_token_audience_single_element_list_passes(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem, sub="sub-aud-list", nonce="n", aud=[CLIENT_ID]
+    )
+    claims = oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert claims.subject == "sub-aud-list"
+
+
+def test_id_token_audience_multi_rejects_extra_client(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-multi",
+        nonce="n",
+        aud=[CLIENT_ID, "other-client"],
+    )
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert exc.value.category == "audience_mismatch"
+
+
+def test_id_token_audience_other_only_fails(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem, sub="sub-other", nonce="n", aud=["other-client"]
+    )
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert exc.value.category == "audience_mismatch"
+
+
+def test_id_token_audience_malformed_fails(oidc_db):
+    _, private_pem = oidc_db
+    for bad_aud in (123, [], [CLIENT_ID, 1], {"client": CLIENT_ID}):
+        token = _mint_id_token(
+            private_pem, sub="sub-bad-aud", nonce="n", aud=bad_aud  # type: ignore[arg-type]
+        )
+        with pytest.raises(oidc_service.OidcError) as exc:
+            oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+        assert exc.value.category == "audience_mismatch", bad_aud
+
+
+def test_id_token_azp_absent_with_valid_audience_passes(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem, sub="sub-no-azp", nonce="n", aud=CLIENT_ID
+    )
+    assert "azp" not in jwt.decode(
+        token, options={"verify_signature": False}
+    )
+    claims = oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert claims.subject == "sub-no-azp"
+
+
+def test_id_token_azp_matches_client_id_passes(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-azp-ok",
+        nonce="n",
+        aud=CLIENT_ID,
+        azp=CLIENT_ID,
+    )
+    claims = oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert claims.subject == "sub-azp-ok"
+
+
+def test_id_token_azp_mismatch_fails(oidc_db):
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-azp-bad",
+        nonce="n",
+        aud=CLIENT_ID,
+        azp="other-client",
+    )
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert exc.value.category == "authorized_party_mismatch"
+
+
+def test_id_token_azp_cannot_rescue_multi_audience(oidc_db):
+    """azp matching client_id must not allow additional untrusted audiences."""
+
+    _, private_pem = oidc_db
+    token = _mint_id_token(
+        private_pem,
+        sub="sub-azp-multi",
+        nonce="n",
+        aud=[CLIENT_ID, "other-client"],
+        azp=CLIENT_ID,
+    )
+    with pytest.raises(oidc_service.OidcError) as exc:
+        oidc_service.validate_id_token(token, nonce="n", discovery=_discovery())
+    assert exc.value.category == "audience_mismatch"
