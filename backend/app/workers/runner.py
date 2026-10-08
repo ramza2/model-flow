@@ -195,6 +195,8 @@ def claim_next_import_job() -> DataImportJob | None:
 
 def claim_next_preparation_run() -> DatasetPreparationRun | None:
     """Claim the next queued preparation run (not JobStatus-based)."""
+    if not _profile_allows_claim("dataset_preparation"):
+        return None
     db = SessionLocal()
     try:
         run = db.scalar(

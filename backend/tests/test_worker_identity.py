@@ -150,3 +150,81 @@ def test_gpu_worker_does_not_claim_general_jobs(monkeypatch, sqlite_sessions):
         db.commit()
 
     assert runner.claim_next_job() is None
+
+
+def _seed_queued_preparation_run(db):
+    from app.db.models import (
+        DatasetPreparation,
+        DatasetPreparationRun,
+        DatasetPreparationRunStatus,
+        DatasetPreparationVersion,
+        Project,
+    )
+
+    project = Project(name="prep-claim")
+    db.add(project)
+    db.flush()
+    prep = DatasetPreparation(project_id=project.id, name="prep")
+    db.add(prep)
+    db.flush()
+    version = DatasetPreparationVersion(
+        preparation_id=prep.id,
+        project_id=project.id,
+        version=1,
+    )
+    db.add(version)
+    db.flush()
+    run = DatasetPreparationRun(
+        project_id=project.id,
+        preparation_id=prep.id,
+        preparation_version_id=version.id,
+        status=DatasetPreparationRunStatus.queued,
+    )
+    db.add(run)
+    db.commit()
+    return run.id
+
+
+def test_general_worker_claims_queued_preparation_run(monkeypatch, sqlite_sessions):
+    from app.db.models import DatasetPreparationRunStatus
+
+    monkeypatch.setattr(settings, "worker_id", "general-prep")
+    monkeypatch.setattr(settings, "worker_profile", "general")
+    with sqlite_sessions() as db:
+        run_id = _seed_queued_preparation_run(db)
+
+    claimed = runner.claim_next_preparation_run()
+    assert claimed is not None
+    assert claimed.id == run_id
+    assert claimed.status == DatasetPreparationRunStatus.running
+
+
+def test_gpu_worker_does_not_claim_queued_preparation_run(monkeypatch, sqlite_sessions):
+    from app.db.models import DatasetPreparationRun, DatasetPreparationRunStatus
+
+    monkeypatch.setattr(settings, "worker_id", "gpu-prep")
+    monkeypatch.setattr(settings, "worker_profile", "gpu")
+    with sqlite_sessions() as db:
+        run_id = _seed_queued_preparation_run(db)
+
+    assert runner.claim_next_preparation_run() is None
+
+    with sqlite_sessions() as db:
+        live = db.get(DatasetPreparationRun, run_id)
+        assert live is not None
+        assert live.status == DatasetPreparationRunStatus.queued
+
+
+def test_special_claim_paths_call_profile_allows_claim():
+    """Non-_claim_next entry points must fail-closed on profile before DB work."""
+
+    import inspect
+
+    preparation_src = inspect.getsource(runner.claim_next_preparation_run)
+    pipeline_src = inspect.getsource(runner.claim_pipeline_runs)
+    claim_next_src = inspect.getsource(runner._claim_next)
+
+    assert "_profile_allows_claim" in preparation_src
+    assert "dataset_preparation" in preparation_src
+    assert "_profile_allows_claim" in pipeline_src
+    assert "_profile_allows_claim" in claim_next_src
