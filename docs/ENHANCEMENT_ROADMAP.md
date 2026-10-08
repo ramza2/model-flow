@@ -336,7 +336,7 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 | Slice | Scope | Status |
 |-------|-------|--------|
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
-| **8-B** | Worker Scale-out & Runner Profiles | **current / Draft** |
+| **8-B** | Worker Scale-out & Runner Profiles | **current / Draft** (PR #79) |
 | **8-C** | Enterprise Identity — OIDC / SSO | planned |
 | **8-D** | External Secret Management | planned |
 | **8-E** | Kubernetes / HA Deployment | planned |

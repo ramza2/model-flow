@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A — Inference Runtime Separation is complete on `main`.** **8-B — Worker Scale-out & Runner Profiles is the current Draft slice** (hostname worker identity, runner profiles, Postgres advisory-lock scheduler leadership, Compose `--scale worker=2`). Slices **8-C–8-F** remain planned.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A — Inference Runtime Separation is complete on `main`.** **8-B — Worker Scale-out & Runner Profiles is the current Draft slice** (Draft PR #79; hostname worker identity, runner profiles, Postgres advisory-lock scheduler leadership, Compose `--scale worker=2`). Slices **8-C–8-F** remain planned.
 
 Phase 8-A completion baseline: `main@933ce3dc2b47fb50aaa28d3e727d6b827d26a38c` (PR #76; exact PR HEAD `6ed6a964d20d11c06d4cd67d30697150f09b25ca`; exact-head CI #362 / run `37572306127` PASS; post-merge main CI #363 / run `37574052970` PASS; Alembic head `023_forecasting_training`).
 
