@@ -422,7 +422,7 @@ _FENCE_RE = re.compile(
 # <think>...</think> reasoning envelope. Strip only one leading envelope;
 # never rewrite tags inside the JSON payload itself.
 _LEADING_THINK_RE = re.compile(
-    r"^\\s*<think>.*?</think>\\s*",
+    r"^\s*<think>.*?</think>\s*",
     re.DOTALL | re.IGNORECASE,
 )
 
