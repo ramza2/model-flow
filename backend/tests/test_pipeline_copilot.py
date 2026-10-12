@@ -317,6 +317,16 @@ def test_resolve_chat_completions_url_variants():
     [
         (json.dumps(_forecast_graph(1, 1)), True),
         ("```json\n" + json.dumps(_forecast_graph(1, 1)) + "\n```", True),
+        (
+            "<think>\ninternal reasoning\n</think>\n"
+            + json.dumps(_forecast_graph(1, 1)),
+            True,
+        ),
+        (
+            "<think>\nunclosed reasoning\n"
+            + json.dumps(_forecast_graph(1, 1)),
+            False,
+        ),
         ("Here is JSON:\n" + json.dumps(_forecast_graph(1, 1)), False),
         ("```json\n{}\n```\nextra", False),
         ("not-json", False),
@@ -329,6 +339,21 @@ def test_parse_llm_content_fence_and_prose_rules(content, ok):
     else:
         with pytest.raises(copilot.CopilotContractError):
             copilot.parse_llm_content(content)
+
+
+def test_parse_llm_patch_content_strips_leading_qwen_think_block():
+    content = (
+        "<think>\nprovider reasoning must not surface\n</think>\n"
+        + json.dumps(
+            {
+                "summary": "Safe patch",
+                "patch": {"operations": []},
+            }
+        )
+    )
+    parsed = copilot.parse_llm_patch_content(content)
+    assert parsed == {"summary": "Safe patch", "patch": {"operations": []}}
+    assert "<think>" not in json.dumps(parsed)
 
 
 def test_catalog_excludes_raw_rows_and_secrets():
