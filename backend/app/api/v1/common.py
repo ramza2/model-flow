@@ -119,6 +119,7 @@ def user_out(row: User) -> dict[str, Any]:
         "full_name": row.full_name,
         "is_active": row.is_active,
         "is_system_admin": row.is_system_admin,
+        "local_login_enabled": bool(getattr(row, "local_login_enabled", True)),
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }

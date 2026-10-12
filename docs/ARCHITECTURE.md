@@ -50,7 +50,8 @@
 
 - Password hashing: bcrypt via passlib
 - Access tokens: JWT (HS256) with expiry; optional refresh not required for v1.0
-- Bootstrap: first SYSTEM_ADMIN from env `MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` / `MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD` (never hardcoded)
+- Optional Enterprise OIDC SSO (Phase 8-C): Authorization Code + PKCE; durable `issuer+subject` binding; ModelFlow still issues its own access token after SSO
+- Bootstrap: first SYSTEM_ADMIN from env `MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` / `MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD` (never hardcoded); local break-glass login retained
 - Project membership enforces isolation at API layer
 - Inactive users rejected; login rate limited / lockout after failures
 

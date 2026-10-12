@@ -64,6 +64,7 @@ def create_user(
         password_hash=hash_password(body.password),
         is_active=True,
         is_system_admin=body.is_system_admin,
+        local_login_enabled=True,
     )
     db.add(user)
     db.flush()

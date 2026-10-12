@@ -21,6 +21,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=1024)
 
 
+class OidcExchangeRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=512)
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=1024)

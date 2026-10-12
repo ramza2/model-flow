@@ -1,16 +1,30 @@
 import { type FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, TOKEN_KEY } from "../api";
+import { useAuth } from "../AuthContext";
 import { ErrorNotice, PageHeader, SuccessNotice } from "../components";
 
 export default function ChangePassword() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  if (user && user.local_login_enabled === false) {
+    return (
+      <div>
+        <PageHeader
+          title="Change password"
+          description="This account signs in with organization SSO only."
+        />
+        <ErrorNotice message="Password change is not available for SSO-only accounts. Use your organization identity provider." />
+      </div>
+    );
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
