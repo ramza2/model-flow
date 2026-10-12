@@ -418,6 +418,14 @@ _FENCE_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# Qwen-family providers may prefix valid JSON with an out-of-band
+# <think>...</think> reasoning envelope. Strip only one leading envelope;
+# never rewrite tags inside the JSON payload itself.
+_LEADING_THINK_RE = re.compile(
+    r"^\\s*<think>.*?</think>\\s*",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 def _extract_provider_json(content: str) -> dict[str, Any]:
     text = (content or "").strip()
@@ -425,6 +433,11 @@ def _extract_provider_json(content: str) -> dict[str, Any]:
         raise CopilotContractError("Provider returned empty content.")
     if len(text) > MAX_PROVIDER_CONTENT_CHARS:
         raise CopilotContractError("Provider content exceeds size limits.")
+    think_match = _LEADING_THINK_RE.match(text)
+    if think_match:
+        text = text[think_match.end() :].strip()
+        if not text:
+            raise CopilotContractError("Provider returned empty content.")
     match = _FENCE_RE.match(text)
     if match:
         text = match.group("body").strip()
