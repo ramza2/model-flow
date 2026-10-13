@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: frontend
-          image: "{{ .Values.images.frontend.repository }}:{{ .Values.images.frontend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.frontend | quote }}
           imagePullPolicy: {{ .Values.images.frontend.pullPolicy }}
           ports:
             - name: http
