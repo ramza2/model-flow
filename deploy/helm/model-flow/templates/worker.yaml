@@ -40,6 +40,8 @@ spec:
               value: {{ .Values.external.objectStore.endpoint | quote }}
             - name: MINIO_SECURE
               value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_REGION
+              value: {{ .Values.external.objectStore.region | quote }}
             - name: MINIO_ACCESS_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
             - name: MINIO_SECRET_KEY_FILE
@@ -85,6 +87,17 @@ spec:
           secret:
             secretName: {{ include "model-flow.secretName" . }}
             defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+              - key: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+              - key: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+              - key: {{ .Values.secret.keys.encryptionKey | quote }}
+                path: {{ .Values.secret.keys.encryptionKey | quote }}
+              - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+                path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
       {{- with .Values.worker.general.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -141,6 +154,8 @@ spec:
               value: {{ .Values.external.objectStore.endpoint | quote }}
             - name: MINIO_SECURE
               value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_REGION
+              value: {{ .Values.external.objectStore.region | quote }}
             - name: MINIO_ACCESS_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
             - name: MINIO_SECRET_KEY_FILE
@@ -186,6 +201,17 @@ spec:
           secret:
             secretName: {{ include "model-flow.secretName" . }}
             defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+              - key: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+              - key: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+              - key: {{ .Values.secret.keys.encryptionKey | quote }}
+                path: {{ .Values.secret.keys.encryptionKey | quote }}
+              - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+                path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
       {{- with .Values.worker.gpu.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
