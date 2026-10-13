@@ -168,7 +168,10 @@ def test_settings_repr_redacts_secret_values():
         "MODELFLOW_OIDC_CLIENT_SECRET": "oidc-secret",
     }
 
-    rendered = repr(Settings(_env_file=None, **values))
+    config = Settings(_env_file=None, **values)
+    rendered = repr(config)
+    serialized = config.model_dump()
 
     for value in values.values():
         assert value not in rendered
+        assert value not in serialized.values()
