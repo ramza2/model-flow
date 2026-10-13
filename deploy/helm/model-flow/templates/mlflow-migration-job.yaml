@@ -1,0 +1,40 @@
+{{- if .Values.mlflow.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "model-flow.fullname" . }}-mlflow-migration
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mlflow-migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-9"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.mlflow.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.mlflow.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mlflow-migration
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mlflow-migration
+          image: {{ include "model-flow.image" .Values.images.mlflow | quote }}
+          imagePullPolicy: {{ .Values.images.mlflow.pullPolicy }}
+          command: ["/bin/sh", "-ec"]
+          args:
+            - 'exec mlflow db upgrade "$MLFLOW_BACKEND_STORE_URI"'
+          env:
+            - name: MLFLOW_BACKEND_STORE_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "model-flow.secretName" . }}
+                  key: {{ .Values.secret.keys.mlflowDatabaseUrl }}
+{{- end }}
