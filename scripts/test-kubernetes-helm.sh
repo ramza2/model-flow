@@ -207,21 +207,12 @@ for internal_component in backend inference-runtime mlflow worker-general worker
     fail "Ingress exposed internal component: $internal_component"
   fi
 done
-if grep -Eq '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*
-  fail "chart must not claim embedded stateful HA"
-fi
 
-echo "[PASS] Helm chart lint/render and HA contract checks"
- "$DEFAULT_RENDER"; then
+if grep -Eq '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*$' "$DEFAULT_RENDER"; then
   fail "internal Services must not render NodePort/LoadBalancer by default"
 fi
 
-if grep -Eq '^kind: (StatefulSet|PersistentVolumeClaim)
-  fail "chart must not claim embedded stateful HA"
-fi
-
-echo "[PASS] Helm chart lint/render and HA contract checks"
- "$DEFAULT_RENDER"; then
+if grep -Eq '^kind: (StatefulSet|PersistentVolumeClaim)$' "$DEFAULT_RENDER"; then
   fail "chart must not claim embedded stateful HA"
 fi
 
