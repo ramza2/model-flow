@@ -28,7 +28,7 @@ spec:
       {{- end }}
       containers:
         - name: worker
-          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
           imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
           command: ["python", "-m", "app.workers.runner"]
           env:
@@ -129,7 +129,7 @@ spec:
       {{- end }}
       containers:
         - name: worker
-          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
           imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
           command: ["python", "-m", "app.workers.runner"]
           env:
