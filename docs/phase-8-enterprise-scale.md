@@ -31,8 +31,8 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 |-------|-------|--------|
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
 | **8-B** | Worker Scale-out & Runner Profiles | **complete** (PR #79; `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37`; post-merge CI #373 PASS) |
-| **8-C** | Enterprise Identity — OIDC / SSO | **current / Draft** (PR #81) |
-| **8-D** | External Secret Management | planned |
+| **8-C** | Enterprise Identity — OIDC / SSO | **complete** (PR #81; `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic `024_oidc_enterprise_identity`) |
+| **8-D** | External Secret Management | **current / Draft** (PR #84) |
 | **8-E** | Kubernetes / HA Deployment | planned |
 | **8-F** | Final Hardening / Scale Regression | planned |
 
@@ -209,8 +209,9 @@ Add standards-based enterprise sign-in without replacing ModelFlow's existing au
 
 SAML, SCIM provisioning, automatic group-to-project-role synchronization, multi-IdP brokering, IdP administration console redesign.
 
-### Draft implementation notes
+### Completion notes
 
+- Merged via PR #81; main commit `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic head `024_oidc_enterprise_identity`.
 - Authorization Code + PKCE S256 with server-side `OidcLoginTransaction` (encrypted nonce/verifier; hashed state + one-time exchange code).
 - Durable binding table `external_identities` keyed by `UNIQUE(issuer, subject)` (+ one binding per user/issuer).
 - Verified-email first link to existing local users; JIT provision only when `MODELFLOW_OIDC_AUTO_PROVISION=true` and never grants `SYSTEM_ADMIN`.
@@ -236,6 +237,17 @@ Allow production secrets to be supplied by an external secret delivery mechanism
 - Secret values never appear in rendered configuration diagnostics, logs, audit, API responses, frontend state, or committed manifests.
 - Local `.env` development remains supported.
 - Key rotation procedures are documented. Multi-key online re-encryption is separate scope unless required by implementation.
+
+### Draft implementation notes
+
+- Allowlisted `<ENV_NAME>_FILE` companions are loaded at the single `Settings` boundary.
+- Precedence is explicit constructor input > file-mounted secret > process environment > local `.env` > default.
+- Configured secret files fail closed on unreadable/invalid/empty content instead of silently falling back to stale environment values.
+- Covered runtime secrets: database URL, MinIO/object-store access + secret keys, JWT signing key, Fernet key, inference service token, bootstrap password, OIDC client secret, and optional LLM API key.
+- Secret-bearing settings are excluded from the default Pydantic representation and serialization.
+- `docker-compose.secret-files.yml` is an optional read-only mount overlay; the default Compose + `.env` workflow remains supported.
+- Mounted-file rotation is restart/roll based; no live reload or multi-key online JWT/Fernet rotation.
+- Deployment/provider details: [`phase-8d-external-secrets.md`](./phase-8d-external-secrets.md).
 
 ### Explicitly out of 8-D
 
