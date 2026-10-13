@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: inference-runtime
-          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
           imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
           command: ["uvicorn"]
           args: ["app.inference_runtime:app", "--host", "0.0.0.0", "--port", "8080"]
