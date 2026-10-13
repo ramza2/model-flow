@@ -262,3 +262,75 @@ def test_predict_input_error_is_422(client, auth_headers, monkeypatch):
         json={"instances": [{"x": "nope"}]},
     )
     assert response.status_code == 422
+
+def test_predict_recovers_after_transient_runtime_failure(
+    client, auth_headers, monkeypatch
+):
+    monkeypatch.setattr(
+        inference_client,
+        "check_model_loadable",
+        lambda uri: {"ok": True, "input_features": []},
+    )
+
+    calls = {"count": 0}
+
+    def flaky_predict(uri, instances, feature_schema=None, target_columns=None):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise inference_client.InferenceRuntimeError(
+                "Inference runtime is unavailable."
+            )
+        return [float(row["x"]) + 10 for row in instances]
+
+    monkeypatch.setattr(inference_client, "predict", flaky_predict)
+
+    project = client.post(
+        "/api/v1/projects",
+        headers=auth_headers,
+        json={"name": "phase8f-runtime-recovery"},
+    )
+    assert project.status_code == 201, project.text
+    model_id = _seed_model(project.json()["id"])
+    created = client.post(
+        f"/api/v1/projects/{project.json()['id']}/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "ep-recovery",
+            "model_version_id": model_id,
+            "feature_schema": [{"name": "x", "dtype": "float"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    endpoint_id = created.json()["id"]
+
+    first = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"x": 1.0}]},
+    )
+    assert first.status_code == 400
+    assert "Prediction failed" in json.dumps(first.json())
+
+    second = client.post(
+        f"/api/v1/endpoints/{endpoint_id}/predict",
+        headers=auth_headers,
+        json={"instances": [{"x": 2.0}]},
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["predictions"] == [12.0]
+
+    with TestingSessionLocal() as db:
+        endpoint = db.get(Endpoint, endpoint_id)
+        assert endpoint.status == "ready"
+        assert endpoint.request_count == 2
+        assert endpoint.error_count == 1
+        assert endpoint.success_count == 1
+        stats = list(
+            db.scalars(
+                select(InferenceStat)
+                .where(InferenceStat.endpoint_id == endpoint_id)
+                .order_by(InferenceStat.id.asc())
+            ).all()
+        )
+        assert [row.success for row in stats] == [False, True]
+
