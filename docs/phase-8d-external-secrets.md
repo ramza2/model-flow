@@ -124,7 +124,7 @@ No provider-specific SDK or application code change is required.
 ## Redaction
 
 Secret-bearing Settings fields are excluded from the default Pydantic
-representation. File read failures report only the `*_FILE` variable name and
+representation and serialization. File read failures report only the `*_FILE` variable name and
 failure class; they never include the secret content or configured path.
 
 Do not place secret values in:
