@@ -35,7 +35,9 @@ secret:
     secretKey: jwt-signing-key
     encryptionKey: encryption-key
     inferenceServiceToken: inference-service-token
-    bootstrapAdminPassword: bootstrap-admin-password
+    # Required only for first bootstrap on an empty user database.
+    # After bootstrap succeeds, set this back to "" and remove the Secret key.
+    bootstrapAdminPassword: ""
     oidcClientSecret: ""
     llmApiKey: ""
 
