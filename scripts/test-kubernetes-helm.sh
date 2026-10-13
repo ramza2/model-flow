@@ -113,6 +113,10 @@ grep -Fq 'app.workers.healthcheck' "$DEFAULT_RENDER" ||
   fail "worker exec probe missing"
 grep -Fq 'kind: PodDisruptionBudget' "$DEFAULT_RENDER" ||
   fail "PodDisruptionBudget did not render"
+grep -Fq 'name: MODELFLOW_ENSURE_OBJECT_STORE_BUCKETS' "$DEFAULT_RENDER" ||
+  fail "object-store bucket bootstrap control did not render"
+grep -Fq 'value: "false"' "$DEFAULT_RENDER" ||
+  fail "Kubernetes must default object-store bucket bootstrap to false"
 
 if grep -Fq 'bootstrap-admin-password' "$DEFAULT_RENDER"; then
   fail "bootstrap admin password must not be permanently required by default"
