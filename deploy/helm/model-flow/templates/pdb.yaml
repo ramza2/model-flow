@@ -1,0 +1,74 @@
+{{- if and .Values.pdb.enabled (gt (int .Values.backend.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-backend
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+{{- end }}
+{{- if and .Values.pdb.enabled (gt (int .Values.inferenceRuntime.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-inference-runtime
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inference-runtime
+{{- end }}
+{{- if and .Values.pdb.enabled (gt (int .Values.mlflow.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-mlflow
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mlflow
+{{- end }}
+{{- if and .Values.pdb.enabled (gt (int .Values.frontend.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-frontend
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: frontend
+{{- end }}
+{{- if and .Values.pdb.enabled (gt (int .Values.worker.general.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-worker-general
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-general
+{{- end }}

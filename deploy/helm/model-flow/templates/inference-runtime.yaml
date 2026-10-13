@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "model-flow.fullname" . }}-inference-runtime
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference-runtime
+spec:
+  selector:
+    {{- include "model-flow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: inference-runtime
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "model-flow.fullname" . }}-inference-runtime
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: inference-runtime
+spec:
+  replicas: {{ .Values.inferenceRuntime.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: inference-runtime
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: inference-runtime
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: inference-runtime
+          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command: ["uvicorn"]
+          args: ["app.inference_runtime:app", "--host", "0.0.0.0", "--port", "8080"]
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: MLFLOW_TRACKING_URI
+              value: "http://{{ include "model-flow.fullname" . }}-mlflow:5000"
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.external.objectStore.endpoint | quote }}
+            - name: MINIO_SECURE
+              value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_ACCESS_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
+            - name: MINIO_SECRET_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
+            - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.inferenceServiceToken }}"
+            - name: MODELFLOW_GIT_SHA
+              value: {{ .Values.global.gitSha | quote }}
+            {{- with .Values.inferenceRuntime.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: runtime-secrets
+              mountPath: {{ .Values.secret.mountPath }}
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.inferenceRuntime.resources | nindent 12 }}
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: {{ include "model-flow.secretName" . }}
+            defaultMode: 0400
+      {{- with .Values.inferenceRuntime.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.inferenceRuntime.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.inferenceRuntime.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

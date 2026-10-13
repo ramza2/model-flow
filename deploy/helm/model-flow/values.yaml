@@ -1,0 +1,172 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+images:
+  backend:
+    repository: model-flow-backend
+    tag: "1.0.0-rc"
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: model-flow-frontend
+    tag: "1.0.0-rc"
+    pullPolicy: IfNotPresent
+  mlflow:
+    repository: model-flow-mlflow
+    tag: "1.0.0-rc"
+    pullPolicy: IfNotPresent
+
+global:
+  gitSha: unknown
+
+secret:
+  # Pre-create this Secret. The chart never commits or generates secret values.
+  existingSecret: model-flow-runtime-secrets
+  mountPath: /run/model-flow-secrets
+  keys:
+    databaseUrl: database-url
+    mlflowDatabaseUrl: mlflow-database-url
+    objectStoreAccessKey: object-store-access-key
+    objectStoreSecretKey: object-store-secret-key
+    secretKey: jwt-signing-key
+    encryptionKey: encryption-key
+    inferenceServiceToken: inference-service-token
+    bootstrapAdminPassword: bootstrap-admin-password
+    oidcClientSecret: ""
+    llmApiKey: ""
+
+external:
+  objectStore:
+    endpoint: s3.example.internal:443
+    secure: true
+    region: us-east-1
+    buckets:
+      datasets: datasets
+      mlflow: mlflow
+      batch: batch-results
+      artifacts: artifacts
+
+backend:
+  replicaCount: 2
+  bootstrapAdminEmail: admin@localhost.local
+  corsOrigins: https://modelflow.example.com
+  rateLimitPerMinute: 120
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+inferenceRuntime:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 4Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+
+worker:
+  general:
+    replicaCount: 2
+    maxConcurrentJobs: 2
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "4"
+        memory: 4Gi
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    extraEnv: []
+  gpu:
+    enabled: false
+    replicaCount: 1
+    maxConcurrentJobs: 1
+    resources:
+      requests:
+        cpu: "1"
+        memory: 2Gi
+        nvidia.com/gpu: 1
+      limits:
+        cpu: "4"
+        memory: 8Gi
+        nvidia.com/gpu: 1
+    nodeSelector: {}
+    tolerations: []
+    affinity: {}
+    extraEnv: []
+
+mlflow:
+  replicaCount: 2
+  artifactRoot: s3://mlflow/
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+frontend:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+oidc:
+  enabled: false
+  issuer: ""
+  clientId: ""
+  redirectUri: ""
+  displayName: Company SSO
+  scopes: openid profile email
+  autoProvision: false
+
+llm:
+  baseUrl: ""
+  model: ""
+  timeoutSeconds: 60
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: modelflow.example.com
+  path: /
+  tls:
+    enabled: false
+    secretName: ""
+
+pdb:
+  enabled: true
+  maxUnavailable: 1
+
+migration:
+  enabled: true
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
