@@ -66,8 +66,6 @@ spec:
       labels:
         {{- include "model-flow.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
-      annotations:
-        checksum/nginx-config: {{ include (print $.Template.BasePath "/frontend.yaml") . | sha256sum }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
