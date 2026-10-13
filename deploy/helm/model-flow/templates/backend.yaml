@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: backend
-          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
           imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
           ports:
             - name: http
