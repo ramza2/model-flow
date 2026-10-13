@@ -26,7 +26,7 @@ spec:
       {{- end }}
       containers:
         - name: migration
-          image: "{{ .Values.images.backend.repository }}:{{ .Values.images.backend.tag }}"
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
           imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
           command: ["alembic"]
           args: ["upgrade", "head"]
