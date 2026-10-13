@@ -31,4 +31,5 @@ def configure_object_store_library_environment(config: Settings = settings) -> N
     scheme = "https" if config.minio_secure else "http"
     os.environ["AWS_ACCESS_KEY_ID"] = access_key
     os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
+    os.environ["AWS_DEFAULT_REGION"] = config.minio_region
     os.environ["MLFLOW_S3_ENDPOINT_URL"] = f"{scheme}://{config.minio_endpoint}"
