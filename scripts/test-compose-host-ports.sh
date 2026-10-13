@@ -65,7 +65,9 @@ export MLFLOW_HOST_PORT BACKEND_HOST_PORT FRONTEND_HOST_PORT
 
 mkdir -p "$ROOT/artifacts/verify"
 CONFIG_FILE="$(mktemp "$ROOT/artifacts/verify/compose-host-ports.XXXXXX.yml")"
-trap 'rm -f "$CONFIG_FILE"' EXIT
+SECRET_CONFIG_FILE="$(mktemp "$ROOT/artifacts/verify/compose-secret-files.XXXXXX.yml")"
+SECRET_ROOT="$(mktemp -d "$ROOT/artifacts/verify/compose-secret-root.XXXXXX")"
+trap 'rm -f "$CONFIG_FILE" "$SECRET_CONFIG_FILE"; rm -rf "$SECRET_ROOT"' EXIT
 
 if ! docker compose --profile source config >"$CONFIG_FILE"; then
   fail "docker compose config failed"
@@ -90,3 +92,45 @@ if ! docker run --rm \
 fi
 
 echo "[PASS] custom host ports rendered by docker compose config"
+
+mkdir -p "$SECRET_ROOT/backend" "$SECRET_ROOT/worker" "$SECRET_ROOT/inference-runtime"
+export MODELFLOW_SECRET_HOST_DIR="$SECRET_ROOT"
+export DATABASE_URL_FILE="/run/model-flow-secrets/database-url"
+export MINIO_ACCESS_KEY_FILE="/run/model-flow-secrets/object-store-access-key"
+export MINIO_SECRET_KEY_FILE="/run/model-flow-secrets/object-store-secret-key"
+export MODELFLOW_SECRET_KEY_FILE="/run/model-flow-secrets/jwt-signing-key"
+export MODELFLOW_ENCRYPTION_KEY_FILE="/run/model-flow-secrets/fernet-key"
+export MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE="/run/model-flow-secrets/inference-token"
+export MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD_FILE="/run/model-flow-secrets/bootstrap-password"
+export MODELFLOW_OIDC_CLIENT_SECRET_FILE="/run/model-flow-secrets/oidc-client-secret"
+export MODELFLOW_LLM_API_KEY_FILE="/run/model-flow-secrets/llm-api-key"
+
+if ! docker compose --profile source \
+  -f docker-compose.yml \
+  -f docker-compose.secret-files.yml \
+  config >"$SECRET_CONFIG_FILE"; then
+  fail "docker compose secret-files overlay config failed"
+fi
+
+for service_dir in backend worker inference-runtime; do
+  if ! grep -Fq "$SECRET_ROOT/$service_dir" "$SECRET_CONFIG_FILE"; then
+    fail "secret-files overlay missing $service_dir bind mount"
+  fi
+done
+
+for secret_path in \
+  "$DATABASE_URL_FILE" \
+  "$MINIO_ACCESS_KEY_FILE" \
+  "$MINIO_SECRET_KEY_FILE" \
+  "$MODELFLOW_SECRET_KEY_FILE" \
+  "$MODELFLOW_ENCRYPTION_KEY_FILE" \
+  "$MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE" \
+  "$MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD_FILE" \
+  "$MODELFLOW_OIDC_CLIENT_SECRET_FILE" \
+  "$MODELFLOW_LLM_API_KEY_FILE"; do
+  if ! grep -Fq "$secret_path" "$SECRET_CONFIG_FILE"; then
+    fail "secret-files overlay lost configured *_FILE path"
+  fi
+done
+
+echo "[PASS] file-secret overlay rendered by docker compose config"
