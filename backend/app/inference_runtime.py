@@ -16,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.core.runtime_secrets import configure_object_store_library_environment
 from app.services import inference
 
 logging.basicConfig(
@@ -62,6 +63,7 @@ def _extract_input_features(model: Any) -> list[dict[str, str]]:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_inference_runtime_settings()
+    configure_object_store_library_environment()
     logger.info(
         "inference_runtime_startup version=%s git_sha=%s",
         settings.app_version,

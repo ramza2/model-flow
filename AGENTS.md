@@ -26,15 +26,20 @@ ModelFlow MVP stack: FastAPI (`backend`), async worker (`python -m app.workers.r
 ### Auth / secrets
 
 ModelFlow v1 requires bearer authentication under `/api/v1`. On a clean database, set
-`MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` and `MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD` to create the
-first system administrator. `MODELFLOW_SECRET_KEY` signs access tokens;
+`MODELFLOW_BOOTSTRAP_ADMIN_EMAIL` plus the bootstrap password through either its direct
+environment value or supported `*_FILE` companion to create the first system
+administrator. `MODELFLOW_SECRET_KEY` signs access tokens;
 `MODELFLOW_ENCRYPTION_KEY` protects data-source secrets. Generate all local values with
 `./scripts/init-env.sh`; it writes the ignored `.env` and prints bootstrap login
 credentials once. Secret generation runs inside a throwaway `python:3.11-slim`
 container so the host does not need Python or OpenSSL. Sign in with those
-credentials and change the bootstrap password immediately. Compose rejects empty
-required credentials. CI generates ephemeral values and must not depend on
-production secrets or paid external services.
+credentials and change the bootstrap password immediately.
+
+Phase 8-D adds an allowlisted file-secret boundary for production. Supported
+`<ENV_NAME>_FILE` paths override direct environment/.env values and fail closed when a
+configured file cannot be read; see `docs/phase-8d-external-secrets.md`. Do not add
+provider-specific secret-manager SDKs to business logic. CI generates ephemeral values
+and must not depend on production secrets or paid external services.
 
 
 

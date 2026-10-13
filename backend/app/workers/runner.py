@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.connectors import connector_for_source
 from app.core.config import settings
+from app.core.runtime_secrets import configure_object_store_library_environment
 from app.db.models import (
     Alert,
     AlertSeverity,
@@ -984,6 +985,7 @@ def _run_scheduler_and_maintenance() -> None:
 
 
 def run_forever() -> None:
+    configure_object_store_library_environment()
     _wait_for_database()
     worker_id = resolve_worker_id()
     profile = resolve_worker_profile()
