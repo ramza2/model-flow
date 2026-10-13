@@ -23,14 +23,28 @@ trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER"' EXIT
 
 "$HELM_BIN" lint "$CHART"
 
-"$HELM_BIN" template modelflow "$CHART"   --namespace model-flow   --kube-version 1.30.0   >"$DEFAULT_RENDER"
+default_args=(
+  template modelflow "$CHART"
+  --namespace model-flow
+  --kube-version 1.30.0
+)
+"$HELM_BIN" "${default_args[@]}" >"$DEFAULT_RENDER"
 
-"$HELM_BIN" template modelflow "$CHART"   --namespace model-flow   --kube-version 1.30.0   --set ingress.enabled=true   --set ingress.host=modelflow.example.test   --set ingress.tls.enabled=true   --set ingress.tls.secretName=modelflow-example-tls   --set worker.gpu.enabled=true   >"$HA_RENDER"
+ha_args=(
+  template modelflow "$CHART"
+  --namespace model-flow
+  --kube-version 1.30.0
+  --set ingress.enabled=true
+  --set ingress.host=modelflow.example.test
+  --set ingress.tls.enabled=true
+  --set ingress.tls.secretName=modelflow-example-tls
+  --set worker.gpu.enabled=true
+)
+"$HELM_BIN" "${ha_args[@]}" >"$HA_RENDER"
 
 grep -Fq '# Source: model-flow/templates/migration-job.yaml' "$DEFAULT_RENDER"   || fail "dedicated migration Job did not render"
 grep -Fq '"helm.sh/hook": pre-install,pre-upgrade' "$DEFAULT_RENDER"   || fail "migration Job is not a pre-install/pre-upgrade hook"
-grep -Fq 'command:' "$DEFAULT_RENDER" || fail "rendered manifests have no commands"
-grep -Fq -- '- alembic' "$DEFAULT_RENDER"   || fail "migration Job does not run alembic"
+grep -Fq 'command: ["alembic"]' "$DEFAULT_RENDER"   || fail "migration Job does not run alembic"
 grep -Fq 'DATABASE_URL_FILE' "$DEFAULT_RENDER"   || fail "file-mounted database secret contract is missing"
 grep -Fq '/run/model-flow-secrets' "$DEFAULT_RENDER"   || fail "runtime secret mount is missing"
 
@@ -46,10 +60,11 @@ grep -Fq 'kind: PodDisruptionBudget' "$DEFAULT_RENDER"   || fail "PodDisruptionB
 if grep -Fq 'nvidia.com/gpu' "$DEFAULT_RENDER"; then
   fail "GPU resource rendered while gpu worker profile is disabled"
 fi
+
 grep -Fq 'app.kubernetes.io/component: worker-gpu' "$HA_RENDER"   || fail "gpu worker deployment did not render when enabled"
 grep -Fq 'nvidia.com/gpu: 1' "$HA_RENDER"   || fail "gpu worker does not request the Kubernetes GPU resource"
 
-grep -Fq 'kind: Ingress' "$HA_RENDER" || fail "Ingress did not render"
+grep -Fq 'kind: Ingress' "$HA_RENDER"   || fail "Ingress did not render"
 grep -Fq 'host: modelflow.example.test' "$HA_RENDER"   || fail "Ingress host did not render"
 grep -Fq 'secretName: modelflow-example-tls' "$HA_RENDER"   || fail "Ingress TLS secret did not render"
 
