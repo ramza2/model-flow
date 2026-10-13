@@ -331,7 +331,7 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 
 ## Phase 8 — Enterprise / Scale
 
-**Status:** current. **8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is current / Draft**; **8-D–8-F** remain planned.
+**Status:** current. **8-A, 8-B, and 8-C are complete on `main`.** **8-D — External Secret Management is current / Draft** (PR #84); **8-E–8-F** remain planned.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
