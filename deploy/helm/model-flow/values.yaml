@@ -7,14 +7,17 @@ images:
   backend:
     repository: model-flow-backend
     tag: "1.0.0-rc"
+    digest: ""
     pullPolicy: IfNotPresent
   frontend:
     repository: model-flow-frontend
     tag: "1.0.0-rc"
+    digest: ""
     pullPolicy: IfNotPresent
   mlflow:
     repository: model-flow-mlflow
     tag: "1.0.0-rc"
+    digest: ""
     pullPolicy: IfNotPresent
 
 global:
