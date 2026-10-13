@@ -1,3 +1,4 @@
+import os
 import pytest
 
 from app.core.config import Settings
@@ -28,10 +29,10 @@ def test_file_mounted_object_store_credentials_reach_mlflow_environment(
 
     assert config.minio_access_key == "file-access"
     assert config.minio_secret_key == "file-secret"
-    assert monkeypatch.getenv("AWS_ACCESS_KEY_ID") == "file-access"
-    assert monkeypatch.getenv("AWS_SECRET_ACCESS_KEY") == "file-secret"
+    assert os.environ.get("AWS_ACCESS_KEY_ID") == "file-access"
+    assert os.environ.get("AWS_SECRET_ACCESS_KEY") == "file-secret"
     assert (
-        monkeypatch.getenv("MLFLOW_S3_ENDPOINT_URL")
+        os.environ.get("MLFLOW_S3_ENDPOINT_URL")
         == "https://object-store.internal:9443"
     )
 
@@ -64,6 +65,6 @@ def test_empty_object_store_credentials_do_not_overwrite_library_environment(
 
     configure_object_store_library_environment(config)
 
-    assert monkeypatch.getenv("AWS_ACCESS_KEY_ID") == "existing-access"
-    assert monkeypatch.getenv("AWS_SECRET_ACCESS_KEY") == "existing-secret"
-    assert monkeypatch.getenv("MLFLOW_S3_ENDPOINT_URL") == "http://existing-endpoint"
+    assert os.environ.get("AWS_ACCESS_KEY_ID") == "existing-access"
+    assert os.environ.get("AWS_SECRET_ACCESS_KEY") == "existing-secret"
+    assert os.environ.get("MLFLOW_S3_ENDPOINT_URL") == "http://existing-endpoint"
