@@ -23,7 +23,8 @@ INFERENCE_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-inference.XXXXXX.yaml")"
 WORKER_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-worker.XXXXXX.yaml")"
 MIGRATION_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-migration.XXXXXX.yaml")"
 MLFLOW_MIGRATION_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-mlflow-migration.XXXXXX.yaml")"
-trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER" "$INFERENCE_RENDER" "$WORKER_RENDER" "$MIGRATION_RENDER" "$MLFLOW_MIGRATION_RENDER"' EXIT
+INGRESS_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-ingress.XXXXXX.yaml")"
+trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER" "$INFERENCE_RENDER" "$WORKER_RENDER" "$MIGRATION_RENDER" "$MLFLOW_MIGRATION_RENDER" "$INGRESS_RENDER"' EXIT
 
 "$HELM_BIN" lint "$CHART"
 
@@ -82,6 +83,16 @@ mlflow_migration_args=(
   --show-only templates/mlflow-migration-job.yaml
 )
 "$HELM_BIN" "${mlflow_migration_args[@]}" >"$MLFLOW_MIGRATION_RENDER"
+
+ingress_args=(
+  template modelflow "$CHART"
+  --namespace model-flow
+  --kube-version 1.30.0
+  --show-only templates/ingress.yaml
+  --set ingress.enabled=true
+  --set ingress.host=modelflow.example.test
+)
+"$HELM_BIN" "${ingress_args[@]}" >"$INGRESS_RENDER"
 
 grep -Fq '# Source: model-flow/templates/migration-job.yaml' "$DEFAULT_RENDER" ||
   fail "dedicated migration Job did not render"
@@ -189,7 +200,28 @@ grep -Fq 'host: modelflow.example.test' "$HA_RENDER" ||
 grep -Fq 'secretName: modelflow-example-tls' "$HA_RENDER" ||
   fail "Ingress TLS secret did not render"
 
-if grep -Eq '^kind: (StatefulSet|PersistentVolumeClaim)$' "$DEFAULT_RENDER"; then
+grep -Fq -- '-frontend' "$INGRESS_RENDER" ||
+  fail "Ingress must route to frontend service"
+for internal_component in backend inference-runtime mlflow worker-general worker-gpu; do
+  if grep -Fq -- "-$internal_component" "$INGRESS_RENDER"; then
+    fail "Ingress exposed internal component: $internal_component"
+  fi
+done
+if grep -Eq '^[[:space:]]*type:[[:space:]]*(NodePort|LoadBalancer)[[:space:]]*
+  fail "chart must not claim embedded stateful HA"
+fi
+
+echo "[PASS] Helm chart lint/render and HA contract checks"
+ "$DEFAULT_RENDER"; then
+  fail "internal Services must not render NodePort/LoadBalancer by default"
+fi
+
+if grep -Eq '^kind: (StatefulSet|PersistentVolumeClaim)
+  fail "chart must not claim embedded stateful HA"
+fi
+
+echo "[PASS] Helm chart lint/render and HA contract checks"
+ "$DEFAULT_RENDER"; then
   fail "chart must not claim embedded stateful HA"
 fi
 
