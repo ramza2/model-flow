@@ -19,7 +19,8 @@ The chart deploys only ModelFlow stateless/control-plane services:
 - general worker replicas
 - optional GPU worker replicas
 - MLflow server replicas
-- one-shot Alembic migration Job
+- one-shot ModelFlow Alembic migration Job
+- one-shot MLflow database migration Job
 - Ingress, TLS reference, Services, health probes, and PodDisruptionBudgets
 
 The chart intentionally does **not** deploy PostgreSQL or MinIO.
@@ -137,12 +138,12 @@ The credentials must permit the ModelFlow operations required for the configured
 buckets. For least-privilege environments, pre-create the buckets and grant only
 the necessary object/bucket permissions.
 
-## Database migration
+## Database migrations
 
 Kubernetes backend replicas do **not** run `alembic upgrade head` during
 startup.
 
-Instead, the chart renders one dedicated migration Job:
+Instead, the chart renders a dedicated ModelFlow migration Job:
 
 ```text
 <release>-model-flow-migration
@@ -156,9 +157,23 @@ alembic upgrade head
 
 The Job uses the same backend image and `DATABASE_URL_FILE` secret contract.
 A failed migration blocks the Helm install/upgrade before new backend replicas
-roll out.
+roll out. This avoids concurrent Alembic upgrades from multiple backend pods.
 
-This avoids concurrent Alembic upgrades from multiple backend pods.
+MLflow has its own SQL schema lifecycle. The chart therefore renders a second
+hook Job:
+
+```text
+<release>-model-flow-mlflow-migration
+```
+
+using the MLflow image and only the `mlflow-database-url` Secret key. It runs:
+
+```text
+mlflow db upgrade "$MLFLOW_BACKEND_STORE_URI"
+```
+
+before MLflow replicas roll out. This keeps MLflow schema upgrades out of
+multi-replica server startup.
 
 ## Backend bootstrap under multiple replicas
 
@@ -340,7 +355,7 @@ that topology has been intentionally designed and tested.
 - `helm lint`
 - default manifest rendering
 - Ingress/TLS rendering
-- dedicated migration Job
+- dedicated ModelFlow + MLflow migration Jobs
 - file-mounted secret paths and service-scoped Secret projections
 - configured object-store region and MLflow artifact bucket derivation
 - component probes and PodDisruptionBudgets
