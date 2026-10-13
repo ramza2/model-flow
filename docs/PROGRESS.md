@@ -2,9 +2,11 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A, 8-B, and 8-C are complete on `main`.** **8-D — External Secret Management is the current Draft slice** (Draft PR #84). Slices **8-E–8-F** remain planned.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A through 8-D are complete on `main`.** **8-E — Kubernetes / HA Deployment is the current Draft slice** (Draft PR #85). **8-F** remains planned.
 
-Phase 8-D current Draft baseline: base `main@a5fd0bbe383cc52deb11cfd6ca7af5ea4a478ee0` (Draft PR #84; vendor-neutral allowlisted `*_FILE` secret loading; optional Compose mount overlay; Alembic head remains `024_oidc_enterprise_identity`; no migration).
+Phase 8-E current Draft baseline: base `main@117f84d0ba4a3f89774f74683adebc13fae8aede` (Draft PR #85; Helm Kubernetes deployment with external/shared PostgreSQL + S3 prerequisites; dedicated migration Job; Alembic head remains `024_oidc_enterprise_identity`; no migration).
+
+Phase 8-D completion baseline: `main@117f84d0ba4a3f89774f74683adebc13fae8aede` (PR #84; exact-head CI #409 PASS; post-merge Full Gate #410 PASS; vendor-neutral `*_FILE` secret loading and MLflow/object-store bridge; Alembic head `024_oidc_enterprise_identity`; no migration).
 
 Phase 8-C completion baseline: `main@6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e` (PR #81; OIDC Authorization Code + PKCE SSO; Alembic head `024_oidc_enterprise_identity`).
 
@@ -497,7 +499,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8-C is complete on `main`.** **8-D — External Secret Management is current / Draft in PR #84.** After 8-D merges, proceed to **8-E — Kubernetes / HA Deployment**; keep 8-E+ scope out of the 8-D PR.
+**Phase 8-D is complete on `main`.** **8-E — Kubernetes / HA Deployment is current / Draft in PR #85.** After 8-E merges, proceed to **8-F — Final Hardening / Scale Regression**; keep 8-F scope out of the 8-E PR.
 
 Phase 8 slice plan:
 
