@@ -66,10 +66,10 @@ Default required keys:
 | `jwt-signing-key` | backend |
 | `encryption-key` | backend, workers |
 | `inference-service-token` | backend, workers, inference runtime |
-| `bootstrap-admin-password` | backend bootstrap path |
 
-Optional keys are enabled by setting their key names in values:
+Conditional keys are enabled by setting their key names in values:
 
+- `secret.keys.bootstrapAdminPassword` — required for the first bootstrap on an empty user database; remove the value/key after bootstrap succeeds
 - `secret.keys.oidcClientSecret`
 - `secret.keys.llmApiKey`
 
@@ -92,8 +92,7 @@ kubectl -n model-flow create secret generic model-flow-runtime-secrets \
   --from-file=object-store-secret-key=/secure/modelflow/object-store-secret-key \
   --from-file=jwt-signing-key=/secure/modelflow/jwt-signing-key \
   --from-file=encryption-key=/secure/modelflow/encryption-key \
-  --from-file=inference-service-token=/secure/modelflow/inference-service-token \
-  --from-file=bootstrap-admin-password=/secure/modelflow/bootstrap-admin-password
+  --from-file=inference-service-token=/secure/modelflow/inference-service-token
 ```
 
 External Secrets Operator, CSI Secret Store, Vault Agent/controller workflows, or
@@ -168,7 +167,18 @@ Phase 8-E makes the unique-email race idempotent: when two fresh backend replica
 race, the replica that loses the unique insert re-reads the committed admin row
 and continues startup instead of failing.
 
-Existing installations with users are unchanged.
+For a fresh empty user database, temporarily configure:
+
+```yaml
+secret:
+  keys:
+    bootstrapAdminPassword: bootstrap-admin-password
+```
+
+and provide that key in the existing Secret. After the administrator is created
+and the password is changed, set `bootstrapAdminPassword: ""` on a later upgrade
+and remove the stale Secret key. Existing installations with users can leave the
+value empty from the start.
 
 ## Replicas and rollout safety
 
@@ -201,7 +211,7 @@ The chart configures explicit probes:
 | Component | Readiness / liveness |
 |---|---|
 | frontend | HTTP `/` |
-| backend | HTTP `/api/health` |
+| backend | readiness `/api/v1/ready` (database) / liveness `/api/health` |
 | inference runtime | `/ready` / `/health` |
 | workers | `python -m app.workers.healthcheck` |
 | MLflow | HTTP `/health` with allowed Host header |
