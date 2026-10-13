@@ -72,3 +72,19 @@ spec:
       {{- include "model-flow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: worker-general
 {{- end }}
+{{- if and .Values.pdb.enabled .Values.worker.gpu.enabled (gt (int .Values.worker.gpu.replicaCount) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "model-flow.fullname" . }}-worker-gpu
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-gpu
+{{- end }}
+
