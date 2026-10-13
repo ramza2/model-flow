@@ -65,6 +65,12 @@ spec:
             - name: runtime-secrets
               mountPath: {{ .Values.secret.mountPath }}
               readOnly: true
+          startupProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
           readinessProbe:
             exec:
               command: ["python", "-m", "app.workers.healthcheck"]
@@ -177,6 +183,12 @@ spec:
             - name: runtime-secrets
               mountPath: {{ .Values.secret.mountPath }}
               readOnly: true
+          startupProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
           readinessProbe:
             exec:
               command: ["python", "-m", "app.workers.healthcheck"]
