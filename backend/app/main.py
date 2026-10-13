@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app.api.v1.auth import bootstrap_admin
 from app.api.v1.router import router as v1_router
 from app.core.config import settings, validate_security_settings
+from app.core.runtime_secrets import configure_object_store_library_environment
 from app.services import storage
 
 logging.basicConfig(
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_security_settings()
+    configure_object_store_library_environment()
     logger.info(
         "startup_begin version=%s git_sha=%s", settings.app_version, settings.git_sha
     )
