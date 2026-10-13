@@ -325,10 +325,24 @@ The migration hook must complete before the new release proceeds.
 
 Before an upgrade:
 
-1. back up the application database according to the PostgreSQL operator policy
+1. back up the ModelFlow and MLflow databases according to the PostgreSQL operator policy
 2. confirm the new backend image contains the expected Alembic migration head
 3. verify image digests/tags and Secret references
 4. run `helm lint` / `helm template` through CI
+5. when the MLflow image/version or its database schema may change, quiesce MLflow before the Helm upgrade:
+
+   ```bash
+   kubectl -n <namespace> scale deployment/<release>-model-flow-mlflow --replicas=0
+   kubectl -n <namespace> rollout status deployment/<release>-model-flow-mlflow
+   ```
+
+   Then run the Helm upgrade. The pre-upgrade MLflow migration hook applies
+   `mlflow db upgrade` before the Deployment is reconciled back to the chart's
+   configured replica count.
+
+MLflow schema migration is therefore a controlled maintenance operation, not a
+zero-downtime claim. If the Helm upgrade fails after MLflow was quiesced, resolve
+the migration/release failure before restoring traffic.
 
 A Helm rollback can restore Deployment configuration/images, but it does not
 automatically reverse database migrations. Database migration rollback must
