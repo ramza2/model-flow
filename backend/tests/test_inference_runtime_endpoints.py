@@ -263,6 +263,7 @@ def test_predict_input_error_is_422(client, auth_headers, monkeypatch):
     )
     assert response.status_code == 422
 
+
 def test_predict_recovers_after_transient_runtime_failure(
     client, auth_headers, monkeypatch
 ):
