@@ -172,4 +172,3 @@ def test_settings_repr_redacts_secret_values():
 
     for value in values.values():
         assert value not in rendered
-
