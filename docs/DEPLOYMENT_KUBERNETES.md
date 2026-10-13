@@ -63,7 +63,7 @@ Default required keys:
 | `mlflow-database-url` | MLflow server |
 | `object-store-access-key` | backend, workers, inference runtime, MLflow |
 | `object-store-secret-key` | backend, workers, inference runtime, MLflow |
-| `jwt-signing-key` | backend, workers |
+| `jwt-signing-key` | backend |
 | `encryption-key` | backend, workers |
 | `inference-service-token` | backend, workers, inference runtime |
 | `bootstrap-admin-password` | backend bootstrap path |
@@ -73,10 +73,14 @@ Optional keys are enabled by setting their key names in values:
 - `secret.keys.oidcClientSecret`
 - `secret.keys.llmApiKey`
 
-ModelFlow application pods mount the Secret read-only under
-`/run/model-flow-secrets` and consume it through the Phase 8-D `*_FILE`
-contract. MLflow is a third-party process and consumes the same object-store
-credentials and its database URI through Kubernetes `secretKeyRef`.
+ModelFlow application pods mount service-scoped projections of the Secret
+read-only under `/run/model-flow-secrets` and consume them through the Phase
+8-D `*_FILE` contract. The inference runtime receives only the object-store
+credential pair plus the inference service token; the migration Job receives
+only the application database URL. Workers receive only their DB/object-store,
+encryption, and inference credentials. MLflow is a third-party process and
+consumes the object-store credentials plus its database URI through Kubernetes
+`secretKeyRef`.
 
 Example creation from operator-managed local files:
 
@@ -127,7 +131,8 @@ external:
 ```
 
 The endpoint is host[:port] without the URL scheme; `secure` selects HTTP vs
-HTTPS.
+HTTPS. `region` is propagated consistently to ModelFlow's direct boto3 client
+and MLflow artifact clients.
 
 The credentials must permit the ModelFlow operations required for the configured
 buckets. For least-privilege environments, pre-create the buckets and grant only
@@ -326,7 +331,8 @@ that topology has been intentionally designed and tested.
 - default manifest rendering
 - Ingress/TLS rendering
 - dedicated migration Job
-- file-mounted secret paths
+- file-mounted secret paths and service-scoped Secret projections
+- configured object-store region and MLflow artifact bucket derivation
 - component probes and PodDisruptionBudgets
 - GPU resource isolation
 - absence of embedded StatefulSet/PVC resources
