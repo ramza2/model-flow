@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     app_name: str = "ModelFlow"
     app_version: str = "1.0.0-rc"
     database_url: str = Field(
-        default="sqlite+pysqlite:///./modelflow.db", repr=False
+        default="sqlite+pysqlite:///./modelflow.db", repr=False, exclude=True
     )
     mlflow_tracking_uri: str = "http://localhost:5000"
     minio_endpoint: str = "localhost:9000"
-    minio_access_key: str = Field(default="", repr=False)
-    minio_secret_key: str = Field(default="", repr=False)
+    minio_access_key: str = Field(default="", repr=False, exclude=True)
+    minio_secret_key: str = Field(default="", repr=False, exclude=True)
     minio_secure: bool = False
     minio_datasets_bucket: str = "datasets"
     minio_mlflow_bucket: str = "mlflow"
@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(
         default="",
         validation_alias=AliasChoices("MODELFLOW_SECRET_KEY", "SECRET_KEY"),
-        repr=False,
+        repr=False, exclude=True,
     )
     access_token_expire_minutes: int = 480
     bootstrap_admin_email: str = Field(
@@ -62,7 +62,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD", "BOOTSTRAP_ADMIN_PASSWORD"
         ),
-        repr=False,
+        repr=False, exclude=True,
     )
     login_max_failures: int = 5
     login_lockout_minutes: int = 15
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     encryption_key: str = Field(
         default="",
         validation_alias=AliasChoices("MODELFLOW_ENCRYPTION_KEY", "ENCRYPTION_KEY"),
-        repr=False,
+        repr=False, exclude=True,
     )
 
     # Defaults
@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     llm_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("MODELFLOW_LLM_API_KEY", "LLM_API_KEY"),
-        repr=False,
+        repr=False, exclude=True,
     )
     llm_model: str = Field(
         default="",
@@ -124,7 +124,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "MODELFLOW_INFERENCE_SERVICE_TOKEN", "INFERENCE_SERVICE_TOKEN"
         ),
-        repr=False,
+        repr=False, exclude=True,
     )
     inference_timeout_seconds: float = Field(
         default=60.0,
@@ -157,7 +157,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices(
             "MODELFLOW_OIDC_CLIENT_SECRET", "OIDC_CLIENT_SECRET"
         ),
-        repr=False,
+        repr=False, exclude=True,
     )
     oidc_redirect_uri: str = Field(
         default="",
