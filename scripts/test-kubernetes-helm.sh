@@ -45,6 +45,7 @@ ha_args=(
   --set worker.gpu.replicaCount=2
   --set external.objectStore.region=ap-northeast-2
   --set external.objectStore.buckets.mlflow=model-flow-mlflow-artifacts
+  --set secret.keys.bootstrapAdminPassword=bootstrap-admin-password
 )
 "$HELM_BIN" "${ha_args[@]}" >"$HA_RENDER"
 
@@ -89,14 +90,22 @@ for component in backend inference-runtime worker-general mlflow frontend; do
     fail "missing component deployment: $component"
 done
 
+grep -Fq 'path: /api/v1/ready' "$DEFAULT_RENDER" ||
+  fail "backend database readiness probe missing"
 grep -Fq 'path: /api/health' "$DEFAULT_RENDER" ||
-  fail "backend health probe missing"
+  fail "backend liveness probe missing"
 grep -Fq 'path: /ready' "$DEFAULT_RENDER" ||
   fail "inference readiness probe missing"
 grep -Fq 'app.workers.healthcheck' "$DEFAULT_RENDER" ||
   fail "worker exec probe missing"
 grep -Fq 'kind: PodDisruptionBudget' "$DEFAULT_RENDER" ||
   fail "PodDisruptionBudget did not render"
+
+if grep -Fq 'bootstrap-admin-password' "$DEFAULT_RENDER"; then
+  fail "bootstrap admin password must not be permanently required by default"
+fi
+grep -Fq 'bootstrap-admin-password' "$HA_RENDER" ||
+  fail "bootstrap admin secret key did not render when explicitly enabled"
 
 if grep -Fq 'nvidia.com/gpu' "$DEFAULT_RENDER"; then
   fail "GPU resource rendered while gpu worker profile is disabled"
