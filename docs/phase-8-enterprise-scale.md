@@ -285,6 +285,7 @@ Add a production-oriented Kubernetes deployment path for the now-separated state
 - MLflow schema migration runs in its own `pre-install,pre-upgrade` hook Job using `mlflow db upgrade`; MLflow version/schema upgrades are documented as controlled maintenance with existing MLflow replicas quiesced first.
 - ModelFlow pods consume the existing Phase 8-D file-secret contract from service-scoped read-only Kubernetes Secret projections; inference and migration pods do not receive unrelated application secrets. MLflow uses `secretKeyRef` for its database/object-store credentials.
 - Object-store region is configurable and shared by ModelFlow's direct boto3 access and MLflow artifact clients; the MLflow artifact root derives from the configured MLflow bucket unless explicitly overridden.
+- Kubernetes defaults runtime bucket auto-creation off, requiring pre-created shared buckets so backend/worker credentials can remain least-privilege; Compose keeps existing auto-create behavior.
 - Optional Ingress/TLS exposes only frontend. Backend, inference runtime, and MLflow stay ClusterIP-only.
 - Rolling updates, startup/readiness/liveness probes, resources, and PodDisruptionBudgets are configurable.
 - Optional GPU workers render `nvidia.com/gpu` only when the GPU profile is enabled; existing sklearn workloads remain general-profile only.
