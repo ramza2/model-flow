@@ -476,6 +476,34 @@ bash "$ROOT/scripts/verify-worker-scale.sh"
 pass "worker scale-out"
 assert_services_healthy
 
+info "5c) Internal inference runtime network/auth boundary (Phase 8-F)"
+INFERENCE_PUBLISHED_PORT="$(modelflow_compose port inference-runtime 8080 2>/dev/null || true)"
+[[ -z "$INFERENCE_PUBLISHED_PORT" ]] ||
+  fail "inference-runtime unexpectedly publishes host port: $INFERENCE_PUBLISHED_PORT"
+modelflow_compose exec -T backend python - <<'PY'
+import httpx
+
+base = "http://inference-runtime:8080"
+with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+    ready = client.get("/ready")
+    assert ready.status_code == 200, ready.text
+
+    missing = client.post(
+        "/v1/models/load-check",
+        json={"model_uri": "models:/phase8f-auth-boundary/1"},
+    )
+    assert missing.status_code == 401, missing.text
+
+    wrong = client.post(
+        "/v1/models/load-check",
+        headers={"X-ModelFlow-Inference-Token": "wrong-token-not-the-runtime-secret"},
+        json={"model_uri": "models:/phase8f-auth-boundary/1"},
+    )
+    assert wrong.status_code == 401, wrong.text
+    assert "Unauthorized" in wrong.text
+PY
+pass "inference runtime remains internal and rejects unauthenticated model calls"
+
 info "6) Frontend lint/typecheck/test (Node container)"
 docker run --rm \
   -v "$ROOT/frontend:/app" \
