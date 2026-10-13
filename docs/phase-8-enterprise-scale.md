@@ -282,9 +282,10 @@ Add a production-oriented Kubernetes deployment path for the now-separated state
 - PostgreSQL and S3-compatible object storage are external/shared prerequisites; no embedded StatefulSet/PVC is rendered.
 - Backend and inference runtime default to two replicas; frontend, MLflow, and general workers are also replica-configurable.
 - Alembic runs in a dedicated Helm `pre-install,pre-upgrade` migration Job; Kubernetes backend pods do not run migrations at startup.
-- ModelFlow pods consume the existing Phase 8-D file-secret contract from a read-only Kubernetes Secret mount; MLflow uses `secretKeyRef` for its database/object-store credentials.
+- ModelFlow pods consume the existing Phase 8-D file-secret contract from service-scoped read-only Kubernetes Secret projections; inference and migration pods do not receive unrelated application secrets. MLflow uses `secretKeyRef` for its database/object-store credentials.
+- Object-store region is configurable and shared by ModelFlow's direct boto3 access and MLflow artifact clients; the MLflow artifact root derives from the configured MLflow bucket unless explicitly overridden.
 - Optional Ingress/TLS exposes only frontend. Backend, inference runtime, and MLflow stay ClusterIP-only.
-- Rolling updates, health/readiness probes, resources, and PodDisruptionBudgets are configurable.
+- Rolling updates, startup/readiness/liveness probes, resources, and PodDisruptionBudgets are configurable.
 - Optional GPU workers render `nvidia.com/gpu` only when the GPU profile is enabled; existing sklearn workloads remain general-profile only.
 - Fresh multi-backend bootstrap handles the unique-email race idempotently.
 - Clusterless CI validates `helm lint` + `helm template`, Ingress/TLS, migration Job, secret mounts, PDBs, and GPU resource isolation.
