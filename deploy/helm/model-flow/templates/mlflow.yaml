@@ -54,7 +54,7 @@ spec:
               --port 5000
               --allowed-hosts "{{ include "model-flow.fullname" . }}-mlflow:5000,localhost:*,127.0.0.1:*"
               --backend-store-uri "$MLFLOW_BACKEND_STORE_URI"
-              --default-artifact-root "{{ .Values.mlflow.artifactRoot }}"
+              --default-artifact-root "{{ include "model-flow.mlflowArtifactRoot" . }}"
               --serve-artifacts
           ports:
             - name: http
