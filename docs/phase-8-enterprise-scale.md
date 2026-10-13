@@ -281,14 +281,15 @@ Add a production-oriented Kubernetes deployment path for the now-separated state
 - Helm chart at `deploy/helm/model-flow` deploys frontend, backend, inference runtime, general/GPU worker profiles, and MLflow as stateless services.
 - PostgreSQL and S3-compatible object storage are external/shared prerequisites; no embedded StatefulSet/PVC is rendered.
 - Backend and inference runtime default to two replicas; frontend, MLflow, and general workers are also replica-configurable.
-- Alembic runs in a dedicated Helm `pre-install,pre-upgrade` migration Job; Kubernetes backend pods do not run migrations at startup.
+- ModelFlow Alembic runs in a dedicated Helm `pre-install,pre-upgrade` migration Job; Kubernetes backend pods do not run migrations at startup.
+- MLflow schema migration runs in its own `pre-install,pre-upgrade` hook Job using `mlflow db upgrade`; MLflow version/schema upgrades are documented as controlled maintenance with existing MLflow replicas quiesced first.
 - ModelFlow pods consume the existing Phase 8-D file-secret contract from service-scoped read-only Kubernetes Secret projections; inference and migration pods do not receive unrelated application secrets. MLflow uses `secretKeyRef` for its database/object-store credentials.
 - Object-store region is configurable and shared by ModelFlow's direct boto3 access and MLflow artifact clients; the MLflow artifact root derives from the configured MLflow bucket unless explicitly overridden.
 - Optional Ingress/TLS exposes only frontend. Backend, inference runtime, and MLflow stay ClusterIP-only.
 - Rolling updates, startup/readiness/liveness probes, resources, and PodDisruptionBudgets are configurable.
 - Optional GPU workers render `nvidia.com/gpu` only when the GPU profile is enabled; existing sklearn workloads remain general-profile only.
 - Fresh multi-backend bootstrap handles the unique-email race idempotently.
-- Clusterless CI validates `helm lint` + `helm template`, Ingress/TLS, migration Job, secret mounts, PDBs, and GPU resource isolation.
+- Clusterless CI validates `helm lint` + `helm template`, Ingress/TLS, both migration Jobs, secret mounts, backend DB readiness, removable bootstrap secret lifecycle, PDBs, and GPU resource isolation.
 - Deployment guide: [`DEPLOYMENT_KUBERNETES.md`](./DEPLOYMENT_KUBERNETES.md).
 
 ### Explicitly out of 8-E
