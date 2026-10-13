@@ -2,9 +2,11 @@
 
 ## Current phase
 
-**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A through 8-D are complete on `main`.** **8-E — Kubernetes / HA Deployment is the current Draft slice** (Draft PR #85). **8-F** remains planned.
+**Enhancement Phase 8 — Enterprise / Scale is current.** **8-A through 8-E are complete on `main`.** **8-F — Final Hardening / Scale Regression is the current Draft slice** (Draft PR #86).
 
-Phase 8-E current Draft baseline: base `main@117f84d0ba4a3f89774f74683adebc13fae8aede` (Draft PR #85; Helm Kubernetes deployment with external/shared PostgreSQL + S3 prerequisites; dedicated migration Job; Alembic head remains `024_oidc_enterprise_identity`; no migration).
+Phase 8-F current Draft baseline: base `main@a6f31e65527f1271410edd02bc1d094f1ddd57c7` (Draft PR #86; transient inference recovery, internal-service network/auth boundary, Kubernetes public-exposure regression, exact-head Full Verify; Alembic head remains `024_oidc_enterprise_identity`; no migration).
+
+Phase 8-E completion baseline: `main@a6f31e65527f1271410edd02bc1d094f1ddd57c7` (PR #85; exact-head CI #460 PASS; post-merge Full Gate #461 PASS; Kubernetes/HA Helm deployment with external/shared PostgreSQL + S3 prerequisites; ModelFlow + MLflow migration hooks; no ModelFlow DB migration).
 
 Phase 8-D completion baseline: `main@117f84d0ba4a3f89774f74683adebc13fae8aede` (PR #84; exact-head CI #409 PASS; post-merge Full Gate #410 PASS; vendor-neutral `*_FILE` secret loading and MLflow/object-store bridge; Alembic head `024_oidc_enterprise_identity`; no migration).
 
@@ -499,7 +501,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8-D is complete on `main`.** **8-E — Kubernetes / HA Deployment is current / Draft in PR #85.** After 8-E merges, proceed to **8-F — Final Hardening / Scale Regression**; keep 8-F scope out of the 8-E PR.
+**Phase 8-E is complete on `main`.** **8-F — Final Hardening / Scale Regression is current / Draft in PR #86.** After 8-F merges and post-merge Full Gate passes, Phase 8 is complete and the next enhancement phase is **Phase 9 — Final Visual Redesign**.
 
 Phase 8 slice plan:
 
