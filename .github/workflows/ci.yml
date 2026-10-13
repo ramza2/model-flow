@@ -161,6 +161,11 @@ jobs:
           command -v bash
           command -v curl
 
+      - name: Set up Helm 4.3.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
+
       - name: Shell syntax (scripts)
         run: |
           set -euo pipefail
@@ -193,6 +198,12 @@ jobs:
           set -euo pipefail
           chmod +x scripts/test-compose-host-ports.sh scripts/init-env.sh
           ./scripts/test-compose-host-ports.sh
+
+      - name: Kubernetes Helm render checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-kubernetes-helm.sh
+          ./scripts/test-kubernetes-helm.sh
 
   pr-fast-gate:
     name: PR fast gate
@@ -245,6 +256,17 @@ jobs:
           docker compose version
           command -v curl
           command -v bash
+
+      - name: Set up Helm 4.3.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
+
+      - name: Kubernetes Helm render checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-kubernetes-helm.sh
+          ./scripts/test-kubernetes-helm.sh
 
       - name: Clean previous verification Compose state
         run: |

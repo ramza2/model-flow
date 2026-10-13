@@ -32,8 +32,8 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 | **8-A** | Inference Runtime Separation | **complete** (PR #76; `933ce3dc2b47fb50aaa28d3e727d6b827d26a38c`; post-merge CI #363 PASS) |
 | **8-B** | Worker Scale-out & Runner Profiles | **complete** (PR #79; `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37`; post-merge CI #373 PASS) |
 | **8-C** | Enterprise Identity — OIDC / SSO | **complete** (PR #81; `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic `024_oidc_enterprise_identity`) |
-| **8-D** | External Secret Management | **current / Draft** (PR #84) |
-| **8-E** | Kubernetes / HA Deployment | planned |
+| **8-D** | External Secret Management | **complete** (PR #84; `117f84d0ba4a3f89774f74683adebc13fae8aede`; post-merge CI #410 PASS) |
+| **8-E** | Kubernetes / HA Deployment | **current / Draft** (PR #85) |
 | **8-F** | Final Hardening / Scale Regression | planned |
 
 ```text
@@ -238,8 +238,9 @@ Allow production secrets to be supplied by an external secret delivery mechanism
 - Local `.env` development remains supported.
 - Key rotation procedures are documented. Multi-key online re-encryption is separate scope unless required by implementation.
 
-### Draft implementation notes
+### Completion notes
 
+- Merged via PR #84; main commit `117f84d0ba4a3f89774f74683adebc13fae8aede`; exact-head CI #409 PASS; post-merge main CI #410 PASS.
 - Allowlisted `<ENV_NAME>_FILE` companions are loaded at the single `Settings` boundary.
 - Precedence is explicit constructor input > file-mounted secret > process environment > local `.env` > default.
 - Configured secret files fail closed on unreadable/invalid/empty content instead of silently falling back to stale environment values.
@@ -275,6 +276,23 @@ Add a production-oriented Kubernetes deployment path for the now-separated state
 - Keep Docker Compose + Traefik as a supported non-Kubernetes deployment mode.
 - CI validation must render/lint deployment configuration without requiring a paid cloud cluster.
 
+### Draft implementation notes
+
+- Helm chart at `deploy/helm/model-flow` deploys frontend, backend, inference runtime, general/GPU worker profiles, and MLflow as stateless services.
+- PostgreSQL and S3-compatible object storage are external/shared prerequisites; no embedded StatefulSet/PVC is rendered.
+- Backend and inference runtime default to two replicas; frontend, MLflow, and general workers are also replica-configurable.
+- ModelFlow Alembic runs in a dedicated Helm `pre-install,pre-upgrade` migration Job; Kubernetes backend pods do not run migrations at startup.
+- MLflow schema migration runs in its own `pre-install,pre-upgrade` hook Job using `mlflow db upgrade`; MLflow version/schema upgrades are documented as controlled maintenance with existing MLflow replicas quiesced first.
+- ModelFlow pods consume the existing Phase 8-D file-secret contract from service-scoped read-only Kubernetes Secret projections; inference and migration pods do not receive unrelated application secrets. MLflow uses `secretKeyRef` for its database/object-store credentials.
+- Object-store region is configurable and shared by ModelFlow's direct boto3 access and MLflow artifact clients; the MLflow artifact root derives from the configured MLflow bucket unless explicitly overridden.
+- Kubernetes defaults runtime bucket auto-creation off, requiring pre-created shared buckets so backend/worker credentials can remain least-privilege; Compose keeps existing auto-create behavior.
+- Optional Ingress/TLS exposes only frontend. Backend, inference runtime, and MLflow stay ClusterIP-only.
+- Rolling updates, startup/readiness/liveness probes, resources, and PodDisruptionBudgets are configurable.
+- Optional GPU workers render `nvidia.com/gpu` only when the GPU profile is enabled; existing sklearn workloads remain general-profile only.
+- Fresh multi-backend bootstrap handles the unique-email race idempotently.
+- Clusterless CI validates `helm lint` + `helm template`, Ingress/TLS, both migration Jobs, secret mounts, backend DB readiness, removable bootstrap secret lifecycle, PDBs, and GPU resource isolation.
+- Deployment guide: [`DEPLOYMENT_KUBERNETES.md`](./DEPLOYMENT_KUBERNETES.md).
+
 ### Explicitly out of 8-E
 
 Operating a production PostgreSQL HA cluster inside ModelFlow, building an object-storage distributed system, service mesh requirement, multi-region active-active, Phase 9 redesign.
@@ -306,4 +324,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-**8-A, 8-B, and 8-C are complete on `main`.** **8-D — External Secret Management is the current Draft slice (PR #84).** Do not pull 8-E+ scope into the 8-D PR.
+**8-A through 8-D are complete on `main`.** **8-E — Kubernetes / HA Deployment is the current Draft slice (PR #85).** Do not pull 8-F scope into the 8-E PR.

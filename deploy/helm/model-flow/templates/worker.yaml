@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "model-flow.fullname" . }}-worker-general
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-general
+spec:
+  replicas: {{ .Values.worker.general.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-general
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-general
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command: ["python", "-m", "app.workers.runner"]
+          env:
+            - name: DATABASE_URL_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.databaseUrl }}"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://{{ include "model-flow.fullname" . }}-mlflow:5000"
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.external.objectStore.endpoint | quote }}
+            - name: MINIO_SECURE
+              value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_REGION
+              value: {{ .Values.external.objectStore.region | quote }}
+            - name: MODELFLOW_ENSURE_OBJECT_STORE_BUCKETS
+              value: {{ .Values.external.objectStore.autoCreateBuckets | quote }}
+            - name: MINIO_ACCESS_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
+            - name: MINIO_SECRET_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
+            - name: MODELFLOW_ENCRYPTION_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.encryptionKey }}"
+            - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.inferenceServiceToken }}"
+            - name: MODELFLOW_INFERENCE_RUNTIME_URL
+              value: "http://{{ include "model-flow.fullname" . }}-inference-runtime:8080"
+            - name: WORKER_PROFILE
+              value: general
+            - name: WORKER_MAX_CONCURRENT_JOBS
+              value: {{ .Values.worker.general.maxConcurrentJobs | quote }}
+            - name: MODELFLOW_GIT_SHA
+              value: {{ .Values.global.gitSha | quote }}
+            {{- with .Values.worker.general.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: runtime-secrets
+              mountPath: {{ .Values.secret.mountPath }}
+              readOnly: true
+          startupProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          readinessProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.general.resources | nindent 12 }}
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: {{ include "model-flow.secretName" . }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+              - key: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+              - key: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+              - key: {{ .Values.secret.keys.encryptionKey | quote }}
+                path: {{ .Values.secret.keys.encryptionKey | quote }}
+              - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+                path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+      {{- with .Values.worker.general.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.general.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.general.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if .Values.worker.gpu.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "model-flow.fullname" . }}-worker-gpu
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker-gpu
+spec:
+  replicas: {{ .Values.worker.gpu.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker-gpu
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker-gpu
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command: ["python", "-m", "app.workers.runner"]
+          env:
+            - name: DATABASE_URL_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.databaseUrl }}"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://{{ include "model-flow.fullname" . }}-mlflow:5000"
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.external.objectStore.endpoint | quote }}
+            - name: MINIO_SECURE
+              value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_REGION
+              value: {{ .Values.external.objectStore.region | quote }}
+            - name: MODELFLOW_ENSURE_OBJECT_STORE_BUCKETS
+              value: {{ .Values.external.objectStore.autoCreateBuckets | quote }}
+            - name: MINIO_ACCESS_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
+            - name: MINIO_SECRET_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
+            - name: MODELFLOW_ENCRYPTION_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.encryptionKey }}"
+            - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.inferenceServiceToken }}"
+            - name: MODELFLOW_INFERENCE_RUNTIME_URL
+              value: "http://{{ include "model-flow.fullname" . }}-inference-runtime:8080"
+            - name: WORKER_PROFILE
+              value: gpu
+            - name: WORKER_MAX_CONCURRENT_JOBS
+              value: {{ .Values.worker.gpu.maxConcurrentJobs | quote }}
+            - name: MODELFLOW_GIT_SHA
+              value: {{ .Values.global.gitSha | quote }}
+            {{- with .Values.worker.gpu.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: runtime-secrets
+              mountPath: {{ .Values.secret.mountPath }}
+              readOnly: true
+          startupProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18
+          readinessProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: ["python", "-m", "app.workers.healthcheck"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.worker.gpu.resources | nindent 12 }}
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: {{ include "model-flow.secretName" . }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+              - key: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+              - key: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+              - key: {{ .Values.secret.keys.encryptionKey | quote }}
+                path: {{ .Values.secret.keys.encryptionKey | quote }}
+              - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+                path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+      {{- with .Values.worker.gpu.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.gpu.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.worker.gpu.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

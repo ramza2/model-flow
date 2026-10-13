@@ -15,11 +15,13 @@ def s3_client():
         aws_access_key_id=settings.minio_access_key,
         aws_secret_access_key=settings.minio_secret_key,
         config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
+        region_name=settings.minio_region,
     )
 
 
 def ensure_buckets() -> None:
+    if not settings.ensure_object_store_buckets:
+        return
     client = s3_client()
     existing = {b["Name"] for b in client.list_buckets().get("Buckets", [])}
     for bucket in (

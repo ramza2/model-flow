@@ -1,0 +1,48 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "model-flow.fullname" . }}-migration
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: migration
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          command: ["alembic"]
+          args: ["upgrade", "head"]
+          env:
+            - name: DATABASE_URL_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.databaseUrl }}"
+          volumeMounts:
+            - name: runtime-secrets
+              mountPath: {{ .Values.secret.mountPath }}
+              readOnly: true
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: {{ include "model-flow.secretName" . }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+{{- end }}

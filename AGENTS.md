@@ -79,6 +79,8 @@ Phase 8 rules:
 - GPU runner profiles are scheduling/capability metadata only unless a workload explicitly supports GPU execution; never silently change sklearn execution semantics.
 - External secret work must preserve current local `.env` support and must not leak secrets into logs, audit, API responses, frontend state, images, or committed manifests.
 - Kubernetes/HA work must distinguish stateless replica HA from stateful storage HA; do not claim HA for a single embedded PostgreSQL or MinIO instance.
+- The Phase 8-E Kubernetes path is the Helm chart under `deploy/helm/model-flow`; keep PostgreSQL and S3-compatible storage external/shared, keep Alembic in the dedicated migration hook Job, project only service-required secret keys, and validate changes with `scripts/test-kubernetes-helm.sh`.
+- Compose + Traefik remains a supported deployment path; Kubernetes changes must not silently break it.
 - Phase 9 visual redesign remains out of Phase 8.
 
 ### Data-source connector architecture

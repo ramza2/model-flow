@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "model-flow.fullname" . }}-backend
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  selector:
+    {{- include "model-flow.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "model-flow.fullname" . }}-backend
+  labels:
+    {{- include "model-flow.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  replicas: {{ .Values.backend.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "model-flow.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        {{- include "model-flow.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: backend
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backend
+          image: {{ include "model-flow.image" .Values.images.backend | quote }}
+          imagePullPolicy: {{ .Values.images.backend.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: DATABASE_URL_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.databaseUrl }}"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://{{ include "model-flow.fullname" . }}-mlflow:5000"
+            - name: MINIO_ENDPOINT
+              value: {{ .Values.external.objectStore.endpoint | quote }}
+            - name: MINIO_SECURE
+              value: {{ .Values.external.objectStore.secure | quote }}
+            - name: MINIO_REGION
+              value: {{ .Values.external.objectStore.region | quote }}
+            - name: MODELFLOW_ENSURE_OBJECT_STORE_BUCKETS
+              value: {{ .Values.external.objectStore.autoCreateBuckets | quote }}
+            - name: MINIO_ACCESS_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
+            - name: MINIO_SECRET_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
+            - name: MINIO_DATASETS_BUCKET
+              value: {{ .Values.external.objectStore.buckets.datasets | quote }}
+            - name: MINIO_MLFLOW_BUCKET
+              value: {{ .Values.external.objectStore.buckets.mlflow | quote }}
+            - name: MINIO_BATCH_BUCKET
+              value: {{ .Values.external.objectStore.buckets.batch | quote }}
+            - name: MINIO_ARTIFACTS_BUCKET
+              value: {{ .Values.external.objectStore.buckets.artifacts | quote }}
+            - name: CORS_ORIGINS
+              value: {{ .Values.backend.corsOrigins | quote }}
+            - name: MODELFLOW_SECRET_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.secretKey }}"
+            - name: MODELFLOW_ENCRYPTION_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.encryptionKey }}"
+            - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.inferenceServiceToken }}"
+            - name: MODELFLOW_INFERENCE_RUNTIME_URL
+              value: "http://{{ include "model-flow.fullname" . }}-inference-runtime:8080"
+            - name: MODELFLOW_BOOTSTRAP_ADMIN_EMAIL
+              value: {{ .Values.backend.bootstrapAdminEmail | quote }}
+            {{- if .Values.secret.keys.bootstrapAdminPassword }}
+            - name: MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.bootstrapAdminPassword }}"
+            {{- end }}
+            - name: MODELFLOW_GIT_SHA
+              value: {{ .Values.global.gitSha | quote }}
+            - name: RATE_LIMIT_PER_MINUTE
+              value: {{ .Values.backend.rateLimitPerMinute | quote }}
+            - name: MODELFLOW_OIDC_ENABLED
+              value: {{ .Values.oidc.enabled | quote }}
+            - name: MODELFLOW_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: MODELFLOW_OIDC_CLIENT_ID
+              value: {{ .Values.oidc.clientId | quote }}
+            - name: MODELFLOW_OIDC_REDIRECT_URI
+              value: {{ .Values.oidc.redirectUri | quote }}
+            - name: MODELFLOW_OIDC_DISPLAY_NAME
+              value: {{ .Values.oidc.displayName | quote }}
+            - name: MODELFLOW_OIDC_SCOPES
+              value: {{ .Values.oidc.scopes | quote }}
+            - name: MODELFLOW_OIDC_AUTO_PROVISION
+              value: {{ .Values.oidc.autoProvision | quote }}
+            {{- if .Values.secret.keys.oidcClientSecret }}
+            - name: MODELFLOW_OIDC_CLIENT_SECRET_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.oidcClientSecret }}"
+            {{- end }}
+            - name: MODELFLOW_LLM_BASE_URL
+              value: {{ .Values.llm.baseUrl | quote }}
+            - name: MODELFLOW_LLM_MODEL
+              value: {{ .Values.llm.model | quote }}
+            - name: MODELFLOW_LLM_TIMEOUT_SECONDS
+              value: {{ .Values.llm.timeoutSeconds | quote }}
+            {{- if .Values.secret.keys.llmApiKey }}
+            - name: MODELFLOW_LLM_API_KEY_FILE
+              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.llmApiKey }}"
+            {{- end }}
+            {{- with .Values.backend.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            - name: runtime-secrets
+              mountPath: {{ .Values.secret.mountPath }}
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /api/v1/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: runtime-secrets
+          secret:
+            secretName: {{ include "model-flow.secretName" . }}
+            defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
+              - key: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreAccessKey | quote }}
+              - key: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+                path: {{ .Values.secret.keys.objectStoreSecretKey | quote }}
+              - key: {{ .Values.secret.keys.secretKey | quote }}
+                path: {{ .Values.secret.keys.secretKey | quote }}
+              - key: {{ .Values.secret.keys.encryptionKey | quote }}
+                path: {{ .Values.secret.keys.encryptionKey | quote }}
+              - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+                path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+              {{- if .Values.secret.keys.bootstrapAdminPassword }}
+              - key: {{ .Values.secret.keys.bootstrapAdminPassword | quote }}
+                path: {{ .Values.secret.keys.bootstrapAdminPassword | quote }}
+              {{- end }}
+              {{- if .Values.secret.keys.oidcClientSecret }}
+              - key: {{ .Values.secret.keys.oidcClientSecret | quote }}
+                path: {{ .Values.secret.keys.oidcClientSecret | quote }}
+              {{- end }}
+              {{- if .Values.secret.keys.llmApiKey }}
+              - key: {{ .Values.secret.keys.llmApiKey | quote }}
+                path: {{ .Values.secret.keys.llmApiKey | quote }}
+              {{- end }}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
