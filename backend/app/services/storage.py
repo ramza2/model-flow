@@ -20,6 +20,8 @@ def s3_client():
 
 
 def ensure_buckets() -> None:
+    if not settings.ensure_object_store_buckets:
+        return
     client = s3_client()
     existing = {b["Name"] for b in client.list_buckets().get("Buckets", [])}
     for bucket in (
