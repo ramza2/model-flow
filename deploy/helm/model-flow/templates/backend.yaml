@@ -84,8 +84,10 @@ spec:
               value: "http://{{ include "model-flow.fullname" . }}-inference-runtime:8080"
             - name: MODELFLOW_BOOTSTRAP_ADMIN_EMAIL
               value: {{ .Values.backend.bootstrapAdminEmail | quote }}
+            {{- if .Values.secret.keys.bootstrapAdminPassword }}
             - name: MODELFLOW_BOOTSTRAP_ADMIN_PASSWORD_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.bootstrapAdminPassword }}"
+            {{- end }}
             - name: MODELFLOW_GIT_SHA
               value: {{ .Values.global.gitSha | quote }}
             - name: RATE_LIMIT_PER_MINUTE
@@ -127,7 +129,7 @@ spec:
               readOnly: true
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /api/v1/ready
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
@@ -160,8 +162,10 @@ spec:
                 path: {{ .Values.secret.keys.encryptionKey | quote }}
               - key: {{ .Values.secret.keys.inferenceServiceToken | quote }}
                 path: {{ .Values.secret.keys.inferenceServiceToken | quote }}
+              {{- if .Values.secret.keys.bootstrapAdminPassword }}
               - key: {{ .Values.secret.keys.bootstrapAdminPassword | quote }}
                 path: {{ .Values.secret.keys.bootstrapAdminPassword | quote }}
+              {{- end }}
               {{- if .Values.secret.keys.oidcClientSecret }}
               - key: {{ .Values.secret.keys.oidcClientSecret | quote }}
                 path: {{ .Values.secret.keys.oidcClientSecret | quote }}
