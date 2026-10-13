@@ -7,6 +7,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.v1.common import audit_event, friendly, user_out
@@ -409,6 +410,26 @@ def bootstrap_admin() -> None:
         )
         db.commit()
         logger.info("bootstrap_admin_created user_id=%s email=%s", user.id, user.email)
+    except IntegrityError:
+        # In multi-replica startup, two backends can observe an empty users table
+        # before either transaction commits. The unique email constraint picks
+        # one winner; the loser treats the committed row as a successful
+        # idempotent bootstrap instead of failing the whole application startup.
+        db.rollback()
+        existing_id = db.scalar(
+            select(User.id).where(
+                func.lower(User.email) == settings.bootstrap_admin_email.lower()
+            )
+        )
+        if existing_id is not None:
+            logger.info(
+                "bootstrap_admin_race_resolved user_id=%s email=%s",
+                existing_id,
+                settings.bootstrap_admin_email.strip().lower(),
+            )
+            return
+        logger.exception("bootstrap_admin_failed")
+        raise
     except Exception:
         db.rollback()
         logger.exception("bootstrap_admin_failed")
