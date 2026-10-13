@@ -44,7 +44,7 @@ spec:
       {{- end }}
       containers:
         - name: mlflow
-          image: "{{ .Values.images.mlflow.repository }}:{{ .Values.images.mlflow.tag }}"
+          image: {{ include "model-flow.image" .Values.images.mlflow | quote }}
           imagePullPolicy: {{ .Values.images.mlflow.pullPolicy }}
           command: ["/bin/sh", "-ec"]
           args:
