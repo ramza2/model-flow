@@ -25,3 +25,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "model-flow.secretName" -}}
 {{- required "secret.existingSecret is required" .Values.secret.existingSecret -}}
 {{- end }}
+
+{{- define "model-flow.image" -}}
+{{- if .digest -}}
+{{- printf "%s@%s" .repository .digest -}}
+{{- else -}}
+{{- printf "%s:%s" .repository .tag -}}
+{{- end -}}
+{{- end }}
