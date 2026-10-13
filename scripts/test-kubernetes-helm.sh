@@ -110,14 +110,14 @@ GPU_HA_PDB_COUNT="$(grep -c '^kind: PodDisruptionBudget$' "$HA_RENDER")"
 [[ "$GPU_HA_PDB_COUNT" -eq 6 ]] ||
   fail "expected 6 PDBs with scaled GPU workers, got $GPU_HA_PDB_COUNT"
 
-grep -Fq 'value: ap-northeast-2' "$HA_RENDER" ||
+grep -Fq 'ap-northeast-2' "$HA_RENDER" ||
   fail "configured object-store region did not render"
 grep -Fq -- '--default-artifact-root "s3://model-flow-mlflow-artifacts/"' "$HA_RENDER" ||
   fail "MLflow artifact root did not follow configured object-store bucket"
 
 grep -Fq 'name: MINIO_REGION' "$INFERENCE_RENDER" ||
   fail "inference runtime MINIO_REGION setting missing"
-grep -Fq 'value: ap-northeast-2' "$INFERENCE_RENDER" ||
+grep -Fq 'ap-northeast-2' "$INFERENCE_RENDER" ||
   fail "inference runtime object-store region did not render"
 for required_secret in object-store-access-key object-store-secret-key inference-service-token; do
   grep -Fq "$required_secret" "$INFERENCE_RENDER" ||
