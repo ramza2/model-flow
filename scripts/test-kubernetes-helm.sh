@@ -177,7 +177,7 @@ done
 grep -Fq 'mlflow-database-url' "$MLFLOW_MIGRATION_RENDER" ||
   fail "MLflow migration database secret reference missing"
 for forbidden_secret in database-url object-store-access-key object-store-secret-key jwt-signing-key encryption-key inference-service-token bootstrap-admin-password; do
-  if grep -Fq "$forbidden_secret" "$MLFLOW_MIGRATION_RENDER"; then
+  if grep -Eq "^[[:space:]]+key: ${forbidden_secret}$" "$MLFLOW_MIGRATION_RENDER"; then
     fail "MLflow migration job received unnecessary secret key: $forbidden_secret"
   fi
 done
