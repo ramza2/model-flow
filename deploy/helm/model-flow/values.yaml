@@ -120,6 +120,10 @@ mlflow:
   replicaCount: 2
   # Empty = s3://<external.objectStore.buckets.mlflow>/
   artifactRoot: ""
+  migration:
+    enabled: true
+    backoffLimit: 3
+    activeDeadlineSeconds: 900
   resources:
     requests:
       cpu: 250m
