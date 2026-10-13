@@ -42,4 +42,7 @@ spec:
           secret:
             secretName: {{ include "model-flow.secretName" . }}
             defaultMode: 0400
+            items:
+              - key: {{ .Values.secret.keys.databaseUrl | quote }}
+                path: {{ .Values.secret.keys.databaseUrl | quote }}
 {{- end }}
