@@ -257,6 +257,17 @@ jobs:
           command -v curl
           command -v bash
 
+      - name: Set up Helm 4.3.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.0
+
+      - name: Kubernetes Helm render checks
+        run: |
+          set -euo pipefail
+          chmod +x scripts/test-kubernetes-helm.sh
+          ./scripts/test-kubernetes-helm.sh
+
       - name: Clean previous verification Compose state
         run: |
           set -euo pipefail
