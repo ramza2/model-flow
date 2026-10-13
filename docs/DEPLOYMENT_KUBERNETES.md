@@ -123,6 +123,7 @@ external:
     endpoint: s3.example.internal:443
     secure: true
     region: us-east-1
+    autoCreateBuckets: false
     buckets:
       datasets: datasets
       mlflow: mlflow
@@ -134,9 +135,14 @@ The endpoint is host[:port] without the URL scheme; `secure` selects HTTP vs
 HTTPS. `region` is propagated consistently to ModelFlow's direct boto3 client
 and MLflow artifact clients.
 
-The credentials must permit the ModelFlow operations required for the configured
-buckets. For least-privilege environments, pre-create the buckets and grant only
-the necessary object/bucket permissions.
+For Kubernetes production, pre-create all configured buckets before installing
+the chart. `autoCreateBuckets: false` is the default, so backend/worker pods do
+not require broad `ListBuckets/CreateBucket` permissions merely to start. Grant
+only the object/bucket permissions required by ModelFlow for those known buckets.
+
+Set `autoCreateBuckets: true` only in an environment where runtime credentials
+are intentionally allowed to discover/create buckets. Docker Compose keeps the
+existing auto-create behavior by default.
 
 ## Database migrations
 
