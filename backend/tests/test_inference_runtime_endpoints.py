@@ -334,4 +334,3 @@ def test_predict_recovers_after_transient_runtime_failure(
             ).all()
         )
         assert [row.success for row in stats] == [False, True]
-
