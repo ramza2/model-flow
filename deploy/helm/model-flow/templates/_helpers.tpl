@@ -40,4 +40,3 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "s3://%s/" .Values.external.objectStore.buckets.mlflow -}}
 {{- end -}}
 {{- end }}
-
