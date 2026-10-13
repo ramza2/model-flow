@@ -33,8 +33,8 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 | **8-B** | Worker Scale-out & Runner Profiles | **complete** (PR #79; `4ad6f908acd1ad5b0512b7e6e0933ac8c34d1e37`; post-merge CI #373 PASS) |
 | **8-C** | Enterprise Identity — OIDC / SSO | **complete** (PR #81; `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic `024_oidc_enterprise_identity`) |
 | **8-D** | External Secret Management | **complete** (PR #84; `117f84d0ba4a3f89774f74683adebc13fae8aede`; post-merge CI #410 PASS) |
-| **8-E** | Kubernetes / HA Deployment | **current / Draft** (PR #85) |
-| **8-F** | Final Hardening / Scale Regression | planned |
+| **8-E** | Kubernetes / HA Deployment | **complete** (PR #85; `a6f31e65527f1271410edd02bc1d094f1ddd57c7`; post-merge CI #461 PASS) |
+| **8-F** | Final Hardening / Scale Regression | **current / Draft** (PR #86) |
 
 ```text
 8-A Inference Runtime Separation
@@ -276,8 +276,9 @@ Add a production-oriented Kubernetes deployment path for the now-separated state
 - Keep Docker Compose + Traefik as a supported non-Kubernetes deployment mode.
 - CI validation must render/lint deployment configuration without requiring a paid cloud cluster.
 
-### Draft implementation notes
+### Completion notes
 
+- Merged via PR #85; main commit `a6f31e65527f1271410edd02bc1d094f1ddd57c7`; exact-head CI #460 PASS; post-merge main CI #461 PASS.
 - Helm chart at `deploy/helm/model-flow` deploys frontend, backend, inference runtime, general/GPU worker profiles, and MLflow as stateless services.
 - PostgreSQL and S3-compatible object storage are external/shared prerequisites; no embedded StatefulSet/PVC is rendered.
 - Backend and inference runtime default to two replicas; frontend, MLflow, and general workers are also replica-configurable.
@@ -322,6 +323,15 @@ Close Phase 8 with failure, concurrency, security, and deployment regression rat
 
 Phase 8 is marked complete only after 8-F merges and post-merge `main` verification passes.
 
+### Draft verification notes
+
+- Draft PR #86 adds transient inference failure → next-request recovery coverage.
+- Full Compose verification proves `inference-runtime` is not host-published and rejects missing/wrong service tokens.
+- Helm render regression proves public Ingress targets frontend only and internal services are not NodePort/LoadBalancer by default.
+- Existing Phase 8 concurrency, OIDC, secret, migration, API, Compose, and browser suites are retained as the authoritative regression base.
+- Verification matrix: [`phase-8f-verification.md`](./phase-8f-verification.md).
+- PR #86 intentionally runs both PR Fast Gate and Full `./scripts/verify.sh` on the exact PR head.
+
 ## Next implementation slice
 
-**8-A through 8-D are complete on `main`.** **8-E — Kubernetes / HA Deployment is the current Draft slice (PR #85).** Do not pull 8-F scope into the 8-E PR.
+**8-A through 8-E are complete on `main`.** **8-F — Final Hardening / Scale Regression is the current Draft slice (PR #86).** Do not pull Phase 9 redesign scope into 8-F.
