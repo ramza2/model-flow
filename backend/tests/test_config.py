@@ -93,6 +93,7 @@ def test_oidc_enabled_accepts_complete_configuration():
     )
     validate_security_settings(config)
 
+
 @pytest.mark.parametrize(
     ("env_name", "field_name", "file_value"),
     [
