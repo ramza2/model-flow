@@ -294,4 +294,4 @@ Phase 8 is marked complete only after 8-F merges and post-merge `main` verificat
 
 ## Next implementation slice
 
-**8-A and 8-B are complete on `main`.** **8-C — Enterprise Identity — OIDC / SSO is the current Draft slice.** Do not pull 8-D+ scope into the 8-C PR.
+**8-A, 8-B, and 8-C are complete on `main`.** **8-D — External Secret Management is the current Draft slice (PR #84).** Do not pull 8-E+ scope into the 8-D PR.
