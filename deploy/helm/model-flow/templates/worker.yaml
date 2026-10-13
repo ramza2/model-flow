@@ -46,8 +46,6 @@ spec:
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
             - name: MINIO_SECRET_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
-            - name: MODELFLOW_SECRET_KEY_FILE
-              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.secretKey }}"
             - name: MODELFLOW_ENCRYPTION_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.encryptionKey }}"
             - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
@@ -160,8 +158,6 @@ spec:
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreAccessKey }}"
             - name: MINIO_SECRET_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.objectStoreSecretKey }}"
-            - name: MODELFLOW_SECRET_KEY_FILE
-              value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.secretKey }}"
             - name: MODELFLOW_ENCRYPTION_KEY_FILE
               value: "{{ .Values.secret.mountPath }}/{{ .Values.secret.keys.encryptionKey }}"
             - name: MODELFLOW_INFERENCE_SERVICE_TOKEN_FILE
