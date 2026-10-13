@@ -19,7 +19,8 @@ command -v "$HELM_BIN" >/dev/null 2>&1 || fail "helm is not installed"
 mkdir -p "$ROOT/artifacts/verify"
 DEFAULT_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-default.XXXXXX.yaml")"
 HA_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-ha.XXXXXX.yaml")"
-trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER"' EXIT
+INFERENCE_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-inference.XXXXXX.yaml")"
+trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER" "$INFERENCE_RENDER"' EXIT
 
 "$HELM_BIN" lint "$CHART"
 
@@ -39,8 +40,19 @@ ha_args=(
   --set ingress.tls.enabled=true
   --set ingress.tls.secretName=modelflow-example-tls
   --set worker.gpu.enabled=true
+  --set worker.gpu.replicaCount=2
+  --set external.objectStore.region=ap-northeast-2
+  --set external.objectStore.buckets.mlflow=model-flow-mlflow-artifacts
 )
 "$HELM_BIN" "${ha_args[@]}" >"$HA_RENDER"
+
+inference_args=(
+  template modelflow "$CHART"
+  --namespace model-flow
+  --kube-version 1.30.0
+  --show-only templates/inference-runtime.yaml
+)
+"$HELM_BIN" "${inference_args[@]}" >"$INFERENCE_RENDER"
 
 grep -Fq '# Source: model-flow/templates/migration-job.yaml' "$DEFAULT_RENDER"   || fail "dedicated migration Job did not render"
 grep -Fq '"helm.sh/hook": pre-install,pre-upgrade' "$DEFAULT_RENDER"   || fail "migration Job is not a pre-install/pre-upgrade hook"
