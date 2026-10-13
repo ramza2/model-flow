@@ -87,4 +87,3 @@ spec:
       {{- include "model-flow.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: worker-gpu
 {{- end }}
-
