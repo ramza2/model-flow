@@ -53,7 +53,10 @@ Examples include:
 - External Secrets Operator output projected as files
 
 This keeps secret-provider choice in deployment infrastructure instead of
-business logic.
+business logic. At process startup, ModelFlow synchronizes the resolved
+object-store access/secret pair into the AWS-compatible environment names used
+internally by MLflow/boto3, so file-mounted MinIO credentials remain authoritative
+for dataset access and MLflow model artifact load/log paths.
 
 ## Docker Compose
 
