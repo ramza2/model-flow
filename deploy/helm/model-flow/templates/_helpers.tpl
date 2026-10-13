@@ -33,3 +33,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" .repository .tag -}}
 {{- end -}}
 {{- end }}
+{{- define "model-flow.mlflowArtifactRoot" -}}
+{{- if .Values.mlflow.artifactRoot -}}
+{{- .Values.mlflow.artifactRoot -}}
+{{- else -}}
+{{- printf "s3://%s/" .Values.external.objectStore.buckets.mlflow -}}
+{{- end -}}
+{{- end }}
+
