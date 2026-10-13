@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     minio_secret_key: str = Field(default="", repr=False, exclude=True)
     minio_secure: bool = False
     minio_region: str = "us-east-1"
+    ensure_object_store_buckets: bool = Field(
+        default=True,
+        validation_alias=AliasChoices(
+            "MODELFLOW_ENSURE_OBJECT_STORE_BUCKETS",
+            "ENSURE_OBJECT_STORE_BUCKETS",
+        ),
+    )
     minio_datasets_bucket: str = "datasets"
     minio_mlflow_bucket: str = "mlflow"
     minio_batch_bucket: str = "batch-results"
