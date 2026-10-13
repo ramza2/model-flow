@@ -16,7 +16,7 @@ not add new product features or pull Phase 9 visual redesign into Phase 8.
 
 | Phase 8-F requirement | Regression evidence |
 |---|---|
-| Multi-replica inference consistency / failure recovery | `backend/tests/test_inference_runtime.py`, `backend/tests/test_inference_runtime_endpoints.py`; 8-F adds transient runtime failure followed by successful next-request recovery while preserving endpoint counters/statistics. |
+| Multi-replica inference consistency / failure recovery | `backend/tests/test_inference_runtime.py`, `backend/tests/test_inference_runtime_endpoints.py`; 8-F adds transient runtime failure followed by successful next-request recovery while preserving endpoint counters/statistics. Full verify additionally scales Compose `inference-runtime` to two healthy replicas, sends the same registered model/input directly to each replica, requires identical prediction JSON, then scales back to one healthy replica. |
 | Multi-worker no-double-claim | `backend/tests/test_worker_scaleout_postgres.py::test_skip_locked_no_double_claim_generic_path`; `scripts/verify-worker-scale.sh` scales Compose workers and validates distinct healthy heartbeats. |
 | Scheduler singleton | PostgreSQL advisory-lock regressions in `test_worker_scaleout_postgres.py`, plus non-Postgres helper coverage in `test_worker_leadership.py`. |
 | Runner profile fail-closed routing | `backend/tests/test_runner_profiles.py`; general/GPU cross-claim and unknown profile cases fail closed. |
@@ -38,6 +38,14 @@ A runtime outage must fail the current public prediction cleanly without leaving
 the Endpoint unusable. The next successful runtime response must succeed through
 the same Endpoint and durable counters must show one failure followed by one
 success.
+
+### Multi-replica inference consistency
+
+After the release-flow model is registered, full verification scales
+`inference-runtime` from one to two Compose replicas. It resolves both container
+IDs, waits for both health checks, sends the same model URI and input directly to
+each authenticated runtime, and requires byte-equivalent normalized prediction
+JSON. Verification then scales back to one replica and waits for health recovery.
 
 ### Compose internal runtime boundary
 
