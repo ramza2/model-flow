@@ -46,6 +46,10 @@ external:
     endpoint: s3.example.internal:443
     secure: true
     region: us-east-1
+    # Production Kubernetes assumes these buckets already exist.
+    # Set true only when the runtime credentials are intentionally allowed
+    # to ListBuckets/CreateBucket.
+    autoCreateBuckets: false
     buckets:
       datasets: datasets
       mlflow: mlflow
