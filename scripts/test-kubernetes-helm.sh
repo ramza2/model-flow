@@ -22,7 +22,8 @@ HA_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-ha.XXXXXX.yaml")"
 INFERENCE_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-inference.XXXXXX.yaml")"
 WORKER_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-worker.XXXXXX.yaml")"
 MIGRATION_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-migration.XXXXXX.yaml")"
-trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER" "$INFERENCE_RENDER" "$WORKER_RENDER" "$MIGRATION_RENDER"' EXIT
+MLFLOW_MIGRATION_RENDER="$(mktemp "$ROOT/artifacts/verify/helm-mlflow-migration.XXXXXX.yaml")"
+trap 'rm -f "$DEFAULT_RENDER" "$HA_RENDER" "$INFERENCE_RENDER" "$WORKER_RENDER" "$MIGRATION_RENDER" "$MLFLOW_MIGRATION_RENDER"' EXIT
 
 "$HELM_BIN" lint "$CHART"
 
@@ -74,6 +75,14 @@ migration_args=(
 )
 "$HELM_BIN" "${migration_args[@]}" >"$MIGRATION_RENDER"
 
+mlflow_migration_args=(
+  template modelflow "$CHART"
+  --namespace model-flow
+  --kube-version 1.30.0
+  --show-only templates/mlflow-migration-job.yaml
+)
+"$HELM_BIN" "${mlflow_migration_args[@]}" >"$MLFLOW_MIGRATION_RENDER"
+
 grep -Fq '# Source: model-flow/templates/migration-job.yaml' "$DEFAULT_RENDER" ||
   fail "dedicated migration Job did not render"
 grep -Fq '"helm.sh/hook": pre-install,pre-upgrade' "$DEFAULT_RENDER" ||
@@ -82,6 +91,10 @@ grep -Fq 'command: ["alembic"]' "$DEFAULT_RENDER" ||
   fail "migration Job does not run alembic"
 grep -Fq 'DATABASE_URL_FILE' "$DEFAULT_RENDER" ||
   fail "file-mounted database secret contract is missing"
+grep -Fq '# Source: model-flow/templates/mlflow-migration-job.yaml' "$DEFAULT_RENDER" ||
+  fail "dedicated MLflow migration Job did not render"
+grep -Fq 'mlflow db upgrade "$MLFLOW_BACKEND_STORE_URI"' "$DEFAULT_RENDER" ||
+  fail "MLflow migration Job does not upgrade its database"
 grep -Fq '/run/model-flow-secrets' "$DEFAULT_RENDER" ||
   fail "runtime secret mount is missing"
 
@@ -153,6 +166,14 @@ grep -Fq 'database-url' "$MIGRATION_RENDER" ||
 for forbidden_secret in object-store-access-key object-store-secret-key jwt-signing-key encryption-key inference-service-token bootstrap-admin-password; do
   if grep -Fq "$forbidden_secret" "$MIGRATION_RENDER"; then
     fail "migration job received unnecessary secret key: $forbidden_secret"
+  fi
+done
+
+grep -Fq 'mlflow-database-url' "$MLFLOW_MIGRATION_RENDER" ||
+  fail "MLflow migration database secret reference missing"
+for forbidden_secret in database-url object-store-access-key object-store-secret-key jwt-signing-key encryption-key inference-service-token bootstrap-admin-password; do
+  if grep -Fq "$forbidden_secret" "$MLFLOW_MIGRATION_RENDER"; then
+    fail "MLflow migration job received unnecessary secret key: $forbidden_secret"
   fi
 done
 
