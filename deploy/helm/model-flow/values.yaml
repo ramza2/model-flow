@@ -116,7 +116,8 @@ worker:
 
 mlflow:
   replicaCount: 2
-  artifactRoot: s3://mlflow/
+  # Empty = s3://<external.objectStore.buckets.mlflow>/
+  artifactRoot: ""
   resources:
     requests:
       cpu: 250m
