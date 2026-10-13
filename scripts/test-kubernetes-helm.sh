@@ -76,6 +76,30 @@ fi
 grep -Fq 'app.kubernetes.io/component: worker-gpu' "$HA_RENDER"   || fail "gpu worker deployment did not render when enabled"
 grep -Fq 'nvidia.com/gpu: 1' "$HA_RENDER"   || fail "gpu worker does not request the Kubernetes GPU resource"
 
+GPU_HA_PDB_COUNT="$(grep -c '^kind: PodDisruptionBudget   || fail "Ingress did not render"
+grep -Fq 'host: modelflow.example.test' "$HA_RENDER"   || fail "Ingress host did not render"
+grep -Fq 'secretName: modelflow-example-tls' "$HA_RENDER"   || fail "Ingress TLS secret did not render"
+
+if grep -Eq '^kind: (StatefulSet|PersistentVolumeClaim)$' "$DEFAULT_RENDER"; then
+  fail "chart must not claim embedded stateful HA"
+fi
+
+echo "[PASS] Helm chart lint/render and HA contract checks"
+ "$HA_RENDER")"
+[[ "$GPU_HA_PDB_COUNT" -eq 6 ]]   || fail "expected 6 PDBs with scaled GPU workers, got $GPU_HA_PDB_COUNT"
+
+grep -Fq 'value: ap-northeast-2' "$HA_RENDER"   || fail "configured object-store region did not render"
+grep -Fq -- '--default-artifact-root "s3://model-flow-mlflow-artifacts/"' "$HA_RENDER"   || fail "MLflow artifact root did not follow configured object-store bucket"
+
+grep -Fq 'object-store-access-key' "$INFERENCE_RENDER"   || fail "inference runtime object-store access key projection missing"
+grep -Fq 'object-store-secret-key' "$INFERENCE_RENDER"   || fail "inference runtime object-store secret key projection missing"
+grep -Fq 'inference-service-token' "$INFERENCE_RENDER"   || fail "inference runtime service-token projection missing"
+for forbidden_secret in database-url jwt-signing-key encryption-key bootstrap-admin-password; do
+  if grep -Fq "$forbidden_secret" "$INFERENCE_RENDER"; then
+    fail "inference runtime received unnecessary secret key: $forbidden_secret"
+  fi
+done
+
 grep -Fq 'kind: Ingress' "$HA_RENDER"   || fail "Ingress did not render"
 grep -Fq 'host: modelflow.example.test' "$HA_RENDER"   || fail "Ingress host did not render"
 grep -Fq 'secretName: modelflow-example-tls' "$HA_RENDER"   || fail "Ingress TLS secret did not render"
