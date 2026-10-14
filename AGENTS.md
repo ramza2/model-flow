@@ -83,6 +83,27 @@ Phase 8 rules:
 - Compose + Traefik remains a supported deployment path; Kubernetes changes must not silently break it.
 - Phase 9 visual redesign remains out of Phase 8.
 
+### Phase 9 final visual redesign
+
+For Phase 9 work, read these first:
+
+- `docs/phase-9-final-visual-redesign.md`
+- `docs/phase-1.5-ux-architecture.md`
+- `docs/phase-1.5-frontend-design-spec.md`
+- `docs/ENHANCEMENT_ROADMAP.md`
+- `docs/PROGRESS.md`
+
+Phase 9 rules:
+
+- Figma is the presentation source of truth for the final visual pass; functional behavior remains sourced from the existing React app, API contracts, auth/RBAC, persisted data, and regression tests.
+- Do not replace the frontend wholesale. Apply the redesign incrementally by slice.
+- Preserve routes, deep links, unsaved-change guards, project selection, auth/OIDC, RBAC, lifecycle semantics, and existing API/runtime behavior.
+- 9-A is design foundations + App Shell only; do not pull page-by-page 9-B/9-C redesign into it.
+- Keep DM Sans for product UI and IBM Plex Mono for technical/code content unless the Figma source is explicitly revised.
+- Keep responsive drawer behavior and visible keyboard focus while visual styling changes.
+- Do not create Figma-only controls or product concepts that have no corresponding supported behavior.
+- Major visual slices require browser review with realistic data before merge.
+
 ### Data-source connector architecture
 
 Phase 4 establishes the reusable Data Source connector architecture. Read these before connector work:
