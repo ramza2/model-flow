@@ -476,6 +476,39 @@ bash "$ROOT/scripts/verify-worker-scale.sh"
 pass "worker scale-out"
 assert_services_healthy
 
+info "5c) Internal inference runtime network/auth boundary (Phase 8-F)"
+INFERENCE_RUNTIME_ID="$(modelflow_compose ps -q inference-runtime | head -n 1)"
+[[ -n "$INFERENCE_RUNTIME_ID" ]] ||
+  fail "inference-runtime container not found"
+INFERENCE_PUBLISHED_BINDINGS="$(
+  docker inspect -f '{{json (index .NetworkSettings.Ports "8080/tcp")}}' "$INFERENCE_RUNTIME_ID"
+)"
+[[ -z "$INFERENCE_PUBLISHED_BINDINGS" || "$INFERENCE_PUBLISHED_BINDINGS" == "null" ]] ||
+  fail "inference-runtime unexpectedly publishes host bindings: $INFERENCE_PUBLISHED_BINDINGS"
+modelflow_compose exec -T backend python - <<'PY'
+import httpx
+
+base = "http://inference-runtime:8080"
+with httpx.Client(base_url=base, timeout=5.0, trust_env=False) as client:
+    ready = client.get("/ready")
+    assert ready.status_code == 200, ready.text
+
+    missing = client.post(
+        "/v1/models/load-check",
+        json={"model_uri": "models:/phase8f-auth-boundary/1"},
+    )
+    assert missing.status_code == 401, missing.text
+
+    wrong = client.post(
+        "/v1/models/load-check",
+        headers={"X-ModelFlow-Inference-Token": "wrong-token-not-the-runtime-secret"},
+        json={"model_uri": "models:/phase8f-auth-boundary/1"},
+    )
+    assert wrong.status_code == 401, wrong.text
+    assert "Unauthorized" in wrong.text
+PY
+pass "inference runtime remains internal and rejects unauthenticated model calls"
+
 info "6) Frontend lint/typecheck/test (Node container)"
 docker run --rm \
   -v "$ROOT/frontend:/app" \
@@ -607,7 +640,99 @@ echo "$PRED" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert len(d["predictions"]) == 1'
 pass "endpoint deployment and realtime inference"
 
-info "8a) Service API Key external inference"
+info "8a) Multi-replica inference consistency (Phase 8-F)"
+MODEL_URI="$(modelflow_compose exec -T -e VERIFY_MODEL_VERSION_ID="$MVID" backend python - <<'PY'
+import os
+
+from app.db.models import ModelVersion
+from app.db.session import SessionLocal
+
+with SessionLocal() as db:
+    row = db.get(ModelVersion, int(os.environ["VERIFY_MODEL_VERSION_ID"]))
+    if row is None or not row.model_uri:
+        raise SystemExit("registered model URI not found")
+    print(row.model_uri)
+PY
+)"
+[[ -n "$MODEL_URI" ]] || fail "failed to resolve registered model URI"
+
+modelflow_compose up -d --no-deps --scale inference-runtime=2 inference-runtime
+for i in $(seq 1 60); do
+  mapfile -t RUNTIME_IDS < <(modelflow_compose ps -q inference-runtime)
+  if [[ "${#RUNTIME_IDS[@]}" -eq 2 ]]; then
+    ALL_RUNTIME_HEALTHY=1
+    for runtime_id in "${RUNTIME_IDS[@]}"; do
+      status="$(docker inspect -f '{{.State.Health.Status}}' "$runtime_id" 2>/dev/null || true)"
+      if [[ "$status" != "healthy" ]]; then
+        ALL_RUNTIME_HEALTHY=0
+        break
+      fi
+    done
+    if [[ "$ALL_RUNTIME_HEALTHY" -eq 1 ]]; then
+      break
+    fi
+  fi
+  sleep 2
+  if [[ "$i" -eq 60 ]]; then
+    fail "two inference-runtime replicas did not become healthy"
+  fi
+done
+
+RUNTIME_RESULTS=()
+for runtime_id in "${RUNTIME_IDS[@]}"; do
+  result="$(docker exec -i \
+    -e VERIFY_RUNTIME_TOKEN="$MODELFLOW_INFERENCE_SERVICE_TOKEN" \
+    -e VERIFY_MODEL_URI="$MODEL_URI" \
+    "$runtime_id" python - <<'PY'
+import json
+import os
+
+import httpx
+
+payload = {
+    "model_uri": os.environ["VERIFY_MODEL_URI"],
+    "instances": [{
+        "sepal length (cm)": 5.1,
+        "sepal width (cm)": 3.5,
+        "petal length (cm)": 1.4,
+        "petal width (cm)": 0.2,
+    }],
+}
+with httpx.Client(base_url="http://127.0.0.1:8080", timeout=30.0, trust_env=False) as client:
+    response = client.post(
+        "/v1/models/predict",
+        headers={"X-ModelFlow-Inference-Token": os.environ["VERIFY_RUNTIME_TOKEN"]},
+        json=payload,
+    )
+    response.raise_for_status()
+    body = response.json()
+    assert len(body.get("predictions") or []) == 1
+    print(json.dumps(body, sort_keys=True, separators=(",", ":")))
+PY
+)"
+  RUNTIME_RESULTS+=("$result")
+done
+[[ "${#RUNTIME_RESULTS[@]}" -eq 2 ]] || fail "expected results from two inference replicas"
+[[ "${RUNTIME_RESULTS[0]}" == "${RUNTIME_RESULTS[1]}" ]] ||
+  fail "inference replicas returned inconsistent predictions"
+
+modelflow_compose up -d --no-deps --scale inference-runtime=1 inference-runtime
+for i in $(seq 1 60); do
+  mapfile -t RUNTIME_IDS < <(modelflow_compose ps -q inference-runtime)
+  if [[ "${#RUNTIME_IDS[@]}" -eq 1 ]]; then
+    status="$(docker inspect -f '{{.State.Health.Status}}' "${RUNTIME_IDS[0]}" 2>/dev/null || true)"
+    if [[ "$status" == "healthy" ]]; then
+      break
+    fi
+  fi
+  sleep 2
+  if [[ "$i" -eq 60 ]]; then
+    fail "inference-runtime did not return to one healthy replica"
+  fi
+done
+pass "two inference replicas returned the same prediction and scale-down recovered"
+
+info "8b) Service API Key external inference"
 SVC_KEY_JSON=$(api -X POST "$API_BASE/projects/$PID/service-api-keys" \
   -H 'Content-Type: application/json' \
   -d "{\"name\":\"verify-erp-$RUN_TAG\",\"endpoint_id\":$EID}")
@@ -706,7 +831,7 @@ echo "$AUDIT" \
 echo "$AUDIT" > artifacts/verify/audit.json
 pass "drift monitoring and audit log listing"
 
-info "8b) Regression training"
+info "8c) Regression training"
 REG_DS=$(api -X POST "$API_BASE/projects/$PID/datasets" \
   -F "name=verify-regression-$RUN_TAG" \
   -F "file=@samples/regression.csv;type=text/csv")
@@ -731,7 +856,7 @@ echo "$REG_JOB_JSON" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert "rmse" in d["metrics"] or "r2" in d["metrics"]'
 pass "regression training (ridge)"
 
-info "8b2) Multi-output regression training"
+info "8c2) Multi-output regression training"
 MO_DS=$(api -X POST "$API_BASE/projects/$PID/datasets" \
   -F "name=verify-multi-output-$RUN_TAG" \
   -F "file=@samples/multi_output_regression.csv;type=text/csv")
@@ -756,7 +881,7 @@ echo "$MO_JOB_JSON" \
   | json_get 'import sys,json; d=json.load(sys.stdin); assert d["target_columns"] == ["power_usage", "cooling_load"]; assert "rmse" in d["metrics"]'
 pass "multi-output regression training (ridge)"
 
-info "8c) Visual pipeline publish + execute"
+info "8d) Visual pipeline publish + execute"
 PIPE_BODY=$(DVID="$DVID" docker run --rm -i -e DVID="$DVID" "$PYTHON_IMAGE" python - <<'PY'
 import json, os
 dvid = int(os.environ["DVID"])
@@ -808,7 +933,7 @@ echo "$PIPE_RUN_JSON" \
 echo "$PIPE_RUN_JSON" > artifacts/verify/pipeline-run.json
 pass "visual pipeline publish + execute"
 
-info "8d) PostgreSQL + MinIO backup/restore round-trip"
+info "8e) PostgreSQL + MinIO backup/restore round-trip"
 ROUNDTRIP_ENDPOINT_ID="$EID" MODELFLOW_ENV_FILE="$VERIFY_ENV_FILE" \
   ./scripts/verify-backup-roundtrip.sh \
   | tee artifacts/verify/backup-roundtrip.log
@@ -922,7 +1047,7 @@ run_npm_audit_with_retry() {
   return 2
 }
 
-info "8e) Dependency security gate (High/Critical)"
+info "8f) Dependency security gate (High/Critical)"
 set +e
 modelflow_compose exec -T backend sh -c \
   'python -m pip install -q pip-audit && pip-audit -r requirements.txt --progress-spinner off --format json' \

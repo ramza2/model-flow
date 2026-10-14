@@ -241,7 +241,13 @@ jobs:
   # ---------------------------------------------------------------------------
   verify:
     name: Full verification gate
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Phase 8-F is the one-time enterprise/scale closeout slice: run the same
+    # full-stack gate on its exact PR HEAD before merge. Normal PRs keep the
+    # conditional Fast Gate; main pushes/workflow_dispatch remain unchanged.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.title, 'Phase 8-F'))
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
