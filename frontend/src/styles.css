@@ -1921,6 +1921,92 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   box-shadow: 0 0 0 1px var(--accent);
 }
 
+/* Phase 9-C1 — Model Registry / Model Version governance */
+.registry-page,
+.model-version-page {
+  min-width: 0;
+}
+.registry-register-panel {
+  margin-bottom: 1rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+.registry-register-panel .panel-title {
+  margin-bottom: 0.85rem;
+}
+.registry-register-actions {
+  margin-top: 0.35rem;
+}
+.registry-toolbar {
+  align-items: flex-end;
+}
+.registry-catalog-table {
+  min-width: 0;
+}
+.governance-state-band {
+  gap: 0.55rem 0.75rem;
+}
+.governance-state-band.is-ready {
+  border-color: rgba(98, 216, 146, 0.35);
+  background: rgba(98, 216, 146, 0.06);
+}
+.governance-state-band.is-blocked {
+  border-color: rgba(230, 199, 95, 0.4);
+  background: rgba(230, 199, 95, 0.07);
+}
+.governance-secondary-actions {
+  margin-bottom: 1rem;
+}
+.governance-blocked-hint {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(230, 199, 95, 0.45);
+  border-radius: var(--radius-card);
+  background: rgba(230, 199, 95, 0.08);
+  color: var(--warn);
+}
+.governance-lifecycle-section .detail-section,
+.governance-metrics-section .detail-section,
+.governance-gates-section .detail-section {
+  background: var(--bg-elevated);
+}
+.governance-comment-panel {
+  display: grid;
+  gap: 0.4rem;
+  max-width: min(720px, 100%);
+  min-width: 0;
+}
+.governance-comment-title {
+  font-weight: 650;
+  font-size: 0.95rem;
+}
+.governance-comment-panel textarea {
+  min-width: 0;
+  width: 100%;
+  resize: vertical;
+}
+.governance-comment-value {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.governance-evidence-grid {
+  align-items: start;
+  min-width: 0;
+}
+.governance-evidence-grid .key-values dd,
+.governance-evidence-grid .mono,
+.model-version-page .mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.model-version-page .page-header h1 {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .preparation-preview-table-wrap th,
 .preparation-preview-table-wrap td {
   white-space: nowrap;
