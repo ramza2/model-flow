@@ -369,7 +369,8 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 - visual consistency pass after major product workflows have stabilized
 - preserve existing routes, API/RBAC/runtime semantics, and responsive behavior while visual treatment changes
 
-Figma source of truth: **ModelFlow Phase 9 — Final Visual Redesign**  
+Figma source of truth: **ModelFlow Phase 9 — Final Visual Redesign**
+
 https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u
 
 See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
