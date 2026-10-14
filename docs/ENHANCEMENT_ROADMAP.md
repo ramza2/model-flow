@@ -331,7 +331,7 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 
 ## Phase 8 — Enterprise / Scale
 
-**Status:** current. **8-A through 8-E are complete on `main`.** **8-F — Final Hardening / Scale Regression is current / Draft** (PR #86).
+**Status:** complete. **8-A through 8-F are complete on `main`.** Phase 8 closed with PR #86 at `2669c996872df30a905b3e298740e3ffd36bac5e`; post-merge CI #473 PASS.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -340,7 +340,7 @@ Phase 7 is complete on `main`. See [`phase-7-llm-pipeline-copilot.md`](./phase-7
 | **8-C** | Enterprise Identity — OIDC / SSO | **complete** (PR #81; `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic `024_oidc_enterprise_identity`) |
 | **8-D** | External Secret Management | **complete** (PR #84; `117f84d0ba4a3f89774f74683adebc13fae8aede`; post-merge CI #410 PASS) |
 | **8-E** | Kubernetes / HA Deployment | **complete** (PR #85; `a6f31e65527f1271410edd02bc1d094f1ddd57c7`; post-merge CI #461 PASS) |
-| **8-F** | Final Hardening / Scale Regression | **current / Draft** (PR #86) |
+| **8-F** | Final Hardening / Scale Regression | **complete** (PR #86; `2669c996872df30a905b3e298740e3ffd36bac5e`; post-merge CI #473 PASS) |
 
 Ordering is deliberate: first remove online/batch inference execution from the API/worker processes, then make worker execution safely multi-replica, then add enterprise identity and secret delivery, and only then deploy those separated stateless roles to Kubernetes/HA.
 
@@ -354,9 +354,24 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
+**Status:** current. **9-A — Design Foundation + App Shell is current** on branch `cursor/phase-9a-design-foundation-app-shell`.
+
+| Slice | Scope | Status |
+|-------|-------|--------|
+| **9-A** | Design Foundation + App Shell | **current** |
+| **9-B** | Data / Build / Pipeline Workflow Polish | planned |
+| **9-C** | Models / Serving / Operations Visual Polish | planned |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
+
 - Figma-driven product-wide final visual redesign
 - final typography, color, spacing, iconography, components, and charts
 - accessibility and responsive polish beyond the Phase 1.5 structural baseline
 - visual consistency pass after major product workflows have stabilized
+- preserve existing routes, API/RBAC/runtime semantics, and responsive behavior while visual treatment changes
 
-**Depends on:** stabilized IA and workflows from Phases 1.5–3 and later product depth.
+Figma source of truth: **ModelFlow Phase 9 — Final Visual Redesign**  
+https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u
+
+See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
+
+**Depends on:** completed Phase 8 and stabilized IA/workflows from Phases 1.5–3 and later product depth.
