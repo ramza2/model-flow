@@ -66,8 +66,8 @@ The final direction is:
 |---|---|---|
 | **9-A** | Design Foundation + App Shell | **complete** (merged via PR #87) |
 | **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
-| **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **current / Draft** |
-| **9-B2** | Training / Experiments Visual Polish | planned |
+| **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **complete** |
+| **9-B2** | Training / Experiments Visual Polish | **current / Draft** |
 | **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | planned |
 | **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | planned |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
@@ -98,7 +98,7 @@ Acceptance:
 
 **Status:** current. Split into reviewable visual-only slices. No workflow/API semantic changes.
 
-#### 9-B1 — Data Workflow Visual Polish (current)
+#### 9-B1 — Data Workflow Visual Polish (complete)
 
 Scope:
 
@@ -110,9 +110,17 @@ Scope:
 - do not invent Connected counts, filters, or Figma-only columns without API support
 - Preparation Builder remains out of scope (later 9-B3)
 
-#### 9-B2 — Training / Experiments Visual Polish
+#### 9-B2 — Training / Experiments Visual Polish (current)
 
-Target: Training Jobs and Experiments list/detail presentation only.
+Scope:
+
+- Training Jobs catalog (status filter, scan-friendly table hierarchy)
+- Training Job detail (status vs lifecycle actions, MetricSummary, setup/lineage, engineering logs)
+- Experiments catalog (search, multi-select, Compare selected CTA)
+- Experiment Run detail (summary / metrics / lineage / technical hierarchy)
+- Compare Runs (primary metrics first, then identity, then technical params)
+- JobCreate excluded from this slice
+- no workflow/API/polling/RBAC semantic changes
 
 #### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish
 

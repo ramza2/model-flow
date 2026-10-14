@@ -49,15 +49,21 @@ export default function RunDetail() {
     <div>
       <PageHeader
         title={displayName}
-        description="Tracked parameters, metrics, tags, and artifact lineage for this MLflow run."
-        actions={run ? <StatusBadge status={run.status} /> : undefined}
+        description="Summary, metrics, lineage, and technical identifiers for this tracked experiment run."
+        actions={
+          run ? (
+            <span className="header-status">
+              <StatusBadge status={run.status} />
+            </span>
+          ) : undefined
+        }
       />
       <ErrorNotice message={error} />
       {loading ? (
         <Loading label="Loading experiment run" />
       ) : !run ? null : (
         <>
-          <div className="row-actions toolbar-actions">
+          <div className="row-actions toolbar-actions lifecycle-toolbar">
             <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>
               ← Back to experiments
             </Link>
@@ -78,11 +84,13 @@ export default function RunDetail() {
               </div>
               <div>
                 <dt>Algorithm</dt>
-                <dd>{algorithm}</dd>
+                <dd className="catalog-secondary-text">{algorithm.replaceAll("_", " ")}</dd>
               </div>
               <div>
                 <dt>Problem type</dt>
-                <dd>{problemType || "—"}</dd>
+                <dd>
+                  {problemType ? <span className="type-chip">{problemType}</span> : "—"}
+                </dd>
               </div>
               <div data-testid="run-targets">
                 <dt>Targets</dt>
@@ -92,19 +100,32 @@ export default function RunDetail() {
               </div>
               <div>
                 <dt>Started</dt>
-                <dd>{run.start_time ? formatDate(new Date(run.start_time).toISOString()) : "—"}</dd>
+                <dd className="catalog-meta-date">
+                  {run.start_time ? formatDate(new Date(run.start_time).toISOString()) : "—"}
+                </dd>
               </div>
               <div>
                 <dt>Finished</dt>
-                <dd>{run.end_time ? formatDate(new Date(run.end_time).toISOString()) : "—"}</dd>
+                <dd className="catalog-meta-date">
+                  {run.end_time ? formatDate(new Date(run.end_time).toISOString()) : "—"}
+                </dd>
               </div>
             </dl>
+          </DetailSection>
+
+          <section className="metric-summary-panel" aria-label="Run metrics">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Performance</span>
+                <h2>Metrics</h2>
+              </div>
+            </div>
             <MetricSummary
               metrics={run.metrics}
               problemType={problemType || undefined}
               targetColumns={targets}
             />
-          </DetailSection>
+          </section>
 
           <EntityLineage
             items={[
@@ -132,9 +153,9 @@ export default function RunDetail() {
 
           <DetailSection eyebrow="Metrics" title="Logged metrics">
             {Object.keys(run.metrics).length === 0 ? (
-              <p>—</p>
+              <p className="catalog-empty-meta">—</p>
             ) : (
-              <div className="table-wrap">
+              <div className="table-wrap catalog-table metrics-table">
                 <table>
                   <thead>
                     <tr>
@@ -148,7 +169,7 @@ export default function RunDetail() {
                       <tr key={key}>
                         <td className="mono">{key}</td>
                         <td>{formatMetricLabel(key, targets)}</td>
-                        <td>{Number(value).toFixed(6)}</td>
+                        <td className="tabular-num">{Number(value).toFixed(6)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -157,17 +178,19 @@ export default function RunDetail() {
             )}
           </DetailSection>
 
-          <div className="two-column">
+          <div className="two-column detail-two-column">
             <DetailSection eyebrow="Parameters" title="Run parameters">
               <TechnicalBlock>
-                <pre className="json-view" data-testid="run-params-json">
-                  {JSON.stringify(run.params, null, 2)}
-                </pre>
+                <div className="engineering-surface">
+                  <pre className="json-view" data-testid="run-params-json">
+                    {JSON.stringify(run.params, null, 2)}
+                  </pre>
+                </div>
               </TechnicalBlock>
             </DetailSection>
             <DetailSection eyebrow="Tags" title="Run tags">
               {Object.keys(run.tags).length === 0 ? (
-                <p>—</p>
+                <p className="catalog-empty-meta">—</p>
               ) : (
                 <dl className="key-values">
                   {Object.entries(run.tags).map(([key, value]) => (

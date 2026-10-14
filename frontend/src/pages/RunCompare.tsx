@@ -76,7 +76,7 @@ export default function RunCompare() {
     <div>
       <PageHeader
         title="Compare runs"
-        description="Review model quality and configuration differences side by side."
+        description="Primary metrics first, then run context and technical parameters."
         actions={
           <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>
             ← Back to experiments
@@ -87,11 +87,11 @@ export default function RunCompare() {
       {!data && !error ? (
         <Loading label="Comparing runs" />
       ) : data ? (
-        <>
+        <div className="compare-board">
           <div className="compare-header" data-testid="compare-header">
-            <div />
+            <div className="compare-header-spacer" aria-hidden="true" />
             {data.runs.map((run) => (
-              <div key={run.run_id}>
+              <div key={run.run_id} className="compare-run-card">
                 <strong>{runDisplayName(run)}</strong>
                 <StatusBadge status={run.status} />
                 <small className="mono">{run.run_id}</small>
@@ -99,100 +99,114 @@ export default function RunCompare() {
             ))}
           </div>
 
-          <section className="panel">
-            <span className="eyebrow">Identity</span>
-            <h2>Run context</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Field</th>
-                  {data.runs.map((run) => (
-                    <th key={run.run_id}>{runDisplayName(run)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {identityRows(data.runs).map((row) => (
-                  <tr key={row.label}>
-                    <td>{row.label}</td>
-                    {row.values.map((value, index) => (
-                      <td key={`${row.label}-${data.runs[index].run_id}`}>
-                        {row.badge ? (
-                          <StatusBadge status={value} />
-                        ) : row.chips && value !== "—" ? (
-                          <TargetChips targets={value.split(", ").filter(Boolean)} />
-                        ) : (
-                          value
-                        )}
-                      </td>
+          <section className="panel compare-section compare-section-primary">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Performance</span>
+                <h2>Metrics</h2>
+              </div>
+            </div>
+            <div className="table-wrap catalog-table compare-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    {data.runs.map((run) => (
+                      <th key={run.run_id}>{runDisplayName(run)}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {primaryKeys.map((key, index) => (
+                    <tr key={key} className={index === 0 ? "compare-primary-metric-row" : undefined}>
+                      <td>
+                        <span>{formatMetricLabel(key, targetColumns)}</span>
+                        <div className="mono text-xs">{key}</div>
+                      </td>
+                      {data.runs.map((run) => (
+                        <td key={run.run_id} className="tabular-num mono">
+                          {run.metrics[key] === undefined ? "—" : Number(run.metrics[key]).toFixed(4)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
 
-          <div className="panel">
-            <span className="eyebrow">Performance</span>
-            <h2>Metrics</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>Metric</th>
-                  {data.runs.map((run) => (
-                    <th key={run.run_id}>{runDisplayName(run)}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {primaryKeys.map((key) => (
-                  <tr key={key}>
-                    <td>
-                      <span>{formatMetricLabel(key, targetColumns)}</span>
-                      <div className="mono text-xs">{key}</div>
-                    </td>
+          <section className="panel compare-section">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Identity</span>
+                <h2>Run context</h2>
+              </div>
+            </div>
+            <div className="table-wrap catalog-table compare-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Field</th>
                     {data.runs.map((run) => (
-                      <td key={run.run_id} className="mono">
-                        {run.metrics[key] === undefined ? "—" : Number(run.metrics[key]).toFixed(4)}
-                      </td>
+                      <th key={run.run_id}>{runDisplayName(run)}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {identityRows(data.runs).map((row) => (
+                    <tr key={row.label}>
+                      <td>{row.label}</td>
+                      {row.values.map((value, index) => (
+                        <td key={`${row.label}-${data.runs[index].run_id}`}>
+                          {row.badge ? (
+                            <StatusBadge status={value} />
+                          ) : row.chips && value !== "—" ? (
+                            <TargetChips targets={value.split(", ").filter(Boolean)} />
+                          ) : (
+                            value
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
 
-          <details className="panel advanced-json">
+          <details className="panel advanced-json compare-section">
             <summary>
               <span className="eyebrow">Configuration</span>
               <strong> Parameters (technical)</strong>
             </summary>
-            <table>
-              <thead>
-                <tr>
-                  <th>Param</th>
-                  {data.runs.map((run) => (
-                    <th key={run.run_id} className="mono">
-                      {run.run_id.slice(0, 8)}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.param_keys.map((key) => (
-                  <tr key={key}>
-                    <td className="mono">{key}</td>
+            <div className="table-wrap catalog-table compare-table engineering-surface">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Param</th>
                     {data.runs.map((run) => (
-                      <td key={run.run_id} className="mono">
-                        {run.params[key] ?? "—"}
-                      </td>
+                      <th key={run.run_id} className="mono">
+                        {run.run_id.slice(0, 8)}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {data.param_keys.map((key) => (
+                    <tr key={key}>
+                      <td className="mono">{key}</td>
+                      {data.runs.map((run) => (
+                        <td key={run.run_id} className="mono">
+                          {run.params[key] ?? "—"}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </details>
-        </>
+        </div>
       ) : null}
     </div>
   );
