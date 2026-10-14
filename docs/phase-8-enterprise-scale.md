@@ -34,7 +34,7 @@ Kubernetes or HA should not be layered on top of those couplings first. Phase 8 
 | **8-C** | Enterprise Identity — OIDC / SSO | **complete** (PR #81; `6325ecf418b6fdd85e675a471ce0c6c9bc6cea4e`; Alembic `024_oidc_enterprise_identity`) |
 | **8-D** | External Secret Management | **complete** (PR #84; `117f84d0ba4a3f89774f74683adebc13fae8aede`; post-merge CI #410 PASS) |
 | **8-E** | Kubernetes / HA Deployment | **complete** (PR #85; `a6f31e65527f1271410edd02bc1d094f1ddd57c7`; post-merge CI #461 PASS) |
-| **8-F** | Final Hardening / Scale Regression | **current / Draft** (PR #86) |
+| **8-F** | Final Hardening / Scale Regression | **complete** (PR #86; `2669c996872df30a905b3e298740e3ffd36bac5e`; post-merge CI #473 PASS) |
 
 ```text
 8-A Inference Runtime Separation
@@ -323,15 +323,15 @@ Close Phase 8 with failure, concurrency, security, and deployment regression rat
 
 Phase 8 is marked complete only after 8-F merges and post-merge `main` verification passes.
 
-### Draft verification notes
+### Completion verification notes
 
-- Draft PR #86 adds transient inference failure → next-request recovery coverage.
+- PR #86 added transient inference failure → next-request recovery coverage.
 - Full Compose verification proves `inference-runtime` is not host-published and rejects missing/wrong service tokens.
 - Helm render regression proves public Ingress targets frontend only and internal services are not NodePort/LoadBalancer by default.
 - Existing Phase 8 concurrency, OIDC, secret, migration, API, Compose, and browser suites are retained as the authoritative regression base.
 - Verification matrix: [`phase-8f-verification.md`](./phase-8f-verification.md).
-- PR #86 intentionally runs both PR Fast Gate and Full `./scripts/verify.sh` on the exact PR head.
+- PR #86 intentionally ran both PR Fast Gate and Full `./scripts/verify.sh` on the exact PR head; exact-head CI #472 PASS and post-merge main CI #473 PASS.
 
 ## Next implementation slice
 
-**8-A through 8-E are complete on `main`.** **8-F — Final Hardening / Scale Regression is the current Draft slice (PR #86).** Do not pull Phase 9 redesign scope into 8-F.
+**8-A through 8-F are complete on `main`.** Phase 8 closed with PR #86 at `2669c996872df30a905b3e298740e3ffd36bac5e` and post-merge CI #473 PASS. The next phase is **Phase 9 — Final Visual Redesign**.
