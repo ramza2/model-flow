@@ -806,10 +806,10 @@ export default function PreparationBuilder() {
           <div>
             <span className="eyebrow">Dataset preparation</span>
             <h1>{preparation.name}</h1>
-            <p className="muted">
-              {preparation.description || "Visual dataset preparation graph."} · v
-              {preparation.latest_version}
-              {dirty ? " · Unsaved changes" : ""}
+            <p className="muted builder-header-subcopy">
+              {preparation.description || "Visual dataset preparation graph."}
+              {" · "}
+              <span className="version-chip">v{preparation.latest_version}</span>
             </p>
           </div>
         </div>
@@ -836,7 +836,7 @@ export default function PreparationBuilder() {
             <>
               <button
                 type="button"
-                className="btn"
+                className="btn secondary"
                 data-testid="preparation-save-version"
                 disabled={busy !== ""}
                 onClick={() => void saveVersion()}
@@ -863,11 +863,14 @@ export default function PreparationBuilder() {
         </div>
       ) : null}
       <SuccessNotice message={success} />
-      {dirty && (
-        <p className="form-hint" data-testid="preparation-dirty-hint">
-          Save a version to keep your graph. Changes are not auto-saved.
-        </p>
-      )}
+      {dirty ? (
+        <div className="builder-state-band is-dirty" data-testid="preparation-dirty-hint" role="status">
+          <span className="builder-state-badge">Unsaved changes</span>
+          <span className="builder-state-copy">
+            Save a version to keep your graph. Changes are not auto-saved.
+          </span>
+        </div>
+      ) : null}
       {successRun && String(successRun.status).toLowerCase() === "succeeded" && (
         <div
           className="preparation-success-cta panel"
