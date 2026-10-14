@@ -43,65 +43,87 @@ export default function Jobs() {
     <div>
       <PageHeader
         title="Training Jobs"
-        description="Configure, track, and reproduce model training work."
+        description="Scan training work by status, then open a job for metrics, lineage, and logs."
         actions={canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>＋ New training job</Link> : undefined}
       />
       <ErrorNotice message={error} />
-      <div className="filter-bar">
-        <label>Status<select value={status} onChange={(event) => setStatus(event.target.value)}>
-          <option value="">All statuses</option><option value="pending">Pending</option><option value="running">Running</option><option value="succeeded">Succeeded</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option>
-        </select></label>
-        <span>{items.length} job{items.length === 1 ? "" : "s"}</span>
-      </div>
-      {loading ? <Loading label="Loading training jobs" /> : items.length === 0 ? (
-        <EmptyState
-          title={status ? `No ${status} jobs` : "No training jobs"}
-          description="Create a job from a versioned dataset to begin an experiment."
-          action={!status && canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>Create training job</Link> : undefined}
-        />
-      ) : (
-        <div className="panel table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Job</th>
-                <th>Status</th>
-                <th>Problem</th>
-                <th>Algorithm</th>
-                <th>Targets</th>
-                <th>Primary metric</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <Link to={`/projects/${projectId}/jobs/${job.id}`}>
-                      <strong>{job.name}</strong>
-                    </Link>
-                    <small className="table-subtitle">
-                      Dataset #{job.dataset_id}
-                      {job.description ? ` · ${job.description}` : ""}
-                    </small>
-                  </td>
-                  <td><StatusBadge status={job.status} /></td>
-                  <td>{job.problem_type}</td>
-                  <td>{job.algorithm.replaceAll("_", " ")}</td>
-                  <td><TargetChips targets={effectiveTargetColumns(job)} /></td>
-                  <td>
-                    {formatPrimaryMetric(job.metrics, {
-                      problemType: job.problem_type,
-                      targetColumns: effectiveTargetColumns(job),
-                    })}
-                  </td>
-                  <td>{formatDate(job.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <div className="workflow-catalog">
+        <div className="filter-bar catalog-filter">
+          <label>
+            Status
+            <select value={status} onChange={(event) => setStatus(event.target.value)}>
+              <option value="">All statuses</option>
+              <option value="pending">Pending</option>
+              <option value="running">Running</option>
+              <option value="succeeded">Succeeded</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          <div className="catalog-summary" aria-live="polite">
+            <span className="catalog-summary-count">{items.length}</span>
+            <span className="catalog-summary-label">
+              {items.length === 1 ? "job" : "jobs"}
+              {status ? ` · ${status}` : ""}
+            </span>
+          </div>
         </div>
-      )}
+        {loading ? (
+          <Loading label="Loading training jobs" />
+        ) : items.length === 0 ? (
+          <EmptyState
+            title={status ? `No ${status} jobs` : "No training jobs"}
+            description="Create a job from a versioned dataset to begin an experiment."
+            action={!status && canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>Create training job</Link> : undefined}
+          />
+        ) : (
+          <div className="panel table-wrap catalog-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Job</th>
+                  <th>Status</th>
+                  <th>Problem</th>
+                  <th>Algorithm</th>
+                  <th>Targets</th>
+                  <th>Primary metric</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((job) => (
+                  <tr key={job.id}>
+                    <td>
+                      <Link className="catalog-primary-link" to={`/projects/${projectId}/jobs/${job.id}`}>
+                        <strong>{job.name}</strong>
+                      </Link>
+                      <small className="table-subtitle">
+                        <span className="mono">Dataset #{job.dataset_id}</span>
+                        {job.description ? ` · ${job.description}` : ""}
+                      </small>
+                    </td>
+                    <td><StatusBadge status={job.status} /></td>
+                    <td>
+                      <span className="type-chip">{job.problem_type}</span>
+                    </td>
+                    <td className="catalog-secondary-text">
+                      {job.algorithm.replaceAll("_", " ")}
+                    </td>
+                    <td><TargetChips targets={effectiveTargetColumns(job)} /></td>
+                    <td className="tabular-num">
+                      {formatPrimaryMetric(job.metrics, {
+                        problemType: job.problem_type,
+                        targetColumns: effectiveTargetColumns(job),
+                      })}
+                    </td>
+                    <td className="catalog-meta-date">{formatDate(job.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

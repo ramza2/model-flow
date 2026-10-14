@@ -124,36 +124,42 @@ export default function JobDetail() {
     <div>
       <PageHeader
         title={job?.name ?? "Training job"}
-        description="Live status, metrics, configuration, and execution logs."
+        description="Live status, metrics, training setup, lineage, and execution logs."
         actions={
           <>
-            {job && <StatusBadge status={job.status} />}
-            {canTrain && job && ["failed", "cancelled"].includes(job.status) && (
-              <button className="btn" disabled={busy === "retry"} onClick={() => void action("retry")} data-testid="job-retry">
-                Retry
-              </button>
-            )}
-            {canRegister && job?.status === "succeeded" && job.model_uri && (
-              <button
-                className="btn"
-                type="button"
-                disabled={busy === "register"}
-                onClick={() => setShowRegister(true)}
-                data-testid="register-model"
-              >
-                {busy === "register" ? "Registering…" : "Register model"}
-              </button>
-            )}
-            {showRetrainAction && !(canRegister && job?.model_uri) && (
-              <button type="button" className="btn" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
-                Retrain
-              </button>
-            )}
-            {showContinueAction && !(canRegister && job?.model_uri) && (
-              <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
-                Continue training
-              </button>
-            )}
+            {job ? (
+              <span className="header-status" data-testid="job-header-status">
+                <StatusBadge status={job.status} />
+              </span>
+            ) : null}
+            <span className="header-lifecycle-actions">
+              {canTrain && job && ["failed", "cancelled"].includes(job.status) && (
+                <button className="btn" disabled={busy === "retry"} onClick={() => void action("retry")} data-testid="job-retry">
+                  Retry
+                </button>
+              )}
+              {canRegister && job?.status === "succeeded" && job.model_uri && (
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={busy === "register"}
+                  onClick={() => setShowRegister(true)}
+                  data-testid="register-model"
+                >
+                  {busy === "register" ? "Registering…" : "Register model"}
+                </button>
+              )}
+              {showRetrainAction && !(canRegister && job?.model_uri) && (
+                <button type="button" className="btn" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
+                  Retrain
+                </button>
+              )}
+              {showContinueAction && !(canRegister && job?.model_uri) && (
+                <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
+                  Continue training
+                </button>
+              )}
+            </span>
           </>
         }
       />
@@ -163,7 +169,7 @@ export default function JobDetail() {
         <Loading label="Loading training job" />
       ) : (
         <>
-          <div className="row-actions toolbar-actions">
+          <div className="row-actions toolbar-actions lifecycle-toolbar">
             {canTrain && active && (
               <button className="btn danger" disabled={busy === "cancel"} onClick={() => void action("cancel")}>
                 Stop job
@@ -215,13 +221,21 @@ export default function JobDetail() {
             </p>
           )}
 
-          <MetricSummary
-            metrics={job.metrics}
-            problemType={job.problem_type}
-            targetColumns={targets}
-          />
+          <section className="metric-summary-panel" aria-label="Training metrics">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Performance</span>
+                <h2>Metrics</h2>
+              </div>
+            </div>
+            <MetricSummary
+              metrics={job.metrics}
+              problemType={job.problem_type}
+              targetColumns={targets}
+            />
+          </section>
 
-          <div className="two-column">
+          <div className="two-column detail-two-column">
             <DetailSection eyebrow="Configuration" title="Training setup">
               {job.is_retrain && job.retrain_source_job_id && (
                 <p data-testid="job-retrain-lineage">
@@ -302,8 +316,12 @@ export default function JobDetail() {
                 <div>
                   <dt>Dataset</dt>
                   <dd>
-                    <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>Dataset #{job.dataset_id}</Link>
-                    {job.dataset_version_id ? ` · Version #${job.dataset_version_id}` : ""}
+                    <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>
+                      Dataset #{job.dataset_id}
+                    </Link>
+                    {job.dataset_version_id ? (
+                      <span className="mono"> · Version #{job.dataset_version_id}</span>
+                    ) : null}
                   </dd>
                 </div>
                 <div data-testid="job-data-split">
@@ -400,7 +418,9 @@ export default function JobDetail() {
           </div>
 
           <DetailSection eyebrow="Parameters" title="Hyperparameters">
-            <pre className="json-view">{JSON.stringify(job.hyperparameters, null, 2)}</pre>
+            <div className="engineering-surface">
+              <pre className="json-view">{JSON.stringify(job.hyperparameters, null, 2)}</pre>
+            </div>
           </DetailSection>
 
           <DetailSection
@@ -408,7 +428,9 @@ export default function JobDetail() {
             title="Logs"
             actions={active ? <span className="live-indicator"><span /> Live</span> : undefined}
           >
-            <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
+            <div className="engineering-surface">
+              <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
+            </div>
           </DetailSection>
 
           {showRegister && (
