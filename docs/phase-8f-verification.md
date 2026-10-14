@@ -9,7 +9,7 @@ not add new product features or pull Phase 9 visual redesign into Phase 8.
 - Phase 8-E exact-head CI: #460 PASS
 - Phase 8-E post-merge main CI: #461 PASS
 - Alembic head: `024_oidc_enterprise_identity`
-- Phase 8-F Draft PR: #86
+- Phase 8-F PR: #86 (merged)
 - No ModelFlow database migration is introduced by 8-F.
 
 ## Acceptance matrix
@@ -67,12 +67,12 @@ use `NodePort` or `LoadBalancer`.
 
 ## Completion rule
 
-Phase 8 is complete only when all of the following are true:
+Phase 8 completion evidence:
 
-1. PR #86 actual-diff final review has no blocker.
-2. Exact PR HEAD Fast Gate passes.
-3. Exact PR HEAD Full verification gate passes, including `./scripts/verify.sh`.
-4. PR #86 is squash-merged.
-5. Post-merge `main` Full verification gate passes.
+1. PR #86 actual-diff final review: PASS / no blocker.
+2. Exact PR HEAD Fast Gate: PASS.
+3. Exact PR HEAD Full verification gate including `./scripts/verify.sh`: CI #472 PASS.
+4. PR #86 squash-merged to `2669c996872df30a905b3e298740e3ffd36bac5e`.
+5. Post-merge `main` Full verification gate: CI #473 PASS.
 
-Only after step 5 should the roadmap move from Phase 8 to Phase 9.
+Phase 8 is complete and the roadmap advances to Phase 9.
