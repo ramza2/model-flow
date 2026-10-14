@@ -591,19 +591,174 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   color: var(--accent);
   font-weight: 800;
 }
-.project-card h2, .source-card h2 { margin: 1rem 0 .35rem; }
+.project-card h2 { margin: 1rem 0 .35rem; }
+.source-card h2 { margin: 0; }
 .project-card p, .source-card p { margin: 0; color: var(--muted); }
 .project-card footer { display: flex; justify-content: space-between; gap: .5rem; margin-top: auto; padding-top: 1rem; color: var(--muted); font-size: .72rem; text-transform: capitalize; }
-.source-card { min-height: 300px; }
-.source-card .row-actions { margin-top: auto; padding-top: 1rem; }
+.source-card { min-height: 300px; gap: 0.75rem; }
+.source-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.source-card-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.source-card-copy { min-width: 0; }
+.source-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.4rem;
+}
+.source-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.source-card-facts { margin-top: 0.15rem; }
+.source-card .row-actions {
+  margin-top: auto;
+  padding-top: 0.85rem;
+  flex-wrap: wrap;
+}
 .source-import-panel { margin-top: 1rem; }
 .source-import-status { margin-top: .75rem; display: grid; gap: .5rem; }
-.source-recent-jobs { margin-top: .75rem; }
+.source-recent-jobs { margin-top: .15rem; }
 .source-recent-jobs ul { list-style: none; margin: .35rem 0 0; padding: 0; display: grid; gap: .35rem; }
-.source-recent-jobs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .9rem; }
-.source-message { padding: .55rem; background: var(--bg-soft); border-radius: 6px; font-size: .8rem; }
-.source-message.ok { background: rgba(94,207,138,.1); border: 1px solid rgba(94,207,138,.3); color: #baf6cf; }
-.source-message.err { background: rgba(232,106,106,.12); border: 1px solid rgba(232,106,106,.35); color: #ffd4d4; }
+.source-recent-jobs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .84rem; }
+.source-job-id { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.source-job-query { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.source-message {
+  margin: 0;
+  padding: 0.55rem 0.65rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.source-message.ok {
+  background: var(--color-accent-soft);
+  border-color: rgba(69, 200, 174, 0.35);
+  color: var(--ok);
+}
+.source-message.err {
+  background: rgba(240, 120, 120, 0.12);
+  border-color: rgba(240, 120, 120, 0.35);
+  color: var(--danger);
+}
+
+/* Phase 9-B1 — shared data-workflow catalog treatment */
+.workflow-catalog {
+  display: grid;
+  gap: var(--space-4);
+}
+.workflow-create-panel { margin-bottom: var(--space-4); }
+.catalog-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.catalog-summary-count {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.catalog-summary-label { color: var(--muted); }
+.source-catalog-grid { align-items: stretch; }
+.type-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.type-chip.is-muted {
+  color: var(--muted);
+  opacity: 0.85;
+}
+.version-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg-soft);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.version-chip.is-neutral { color: var(--muted); font-weight: 500; }
+.catalog-table table { width: 100%; border-collapse: collapse; }
+.catalog-table th {
+  padding: 0.7rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.catalog-table td {
+  padding: 0.95rem 0.85rem;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.catalog-table tbody tr:hover { background: rgba(24, 34, 45, 0.55); }
+.catalog-primary-link {
+  color: var(--text);
+  text-decoration: none;
+}
+.catalog-primary-link:hover,
+.catalog-primary-link:focus-visible {
+  color: var(--accent);
+  text-decoration: none;
+}
+.catalog-primary-link strong {
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+.catalog-empty-meta { color: var(--muted); font-size: 0.84rem; }
+.catalog-meta-date {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.catalog-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  justify-content: flex-end;
+}
+.tabular-num {
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
 
 .activity-list { display: flex; flex-direction: column; }
 .activity-list > a, .activity-list > div, .activity-button {

@@ -61,18 +61,18 @@ export default function Datasets() {
     <div>
       <PageHeader
         title="Datasets"
-        description="Version, profile, validate, and split the data used by your models."
+        description="Scan versioned datasets, then open a detail view to inspect the latest immutable DatasetVersion."
         actions={canWrite ? <button className="btn" onClick={() => setShowUpload(!showUpload)}>↑ Upload dataset</button> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
       {showUpload && (
-        <form className="panel form" onSubmit={onUpload}>
+        <form className="panel form workflow-create-panel" onSubmit={onUpload}>
           <div className="panel-title"><div><span className="eyebrow">New version</span><h2>Upload data</h2></div></div>
           <label>
             File
             <input type="file" name="file" accept=".csv,.json,.parquet,text/csv,application/json" required data-testid="dataset-file" />
-            <small>CSV, JSON, or Parquet.</small>
+            <small>CSV, JSON, or Parquet. Upload creates a new immutable DatasetVersion.</small>
           </label>
           <label>Name (optional)<input name="name" placeholder="Defaults to the file name" /></label>
           <label>Description (optional)<input name="description" placeholder="Source and intended use" /></label>
@@ -91,23 +91,53 @@ export default function Datasets() {
           action={canWrite ? <button className="btn" onClick={() => setShowUpload(true)}>Upload dataset</button> : undefined}
         />
       ) : (
-        <div className="panel table-wrap">
-          <table>
-            <thead>
-              <tr><th>Dataset</th><th>Version</th><th>Rows</th><th>Columns</th><th>Updated</th></tr>
-            </thead>
-            <tbody>
-              {items.map((dataset) => (
-                <tr key={dataset.id}>
-                  <td><Link to={`/projects/${projectId}/datasets/${dataset.id}`}><strong>{dataset.name}</strong></Link><small className="table-subtitle">{dataset.description || "Uploaded dataset"}</small></td>
-                  <td>v{dataset.latest_version}</td>
-                  <td>{dataset.row_count.toLocaleString()}</td>
-                  <td>{dataset.column_count}</td>
-                  <td>{formatDate(dataset.latest_version_created_at ?? dataset.created_at)}</td>
+        <div className="workflow-catalog">
+          <div className="catalog-summary" aria-live="polite">
+            <span className="catalog-summary-count">{items.length}</span>
+            <span className="catalog-summary-label">
+              {items.length === 1 ? "dataset in this project" : "datasets in this project"}
+            </span>
+          </div>
+          <div className="panel table-wrap catalog-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Dataset</th>
+                  <th>Latest version</th>
+                  <th>Rows</th>
+                  <th>Columns</th>
+                  <th>Updated</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((dataset) => (
+                  <tr key={dataset.id}>
+                    <td>
+                      <Link
+                        className="catalog-primary-link"
+                        to={`/projects/${projectId}/datasets/${dataset.id}`}
+                      >
+                        <strong>{dataset.name}</strong>
+                      </Link>
+                      <small className="table-subtitle">
+                        {dataset.description || "Uploaded dataset"}
+                      </small>
+                    </td>
+                    <td>
+                      <span className="version-chip" title="Latest immutable DatasetVersion">
+                        v{dataset.latest_version}
+                      </span>
+                    </td>
+                    <td className="tabular-num">{dataset.row_count.toLocaleString()}</td>
+                    <td className="tabular-num">{dataset.column_count}</td>
+                    <td className="catalog-meta-date">
+                      {formatDate(dataset.latest_version_created_at ?? dataset.created_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

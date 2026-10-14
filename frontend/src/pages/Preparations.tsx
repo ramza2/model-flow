@@ -98,7 +98,7 @@ export default function Preparations() {
     <div>
       <PageHeader
         title="Preparations"
-        description="Combine and inspect datasets before training."
+        description="Scan preparation graphs, then open a builder to combine datasets into an immutable output version."
         actions={
           canWrite ? (
             <button
@@ -115,7 +115,7 @@ export default function Preparations() {
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
       {canWrite && showCreate && (
-        <form className="panel form" onSubmit={onCreate} data-testid="preparation-create-form">
+        <form className="panel form workflow-create-panel" onSubmit={onCreate} data-testid="preparation-create-form">
           <div className="panel-title">
             <div>
               <span className="eyebrow">New preparation</span>
@@ -168,53 +168,78 @@ export default function Preparations() {
           }
         />
       ) : (
-        <div className="panel table-wrap">
-          <table data-testid="preparations-table">
-            <thead>
-              <tr>
-                <th>Preparation</th>
-                <th>Latest version</th>
-                <th>Output dataset</th>
-                <th>Created</th>
-                <th>
-                  <span className="sr-only">Action</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((preparation) => (
-                <tr key={preparation.id} data-testid={`preparation-row-${preparation.id}`}>
-                  <td>
-                    <Link to={`/projects/${projectId}/preparations/${preparation.id}`}>
-                      <strong>{preparation.name}</strong>
-                    </Link>
-                    <small className="table-subtitle">
-                      {preparation.description || "Dataset preparation"}
-                    </small>
-                  </td>
-                  <td>v{preparation.latest_version}</td>
-                  <td>
-                    {preparation.output_dataset_id == null
-                      ? "Not configured"
-                      : `#${preparation.output_dataset_id}`}
-                  </td>
-                  <td>{formatDate(preparation.created_at)}</td>
-                  <td>
-                    {canWrite ? (
-                      <button
-                        type="button"
-                        className="btn link danger-text"
-                        data-testid={`preparation-delete-${preparation.id}`}
-                        onClick={() => void onDelete(preparation)}
-                      >
-                        Delete
-                      </button>
-                    ) : null}
-                  </td>
+        <div className="workflow-catalog">
+          <div className="catalog-summary" aria-live="polite">
+            <span className="catalog-summary-count">{items.length}</span>
+            <span className="catalog-summary-label">
+              {items.length === 1 ? "preparation in this project" : "preparations in this project"}
+            </span>
+          </div>
+          <div className="panel table-wrap catalog-table">
+            <table data-testid="preparations-table">
+              <thead>
+                <tr>
+                  <th>Preparation</th>
+                  <th>Latest version</th>
+                  <th>Output dataset</th>
+                  <th>Created</th>
+                  <th>
+                    <span className="sr-only">Action</span>
+                  </th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((preparation) => (
+                  <tr key={preparation.id} data-testid={`preparation-row-${preparation.id}`}>
+                    <td>
+                      <Link
+                        className="catalog-primary-link"
+                        to={`/projects/${projectId}/preparations/${preparation.id}`}
+                      >
+                        <strong>{preparation.name}</strong>
+                      </Link>
+                      <small className="table-subtitle">
+                        {preparation.description || "Dataset preparation"}
+                      </small>
+                    </td>
+                    <td>
+                      <span className="version-chip" title="Latest preparation graph version">
+                        v{preparation.latest_version}
+                      </span>
+                    </td>
+                    <td>
+                      {preparation.output_dataset_id == null ? (
+                        <span className="catalog-empty-meta">Not configured</span>
+                      ) : (
+                        <span className="version-chip is-neutral" title="Pinned output dataset">
+                          #{preparation.output_dataset_id}
+                        </span>
+                      )}
+                    </td>
+                    <td className="catalog-meta-date">{formatDate(preparation.created_at)}</td>
+                    <td className="catalog-row-actions">
+                      <Link
+                        className="btn link"
+                        to={`/projects/${projectId}/preparations/${preparation.id}`}
+                      >
+                        Open
+                      </Link>
+                      {canWrite ? (
+                        <button
+                          type="button"
+                          className="btn link danger-text"
+                          data-testid={`preparation-delete-${preparation.id}`}
+                          onClick={() => void onDelete(preparation)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

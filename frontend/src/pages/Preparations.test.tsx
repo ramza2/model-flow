@@ -89,7 +89,7 @@ describe("Preparations list", () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Preparations" })).toBeInTheDocument();
     expect(
-      screen.getByText("Combine and inspect datasets before training."),
+      screen.getByText(/Scan preparation graphs/i),
     ).toBeInTheDocument();
     const table = await screen.findByTestId("preparations-table");
     expect(within(table).getByText("Join customers")).toBeInTheDocument();
