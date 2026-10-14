@@ -350,7 +350,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   display: none;
 }
 .project-picker label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
-..project-picker select {
+.project-picker select {
   width: 100%;
   background: var(--bg-soft);
   border-color: var(--border);
@@ -399,6 +399,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   cursor: pointer;
 }
 .user-menu summary::-webkit-details-marker { display: none; }
+.user-menu summary:hover { border-color: var(--border); background: var(--bg-raised); }
 .avatar {
   display: grid;
   place-items: center;
@@ -511,7 +512,11 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   margin-bottom: 1.75rem;
 }
 .page-header-copy { min-width: 0; flex: 1; }
-.page-header h1 { font-size: 1.85rem; overflow-wrap: anywhere; }
+.page-header h1 {
+  font-size: 1.875rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
 .page-header .lead { margin-bottom: 0; max-width: 720px; }
 .page-header-actions, .page-header > .row-actions { justify-content: flex-end; flex-shrink: 0; }
 .eyebrow { display: block; color: var(--accent); font-size: .65rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
@@ -527,7 +532,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .panel-title:first-child h2 { margin-top: .15rem; }
 
 .stats-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 1.25rem; }
-.stat { min-height: 108px; position: relative; overflow: hidden; }
+.stat { min-height: 128px; position: relative; overflow: hidden; }
 .stat::after {
   content: "";
   position: absolute;
