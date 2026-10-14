@@ -273,7 +273,7 @@ export function Pipelines() {
   }
 
   return (
-    <div>
+    <div className="page-stack pipeline-catalog-page">
       <PageHeader
         title="Pipelines"
         description="Build repeatable data, training, approval, and deployment workflows."
@@ -287,7 +287,7 @@ export function Pipelines() {
       />
       <ErrorNotice message={error} />
       {canWrite && showCreate && (
-        <form className="panel inline-form" onSubmit={create} data-testid="pipeline-create-form">
+        <form className="panel inline-form pipeline-create-form" onSubmit={create} data-testid="pipeline-create-form">
           <label>
             Pipeline name
             <input
@@ -321,7 +321,7 @@ export function Pipelines() {
           }
         />
       ) : (
-        <div className="panel table-wrap">
+        <div className="panel table-wrap catalog-table pipeline-catalog-table">
           <table>
             <thead>
               <tr>
@@ -337,7 +337,10 @@ export function Pipelines() {
               {pipelines.map((pipeline) => (
                 <tr key={pipeline.id}>
                   <td>
-                    <Link to={`/projects/${projectId}/pipelines/${pipeline.id}`}>
+                    <Link
+                      className="catalog-primary-link"
+                      to={`/projects/${projectId}/pipelines/${pipeline.id}`}
+                    >
                       <strong>{pipeline.name}</strong>
                     </Link>
                     <small className="table-subtitle">
@@ -347,31 +350,39 @@ export function Pipelines() {
                   <td>
                     <StatusBadge status={pipeline.status} />
                   </td>
-                  <td>v{pipeline.latest_version}</td>
-                  <td>{pipeline.is_template ? "Template" : "Project pipeline"}</td>
-                  <td>{formatDate(pipeline.created_at)}</td>
+                  <td>
+                    <span className="version-chip">v{pipeline.latest_version}</span>
+                  </td>
+                  <td>
+                    <span className={`type-chip${pipeline.is_template ? "" : " is-muted"}`}>
+                      {pipeline.is_template ? "Template" : "Project pipeline"}
+                    </span>
+                  </td>
+                  <td className="catalog-meta-date">{formatDate(pipeline.created_at)}</td>
                   <td className="align-right">
-                    {canWrite && pipeline.status === "published" && (
-                      <Link
-                        className="btn link"
-                        data-testid={`pipeline-schedule-${pipeline.id}`}
-                        to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
-                      >
-                        Schedule
-                      </Link>
-                    )}
-                    {canWrite && pipeline.status !== "published" && (
-                      <button
-                        type="button"
-                        className="btn link"
-                        data-testid={`pipeline-schedule-${pipeline.id}`}
-                        disabled
-                        title="Publish this pipeline before scheduling."
-                        aria-label="Schedule unavailable. Publish this pipeline before scheduling."
-                      >
-                        Schedule
-                      </button>
-                    )}
+                    <div className="catalog-row-actions">
+                      {canWrite && pipeline.status === "published" && (
+                        <Link
+                          className="btn link"
+                          data-testid={`pipeline-schedule-${pipeline.id}`}
+                          to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
+                        >
+                          Schedule
+                        </Link>
+                      )}
+                      {canWrite && pipeline.status !== "published" && (
+                        <button
+                          type="button"
+                          className="btn link pipeline-schedule-disabled"
+                          data-testid={`pipeline-schedule-${pipeline.id}`}
+                          disabled
+                          title="Publish this pipeline before scheduling."
+                          aria-label="Schedule unavailable. Publish this pipeline before scheduling."
+                        >
+                          Schedule
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -1842,17 +1853,15 @@ export function PipelineRunDetail() {
   );
 
   return (
-    <div>
+    <div className="page-stack pipeline-run-page">
       <PageHeader
         title={`Pipeline run #${runId}`}
-        description={
-          version
-            ? `Historical graph · pipeline version v${version.version}`
-            : "Step-level execution state and logs."
-        }
+        description="Step-level execution state against the immutable historical pipeline version."
         actions={
           <>
-            <StatusBadge status={run?.status} />
+            <span className="header-status">
+              <StatusBadge status={run?.status} />
+            </span>
             {canWrite && run?.status === "failed" && (
               <button
                 className="btn"
@@ -1866,6 +1875,15 @@ export function PipelineRunDetail() {
           </>
         }
       />
+      {version ? (
+        <div className="builder-state-band pipeline-run-version-band" role="status">
+          <span className="builder-state-copy">Historical graph</span>
+          <span className="version-chip" data-testid="pipeline-run-version-chip">
+            v{version.version}
+          </span>
+          <span className="muted mono">version id #{version.id}</span>
+        </div>
+      ) : null}
       <ErrorNotice message={error || versionError} />
       {!run ? (
         <Loading label="Loading pipeline run" />
@@ -1877,7 +1895,7 @@ export function PipelineRunDetail() {
             </p>
           )}
           {run.status === "failed" && run.error_message && (
-            <div className="pipeline-validation-errors">
+            <div className="pipeline-validation-errors pipeline-run-failed-banner">
               <strong>Run failed</strong>
               <p>{run.error_message}</p>
             </div>
@@ -1892,7 +1910,7 @@ export function PipelineRunDetail() {
                 const attempt = state.attempt ?? 1;
                 return (
                   <article
-                    className="source-card pipeline-run-step"
+                    className={`source-card pipeline-run-step status-${state.status || "pending"}`}
                     key={id}
                     data-testid={`pipeline-run-step-${id}`}
                   >
@@ -1904,7 +1922,7 @@ export function PipelineRunDetail() {
                     <p className="pipeline-run-attempt" data-testid={`pipeline-run-attempt-${id}`}>
                       Attempt {attempt}
                     </p>
-                    <small className="muted pipeline-node-id">Node id: {id}</small>
+                    <small className="muted pipeline-node-id mono">Node id: {id}</small>
                     {state.branch && <p className="muted">Selected branch: {state.branch}</p>}
                     {state.reason && <p className="muted">{state.reason}</p>}
                     {state.error && <p className="error">{state.error}</p>}
@@ -1919,7 +1937,7 @@ export function PipelineRunDetail() {
               )}
             </div>
           ) : (
-            <div className="pipeline-run-layout">
+            <div className="pipeline-run-layout pipeline-run-workspace">
               <div
                 className="pipeline-canvas"
                 aria-label="Pipeline run graph"
@@ -1942,41 +1960,68 @@ export function PipelineRunDetail() {
               </div>
               <aside className="pipeline-run-inspector panel">
                 {selectedId ? (
-                  <div data-testid={`pipeline-run-step-${selectedId}`}>
+                  <div
+                    className="pipeline-run-inspector-body"
+                    data-testid={`pipeline-run-step-${selectedId}`}
+                  >
                     <span className="eyebrow">
                       {selectedType ? labelForType(selectedType) : "Step"}
                     </span>
                     <h2>{selectedLabel}</h2>
-                    <StatusBadge status={selectedState?.status || "pending"} />
-                    <p
-                      className="pipeline-run-attempt"
-                      data-testid={`pipeline-run-attempt-${selectedId}`}
-                    >
-                      Attempt {selectedAttempt}
-                    </p>
-                    <small className="muted pipeline-node-id">Node id: {selectedId}</small>
-                    {selectedState?.branch && (
-                      <p className="muted">Selected branch: {selectedState.branch}</p>
+                    <div className="pipeline-run-inspector-status">
+                      <StatusBadge status={selectedState?.status || "pending"} />
+                      <p
+                        className="pipeline-run-attempt"
+                        data-testid={`pipeline-run-attempt-${selectedId}`}
+                      >
+                        Attempt {selectedAttempt}
+                      </p>
+                    </div>
+                    <dl className="pipeline-run-inspector-meta">
+                      <div>
+                        <dt>Node id</dt>
+                        <dd className="mono pipeline-node-id">{selectedId}</dd>
+                      </div>
+                      {selectedState?.branch ? (
+                        <div>
+                          <dt>Branch</dt>
+                          <dd>{selectedState.branch}</dd>
+                        </div>
+                      ) : null}
+                      {selectedState?.started_at ? (
+                        <div>
+                          <dt>Started</dt>
+                          <dd className="catalog-meta-date">{formatDate(selectedState.started_at)}</dd>
+                        </div>
+                      ) : null}
+                      {selectedState?.finished_at ? (
+                        <div>
+                          <dt>Finished</dt>
+                          <dd className="catalog-meta-date">{formatDate(selectedState.finished_at)}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                    {selectedState?.reason && (
+                      <p className="muted pipeline-run-reason">{selectedState.reason}</p>
                     )}
-                    {selectedState?.started_at && (
-                      <p className="muted">Started: {formatDate(selectedState.started_at)}</p>
+                    {selectedState?.error && (
+                      <p className="error pipeline-run-error">{selectedState.error}</p>
                     )}
-                    {selectedState?.finished_at && (
-                      <p className="muted">Finished: {formatDate(selectedState.finished_at)}</p>
-                    )}
-                    {selectedState?.reason && <p className="muted">{selectedState.reason}</p>}
-                    {selectedState?.error && <p className="error">{selectedState.error}</p>}
                     {selectedArtifact != null && (
-                      <>
+                      <div className="pipeline-run-artifact-block">
                         <span className="eyebrow">Artifacts</span>
-                        <pre className="code-block">{artifactSnippet(selectedArtifact)}</pre>
-                      </>
+                        <pre className="code-block engineering-surface">
+                          {artifactSnippet(selectedArtifact)}
+                        </pre>
+                      </div>
                     )}
                     {selectedState?.output != null && (
-                      <>
+                      <div className="pipeline-run-artifact-block">
                         <span className="eyebrow">Output</span>
-                        <pre className="code-block">{artifactSnippet(selectedState.output)}</pre>
-                      </>
+                        <pre className="code-block engineering-surface">
+                          {artifactSnippet(selectedState.output)}
+                        </pre>
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -1986,10 +2031,10 @@ export function PipelineRunDetail() {
             </div>
           )}
 
-          <section className="panel">
+          <section className="panel pipeline-run-logs-section">
             <span className="eyebrow">Execution</span>
             <h2>Logs</h2>
-            <div className="logs">{run.logs || "Waiting for execution…"}</div>
+            <div className="logs engineering-surface">{run.logs || "Waiting for execution…"}</div>
           </section>
         </>
       )}
