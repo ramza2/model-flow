@@ -68,8 +68,8 @@ The final direction is:
 | **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
 | **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **complete** |
 | **9-B2** | Training / Experiments Visual Polish | **complete** |
-| **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **current / Draft** |
-| **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | planned |
+| **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **complete** |
+| **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **current / Draft** |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 
@@ -122,7 +122,7 @@ Scope:
 - JobCreate excluded from this slice
 - no workflow/API/polling/RBAC semantic changes
 
-#### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish (current)
+#### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish (complete)
 
 Scope:
 
@@ -137,9 +137,20 @@ Scope:
 - reuse Phase 9-A / 9-B1 / 9-B2 tokens; no new color system
 - no graph schema, React Flow behavior, API, or runtime semantic changes
 
-#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish (planned)
+#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish (current)
 
-Target: Feedback surfaces, pipeline catalog, run graph presentation.
+Scope:
+
+- Feedback Review visual polish (compact review toolbar, selection actions,
+  queue table hierarchy, locked/materialized row treatment, HISTORY section)
+- Pipeline Catalog visual polish (catalog density aligned with 9-B1/B2,
+  name/description hierarchy, version-chip, schedule published/unpublished clarity)
+- Pipeline Run Detail visual polish (run identity / historical version / status,
+  execution workspace graph + inspector hierarchy, run-status node states,
+  EXECUTION logs section, fallback card hierarchy)
+- Builder / Copilot excluded (completed in 9-B3)
+- no new aggregate count cards or dashboard metrics without API support
+- workflow / API / polling / historical-version / rerun-from-failed semantics unchanged
 
 ### 9-C — Models / Serving / Operations Visual Polish
 

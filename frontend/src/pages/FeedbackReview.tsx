@@ -209,73 +209,90 @@ export default function FeedbackReview() {
         description="Approve ground truth before it can become an immutable training DatasetVersion. Closed-loop automation still stops at CANDIDATE."
       />
 
-      <div className="row-actions" data-testid="feedback-filters">
-        <label>
-          Review status
-          <select
-            value={statusFilter}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusFilter(value);
-              setFeedbackSkip(0);
-              syncUrl({ review_status: value, skip: 0 });
-            }}
-            data-testid="feedback-status-filter"
-          >
-            <option value="">All</option>
-            <option value="PENDING">PENDING</option>
-            <option value="APPROVED">APPROVED</option>
-            <option value="REJECTED">REJECTED</option>
-          </select>
-        </label>
-        <label>
-          Endpoint ID
-          <input
-            value={endpointFilter}
-            onChange={(event) => {
-              const value = event.target.value;
-              setEndpointFilter(value);
-              setFeedbackSkip(0);
-              syncUrl({ endpoint_id: value, skip: 0 });
-            }}
-            placeholder="optional"
-            data-testid="feedback-endpoint-filter"
-          />
-        </label>
-        <label>
-          Materializable
-          <select
-            value={materializableFilter}
-            onChange={(event) => {
-              const value = event.target.value;
-              setMaterializableFilter(value);
-              setFeedbackSkip(0);
-              syncUrl({ materializable: value, skip: 0 });
-            }}
-            data-testid="feedback-materializable-filter"
-          >
-            <option value="">All</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
-          </select>
-        </label>
+      <div className="feedback-review-toolbar filter-bar catalog-filter" data-testid="feedback-filters">
+        <div className="feedback-filter-controls">
+          <label>
+            Review status
+            <select
+              value={statusFilter}
+              onChange={(event) => {
+                const value = event.target.value;
+                setStatusFilter(value);
+                setFeedbackSkip(0);
+                syncUrl({ review_status: value, skip: 0 });
+              }}
+              data-testid="feedback-status-filter"
+            >
+              <option value="">All</option>
+              <option value="PENDING">PENDING</option>
+              <option value="APPROVED">APPROVED</option>
+              <option value="REJECTED">REJECTED</option>
+            </select>
+          </label>
+          <label>
+            Endpoint ID
+            <input
+              value={endpointFilter}
+              onChange={(event) => {
+                const value = event.target.value;
+                setEndpointFilter(value);
+                setFeedbackSkip(0);
+                syncUrl({ endpoint_id: value, skip: 0 });
+              }}
+              placeholder="optional"
+              data-testid="feedback-endpoint-filter"
+            />
+          </label>
+          <label>
+            Materializable
+            <select
+              value={materializableFilter}
+              onChange={(event) => {
+                const value = event.target.value;
+                setMaterializableFilter(value);
+                setFeedbackSkip(0);
+                syncUrl({ materializable: value, skip: 0 });
+              }}
+              data-testid="feedback-materializable-filter"
+            >
+              <option value="">All</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </label>
+        </div>
         {canWrite ? (
-          <>
-            <button className="btn" disabled={busy || selectedIds.length === 0} onClick={() => review("approved")} data-testid="feedback-approve">
+          <div className="feedback-selection-actions" data-testid="feedback-selection-actions">
+            <span className="feedback-selection-meta muted">
+              {selectedIds.length === 0
+                ? "Select rows to review"
+                : `${selectedIds.length} selected`}
+            </span>
+            <button
+              className="btn"
+              disabled={busy || selectedIds.length === 0}
+              onClick={() => review("approved")}
+              data-testid="feedback-approve"
+            >
               Approve
             </button>
-            <button className="btn btn-secondary" disabled={busy || selectedIds.length === 0} onClick={() => review("rejected")} data-testid="feedback-reject">
+            <button
+              className="btn secondary"
+              disabled={busy || selectedIds.length === 0}
+              onClick={() => review("rejected")}
+              data-testid="feedback-reject"
+            >
               Reject
             </button>
             <button
-              className="btn"
+              className="btn secondary"
               disabled={busy || materializableSelected.length === 0}
               onClick={materialize}
               data-testid="feedback-materialize"
             >
               Create training DatasetVersion
             </button>
-          </>
+          </div>
         ) : null}
       </div>
 
@@ -290,110 +307,139 @@ export default function FeedbackReview() {
       ) : null}
 
       {!loading && items.length > 0 ? (
-        <div className="table-wrap" data-testid="feedback-queue">
-          <table>
-            <thead>
-              <tr>
-                {canWrite ? <th>Select</th> : null}
-                <th>Predicted at</th>
-                <th>Endpoint</th>
-                <th>Model</th>
-                <th>Prediction</th>
-                <th>Ground truth</th>
-                <th>Review</th>
-                <th>Input snapshot</th>
-                <th>Materialization</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => {
-                const locked = Boolean(item.materialized_dataset_version_id || item.materialization_run_id);
-                return (
-                  <tr key={item.id} data-testid={`feedback-row-${item.id}`}>
-                    {canWrite ? (
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={Boolean(selected[item.id])}
-                          disabled={locked}
-                          onChange={(event) =>
-                            setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
-                          }
-                          data-testid={`feedback-select-${item.id}`}
-                        />
-                      </td>
-                    ) : null}
-                    <td>{item.predicted_at ? new Date(item.predicted_at).toLocaleString() : "—"}</td>
-                    <td>{item.endpoint_name || (item.endpoint_id != null ? `#${item.endpoint_id}` : "—")}</td>
-                    <td>
-                      {item.model_name
-                        ? `${item.model_name}${item.model_version ? ` v${item.model_version}` : ""}`
-                        : item.model_version_id != null
-                          ? `#${item.model_version_id}`
-                          : "—"}
-                    </td>
-                    <td>{stringifyValue(item.predicted_value)}</td>
-                    <td>{stringifyValue(item.actual_value)}</td>
-                    <td><StatusBadge status={item.review_status} /></td>
-                    <td data-testid={`feedback-snapshot-${item.id}`}>
-                      {item.input_snapshot_available ? "Available" : "Not materializable — input snapshot unavailable"}
-                    </td>
-                    <td>
-                      {item.materialized_dataset_version_id
-                        ? `DatasetVersion #${item.materialized_dataset_version_id}`
-                        : item.materialization_run_id
-                          ? `Reserved run #${item.materialization_run_id}`
-                          : item.materializable
-                            ? "Ready"
-                            : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          <div className="row-actions" data-testid="feedback-pagination">
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={feedbackSkip <= 0 || loading}
-              onClick={() => {
-                const next = Math.max(0, feedbackSkip - PAGE_SIZE);
-                setFeedbackSkip(next);
-                syncUrl({ skip: next });
-              }}
-              data-testid="feedback-prev"
-            >
-              Previous
-            </button>
-            <span className="muted">
-              {itemTotal === 0
-                ? "0 rows"
-                : `${feedbackSkip + 1}–${Math.min(feedbackSkip + PAGE_SIZE, itemTotal)} of ${itemTotal}`}
-            </span>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              disabled={feedbackSkip + PAGE_SIZE >= itemTotal || loading}
-              onClick={() => {
-                const next = feedbackSkip + PAGE_SIZE;
-                setFeedbackSkip(next);
-                syncUrl({ skip: next });
-              }}
-              data-testid="feedback-next"
-            >
-              Next
-            </button>
+        <section className="feedback-queue-section">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow">Queue</span>
+              <h2>Feedback queue</h2>
+            </div>
           </div>
-        </div>
+          <div className="panel table-wrap catalog-table" data-testid="feedback-queue">
+            <table>
+              <thead>
+                <tr>
+                  {canWrite ? <th className="catalog-select-col">Select</th> : null}
+                  <th>Predicted at</th>
+                  <th>Endpoint / model</th>
+                  <th>Prediction</th>
+                  <th>Ground truth</th>
+                  <th>Review</th>
+                  <th>Input snapshot</th>
+                  <th>Materialization</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item) => {
+                  const locked = Boolean(item.materialized_dataset_version_id || item.materialization_run_id);
+                  const endpointLabel =
+                    item.endpoint_name || (item.endpoint_id != null ? `#${item.endpoint_id}` : "—");
+                  const modelLabel = item.model_name
+                    ? `${item.model_name}${item.model_version ? ` v${item.model_version}` : ""}`
+                    : item.model_version_id != null
+                      ? `#${item.model_version_id}`
+                      : "—";
+                  return (
+                    <tr
+                      key={item.id}
+                      className={locked ? "feedback-row is-locked" : "feedback-row"}
+                      data-testid={`feedback-row-${item.id}`}
+                    >
+                      {canWrite ? (
+                        <td className="catalog-select-col">
+                          <label className="catalog-select">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selected[item.id])}
+                              disabled={locked}
+                              onChange={(event) =>
+                                setSelected((prev) => ({ ...prev, [item.id]: event.target.checked }))
+                              }
+                              data-testid={`feedback-select-${item.id}`}
+                            />
+                          </label>
+                        </td>
+                      ) : null}
+                      <td className="catalog-meta-date">
+                        {item.predicted_at ? new Date(item.predicted_at).toLocaleString() : "—"}
+                      </td>
+                      <td>
+                        <strong className="feedback-endpoint-label">{endpointLabel}</strong>
+                        <small className="table-subtitle mono">{modelLabel}</small>
+                      </td>
+                      <td className="mono feedback-value-cell">{stringifyValue(item.predicted_value)}</td>
+                      <td className="mono feedback-value-cell">{stringifyValue(item.actual_value)}</td>
+                      <td><StatusBadge status={item.review_status} /></td>
+                      <td data-testid={`feedback-snapshot-${item.id}`}>
+                        {item.input_snapshot_available ? (
+                          <span className="feedback-snapshot-ok">Available</span>
+                        ) : (
+                          <span className="feedback-snapshot-blocked">
+                            Not materializable — input snapshot unavailable
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono">
+                        {item.materialized_dataset_version_id
+                          ? `DatasetVersion #${item.materialized_dataset_version_id}`
+                          : item.materialization_run_id
+                            ? `Reserved run #${item.materialization_run_id}`
+                            : item.materializable
+                              ? "Ready"
+                              : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="row-actions" data-testid="feedback-pagination">
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={feedbackSkip <= 0 || loading}
+                onClick={() => {
+                  const next = Math.max(0, feedbackSkip - PAGE_SIZE);
+                  setFeedbackSkip(next);
+                  syncUrl({ skip: next });
+                }}
+                data-testid="feedback-prev"
+              >
+                Previous
+              </button>
+              <span className="muted">
+                {itemTotal === 0
+                  ? "0 rows"
+                  : `${feedbackSkip + 1}–${Math.min(feedbackSkip + PAGE_SIZE, itemTotal)} of ${itemTotal}`}
+              </span>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={feedbackSkip + PAGE_SIZE >= itemTotal || loading}
+                onClick={() => {
+                  const next = feedbackSkip + PAGE_SIZE;
+                  setFeedbackSkip(next);
+                  syncUrl({ skip: next });
+                }}
+                data-testid="feedback-next"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </section>
       ) : null}
 
-      <section className="panel" data-testid="feedback-materialization-history">
-        <h2>Feedback Materialization History</h2>
+      <section className="panel feedback-history-section" data-testid="feedback-materialization-history">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">History</span>
+            <h2>Feedback Materialization History</h2>
+          </div>
+        </div>
         {runs.length === 0 ? (
           <p className="muted">No materialization runs yet.</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap catalog-table">
             <table>
               <thead>
                 <tr>
@@ -412,14 +458,18 @@ export default function FeedbackReview() {
               <tbody>
                 {runs.map((run) => (
                   <tr key={run.id} data-testid={`materialization-run-${run.id}`}>
-                    <td>#{run.id}</td>
+                    <td className="mono">#{run.id}</td>
                     <td><StatusBadge status={run.status} /></td>
-                    <td>#{run.endpoint_id}</td>
-                    <td>#{run.source_model_version_id}</td>
-                    <td>#{run.base_dataset_version_id}{run.base_dataset_version != null ? ` (v${run.base_dataset_version})` : ""}</td>
+                    <td className="mono">#{run.endpoint_id}</td>
+                    <td className="mono">#{run.source_model_version_id}</td>
+                    <td className="mono">
+                      #{run.base_dataset_version_id}
+                      {run.base_dataset_version != null ? ` (v${run.base_dataset_version})` : ""}
+                    </td>
                     <td>
                       {run.output_dataset_version_id ? (
                         <Link
+                          className="catalog-primary-link mono"
                           to={
                             run.output_dataset_version != null
                               ? `/projects/${projectId}/datasets/${run.dataset_id}?version=${run.output_dataset_version}`
@@ -435,12 +485,17 @@ export default function FeedbackReview() {
                         "—"
                       )}
                     </td>
-                    <td>{run.feedback_count}</td>
-                    <td data-testid={`materialization-rows-added-${run.id}`}>
+                    <td className="tabular-num">{run.feedback_count}</td>
+                    <td className="tabular-num" data-testid={`materialization-rows-added-${run.id}`}>
                       {run.status === "succeeded" ? (run.row_count_added ?? 0) : "—"}
                     </td>
-                    <td>{run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}</td>
-                    <td data-testid={`materialization-error-${run.id}`}>
+                    <td className="catalog-meta-date">
+                      {run.finished_at ? new Date(run.finished_at).toLocaleString() : "—"}
+                    </td>
+                    <td
+                      className={run.status === "failed" ? "danger-text" : undefined}
+                      data-testid={`materialization-error-${run.id}`}
+                    >
                       {run.status === "failed"
                         ? (run.error_message || "Materialization failed")
                         : (run.error_message || "—")}
@@ -454,7 +509,7 @@ export default function FeedbackReview() {
         <div className="row-actions" data-testid="materialization-history-pagination">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn secondary"
             disabled={historySkip <= 0 || loading}
             onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
             data-testid="materialization-history-prev"
@@ -468,7 +523,7 @@ export default function FeedbackReview() {
           </span>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn secondary"
             disabled={historySkip + HISTORY_PAGE_SIZE >= runTotal || loading}
             onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
             data-testid="materialization-history-next"

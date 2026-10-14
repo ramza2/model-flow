@@ -1723,6 +1723,204 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     min-height: 420px;
   }
 }
+
+/* Phase 9-B4 — Feedback / Pipeline catalog / Pipeline run views */
+.feedback-review-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem 1.25rem;
+  margin-bottom: 1rem;
+}
+.feedback-filter-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  min-width: 0;
+  flex: 1;
+}
+.feedback-selection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-soft);
+}
+.feedback-selection-meta {
+  font-size: 0.78rem;
+  margin-right: 0.15rem;
+  white-space: nowrap;
+}
+.feedback-queue-section { min-width: 0; }
+.feedback-queue-section .section-heading { margin-top: 0.25rem; }
+.feedback-row.is-locked {
+  opacity: 0.72;
+  background: rgba(24, 34, 45, 0.45);
+}
+.feedback-row.is-locked td { color: var(--muted); }
+.feedback-endpoint-label {
+  display: block;
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+.feedback-value-cell {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.feedback-snapshot-ok { color: var(--ok); font-size: 0.84rem; }
+.feedback-snapshot-blocked { color: var(--muted); font-size: 0.84rem; }
+.feedback-history-section .section-heading {
+  margin: 0 0 0.85rem;
+  padding: 0;
+  border: 0;
+}
+.pipeline-catalog-page { min-width: 0; }
+.pipeline-create-form {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+.pipeline-schedule-disabled,
+.pipeline-schedule-disabled:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pipeline-run-page { min-width: 0; }
+.pipeline-run-version-band {
+  margin-top: -0.35rem;
+}
+.pipeline-run-workspace {
+  min-width: 0;
+  align-items: stretch;
+}
+.pipeline-run-workspace .pipeline-canvas,
+.pipeline-run-workspace .pipeline-run-inspector {
+  min-width: 0;
+}
+.pipeline-run-inspector {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(147, 166, 184, 0.35) transparent;
+}
+.pipeline-run-inspector::-webkit-scrollbar { width: 8px; }
+.pipeline-run-inspector::-webkit-scrollbar-thumb {
+  background: rgba(147, 166, 184, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.pipeline-run-inspector-body {
+  display: grid;
+  gap: 0.55rem;
+  min-width: 0;
+}
+.pipeline-run-inspector-body h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+  word-break: break-word;
+}
+.pipeline-run-inspector-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+}
+.pipeline-run-inspector-meta {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.pipeline-run-inspector-meta > div {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: start;
+}
+.pipeline-run-inspector-meta dt {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.pipeline-run-inspector-meta dd {
+  margin: 0;
+  min-width: 0;
+  word-break: break-word;
+  font-size: 0.86rem;
+}
+.pipeline-run-reason,
+.pipeline-run-error { margin: 0; word-break: break-word; }
+.pipeline-run-artifact-block {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.pipeline-run-artifact-block .code-block {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.pipeline-run-logs-section .logs {
+  max-height: 320px;
+  overflow: auto;
+  word-break: break-word;
+}
+.pipeline-run-failed-banner {
+  margin-bottom: 1rem;
+}
+.pipeline-run-step.status-failed {
+  border-color: rgba(240, 120, 120, 0.55);
+}
+.pipeline-run-step.status-succeeded {
+  border-color: rgba(98, 216, 146, 0.45);
+}
+.pipeline-run-step.status-running {
+  border-color: rgba(69, 200, 174, 0.45);
+}
+.pipeline-step-node.has-run-status.status-succeeded {
+  border-color: rgba(98, 216, 146, 0.55);
+}
+.pipeline-step-node.has-run-status.status-running {
+  border-color: rgba(69, 200, 174, 0.55);
+}
+.pipeline-step-node.has-run-status.status-failed {
+  border-color: rgba(240, 120, 120, 0.65);
+}
+.pipeline-step-node.has-run-status.status-pending {
+  border-color: var(--border);
+}
+.pipeline-canvas .react-flow__node.selected .pipeline-step-node.has-run-status.status-failed,
+.pipeline-step-node.is-selected.has-run-status.status-failed {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.pipeline-canvas .react-flow__node.selected .pipeline-step-node.has-run-status.status-succeeded,
+.pipeline-step-node.is-selected.has-run-status.status-succeeded,
+.pipeline-canvas .react-flow__node.selected .pipeline-step-node.has-run-status.status-running,
+.pipeline-step-node.is-selected.has-run-status.status-running,
+.pipeline-canvas .react-flow__node.selected .pipeline-step-node.has-run-status.status-pending,
+.pipeline-step-node.is-selected.has-run-status.status-pending {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
 .preparation-preview-table-wrap th,
 .preparation-preview-table-wrap td {
   white-space: nowrap;

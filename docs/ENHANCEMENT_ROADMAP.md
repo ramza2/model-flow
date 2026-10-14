@@ -354,7 +354,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
-**Status:** current. **9-A, 9-B1, and 9-B2 complete on `main`.** **9-B3 — Builder Visual Polish is current / Draft.**
+**Status:** current. **9-A through 9-B3 complete on `main`.** **9-B4 — Feedback / Pipeline Catalog & Runs Visual Polish is current / Draft.**
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -362,8 +362,8 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 | **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
 | **9-B1** | Data Workflow Visual Polish | **complete** |
 | **9-B2** | Training / Experiments Visual Polish | **complete** |
-| **9-B3** | Builder Visual Polish | **current / Draft** |
-| **9-B4** | Feedback / Pipeline Catalog & Runs | planned |
+| **9-B3** | Builder Visual Polish | **complete** |
+| **9-B4** | Feedback / Pipeline Catalog & Runs | **current / Draft** |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 

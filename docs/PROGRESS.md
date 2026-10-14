@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 9 — Final Visual Redesign is current.** **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A, 9-B1, and 9-B2 are complete on `main`.** **9-B3 — Preparation Builder / Pipeline Builder Visual Polish is the current Draft slice.**
+**Enhancement Phase 9 — Final Visual Redesign is current.** **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A through 9-B3 are complete on `main`.** **9-B4 — Feedback / Pipeline Catalog & Run Views Visual Polish is the current Draft slice.**
 
 Phase 9-A baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (Phase 8-F PR #86 merged; exact-head CI #472 PASS; post-merge main CI #473 PASS; Alembic head remains `024_oidc_enterprise_identity`). Figma source: `ModelFlow Phase 9 — Final Visual Redesign` at https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u.
 
@@ -503,7 +503,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8 is complete on `main`.** **Phase 9-A, 9-B1, and 9-B2 are complete on `main`.** **9-B3 — Preparation Builder / Pipeline Builder Visual Polish is current.** Continue the Figma-driven visual redesign without changing backend/API/runtime behavior; 9-B4 covers feedback/pipeline catalog & run views, then 9-C Models/Serving/Operations and 9-D accessibility/browser regression.
+**Phase 8 is complete on `main`.** **Phase 9-A through 9-B3 are complete on `main`.** **9-B4 — Feedback / Pipeline Catalog & Run Views Visual Polish is current.** Continue the Figma-driven visual redesign without changing backend/API/runtime behavior; after 9-B4 merge, 9-C covers Models/Serving/Operations and 9-D accessibility/browser regression.
 
 Phase 8 slice plan:
 
