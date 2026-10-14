@@ -23,7 +23,11 @@ Figma file:
 - **ModelFlow Phase 9 — Final Visual Redesign**
 - https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u
 
-The Figma file currently contains the 9-A visual foundation:
+The Figma file contains the Phase 9 visual foundation and workflow frames.
+9-A App Shell is complete on `main`. 9-B1 uses the **9-B1 Data Workflow** page
+(Data Sources / Datasets / Preparations frames) as the visual reference.
+
+9-A foundation includes:
 
 - ModelFlow primitive + semantic color variables
 - spacing and radius variables
@@ -60,8 +64,12 @@ The final direction is:
 
 | Slice | Scope | Status |
 |---|---|---|
-| **9-A** | Design Foundation + App Shell | **current / Draft** (PR #87) |
-| **9-B** | Data / Build / Pipeline Workflow Polish | planned |
+| **9-A** | Design Foundation + App Shell | **complete** (merged via PR #87) |
+| **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
+| **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **current / Draft** |
+| **9-B2** | Training / Experiments Visual Polish | planned |
+| **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | planned |
+| **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | planned |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 
@@ -88,14 +96,31 @@ Acceptance:
 
 ### 9-B — Data / Build / Pipeline Workflow Polish
 
-Target areas:
+**Status:** current. Split into reviewable visual-only slices. No workflow/API semantic changes.
 
-- Data Sources, Datasets, Preparations, Feedback
-- Training Jobs, Experiments
-- Pipeline catalog, builder, validation, run views
-- complex forms, tables, node panels, progressive disclosure
+#### 9-B1 — Data Workflow Visual Polish (current)
 
-No workflow/API semantic changes are implied.
+Scope:
+
+- Data Sources catalog hierarchy (type / connection state / recent imports)
+- Datasets catalog table hierarchy (name / description / immutable latest version)
+- Preparations catalog table hierarchy (name / description / version / output)
+- reuse Phase 9-A tokens; no new color system
+- preserve Test / Import / Edit / Upload / Create / Delete / deep links
+- do not invent Connected counts, filters, or Figma-only columns without API support
+- Preparation Builder remains out of scope (later 9-B3)
+
+#### 9-B2 — Training / Experiments Visual Polish
+
+Target: Training Jobs and Experiments list/detail presentation only.
+
+#### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish
+
+Target: complex builder canvases, node panels, validation presentation.
+
+#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish
+
+Target: Feedback surfaces, pipeline catalog, run graph presentation.
 
 ### 9-C — Models / Serving / Operations Visual Polish
 

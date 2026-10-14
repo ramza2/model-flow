@@ -644,7 +644,7 @@ export default function DataSources() {
     <div>
       <PageHeader
         title="Data Sources"
-        description="Connect managed data systems, import datasets, and control source lifecycle without exposing credentials."
+        description="Browse connected sources, check connection state, and import immutable dataset versions without exposing credentials."
         actions={
           canWrite ? (
             <button className="btn" onClick={() => setShowForm(!showForm)} data-testid="add-data-source">
@@ -1058,35 +1058,36 @@ export default function DataSources() {
           }
         />
       ) : (
-        <div className="card-grid">
+        <div className="workflow-catalog">
+          <div className="catalog-summary" aria-live="polite">
+            <span className="catalog-summary-count">{sources.length}</span>
+            <span className="catalog-summary-label">
+              {sources.length === 1 ? "data source in this project" : "data sources in this project"}
+            </span>
+          </div>
+          <div className="card-grid source-catalog-grid">
           {sources.map((source) => (
             <article className="source-card" key={source.id} data-testid={`data-source-card-${source.id}`}>
-              <div className="project-card-top">
-                <span className="source-icon" aria-hidden="true">
-                  {isSqlSourceType(source.source_type)
-                    ? "▥"
-                    : source.source_type === "rest_api"
-                      ? "⇄"
-                      : "▤"}
-                </span>
+              <div className="source-card-header">
+                <div className="source-card-identity">
+                  <span className="source-icon" aria-hidden="true">
+                    {isSqlSourceType(source.source_type)
+                      ? "▥"
+                      : source.source_type === "rest_api"
+                        ? "⇄"
+                        : "▤"}
+                  </span>
+                  <div className="source-card-copy">
+                    <div className="source-card-meta">
+                      <span className="type-chip">{sqlSourceLabel(source.source_type)}</span>
+                      {!source.is_active ? <span className="type-chip is-muted">Inactive</span> : null}
+                    </div>
+                    <h2>{source.name}</h2>
+                  </div>
+                </div>
                 <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
               </div>
-              <h2>{source.name}</h2>
-              <p className="muted">
-                {source.source_type === "postgres"
-                  ? "PostgreSQL database"
-                  : source.source_type === "mysql"
-                    ? "MySQL / MariaDB database"
-                    : source.source_type === "mssql"
-                      ? "Microsoft SQL Server database"
-                      : source.source_type === "oracle"
-                        ? "Oracle Database"
-                        : source.source_type === "rest_api"
-                          ? "REST API"
-                          : "Managed file source"}
-                {!source.is_active ? " · Inactive" : ""}
-              </p>
-              <dl className="key-values">
+              <dl className="key-values source-card-facts">
                 {Object.entries(source.config)
                   .slice(0, 4)
                   .map(([key, value]) => (
@@ -1114,8 +1115,9 @@ export default function DataSources() {
                   <ul>
                     {(recentJobs[source.id] || []).slice(0, 3).map((job) => (
                       <li key={job.id}>
-                        <StatusBadge status={job.status} /> #{job.id}{" "}
-                        <span className="muted">{job.table_or_query.slice(0, 48)}</span>
+                        <StatusBadge status={job.status} />
+                        <span className="source-job-id">#{job.id}</span>
+                        <span className="muted source-job-query">{job.table_or_query.slice(0, 48)}</span>
                       </li>
                     ))}
                   </ul>
@@ -1399,6 +1401,7 @@ export default function DataSources() {
               )}
             </article>
           ))}
+          </div>
         </div>
       )}
     </div>
