@@ -2,9 +2,11 @@
 
 ## Current phase
 
-**Enhancement Phase 9 — Final Visual Redesign is current.** **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A — Design Foundation + App Shell is the current slice** on branch `cursor/phase-9a-design-foundation-app-shell`.
+**Enhancement Phase 9 — Final Visual Redesign is current.** **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A — Design Foundation + App Shell is the current Draft slice** (PR #87).
 
 Phase 9-A baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (Phase 8-F PR #86 merged; exact-head CI #472 PASS; post-merge main CI #473 PASS; Alembic head remains `024_oidc_enterprise_identity`). Figma source: `ModelFlow Phase 9 — Final Visual Redesign` at https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u.
+
+Phase 8-F completion baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (PR #86; transient inference recovery; live two-replica consistency + scale-down recovery; internal runtime network/auth boundary; Kubernetes public exposure regression; exact-head CI #472 PASS; post-merge Full Gate #473 PASS; no migration).
 
 Phase 8-E completion baseline: `main@a6f31e65527f1271410edd02bc1d094f1ddd57c7` (PR #85; exact-head CI #460 PASS; post-merge Full Gate #461 PASS; Kubernetes/HA Helm deployment with external/shared PostgreSQL + S3 prerequisites; ModelFlow + MLflow migration hooks; no ModelFlow DB migration).
 
