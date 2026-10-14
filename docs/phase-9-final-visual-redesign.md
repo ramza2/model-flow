@@ -67,8 +67,8 @@ The final direction is:
 | **9-A** | Design Foundation + App Shell | **complete** (merged via PR #87) |
 | **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
 | **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **complete** |
-| **9-B2** | Training / Experiments Visual Polish | **current / Draft** |
-| **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | planned |
+| **9-B2** | Training / Experiments Visual Polish | **complete** |
+| **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **current / Draft** |
 | **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | planned |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
@@ -110,7 +110,7 @@ Scope:
 - do not invent Connected counts, filters, or Figma-only columns without API support
 - Preparation Builder remains out of scope (later 9-B3)
 
-#### 9-B2 — Training / Experiments Visual Polish (current)
+#### 9-B2 — Training / Experiments Visual Polish (complete)
 
 Scope:
 
@@ -122,11 +122,22 @@ Scope:
 - JobCreate excluded from this slice
 - no workflow/API/polling/RBAC semantic changes
 
-#### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish
+#### 9-B3 — Preparation Builder / Pipeline Builder Visual Polish (current)
 
-Target: complex builder canvases, node panels, validation presentation.
+Scope:
 
-#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish
+- Preparation Builder workspace visual polish (header/actions, dirty state band,
+  node library groups, canvas surface, inspector hierarchy, preview/run panels)
+- Pipeline Builder workspace visual polish (header/actions, draft/published/dirty
+  state band, node library, React Flow node density, selected/invalid/warning
+  states, inspector hierarchy, validation issue panel)
+- Pipeline Copilot entry + proposal/preview/confirmation visual hierarchy
+  (proposal-before-apply clarity; stale-response guards unchanged)
+- Pipeline catalog / list / Run Detail / schedule page excluded (later 9-B4)
+- reuse Phase 9-A / 9-B1 / 9-B2 tokens; no new color system
+- no graph schema, React Flow behavior, API, or runtime semantic changes
+
+#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish (planned)
 
 Target: Feedback surfaces, pipeline catalog, run graph presentation.
 
