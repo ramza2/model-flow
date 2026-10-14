@@ -477,9 +477,14 @@ pass "worker scale-out"
 assert_services_healthy
 
 info "5c) Internal inference runtime network/auth boundary (Phase 8-F)"
-INFERENCE_PUBLISHED_PORT="$(modelflow_compose port inference-runtime 8080 2>/dev/null || true)"
-[[ -z "$INFERENCE_PUBLISHED_PORT" ]] ||
-  fail "inference-runtime unexpectedly publishes host port: $INFERENCE_PUBLISHED_PORT"
+INFERENCE_RUNTIME_ID="$(modelflow_compose ps -q inference-runtime | head -n 1)"
+[[ -n "$INFERENCE_RUNTIME_ID" ]] ||
+  fail "inference-runtime container not found"
+INFERENCE_PUBLISHED_BINDINGS="$(
+  docker inspect -f '{{json (index .NetworkSettings.Ports "8080/tcp")}}' "$INFERENCE_RUNTIME_ID"
+)"
+[[ -z "$INFERENCE_PUBLISHED_BINDINGS" || "$INFERENCE_PUBLISHED_BINDINGS" == "null" ]] ||
+  fail "inference-runtime unexpectedly publishes host bindings: $INFERENCE_PUBLISHED_BINDINGS"
 modelflow_compose exec -T backend python - <<'PY'
 import httpx
 
