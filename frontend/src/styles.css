@@ -305,6 +305,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   display: grid;
   grid-template: var(--shell-topbar-height) minmax(0, 1fr) / var(--shell-sidebar-width) minmax(0, 1fr);
   min-height: 100%;
+  /* Solid canvas — mask body radial gradients inside the authenticated shell */
+  background: var(--color-bg-canvas);
 }
 
 .topbar {
@@ -451,6 +453,26 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   gap: 1rem;
   justify-content: space-between;
   overflow-y: auto;
+  /* Dark thin scrollbar — keep sidebar width stable (no gutter reserved) */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(147, 166, 184, 0.35) transparent;
+}
+.app-frame > .sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+.app-frame > .sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-frame > .sidebar::-webkit-scrollbar-thumb {
+  background: rgba(147, 166, 184, 0.28);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.app-frame > .sidebar::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 166, 184, 0.48);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 .nav { gap: 1.15rem; }
 .nav-group { display: flex; flex-direction: column; gap: .2rem; }
