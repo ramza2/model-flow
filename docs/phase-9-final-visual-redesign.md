@@ -60,7 +60,7 @@ The final direction is:
 
 | Slice | Scope | Status |
 |---|---|---|
-| **9-A** | Design Foundation + App Shell | **current** |
+| **9-A** | Design Foundation + App Shell | **current / Draft** (PR #87) |
 | **9-B** | Data / Build / Pipeline Workflow Polish | planned |
 | **9-C** | Models / Serving / Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
