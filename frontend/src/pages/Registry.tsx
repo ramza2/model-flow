@@ -68,16 +68,28 @@ export default function Registry() {
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   return (
-    <div>
+    <div className="page-stack registry-page">
       <PageHeader
         title="Model Registry"
         description="Govern model versions from candidate through production."
-        actions={canWrite ? <button className="btn" onClick={() => setShowRegister(!showRegister)}>＋ Register from run</button> : undefined}
+        actions={
+          canWrite ? (
+            <button className="btn" onClick={() => setShowRegister(!showRegister)}>
+              ＋ Register from run
+            </button>
+          ) : undefined
+        }
       />
-      <ErrorNotice message={error} /><SuccessNotice message={msg} />
+      <ErrorNotice message={error} />
+      <SuccessNotice message={msg} />
       {showRegister && (
-        <form className="panel form" onSubmit={onRegister}>
-          <div className="panel-title"><div><span className="eyebrow">New candidate</span><h2>Register experiment run</h2></div></div>
+        <form className="panel form registry-register-panel" onSubmit={onRegister}>
+          <div className="panel-title">
+            <div>
+              <span className="eyebrow">New candidate</span>
+              <h2>Register experiment run</h2>
+            </div>
+          </div>
           <label>
             Source run
             <select
@@ -99,74 +111,118 @@ export default function Registry() {
           </label>
           <label>
             Model name
-            <input value={modelName} onChange={(event) => setModelName(event.target.value)} required data-testid="register-name" placeholder="model_name" />
+            <input
+              value={modelName}
+              onChange={(event) => setModelName(event.target.value)}
+              required
+              data-testid="register-name"
+              placeholder="model_name"
+            />
           </label>
-          <div className="row-actions">
-            <button className="btn" disabled={!runId || !modelName.trim()} data-testid="register-submit">Register version</button>
-            <button className="btn secondary" type="button" onClick={() => setShowRegister(false)}>Cancel</button>
+          <div className="row-actions registry-register-actions">
+            <button className="btn" disabled={!runId || !modelName.trim()} data-testid="register-submit">
+              Register version
+            </button>
+            <button className="btn secondary" type="button" onClick={() => setShowRegister(false)}>
+              Cancel
+            </button>
           </div>
         </form>
       )}
-      <div className="filter-bar">
-        <label>
-          Lifecycle
-          <select value={lifecycle} onChange={(event) => setLifecycle(event.target.value)} data-testid="registry-lifecycle-filter">
-            <option value="">All stages</option>
-            {MODEL_LIFECYCLES.map((value) => (
-              <option key={value} value={value}>
-                {value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span>{models.length} version{models.length === 1 ? "" : "s"}</span>
-      </div>
-      {loading ? <Loading label="Loading model registry" /> : models.length === 0 ? (
-        <EmptyState
-          title="No registered models"
-          description="Register a successful training job or experiment run to start governance."
-          action={canWrite ? <button className="btn" onClick={() => setShowRegister(true)}>Register from run</button> : undefined}
-        />
-      ) : (
-        <div className="panel table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>Version</th>
-                <th>Lifecycle</th>
-                <th>Gates</th>
-                <th>Primary metric</th>
-                <th>Registered</th>
-              </tr>
-            </thead>
-            <tbody>
-              {models.map((model) => (
-                <tr key={model.id}>
-                  <td>
-                    <Link to={`/projects/${projectId}/models/${model.id}`}>
-                      <strong>{model.name}</strong>
-                    </Link>
-                    <small className="table-subtitle mono">{model.mlflow_run_id?.slice(0, 12)}</small>
-                  </td>
-                  <td>v{model.version}</td>
-                  <td><StatusBadge status={model.lifecycle} /></td>
-                  <td><StatusBadge status={model.gates_passed ? "passed" : "pending"} /></td>
-                  <td>
-                    {formatPrimaryMetric(model.metrics, {
-                      problemType: typeof model.metadata?.problem_type === "string" ? model.metadata.problem_type : undefined,
-                      targetColumns: Array.isArray(model.metadata?.target_columns)
-                        ? model.metadata.target_columns.map(String)
-                        : [],
-                    })}
-                  </td>
-                  <td>{formatDate(model.created_at)}</td>
-                </tr>
+      <div className="workflow-catalog">
+        <div className="filter-bar catalog-filter registry-toolbar">
+          <label>
+            Lifecycle
+            <select
+              value={lifecycle}
+              onChange={(event) => setLifecycle(event.target.value)}
+              data-testid="registry-lifecycle-filter"
+            >
+              <option value="">All stages</option>
+              {MODEL_LIFECYCLES.map((value) => (
+                <option key={value} value={value}>
+                  {value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                </option>
               ))}
-            </tbody>
-          </table>
+            </select>
+          </label>
+          <div className="catalog-summary" aria-live="polite">
+            <span className="catalog-summary-count">{models.length}</span>
+            <span className="catalog-summary-label">
+              {models.length === 1 ? "version" : "versions"}
+              {lifecycle ? ` · ${lifecycle.replaceAll("_", " ")}` : ""}
+            </span>
+          </div>
         </div>
-      )}
+        {loading ? (
+          <Loading label="Loading model registry" />
+        ) : models.length === 0 ? (
+          <EmptyState
+            title="No registered models"
+            description="Register a successful training job or experiment run to start governance."
+            action={
+              canWrite ? (
+                <button className="btn" onClick={() => setShowRegister(true)}>
+                  Register from run
+                </button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <div className="panel table-wrap catalog-table registry-catalog-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Version</th>
+                  <th>Lifecycle</th>
+                  <th>Gates</th>
+                  <th>Primary metric</th>
+                  <th>Registered</th>
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((model) => (
+                  <tr key={model.id}>
+                    <td>
+                      <Link
+                        className="catalog-primary-link"
+                        to={`/projects/${projectId}/models/${model.id}`}
+                      >
+                        <strong>{model.name}</strong>
+                      </Link>
+                      <small className="table-subtitle mono">
+                        {model.mlflow_run_id?.slice(0, 12) || "—"}
+                      </small>
+                    </td>
+                    <td>
+                      <span className="version-chip">v{model.version}</span>
+                    </td>
+                    <td>
+                      <StatusBadge status={model.lifecycle} />
+                    </td>
+                    <td>
+                      <StatusBadge status={model.gates_passed ? "passed" : "pending"} />
+                    </td>
+                    <td className="tabular-num">
+                      {formatPrimaryMetric(model.metrics, {
+                        problemType:
+                          typeof model.metadata?.problem_type === "string"
+                            ? model.metadata.problem_type
+                            : undefined,
+                        targetColumns: Array.isArray(model.metadata?.target_columns)
+                          ? model.metadata.target_columns.map(String)
+                          : [],
+                      })}
+                    </td>
+                    <td className="catalog-meta-date">{formatDate(model.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

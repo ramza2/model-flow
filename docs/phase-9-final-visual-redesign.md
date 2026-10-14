@@ -65,12 +65,15 @@ The final direction is:
 | Slice | Scope | Status |
 |---|---|---|
 | **9-A** | Design Foundation + App Shell | **complete** (merged via PR #87) |
-| **9-B** | Data / Build / Pipeline Workflow Polish | **current** |
+| **9-B** | Data / Build / Pipeline Workflow Polish | **complete** |
 | **9-B1** | Data Workflow Visual Polish (Sources / Datasets / Preparations) | **complete** |
 | **9-B2** | Training / Experiments Visual Polish | **complete** |
 | **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **complete** |
-| **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **current / Draft** |
-| **9-C** | Models / Serving / Operations Visual Polish | planned |
+| **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **complete** |
+| **9-C** | Models / Serving / Operations Visual Polish | **current** |
+| **9-C1** | Model Registry / Model Version Governance Visual Polish | **current / Draft** |
+| **9-C2** | Deployments / Serving Visual Polish | planned |
+| **9-C3** | Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 
 ### 9-A — Design Foundation + App Shell
@@ -96,7 +99,7 @@ Acceptance:
 
 ### 9-B — Data / Build / Pipeline Workflow Polish
 
-**Status:** current. Split into reviewable visual-only slices. No workflow/API semantic changes.
+**Status:** complete. Split into reviewable visual-only slices. No workflow/API semantic changes.
 
 #### 9-B1 — Data Workflow Visual Polish (complete)
 
@@ -137,7 +140,7 @@ Scope:
 - reuse Phase 9-A / 9-B1 / 9-B2 tokens; no new color system
 - no graph schema, React Flow behavior, API, or runtime semantic changes
 
-#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish (current)
+#### 9-B4 — Feedback / Pipeline Catalog & Run Views Polish (complete)
 
 Scope:
 
@@ -154,12 +157,27 @@ Scope:
 
 ### 9-C — Models / Serving / Operations Visual Polish
 
-Target areas:
+**Status:** current. Split into reviewable visual-only slices.
 
-- Model Registry and governance lifecycle
-- Deployments, prediction, API usage, batch inference
-- Schedules, Monitoring, Quality Policies, Alerts, Audit
-- operational metrics, charts, status density, triage surfaces
+#### 9-C1 — Model Registry / Model Version Governance Visual Polish (current)
+
+Scope:
+
+- Model Registry visual polish (header / Register from run, lifecycle toolbar,
+  catalog density, NEW CANDIDATE registration panel)
+- Model Version governance visual polish (lifecycle/gates state band, primary
+  vs secondary actions, Lifecycle Progress, metrics, approval evidence / lineage
+  2-column hierarchy, VALIDATION gates, review comment evidence input)
+- lifecycle / gate / approval / RBAC / deployment eligibility semantics unchanged
+- Deployments / serving / operations pages excluded until 9-C2 / 9-C3
+
+#### 9-C2 — Deployments / Serving Visual Polish (planned)
+
+Target: Deployments, prediction, API usage, batch inference.
+
+#### 9-C3 — Operations Visual Polish (planned)
+
+Target: Schedules, Monitoring, Quality Policies, Alerts, Audit.
 
 ### 9-D — Final Accessibility / Responsive / Browser Regression
 

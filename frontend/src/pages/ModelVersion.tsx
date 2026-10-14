@@ -163,7 +163,7 @@ export default function ModelVersion() {
   }
 
   return (
-    <div>
+    <div className="page-stack model-version-page">
       <PageHeader
         title={mv ? `${mv.name} · v${mv.version}` : "Model version"}
         description={
@@ -173,7 +173,9 @@ export default function ModelVersion() {
         }
         actions={
           <>
-            <StatusBadge status={mv?.lifecycle} />
+            <span className="header-status">
+              <StatusBadge status={mv?.lifecycle} />
+            </span>
             {headerPrimary}
           </>
         }
@@ -184,53 +186,74 @@ export default function ModelVersion() {
         <Loading label="Loading model version" />
       ) : (
         <>
-          <div className="row-actions toolbar-actions">
-            {canRerun && primaryKind !== "rerun" && (
-              <button
-                className="btn secondary"
-                disabled={busy === "evaluate-gates"}
-                onClick={() => void rerunValidation()}
-                data-testid="rerun-validation"
-              >
-                {busy === "evaluate-gates" ? "Validating…" : "Rerun validation"}
-              </button>
-            )}
-            {canReject && (
-              <button className="btn danger" disabled={Boolean(busy)} onClick={() => void action("reject")} data-testid="reject-model">
-                Reject
-              </button>
-            )}
-            {canDeployLink && primaryKind !== "deploy" && (
-              <Link
-                className="btn secondary"
-                to={`/projects/${projectId}/deployments`}
-                state={{ modelVersionId: mv.id }}
-                data-testid="create-deployment"
-              >
-                Create deployment
-              </Link>
-            )}
+          <div
+            className={`builder-state-band governance-state-band${mv.gates_passed ? " is-ready" : " is-blocked"}`}
+            role="status"
+          >
+            <span className="builder-state-copy">Lifecycle</span>
+            <StatusBadge status={mv.lifecycle} />
+            <span className="builder-state-copy">Gates</span>
+            <StatusBadge status={mv.gates_passed ? "passed" : "pending"} />
+            {mv.version != null ? <span className="version-chip">v{mv.version}</span> : null}
           </div>
 
+          {(canRerun && primaryKind !== "rerun") || canReject || (canDeployLink && primaryKind !== "deploy") ? (
+            <div className="row-actions toolbar-actions governance-secondary-actions">
+              {canRerun && primaryKind !== "rerun" && (
+                <button
+                  className="btn secondary"
+                  disabled={busy === "evaluate-gates"}
+                  onClick={() => void rerunValidation()}
+                  data-testid="rerun-validation"
+                >
+                  {busy === "evaluate-gates" ? "Validating…" : "Rerun validation"}
+                </button>
+              )}
+              {canReject && (
+                <button
+                  className="btn danger"
+                  disabled={Boolean(busy)}
+                  onClick={() => void action("reject")}
+                  data-testid="reject-model"
+                >
+                  Reject
+                </button>
+              )}
+              {canDeployLink && primaryKind !== "deploy" && (
+                <Link
+                  className="btn secondary"
+                  to={`/projects/${projectId}/deployments`}
+                  state={{ modelVersionId: mv.id }}
+                  data-testid="create-deployment"
+                >
+                  Create deployment
+                </Link>
+              )}
+            </div>
+          ) : null}
+
           {showApprovalBlocked && canWrite && (
-            <p className="form-hint" data-testid="approval-blocked-hint">
+            <p className="form-hint governance-blocked-hint" data-testid="approval-blocked-hint">
               Approval blocked. Validation gates must pass before approval can be requested.
             </p>
           )}
 
-          <DetailSection eyebrow="Lifecycle" title="Progress">
-            <LifecycleStepper lifecycle={mv.lifecycle} />
-            {targets.length > 0 && (
-              <div className="lifecycle-targets">
-                <span className="eyebrow">Targets</span>
-                <TargetChips targets={targets} testId="model-target-chips" />
-              </div>
-            )}
-          </DetailSection>
+          <div className="governance-lifecycle-section">
+            <DetailSection eyebrow="Lifecycle" title="Progress">
+              <LifecycleStepper lifecycle={mv.lifecycle} />
+              {targets.length > 0 && (
+                <div className="lifecycle-targets">
+                  <span className="eyebrow">Targets</span>
+                  <TargetChips targets={targets} testId="model-target-chips" />
+                </div>
+              )}
+            </DetailSection>
+          </div>
 
           {showReviewCommentInput && (
-            <label className="panel comment-field">
-              Review comment
+            <label className="panel comment-field governance-comment-panel">
+              <span className="eyebrow">Evidence input</span>
+              <span className="governance-comment-title">Review comment</span>
               <textarea
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
@@ -243,15 +266,17 @@ export default function ModelVersion() {
             </label>
           )}
 
-          <DetailSection eyebrow="Quality" title="Metrics">
-            <MetricSummary
-              metrics={mv.metrics}
-              problemType={problemType}
-              targetColumns={targets}
-            />
-          </DetailSection>
+          <div className="governance-metrics-section">
+            <DetailSection eyebrow="Quality" title="Metrics">
+              <MetricSummary
+                metrics={mv.metrics}
+                problemType={problemType}
+                targetColumns={targets}
+              />
+            </DetailSection>
+          </div>
 
-          <div className="two-column">
+          <div className="two-column governance-evidence-grid">
             <DetailSection eyebrow="Governance" title="Approval evidence" testId="approval-evidence">
               <dl className="key-values">
                 <div>
@@ -268,7 +293,9 @@ export default function ModelVersion() {
                 </div>
                 <div>
                   <dt>Comment</dt>
-                  <dd data-testid="approval-comment-value">{mv.approval_comment || "—"}</dd>
+                  <dd className="governance-comment-value" data-testid="approval-comment-value">
+                    {mv.approval_comment || "—"}
+                  </dd>
                 </div>
                 {mv.approved_by != null ? (
                   <div>
@@ -279,12 +306,12 @@ export default function ModelVersion() {
                 {mv.approved_at ? (
                   <div>
                     <dt>Approved at</dt>
-                    <dd>{formatDate(mv.approved_at)}</dd>
+                    <dd className="catalog-meta-date">{formatDate(mv.approved_at)}</dd>
                   </div>
                 ) : null}
                 <div>
                   <dt>Registered</dt>
-                  <dd>{formatDate(mv.created_at)}</dd>
+                  <dd className="catalog-meta-date">{formatDate(mv.created_at)}</dd>
                 </div>
               </dl>
             </DetailSection>
@@ -366,9 +393,11 @@ export default function ModelVersion() {
             />
           </div>
 
-          <DetailSection eyebrow="Validation" title="Gates">
-            <GateSummary gatesPassed={mv.gates_passed} gateResults={mv.gate_results || {}} />
-          </DetailSection>
+          <div className="governance-gates-section">
+            <DetailSection eyebrow="Validation" title="Gates">
+              <GateSummary gatesPassed={mv.gates_passed} gateResults={mv.gate_results || {}} />
+            </DetailSection>
+          </div>
         </>
       )}
     </div>
