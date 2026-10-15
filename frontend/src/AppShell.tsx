@@ -206,6 +206,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("click", guardLinkNavigation, true);
   }, []);
 
+  // Remove inert before the focus-transfer effect runs. Real browsers block
+  // focus inside inert subtrees; effect order is the synchronization point.
+  useEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) {
+      return;
+    }
+    if (drawerClosed) {
+      sidebar.setAttribute("inert", "");
+    } else {
+      sidebar.removeAttribute("inert");
+    }
+  }, [drawerClosed]);
+
   useEffect(() => {
     if (!isDrawerViewport || !navOpen) {
       return;
@@ -232,18 +246,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [navOpen, isDrawerViewport]);
-
-  useEffect(() => {
-    const sidebar = sidebarRef.current;
-    if (!sidebar) {
-      return;
-    }
-    if (drawerClosed) {
-      sidebar.setAttribute("inert", "");
-    } else {
-      sidebar.removeAttribute("inert");
-    }
-  }, [drawerClosed]);
 
   async function signOut() {
     if (!confirmUnsavedNavigation()) return;
