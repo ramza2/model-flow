@@ -549,7 +549,7 @@ export default function QualityPolicies() {
     (editingId == null || !selectedPolicy?.baseline);
 
   return (
-    <div className="page-stack" data-testid="quality-policies-page">
+    <div className="page-stack ops-page quality-policies-page" data-testid="quality-policies-page">
       <PageHeader
         title="Quality Policies"
         description="Configure production quality evaluation rules, baselines, and closed-loop retrain triggers. Automation still stops at CANDIDATE."
@@ -568,6 +568,7 @@ export default function QualityPolicies() {
         <Loading label="Loading quality policies" />
       ) : (
         <>
+          <div className="quality-policies-layout">
           <DetailSection eyebrow="Policies" title="Configured policies" testId="quality-policy-list">
             {policies.length === 0 ? (
               <EmptyState
@@ -582,7 +583,7 @@ export default function QualityPolicies() {
                 }
               />
             ) : (
-              <div className="table-wrap">
+              <div className="table-wrap catalog-table">
                 <table>
                   <thead>
                     <tr>
@@ -600,12 +601,17 @@ export default function QualityPolicies() {
                       <tr
                         key={policy.id}
                         data-testid={`policy-row-${policy.id}`}
-                        className={selectedId === policy.id ? "is-selected" : undefined}
+                        className={[
+                          selectedId === policy.id ? "is-selected" : "",
+                          policy.is_active ? "" : "is-inactive",
+                        ]
+                          .filter(Boolean)
+                          .join(" ") || undefined}
                       >
                         <td>
                           <button
                             type="button"
-                            className="btn link"
+                            className="btn link catalog-primary-link"
                             data-testid={`select-policy-${policy.id}`}
                             onClick={() => {
                               setSelectedId(policy.id);
@@ -616,17 +622,21 @@ export default function QualityPolicies() {
                           </button>
                         </td>
                         <td>{endpointLabel(endpoints, policy.endpoint_id)}</td>
-                        <td>{policy.revision}</td>
+                        <td>
+                          <span className="version-chip">r{policy.revision}</span>
+                        </td>
                         <td>
                           <StatusBadge status={policy.mode} />
                         </td>
                         <td>{policy.is_active ? "Yes" : "No"}</td>
-                        <td>{policy.effective_rules?.length ?? policy.rules?.length ?? 0}</td>
+                        <td className="tabular-num">
+                          {policy.effective_rules?.length ?? policy.rules?.length ?? 0}
+                        </td>
                         <td>
-                          <div className="row-actions">
+                          <div className="row-actions catalog-row-actions">
                             <button
                               type="button"
-                              className="btn btn-secondary"
+                              className="btn secondary"
                               onClick={() => startEdit(policy)}
                               data-testid={`edit-policy-${policy.id}`}
                             >
@@ -635,7 +645,7 @@ export default function QualityPolicies() {
                             {canWrite ? (
                               <button
                                 type="button"
-                                className="btn btn-secondary"
+                                className="btn secondary"
                                 disabled={busy}
                                 onClick={() => toggleActive(policy)}
                                 data-testid={`toggle-policy-${policy.id}`}
@@ -655,6 +665,8 @@ export default function QualityPolicies() {
               <Link to={`/projects/${projectId}/monitoring`}>Open Monitoring</Link>
             </div>
           </DetailSection>
+
+          <div className="quality-policies-detail">
 
           {showForm ? (
             <DetailSection
@@ -847,7 +859,7 @@ export default function QualityPolicies() {
                     {canWrite ? (
                       <button
                         type="button"
-                        className="btn btn-secondary"
+                        className="btn secondary"
                         onClick={addRule}
                         disabled={form.rules.length >= MAX_RULES}
                         data-testid="add-rule"
@@ -951,7 +963,7 @@ export default function QualityPolicies() {
                       {canWrite && form.rules.length > 1 ? (
                         <button
                           type="button"
-                          className="btn btn-secondary"
+                          className="btn secondary"
                           onClick={() => removeRule(index)}
                           data-testid={`remove-rule-${index}`}
                         >
@@ -982,7 +994,7 @@ export default function QualityPolicies() {
                     </button>
                     <button
                       type="button"
-                      className="btn btn-secondary"
+                      className="btn secondary"
                       onClick={() => setShowForm(false)}
                     >
                       Cancel
@@ -1034,7 +1046,7 @@ export default function QualityPolicies() {
                   {selectedPolicy.baseline ? (
                     <button
                       type="button"
-                      className="btn btn-secondary"
+                      className="btn secondary"
                       disabled={busy}
                       onClick={clearBaseline}
                       data-testid="clear-baseline-btn"
@@ -1044,7 +1056,7 @@ export default function QualityPolicies() {
                   ) : null}
                 </div>
               ) : null}
-              <div className="table-wrap" style={{ marginTop: "1rem" }}>
+              <div className="table-wrap catalog-table" style={{ marginTop: "1rem" }}>
                 <table data-testid="baseline-candidate-table">
                   <thead>
                     <tr>
@@ -1079,7 +1091,7 @@ export default function QualityPolicies() {
                           {canWrite ? (
                             <button
                               type="button"
-                              className="btn btn-secondary"
+                              className="btn secondary"
                               disabled={busy}
                               onClick={() => setBaseline(run.id)}
                               data-testid="set-baseline-btn"
@@ -1097,7 +1109,7 @@ export default function QualityPolicies() {
               <div className="row-actions" data-testid="baseline-candidate-pagination">
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn secondary"
                   disabled={baselineSkip <= 0 || baselineLoading}
                   onClick={() => setBaselineSkip((prev) => Math.max(0, prev - BASELINE_PAGE_SIZE))}
                   data-testid="baseline-candidates-prev"
@@ -1111,7 +1123,7 @@ export default function QualityPolicies() {
                 </span>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn secondary"
                   disabled={baselineSkip + BASELINE_PAGE_SIZE >= baselineTotal || baselineLoading}
                   onClick={() => setBaselineSkip((prev) => prev + BASELINE_PAGE_SIZE)}
                   data-testid="baseline-candidates-next"
@@ -1129,6 +1141,8 @@ export default function QualityPolicies() {
               ) : null}
             </DetailSection>
           ) : null}
+          </div>
+          </div>
         </>
       )}
     </div>
