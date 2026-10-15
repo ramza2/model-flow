@@ -1,4 +1,7 @@
-# ModelFlow Architecture (v1.0 RC)
+# ModelFlow Architecture
+
+Status: GA-candidate documentation under Phase 10. This is **not** a claim that
+`v1.0.0` has been tagged or published.
 
 ## Overview
 
@@ -98,6 +101,15 @@ Unified `work_items` / domain job tables claimed by worker:
 - Audit log for governance events
 - Endpoint request metrics (counts, latency histograms) without storing raw PII by default
 
+## Deployment modes
+
+| Mode | Role |
+|------|------|
+| Docker Compose (+ optional Traefik) | Supported local/self-hosted stack; single Compose deployment is **not** HA by itself |
+| Helm / Kubernetes | Replicated **stateless** ModelFlow services (`backend`, `worker`, `inference-runtime`, frontend, etc.) |
+
+Kubernetes HA requires **operator-managed external** PostgreSQL and S3-compatible object storage. Do not claim HA from a single embedded Postgres/MinIO instance. See `docs/DEPLOYMENT_KUBERNETES.md` and D-048.
+
 ## Security boundary
 
-Compose is a **local/self-hosted trust boundary**. Do not expose to the public internet without reverse proxy TLS, hardened secrets, and operational controls. See README security section.
+Compose is a **local/self-hosted trust boundary**. Do not expose published Compose ports to the public internet without reverse proxy TLS, hardened secrets, and operational controls. See README security section.

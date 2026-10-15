@@ -5,7 +5,7 @@ Phases 1–9 landed on `main`. Phase 10-A was **planning / audit only**: no prod
 features, no version bump, no tag, no GitHub Release, no runtime or migration
 changes.
 
-**Phase 10-A status:** complete. **Phase 10 overall:** in progress — **not GA ready**.
+**Phase 10-A status:** complete. **Phase 10-B status:** complete (documentation truth-up). **Phase 10-C:** next. **Phase 10 overall:** in progress — **not GA ready**.
 
 ## Current GA candidate baseline
 
@@ -13,6 +13,7 @@ changes.
 |---|---|
 | Phase 10 starting baseline | `9e3f6e356795a1a063d2472b05520aa0009a0fd9` |
 | Tip summary | Phase 9-D merge (`#96`) — accessibility / responsive closeout |
+| 10-A merge on main | `3e271e172580932ce7ae61d89b62c3625c54ce7a` (PR #97) |
 | Prior release identity | `v1.0.0-rc.1` only (no GA tag / GA release notes yet) |
 | Alembic head | `024_oidc_enterprise_identity` |
 | Enhancement phases on tip | **1 through 9 complete** (incl. 8-A–F, 9-A–D) |
@@ -67,19 +68,24 @@ phase docs**, not RC-era acceptance/limitations text.
 
 ## Stale documentation findings
 
-Do **not** rewrite these files in 10-A. Later Phase 10 slices should.
+### Cleared in Phase 10-B
+
+| File | Correction |
+|---|---|
+| `README.md` | Non-GA identity retained; capabilities/deploy (Compose + Helm/K8s, OIDC, inference-runtime, connectors) truth-up; Docs index points at Phase 10 |
+| `docs/KNOWN_LIMITATIONS.md` | Removed Compose-only / in-API inference / no-SSO bullets; replaced with current HA/OIDC/runtime boundaries |
+| `docs/PRODUCT_SPEC.md` | Current goals/non-goals; connectors and deploy modes; no false K8s/SSO non-goals |
+| `docs/ARCHITECTURE.md` | Neutral title; deployment modes section for Compose vs Helm + external durable state |
+| `docs/DECISIONS.md` | D-006 marked superseded by Phase 8-A; D-017 annotated for Fast vs Full gates (90m) |
+| `docs/phase-9-final-visual-redesign.md` | Draft PR #96 → PR #96 merged |
+
+### Remaining for later slices
 
 | File | Factual drift |
 |---|---|
-| `README.md` | Still “v1.0 Release Candidate”; Docs index emphasizes RC; under-describes connectors, OIDC, inference-runtime, Helm/K8s |
-| `docs/KNOWN_LIMITATIONS.md` | Claims no Kubernetes/HA; inference in API process; no SSO/LDAP as a single bullet — conflicts with 8-A/8-C/8-E (LDAP half still true) |
-| `docs/ACCEPTANCE_CRITERIA.md` | Tip `2d2f3da`; Alembic evidence `005_…`; test counts 137/98/18; AC-27 says PRs run full gate (now Fast Gate); no AC coverage for Phases 1.5–9 |
-| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Correct as RC history; “what’s next: Scheduling” long obsolete; no GA notes file |
-| `docs/PRODUCT_SPEC.md` | RC title; goals/non-goals still deny K8s/SSO and understate connectors |
-| `docs/ARCHITECTURE.md` | Topology largely current (includes inference-runtime/OIDC); title still “(v1.0 RC)” |
-| `docs/DECISIONS.md` | D-046–048 current; **D-006** still says inference in backend process (superseded in practice by 8-A, not marked); D-017 PR=full-gate wording stale |
-| `docs/PROGRESS.md` / `docs/ENHANCEMENT_ROADMAP.md` / `docs/phase-9-final-visual-redesign.md` | Still say “Draft PR #96” after merge to `9e3f6e3` (partially corrected in 10-A roadmap/progress) |
-| `docs/ENHANCEMENT_ROADMAP.md` | Phase 0 still lists branch protection **pending**; framing still “post-RC future work” |
+| `docs/ACCEPTANCE_CRITERIA.md` | Tip `2d2f3da`; Alembic evidence `005_…`; stale test counts; AC-27 vs Fast Gate — **10-C** |
+| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Correct as RC history; GA notes belong to **10-D** |
+| Phase 0 branch protection | Still listed pending — process item **G-09**, not fabricated complete |
 
 Rough current test surface (counts only; not a tip attestation): ~673 backend `def test_*`, ~371 frontend Vitest `it(` matches. Playwright suite has grown beyond the RC “18 tests” figure.
 
@@ -107,37 +113,37 @@ Treat as **accepted product boundaries** unless GA explicitly expands scope:
 
 | ID | Item | Severity | Notes |
 |---|---|---|---|
-| G-01 | Release identity still RC (README branding; only `v1.0.0-rc.1` tag; no GA release notes) | **BLOCKER** | Cleared only by GA packaging (10-D identity prep) after docs/acceptance slices |
-| G-03 | `ACCEPTANCE_CRITERIA.md` tip/counts/head/AC-27 stale; enhancement phases unattested | **BLOCKER** | Refresh attestation in 10-C; fix AC-27 vs Fast Gate reality |
+| G-01 | Release identity still not GA (only `v1.0.0-rc.1` tag; no GA release notes / version bump) | **BLOCKER** | README no longer claims released GA, but packaging remains **10-D** |
+| G-03 | `ACCEPTANCE_CRITERIA.md` tip/counts/head/AC-27 stale; enhancement phases unattested | **BLOCKER** | Refresh attestation in **10-C** |
 
 ### Cleared evidence
 
 | ID | Item | Status | Evidence |
 |---|---|---|---|
 | G-02 | Starting-baseline Full Gate for `9e3f6e3` | **CLEARED / VERIFIED** | CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) push Full Gate **SUCCESS** on exact SHA `9e3f6e356795a1a063d2472b05520aa0009a0fd9` |
+| G-04 | `KNOWN_LIMITATIONS.md` Phase-8 conflict | **CLEARED** | Phase 10-B rewrite |
+| G-05 | README / `PRODUCT_SPEC.md` capability & non-goal drift | **CLEARED** | Phase 10-B truth-up |
+| G-06 | `DECISIONS.md` D-006 / D-017 drift | **CLEARED** | Phase 10-B annotations |
+| G-07 | Remaining Draft PR #96 wording | **CLEARED** | Phase 10-B (`phase-9-final-visual-redesign.md`) |
+| G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Neutral GA-candidate framing in KNOWN/PRODUCT/ARCHITECTURE |
 
-**Still required before the GA tag:** a Full Gate SUCCESS on the **final packaging SHA** (not only #512 on the Phase 10 start tip). See 10-D ordering below.
+**Still required before the GA tag:** a Full Gate SUCCESS on the **final packaging SHA** (not only #512 on the Phase 10 start tip). See 10-D ordering below. Do not treat an in-progress or later main Full Gate (#515, etc.) as the packaging attestation unless it is SUCCESS on the exact packaging SHA.
 
 ### Other rows
 
 | ID | Item | Severity | Notes |
 |---|---|---|---|
-| G-04 | `KNOWN_LIMITATIONS.md` top bullets contradict Phase 8 | **SHOULD-FIX** | 10-B |
-| G-05 | `PRODUCT_SPEC.md` / README capability & non-goal drift | **SHOULD-FIX** | 10-B |
-| G-06 | `DECISIONS.md` D-006 (and D-017 context) not marked superseded/updated | **DOCUMENT-ONLY** | 10-B |
-| G-07 | Draft PR #96 wording in remaining phase-9 docs | **DOCUMENT-ONLY** | 10-B |
-| G-08 | Architecture/PRODUCT/KNOWN titles still say “v1.0 RC” | **DOCUMENT-ONLY** | 10-B |
-| G-09 | Phase 0 branch protection / repo governance pending | **SHOULD-FIX** (process) | Confirm org policy before GA |
+| G-09 | Phase 0 branch protection / repo governance pending | **SHOULD-FIX** (process) | Unresolved; do not mark complete without verified repository policy |
 | G-10 | Sklearn-only / no LDAP / no Airflow / no auto-PRODUCTION / Compose trust boundary / external-state K8s HA | **ACCEPTED LIMITATION** | Keep unless GA scope expands |
-| G-11 | Phase 6 deferred forecasting shapes; in-memory prep; orphan object edge case; dual polling | **ACCEPTED LIMITATION** | Document honestly; not GA feature work unless prioritized |
+| G-11 | Phase 6 deferred forecasting shapes; in-memory prep; orphan object edge case; dual polling | **ACCEPTED LIMITATION** | Documented in KNOWN_LIMITATIONS after 10-B |
 
 No evidence that Phase 8–9 **implementation** of inference-runtime, OIDC, Helm, or Phase 9-D is missing on tip.
 
 ## Exact verification plan (later Phase 10 slices)
 
 1. **Baseline attestation (done):** Full Gate #512 SUCCESS on starting tip `9e3f6e3`.
-2. **Doc truth-up (10-B):** Rewrite `KNOWN_LIMITATIONS.md`, refresh README/PRODUCT_SPEC deploy+capability language, mark D-006 superseded, fix remaining Draft #96 wording.
-3. **Acceptance refresh (10-C):** Update AC tip/counts/head, AC-27 aligned with Fast Gate, additive ACs (or explicit “covered by phase verify docs”) for 1.5–9.
+2. **Doc truth-up (done — 10-B):** `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE, DECISIONS D-006/D-017, Draft #96 wording.
+3. **Acceptance refresh (10-C — next):** Update AC tip/counts/head, AC-27 aligned with Fast Gate, additive ACs (or explicit “covered by phase verify docs”) for 1.5–9.
 4. **GA packaging (10-D):** Follow the release ordering below — never tag an unverified packaging commit.
 5. **No invented features:** GA validates shipped behavior; deferred forecasting/LDAP/Spark stay documented limitations.
 
@@ -158,8 +164,8 @@ Safe sequence — **do not tag an unverified packaging commit**:
 | Slice | Scope | Status |
 |---|---|---|
 | **10-A** | GA readiness baseline & gap audit (this document) | **complete** |
-| **10-B** | Documentation truth-up — `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE framing, DECISIONS supersede notes, merge-status wording | **next / planned** |
-| **10-C** | Acceptance & evidence refresh — AC table update, CI wording (Fast vs Full), GA tip attestation linkage | planned |
+| **10-B** | Documentation truth-up — `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE framing, DECISIONS supersede notes, merge-status wording | **complete** |
+| **10-C** | Acceptance & evidence refresh — AC table update, CI wording (Fast vs Full), GA tip attestation linkage | **next** |
 | **10-D** | GA release packaging — version + notes merge, then exact-SHA Full Gate, then tag + GitHub Release | planned |
 
-Phase 10 overall remains **in progress / not GA ready**. **Do not claim v1.0 GA readiness from 10-A alone.**
+Phase 10 overall remains **in progress / not GA ready**. **Do not claim v1.0 GA readiness from 10-B alone.**

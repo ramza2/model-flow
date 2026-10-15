@@ -74,7 +74,7 @@ The final direction is:
 | **9-C1** | Model Registry / Model Version Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
 | **9-C3** | Operations Visual Polish | **complete** (merged via PR #95) |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (Draft PR #96; Chrome browser review PASS) |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (PR #96 merged; Chrome browser review PASS) |
 
 ### 9-A — Design Foundation + App Shell
 
