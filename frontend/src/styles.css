@@ -2675,6 +2675,12 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   align-items: start;
   min-width: 0;
 }
+.quality-policies-page .quality-policies-layout.is-empty {
+  grid-template-columns: 1fr;
+}
+.quality-policies-page .quality-policies-layout.is-empty .quality-policies-detail {
+  display: none;
+}
 .quality-policies-detail {
   display: flex;
   flex-direction: column;

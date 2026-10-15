@@ -568,7 +568,14 @@ export default function QualityPolicies() {
         <Loading label="Loading quality policies" />
       ) : (
         <>
-          <div className="quality-policies-layout">
+          <div
+            className={[
+              "quality-policies-layout",
+              policies.length === 0 && !showForm ? "is-empty" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
           <DetailSection eyebrow="Policies" title="Configured policies" testId="quality-policy-list">
             {policies.length === 0 ? (
               <EmptyState
