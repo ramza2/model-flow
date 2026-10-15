@@ -2510,7 +2510,10 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     height: 100vh;
     height: 100dvh;
     transform: translateX(-105%);
-    transition: transform .2s ease, visibility .2s ease;
+    /* Open: visibility immediate; close: hide after transform finishes */
+    transition:
+      transform .2s ease,
+      visibility 0s linear .2s;
     visibility: hidden;
     pointer-events: none;
     background: rgba(18, 25, 34, 0.99);
@@ -2521,6 +2524,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     transform: translateX(0);
     visibility: visible;
     pointer-events: auto;
+    transition-delay: 0s, 0s;
   }
   .content { padding: 1rem; }
 }
