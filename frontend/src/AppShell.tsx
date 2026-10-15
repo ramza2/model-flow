@@ -225,15 +225,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       return;
     }
 
-    let cancelled = false;
-
-    // Defer past the toggle click/default focus lifecycle so the Home link
-    // receives focus in real browsers (synchronous focus is overwritten).
-    queueMicrotask(() => {
-      if (cancelled) {
-        return;
-      }
-
+    // Wait until after the toggle click/default focus lifecycle completes;
+    // queueMicrotask still lost to Chrome's button focus retention.
+    const frameId = window.requestAnimationFrame(() => {
       const sidebar = sidebarRef.current;
       if (!sidebar || sidebar.hasAttribute("inert")) {
         return;
@@ -247,7 +241,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      cancelled = true;
+      window.cancelAnimationFrame(frameId);
     };
   }, [navOpen, isDrawerViewport]);
 
