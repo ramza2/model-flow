@@ -2201,7 +2201,15 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 }
 .deployment-card.status-ready { border-color: rgba(98, 216, 146, 0.4); }
 .deployment-card.status-stopped { border-color: rgba(147, 166, 184, 0.45); opacity: 0.96; }
-.deployment-card header { display: flex; justify-content: space-between; gap: 1rem; }
+.deployment-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.deployment-card header .badge {
+  flex: 0 0 auto;
+}
 .deployment-card h2 { margin: .15rem 0; overflow-wrap: anywhere; }
 .deployment-model-meta {
   display: flex;
