@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 10 — v1.0 GA Release Readiness is current.** **Phase 9 — Final Visual Redesign is complete on `main`** (PR #96 merged at `9e3f6e3`; Chrome browser review PASS). **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A through 9-D are complete.** **Phase 10-A — GA Readiness Baseline & Gap Audit is in progress.** Phase 10 overall remains planned; do not claim GA ready yet.
+**Enhancement Phase 10 — v1.0 GA Release Readiness is current (not GA ready).** **Phase 9 — Final Visual Redesign is complete on `main`** (PR #96 merged at `9e3f6e3`; Chrome browser review PASS). **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A through 9-D are complete.** **Phase 10-A is complete.** **Phase 10-B — Documentation Truth-up is next.**
 
-Phase 10-A baseline: `main@9e3f6e356795a1a063d2472b05520aa0009a0fd9` (Phase 9-D PR #96 merged; Alembic head remains `024_oidc_enterprise_identity`). Planning doc: [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+Phase 10-A baseline: `main@9e3f6e356795a1a063d2472b05520aa0009a0fd9` (Phase 9-D PR #96 merged; Alembic head remains `024_oidc_enterprise_identity`). Baseline Full Gate: CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) **SUCCESS** on exact SHA `9e3f6e3`. Planning doc: [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
 
 Phase 9-A baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (Phase 8-F PR #86 merged; exact-head CI #472 PASS; post-merge main CI #473 PASS; Alembic head remains `024_oidc_enterprise_identity`). Figma source: `ModelFlow Phase 9 — Final Visual Redesign` at https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u.
 
@@ -505,23 +505,24 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8 and Phase 9 are complete on `main`.** **Phase 10-A is in progress** (GA readiness audit only). Next: review [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md), then 10-B documentation truth-up and 10-C acceptance/evidence refresh before any GA packaging (10-D). Do not bump version, tag, or publish a GitHub Release from 10-A.
+**Phase 8 and Phase 9 are complete on `main`.** **Phase 10-A is complete** (audit reviewed; baseline Full Gate #512 SUCCESS on `9e3f6e3`). **Next: Phase 10-B documentation truth-up**, then 10-C acceptance/evidence refresh. Active GA blockers: **G-01** (RC release identity) and **G-03** (stale acceptance). G-02 (baseline Full Gate) is cleared. Do not claim v1.0 GA ready; do not tag until Full Gate SUCCESS on the final packaging SHA.
 
 Phase 10 slice plan:
 
 ```text
-10-A GA Readiness Baseline & Gap Audit
-10-B Documentation Truth-up
+10-A GA Readiness Baseline & Gap Audit   (complete)
+10-B Documentation Truth-up              (next)
 10-C Acceptance & Evidence Refresh
 10-D GA Release Packaging
 ```
 
-Ordering constraints:
+10-D release ordering (mandatory):
 
-- audit before rewriting KNOWN_LIMITATIONS / ACCEPTANCE_CRITERIA / README / release notes
-- attest Full Gate on the GA candidate tip before claiming GA
-- keep intentional product limitations honest (no LDAP, sklearn-only, no auto-PRODUCTION, external-state K8s HA)
-- version bump / tag / GitHub Release only in 10-D after blockers clear
+1. merge GA identity + version + `RELEASE_NOTES_v1.0.0.md` **without** tag/Release
+2. wait for Full Gate SUCCESS on that exact `main` SHA
+3. create `v1.0.0` tag on that exact verified SHA
+4. publish GitHub GA Release from the tag
+5. post-release smoke if required
 
 See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md) and [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md).
 

@@ -388,15 +388,15 @@ See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
 
 ## Phase 10 — v1.0 GA Release Readiness
 
-**Status:** planned. **10-A — GA Readiness Baseline & Gap Audit is in progress.** Do not claim GA ready until later slices clear documented blockers.
+**Status:** in progress — **not GA ready.** **10-A complete.** **10-B is next.**
 
 | Slice | Scope | Status |
 |-------|-------|--------|
-| **10-A** | GA Readiness Baseline & Gap Audit | **in progress** |
-| **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | planned |
-| **10-C** | Acceptance & evidence refresh (tip Full Gate, AC table, CI wording) | planned |
-| **10-D** | GA release packaging (version, tag, release notes) | planned |
+| **10-A** | GA Readiness Baseline & Gap Audit | **complete** |
+| **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | **next / planned** |
+| **10-C** | Acceptance & evidence refresh (AC table, CI wording, GA tip linkage) | planned |
+| **10-D** | GA release packaging (version + notes, then exact-SHA Full Gate, then tag/Release) | planned |
 
-Phase 10 is planning and release-readiness work after Phases 1–9. It does not add product features in 10-A. See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+Phase 10 is release-readiness work after Phases 1–9. Starting baseline Full Gate #512 SUCCESS on `9e3f6e3` is recorded; active blockers remain G-01 (release identity) and G-03 (stale acceptance). See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
 
-**Depends on:** completed Phase 9 on `main` and an attested Full Gate on the GA candidate tip.
+**Depends on:** completed Phase 9 on `main`; Full Gate on the final packaging SHA before `v1.0.0` tag.
