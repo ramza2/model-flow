@@ -104,7 +104,7 @@ def auth_headers(client):
 def test_v1_health_auth_and_security_headers(client, auth_headers):
     health = client.get("/api/v1/health")
     assert health.status_code == 200
-    assert health.json()["version"] == "1.0.0-rc"
+    assert health.json()["version"] == "1.0.0"
     assert health.headers["x-content-type-options"] == "nosniff"
     assert health.headers["x-frame-options"] == "DENY"
     assert health.headers["x-request-id"]

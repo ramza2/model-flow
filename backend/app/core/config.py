@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         super().__init__(**merged)
 
     app_name: str = "ModelFlow"
-    app_version: str = "1.0.0-rc"
+    app_version: str = "1.0.0"
     database_url: str = Field(
         default="sqlite+pysqlite:///./modelflow.db", repr=False, exclude=True
     )
