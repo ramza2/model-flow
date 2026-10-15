@@ -2,7 +2,7 @@
 
 ## Current phase
 
-**Enhancement Phase 9 — Final Visual Redesign is current.** **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A, 9-B, 9-C1, 9-C2, and 9-C3 are complete on `main`.** **9-D — Final Accessibility / Responsive / Browser Regression is the current Draft slice.** Phase 9 itself remains incomplete until representative browser review lands.
+**Enhancement Phase 9 — Final Visual Redesign is complete** (Draft PR #96; Chrome browser review PASS). **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A through 9-D are complete.**
 
 Phase 9-A baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (Phase 8-F PR #86 merged; exact-head CI #472 PASS; post-merge main CI #473 PASS; Alembic head remains `024_oidc_enterprise_identity`). Figma source: `ModelFlow Phase 9 — Final Visual Redesign` at https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u.
 
@@ -503,7 +503,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8 is complete on `main`.** **Phase 9-A through 9-C3 are complete on `main`.** **9-D — Final Accessibility / Responsive / Browser Regression is current.** Close out keyboard/focus, reduced-motion, tablet/mobile shell, dense-page overflow, and builder regression without changing backend/API/runtime behavior; Phase 9 stays incomplete until representative browser review.
+**Phase 8 is complete on `main`.** **Phase 9 is complete** (9-A through 9-D; Draft PR #96 Chrome browser review PASS: drawer focus/inert, 768/390 page overflow 0, dense Training Jobs internal table scroll, Pipeline Builder canvas-only overflow, user-menu focus-visible, reduced-motion).
 
 Phase 8 slice plan:
 

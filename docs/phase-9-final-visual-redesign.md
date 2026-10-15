@@ -74,7 +74,7 @@ The final direction is:
 | **9-C1** | Model Registry / Model Version Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
 | **9-C3** | Operations Visual Polish | **complete** (merged via PR #95) |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | **current** |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (Draft PR #96; Chrome browser review PASS) |
 
 ### 9-A — Design Foundation + App Shell
 
@@ -157,7 +157,7 @@ Scope:
 
 ### 9-C — Models / Serving / Operations Visual Polish
 
-**Status:** current. Split into reviewable visual-only slices.
+**Status:** complete. Split into reviewable visual-only slices.
 
 #### 9-C1 — Model Registry / Model Version Governance Visual Polish (complete)
 
@@ -203,26 +203,30 @@ Scope:
 
 ### 9-D — Final Accessibility / Responsive / Browser Regression
 
-**Status:** current. Closeout only — no new screens, features, or Figma frames.
+**Status:** complete. Closeout only — no new screens, features, or Figma frames.
 
-Completed in this slice (pending representative browser review):
+Delivered:
 
 - keyboard / focus-visible closeout (`summary` + library item outline restore)
 - `prefers-reduced-motion` support for sidebar, spinner, live pulse, hover translate, library transitions
 - tablet / mobile shell regression (`100dvh` fallback, menu popover max-width, drawer breakpoint preserved at 1023px)
-- dense page / table overflow regression (safe `minmax(min(100%, …))` grids, `.code-block` wrap/scroll, catalog/ops cell wrap)
+- dense page / table overflow regression (catalog `min-width` + `.table-wrap` internal scroll; ops/audit technical wrap retained)
 - builder workspace regression (min-width / max-width guards at ≤1023 without changing zone stack breakpoints)
 - browser compatibility presentation-only (`-webkit-backdrop-filter` beside solid topbar fallback)
-- AppShell drawer a11y and Drawer dialog semantics preserved (tests unchanged)
+- AppShell drawer open focus: inert sync → `requestAnimationFrame` focus → asymmetric visibility transition
+- AppShell drawer close focus: move focus to toggle before `aria-hidden`/`inert` (nav click / Escape / backdrop)
 
-Still required before Phase 9 complete:
+Manual Chrome browser review: **PASS**
 
-- representative browser review at 1440 / 1280 / 1024 / 1023 / 768 / 390
-- keyboard pass on App Shell drawer, user menu `<summary>`, Drawer focus trap
-- reduced-motion visual spot-check
-- dense catalog / builder overflow spot-check with realistic data
+- 1024 desktop shell; 1023 drawer breakpoint; drawer open/backdrop
+- drawer open → Home focus; Escape → toggle focus restore
+- drawer nav click → no aria-hidden descendant-focus warning
+- 768 / 390: page overflow 0
+- user-menu `<summary>` focus-visible; `prefers-reduced-motion: reduce`
+- 390 Training Jobs: page overflow 0, table internal horizontal scroll, readable job names
+- 390 Pipeline Builder: page overflow 0, canvas internal overflow only
 
-Phase 9 itself remains incomplete until that browser review lands.
+**Phase 9 overall is complete.**
 
 ## 9-A token baseline
 

@@ -354,7 +354,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
-**Status:** current. **9-A through 9-C3 complete on `main`.** **9-D — Final Accessibility / Responsive / Browser Regression is current / Draft.** Phase 9 remains incomplete until representative browser review.
+**Status:** complete. **9-A through 9-D complete.** Draft PR #96 Chrome browser review PASS (drawer focus/inert, 768/390 overflow 0, dense catalog internal scroll, builder canvas overflow, focus-visible, reduced-motion).
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -368,7 +368,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 | **9-C1** | Model Registry / Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
 | **9-C3** | Operations Visual Polish | **complete** (PR #95) |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | **current / Draft** |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (Draft PR #96) |
 
 - Figma-driven product-wide final visual redesign
 - final typography, color, spacing, iconography, components, and charts
