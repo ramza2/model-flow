@@ -188,24 +188,154 @@ export default function BatchInference() {
     }
   }
 
-  return <div>
-    <PageHeader title="Batch inference" description="Score a complete dataset version with a deployment or approved model." />
-    <ErrorNotice message={error} /><SuccessNotice message={success} />
-    {loading ? <Loading label="Loading batch inference" /> : <>
-      {canDeploy && <form className="panel form form-wide" onSubmit={create}>
-        <div className="form-grid">
-          <label>Dataset<select value={datasetId} onChange={(event) => setDatasetId(event.target.value)} required><option value="">Select dataset</option>{datasets.map((dataset) => <option value={dataset.id} key={dataset.id}>{dataset.name}</option>)}</select></label>
-          <label>Version<select value={versionId} onChange={(event) => setVersionId(event.target.value)} required>{versions.map((version) => <option value={version.id} key={version.id}>v{version.version} · {version.row_count.toLocaleString()} rows</option>)}</select></label>
-          <label>Prediction target<select value={targetType} onChange={(event) => setTargetType(event.target.value as "endpoint" | "model")}><option value="endpoint">Deployment</option><option value="model">Approved model</option></select></label>
-          <label>{targetType === "endpoint" ? "Deployment" : "Model"}<select value={targetId} onChange={(event) => setTargetId(event.target.value)} required>{(targetType === "endpoint" ? endpoints : models).map((target) => <option value={target.id} key={target.id}>{target.name}{targetType === "model" && "version" in target ? ` · v${target.version}` : ""}</option>)}</select></label>
-          <label>Result format<select value={format} onChange={(event) => setFormat(event.target.value)}><option value="csv">CSV</option><option value="json">JSON</option><option value="parquet">Parquet</option></select></label>
-        </div>
-        <button className="btn" disabled={busy || !versionId || !targetId}>{busy ? "Queuing…" : "Run batch inference"}</button>
-      </form>}
-      <section className="panel">
-        <div className="panel-title"><div><span className="eyebrow">History</span><h2>Batch jobs</h2></div></div>
-        {jobs.length === 0 ? <EmptyState title="No batch jobs" description="Configure a dataset and prediction target to score records in bulk." /> : <div className="table-wrap"><table><thead><tr><th>Job</th><th>Status</th><th>Rows</th><th>Format</th><th>Created</th><th /></tr></thead><tbody>{jobs.map((job) => <tr key={job.id}><td>Batch #{job.id}</td><td><StatusBadge status={job.status} /></td><td>{job.row_count?.toLocaleString() || "—"}</td><td>{job.result_format.toUpperCase()}</td><td>{formatDate(job.created_at)}</td><td>{job.status === "succeeded" && <button className="btn link" onClick={() => download(job)}>Download</button>}</td></tr>)}</tbody></table></div>}
-      </section>
-    </>}
-  </div>;
+  return (
+    <div className="page-stack batch-inference-page">
+      <PageHeader
+        title="Batch inference"
+        description="Score a complete dataset version with a deployment or approved model."
+      />
+      <ErrorNotice message={error} />
+      <SuccessNotice message={success} />
+      {loading ? (
+        <Loading label="Loading batch inference" />
+      ) : (
+        <>
+          {canDeploy && (
+            <form className="panel form form-wide batch-create-panel" onSubmit={create}>
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">New batch job</span>
+                  <h2>Configure scoring run</h2>
+                </div>
+              </div>
+              <div className="form-grid batch-form-grid">
+                <label>
+                  Dataset
+                  <select
+                    value={datasetId}
+                    onChange={(event) => setDatasetId(event.target.value)}
+                    required
+                  >
+                    <option value="">Select dataset</option>
+                    {datasets.map((dataset) => (
+                      <option value={dataset.id} key={dataset.id}>
+                        {dataset.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Version
+                  <select
+                    value={versionId}
+                    onChange={(event) => setVersionId(event.target.value)}
+                    required
+                  >
+                    {versions.map((version) => (
+                      <option value={version.id} key={version.id}>
+                        v{version.version} · {version.row_count.toLocaleString()} rows
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Prediction target
+                  <select
+                    value={targetType}
+                    onChange={(event) => setTargetType(event.target.value as "endpoint" | "model")}
+                  >
+                    <option value="endpoint">Deployment</option>
+                    <option value="model">Approved model</option>
+                  </select>
+                </label>
+                <label>
+                  {targetType === "endpoint" ? "Deployment" : "Model"}
+                  <select
+                    value={targetId}
+                    onChange={(event) => setTargetId(event.target.value)}
+                    required
+                  >
+                    {(targetType === "endpoint" ? endpoints : models).map((target) => (
+                      <option value={target.id} key={target.id}>
+                        {target.name}
+                        {targetType === "model" && "version" in target
+                          ? ` · v${target.version}`
+                          : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Result format
+                  <select value={format} onChange={(event) => setFormat(event.target.value)}>
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                    <option value="parquet">Parquet</option>
+                  </select>
+                </label>
+              </div>
+              <button className="btn" disabled={busy || !versionId || !targetId}>
+                {busy ? "Queuing…" : "Run batch inference"}
+              </button>
+            </form>
+          )}
+          <section className="panel batch-history-panel">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">History</span>
+                <h2>Batch jobs</h2>
+              </div>
+            </div>
+            {jobs.length === 0 ? (
+              <EmptyState
+                title="No batch jobs"
+                description="Configure a dataset and prediction target to score records in bulk."
+              />
+            ) : (
+              <div className="table-wrap catalog-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Job</th>
+                      <th>Status</th>
+                      <th>Rows</th>
+                      <th>Format</th>
+                      <th>Created</th>
+                      <th>
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job) => (
+                      <tr key={job.id} className={`batch-job-row status-${job.status || "unknown"}`}>
+                        <td className="mono">Batch #{job.id}</td>
+                        <td>
+                          <StatusBadge status={job.status} />
+                        </td>
+                        <td className="tabular-num">
+                          {job.row_count?.toLocaleString() || "—"}
+                        </td>
+                        <td>
+                          <span className="type-chip">{job.result_format.toUpperCase()}</span>
+                        </td>
+                        <td className="catalog-meta-date">{formatDate(job.created_at)}</td>
+                        <td className="align-right">
+                          {job.status === "succeeded" && (
+                            <button className="btn link" onClick={() => download(job)}>
+                              Download
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </div>
+  );
 }
