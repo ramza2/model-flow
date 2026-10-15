@@ -354,7 +354,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
-**Status:** complete. **9-A through 9-D complete.** Draft PR #96 Chrome browser review PASS (drawer focus/inert, 768/390 overflow 0, dense catalog internal scroll, builder canvas overflow, focus-visible, reduced-motion).
+**Status:** complete. **9-A through 9-D complete** (PR #96 merged on `main@9e3f6e3`; Chrome browser review PASS).
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -368,7 +368,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 | **9-C1** | Model Registry / Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
 | **9-C3** | Operations Visual Polish | **complete** (PR #95) |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (Draft PR #96) |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (PR #96) |
 
 - Figma-driven product-wide final visual redesign
 - final typography, color, spacing, iconography, components, and charts
@@ -383,3 +383,20 @@ https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u
 See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
 
 **Depends on:** completed Phase 8 and stabilized IA/workflows from Phases 1.5–3 and later product depth.
+
+---
+
+## Phase 10 — v1.0 GA Release Readiness
+
+**Status:** planned. **10-A — GA Readiness Baseline & Gap Audit is in progress.** Do not claim GA ready until later slices clear documented blockers.
+
+| Slice | Scope | Status |
+|-------|-------|--------|
+| **10-A** | GA Readiness Baseline & Gap Audit | **in progress** |
+| **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | planned |
+| **10-C** | Acceptance & evidence refresh (tip Full Gate, AC table, CI wording) | planned |
+| **10-D** | GA release packaging (version, tag, release notes) | planned |
+
+Phase 10 is planning and release-readiness work after Phases 1–9. It does not add product features in 10-A. See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+
+**Depends on:** completed Phase 9 on `main` and an attested Full Gate on the GA candidate tip.
