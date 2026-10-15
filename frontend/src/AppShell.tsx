@@ -245,6 +245,29 @@ export default function AppShell({ children }: { children: ReactNode }) {
     };
   }, [navOpen, isDrawerViewport]);
 
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      // Focus toggle before aria-hidden/inert on the closing render.
+      navToggleRef.current?.focus();
+      setNavOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navOpen, isDrawerViewport]);
+
+  async function signOut() {
+    if (!confirmUnsavedNavigation()) return;
+    await logout();
+    navigate("/login", { replace: true });
+  }
+
   function closeNav(options?: { restoreFocus?: boolean }) {
     const sidebar = sidebarRef.current;
     const activeElement = document.activeElement;
@@ -258,27 +281,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     }
 
     setNavOpen(false);
-  }
-
-  useEffect(() => {
-    if (!isDrawerViewport || !navOpen) {
-      return;
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      closeNav({ restoreFocus: true });
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navOpen, isDrawerViewport]);
-
-  async function signOut() {
-    if (!confirmUnsavedNavigation()) return;
-    await logout();
-    navigate("/login", { replace: true });
   }
 
   return (
