@@ -108,56 +108,126 @@ export default function Predict() {
   const showPreview = firstPrediction !== undefined && !isScalarPrediction(firstPrediction);
 
   return (
-    <div>
-      <PageHeader title="Prediction test" description={ep ? `Send a test request to ${ep.name}.` : "Load deployment schema and test a prediction."} actions={ep && <StatusBadge status={ep.status} />} />
+    <div className="page-stack predict-page">
+      <PageHeader
+        title="Prediction test"
+        description={
+          ep ? `Send a test request to ${ep.name}.` : "Load deployment schema and test a prediction."
+        }
+        actions={ep ? <StatusBadge status={ep.status} /> : undefined}
+      />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      {!ep ? <Loading label="Loading deployment" /> : (
-        <div className="predict-layout">
-          <form className="panel form form-wide" onSubmit={onSubmit}>
-            <div className="panel-title"><div><span className="eyebrow">Request</span><h2>Instances JSON</h2></div></div>
-            {stopped && (
-              <div className="notice" data-testid="endpoint-stopped-notice">
-                <p>This endpoint is stopped. Start the endpoint before running predictions.</p>
-                <div className="row-actions">
-                  {canDeploy ? (
-                    <button className="btn" type="button" disabled={starting} onClick={() => void startEndpoint()} data-testid="start-endpoint">
-                      {starting ? "Starting…" : "Start endpoint"}
-                    </button>
-                  ) : (
-                    <Link className="btn secondary" to={`/projects/${projectId}/deployments`}>Back to deployments</Link>
-                  )}
+      {!ep ? (
+        <Loading label="Loading deployment" />
+      ) : (
+        <>
+          <div
+            className={`builder-state-band predict-state-band${stopped ? " is-blocked" : " is-ready"}`}
+            role="status"
+          >
+            <span className="builder-state-copy">Endpoint</span>
+            <StatusBadge status={ep.status} />
+            <span className="builder-state-copy" data-testid="predict-output-targets">
+              {formatOutputTargetsLabel(outputTargets)}
+            </span>
+          </div>
+          <div className="predict-layout">
+            <form className="panel form form-wide predict-request-panel" onSubmit={onSubmit}>
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">Request</span>
+                  <h2>Instances JSON</h2>
                 </div>
               </div>
-            )}
-            <p className="form-hint" data-testid="predict-output-targets">
-              {formatOutputTargetsLabel(outputTargets)}
-            </p>
-            <label>Payload<textarea className="code-input predict-input" value={payload} onChange={(event) => setPayload(event.target.value)} data-testid="predict-payload" spellCheck={false} /><small>Expected fields: {ep.feature_schema.map((field) => typeof field === "string" ? field : String(field.name || field.field)).join(", ") || "schema not declared"}</small></label>
-            <button className="btn" type="submit" disabled={busy || ep.status !== "ready"} data-testid="predict-submit">{busy ? "Running…" : "Run prediction"}</button>
-          </form>
-          <section className="panel result-panel">
-            <div className="panel-title"><div><span className="eyebrow">Response</span><h2>Prediction result</h2></div></div>
-            {result ? (
-              <>
-                <div className="prediction-summary" data-testid="predict-summary">
-                  <span className="eyebrow">Summary</span>
-                  <pre className="prediction-value prediction-preview named-prediction">
-                    {formatPredictionSummary(firstPrediction, outputTargets)}
-                  </pre>
-                </div>
-                {showPreview && (
-                  <div className="prediction-value prediction-preview" data-testid="predict-preview">
-                    {formatPredictionPreview(firstPrediction)}
+              {stopped && (
+                <div className="notice predict-stopped-notice" data-testid="endpoint-stopped-notice">
+                  <p>This endpoint is stopped. Start the endpoint before running predictions.</p>
+                  <div className="row-actions">
+                    {canDeploy ? (
+                      <button
+                        className="btn"
+                        type="button"
+                        disabled={starting}
+                        onClick={() => void startEndpoint()}
+                        data-testid="start-endpoint"
+                      >
+                        {starting ? "Starting…" : "Start endpoint"}
+                      </button>
+                    ) : (
+                      <Link className="btn secondary" to={`/projects/${projectId}/deployments`}>
+                        Back to deployments
+                      </Link>
+                    )}
                   </div>
-                )}
-                <pre className="json-view predict-result-json" data-testid="predict-result">{JSON.stringify(result, null, 2)}</pre>
-              </>
-            ) : (
-              <div className="result-placeholder">Run a prediction to inspect the response.</div>
-            )}
-          </section>
-        </div>
+                </div>
+              )}
+              <label>
+                Payload
+                <textarea
+                  className="code-input predict-input engineering-surface"
+                  value={payload}
+                  onChange={(event) => setPayload(event.target.value)}
+                  data-testid="predict-payload"
+                  spellCheck={false}
+                />
+                <small>
+                  Expected fields:{" "}
+                  {ep.feature_schema
+                    .map((field) =>
+                      typeof field === "string" ? field : String(field.name || field.field),
+                    )
+                    .join(", ") || "schema not declared"}
+                </small>
+              </label>
+              <button
+                className="btn"
+                type="submit"
+                disabled={busy || ep.status !== "ready"}
+                data-testid="predict-submit"
+              >
+                {busy ? "Running…" : "Run prediction"}
+              </button>
+            </form>
+            <section className="panel result-panel predict-response-panel">
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">Response</span>
+                  <h2>Prediction result</h2>
+                </div>
+              </div>
+              {result ? (
+                <>
+                  <div className="prediction-summary" data-testid="predict-summary">
+                    <span className="eyebrow">Summary</span>
+                    <pre className="prediction-value prediction-preview named-prediction">
+                      {formatPredictionSummary(firstPrediction, outputTargets)}
+                    </pre>
+                  </div>
+                  {showPreview && (
+                    <div
+                      className="prediction-value prediction-preview engineering-surface"
+                      data-testid="predict-preview"
+                    >
+                      {formatPredictionPreview(firstPrediction)}
+                    </div>
+                  )}
+                  <div className="predict-raw-block">
+                    <span className="eyebrow">Raw JSON</span>
+                    <pre
+                      className="json-view predict-result-json engineering-surface"
+                      data-testid="predict-result"
+                    >
+                      {JSON.stringify(result, null, 2)}
+                    </pre>
+                  </div>
+                </>
+              ) : (
+                <div className="result-placeholder">Run a prediction to inspect the response.</div>
+              )}
+            </section>
+          </div>
+        </>
       )}
       <Link to={`/projects/${projectId}/deployments`}>← Back to deployments</Link>
     </div>

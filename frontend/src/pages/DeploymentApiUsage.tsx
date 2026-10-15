@@ -253,7 +253,7 @@ export default function DeploymentApiUsage() {
                 {copyLabel("url", "Copy URL")}
               </button>
             </div>
-            <dl className="api-meta">
+            <dl className="api-meta api-endpoint-meta">
               <div>
                 <dt>Method</dt>
                 <dd>
@@ -264,7 +264,7 @@ export default function DeploymentApiUsage() {
               </div>
               <div>
                 <dt>Endpoint</dt>
-                <dd className="mono" data-testid="api-usage-url">
+                <dd className="mono api-usage-url" data-testid="api-usage-url">
                   {predictUrl}
                 </dd>
               </div>
@@ -288,41 +288,41 @@ export default function DeploymentApiUsage() {
             </p>
           </section>
 
-          <div className="api-usage-grid">
-            <section className="panel api-usage-block" data-testid="api-usage-schema">
-              <div className="panel-title">
-                <div>
-                  <span className="eyebrow">Schema</span>
-                  <h2>Request schema</h2>
-                </div>
+          <section className="panel api-usage-block" data-testid="api-usage-schema">
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Schema</span>
+                <h2>Request schema</h2>
               </div>
-              {schemaFields.length === 0 ? (
-                <p className="muted-copy">
-                  No feature schema is available for this deployment. Use the sample request as a
-                  reference.
-                </p>
-              ) : (
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Field</th>
-                        <th>Type</th>
+            </div>
+            {schemaFields.length === 0 ? (
+              <p className="muted-copy">
+                No feature schema is available for this deployment. Use the sample request as a
+                reference.
+              </p>
+            ) : (
+              <div className="table-wrap catalog-table">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Field</th>
+                      <th>Type</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schemaFields.map((field) => (
+                      <tr key={field.name}>
+                        <td className="mono">{field.name}</td>
+                        <td>{field.type}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {schemaFields.map((field) => (
-                        <tr key={field.name}>
-                          <td className="mono">{field.name}</td>
-                          <td>{field.type}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
+          <div className="api-usage-grid api-usage-engineering-grid">
             <section className="panel api-usage-block" data-testid="api-usage-sample">
               <div className="panel-title">
                 <div>
@@ -338,37 +338,37 @@ export default function DeploymentApiUsage() {
                   {copyLabel("json", "Copy JSON")}
                 </button>
               </div>
-              <pre className="json-view" data-testid="api-usage-sample-json">
+              <pre className="json-view engineering-surface" data-testid="api-usage-sample-json">
                 {requestJson}
               </pre>
             </section>
+
+            <section className="panel api-usage-block" data-testid="api-usage-curl">
+              <div className="panel-title">
+                <div>
+                  <span className="eyebrow">Example</span>
+                  <h2>cURL</h2>
+                </div>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  data-testid="copy-curl"
+                  onClick={() => void onCopy("curl", curlExample)}
+                >
+                  {copyLabel("curl", "Copy cURL")}
+                </button>
+              </div>
+              <pre className="json-view mono engineering-surface" data-testid="api-usage-curl-text">
+                {curlExample}
+              </pre>
+              <p className="muted-copy">
+                Replace <code>{CURL_KEY_PLACEHOLDER}</code> with a Service API Key from the section
+                below.
+              </p>
+            </section>
           </div>
 
-          <section className="panel api-usage-block" data-testid="api-usage-curl">
-            <div className="panel-title">
-              <div>
-                <span className="eyebrow">Example</span>
-                <h2>cURL</h2>
-              </div>
-              <button
-                type="button"
-                className="btn secondary"
-                data-testid="copy-curl"
-                onClick={() => void onCopy("curl", curlExample)}
-              >
-                {copyLabel("curl", "Copy cURL")}
-              </button>
-            </div>
-            <pre className="json-view mono" data-testid="api-usage-curl-text">
-              {curlExample}
-            </pre>
-            <p className="muted-copy">
-              Replace <code>{CURL_KEY_PLACEHOLDER}</code> with a Service API Key from the section
-              below.
-            </p>
-          </section>
-
-          <section className="panel api-usage-block" data-testid="api-usage-keys">
+          <section className="panel api-usage-block api-usage-credentials" data-testid="api-usage-keys">
             <div className="panel-title">
               <div>
                 <span className="eyebrow">Credentials</span>
@@ -497,11 +497,14 @@ export default function DeploymentApiUsage() {
                     <h2>Service API Key created</h2>
                   </div>
                 </div>
-                <p>This key is shown only once. Copy it now and store it securely.</p>
+                <p className="secret-once-warning">
+                  This key is shown only once. Copy it now and store it securely. It will not appear
+                  in the key list after you leave this panel.
+                </p>
                 {createdKeyPrefix && (
                   <p className="mono muted-copy">Prefix: {createdKeyPrefix}</p>
                 )}
-                <pre className="json-view mono" data-testid="service-key-plaintext">
+                <pre className="json-view mono engineering-surface" data-testid="service-key-plaintext">
                   {createdKeyPlaintext}
                 </pre>
                 <div className="row-actions">
@@ -539,36 +542,42 @@ export default function DeploymentApiUsage() {
                 <div className="service-key-list">
                   {keys.map((key) => {
                     const status = serviceKeyStatus(key);
+                    const inactive = status !== "Active";
                     return (
-                      <article className="service-key-card" key={key.id} data-testid="service-key-row">
+                      <article
+                        className={`service-key-card${inactive ? " is-inactive" : ""}`}
+                        key={key.id}
+                        data-testid="service-key-row"
+                      >
                         <header>
-                          <h3>{key.name}</h3>
+                          <div className="service-key-identity">
+                            <h3>{key.name}</h3>
+                            <span className="mono service-key-prefix-inline" data-testid="service-key-prefix">
+                              {key.key_prefix}
+                            </span>
+                          </div>
                           <span className={`badge ${status === "Active" ? "ok" : "warn"}`}>
                             {status}
                           </span>
                         </header>
                         <dl className="key-meta">
                           <div>
-                            <dt>Prefix</dt>
-                            <dd className="mono" data-testid="service-key-prefix">
-                              {key.key_prefix}
-                            </dd>
-                          </div>
-                          <div>
                             <dt>Scope</dt>
                             <dd>{serviceKeyScopeLabel(key, numericEndpointId)}</dd>
                           </div>
                           <div>
                             <dt>Expires</dt>
-                            <dd>{key.expires_at ? formatDate(key.expires_at) : "Never"}</dd>
+                            <dd className="catalog-meta-date">
+                              {key.expires_at ? formatDate(key.expires_at) : "Never"}
+                            </dd>
                           </div>
                           <div>
                             <dt>Last used</dt>
-                            <dd>{formatDate(key.last_used_at)}</dd>
+                            <dd className="catalog-meta-date">{formatDate(key.last_used_at)}</dd>
                           </div>
                           <div>
                             <dt>Created</dt>
-                            <dd>{formatDate(key.created_at)}</dd>
+                            <dd className="catalog-meta-date">{formatDate(key.created_at)}</dd>
                           </div>
                         </dl>
                         {status === "Active" && (

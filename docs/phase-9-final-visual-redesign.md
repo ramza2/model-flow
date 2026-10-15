@@ -71,8 +71,8 @@ The final direction is:
 | **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **complete** |
 | **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **complete** |
 | **9-C** | Models / Serving / Operations Visual Polish | **current** |
-| **9-C1** | Model Registry / Model Version Governance Visual Polish | **current / Draft** |
-| **9-C2** | Deployments / Serving Visual Polish | planned |
+| **9-C1** | Model Registry / Model Version Governance Visual Polish | **complete** |
+| **9-C2** | Deployments / Serving Visual Polish | **current / Draft** |
 | **9-C3** | Operations Visual Polish | planned |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 
@@ -159,7 +159,7 @@ Scope:
 
 **Status:** current. Split into reviewable visual-only slices.
 
-#### 9-C1 — Model Registry / Model Version Governance Visual Polish (current)
+#### 9-C1 — Model Registry / Model Version Governance Visual Polish (complete)
 
 Scope:
 
@@ -171,9 +171,20 @@ Scope:
 - lifecycle / gate / approval / RBAC / deployment eligibility semantics unchanged
 - Deployments / serving / operations pages excluded until 9-C2 / 9-C3
 
-#### 9-C2 — Deployments / Serving Visual Polish (planned)
+#### 9-C2 — Deployments / Serving Visual Polish (current)
 
-Target: Deployments, prediction, API usage, batch inference.
+Scope:
+
+- Deployments visual polish (header actions, ONLINE PREDICTION create panel,
+  card hierarchy, metric density, Test prediction primary serving action)
+- Prediction Test visual polish (status/output state band, request/response
+  hierarchy, engineering JSON surfaces, stopped endpoint notice)
+- API Usage / Service API Keys visual polish (method/URL surface, body/cURL
+  engineering grid, credentials section, one-time secret panel, inactive keys)
+- Batch Inference visual polish (new job form vs history separation, catalog
+  table density) while preserving 2.5s polling and stream download semantics
+- serving / API / security / polling semantics unchanged
+- operations pages excluded until 9-C3
 
 #### 9-C3 — Operations Visual Polish (planned)
 
