@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/ramza2/model-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/ramza2/model-flow/actions/workflows/ci.yml)
 
-Self-hosted, end-to-end tabular MLOps platform — ModelFlow v1.0 Release Candidate.
+Self-hosted, end-to-end tabular MLOps platform. Enhancement Phases 1–9 are complete
+on `main`; Phase 10 tracks **v1.0 GA readiness**. This README does **not** claim
+that `v1.0.0` has been tagged or published (historical RC: `v1.0.0-rc.1`).
 
 ## Host prerequisites
 
@@ -88,6 +90,15 @@ Actions runs this gate on non-default host ports and also asserts default-port C
 config rendering. Pull requests use a faster Fast Gate instead (see below); run
 `./scripts/verify.sh` locally before opening or updating a Draft PR.
 
+## Platform capabilities (current)
+
+- **Auth / tenancy:** bootstrap admin, local JWT login, RBAC, project isolation, audit; optional OIDC Authorization Code + PKCE SSO (`MODELFLOW_OIDC_*`, disabled by default). LDAP is not supported.
+- **Data:** managed file upload/import (CSV/JSON/Parquet) and connectors for PostgreSQL, MySQL/MariaDB, Microsoft SQL Server, Oracle, and REST (GET-oriented JSON materialization). Secrets encrypted at rest.
+- **ML:** sklearn tabular classification/regression (including time-aware / forecasting features that are shipped); MLflow tracking; visual pipelines; model registry with server-side gates.
+- **Serving:** dedicated internal `inference-runtime` for model load/predict (not a public serving mesh); realtime endpoints and batch inference on the control plane.
+- **Ops:** scheduling/automation, drift, closed-loop quality/feedback that **never auto-promotes to PRODUCTION**, alerts, backup/restore scripts.
+- **Deploy:** Docker Compose for local/self-hosted stacks; Helm/Kubernetes for replicated **stateless** services with operator-managed external PostgreSQL and S3-compatible object storage (see `docs/DEPLOYMENT_KUBERNETES.md`).
+
 ## Authentication and bootstrap
 
 The API and UI require authentication. On an empty database, the backend creates one
@@ -104,7 +115,10 @@ missing or empty required settings. Keep `MODELFLOW_SECRET_KEY`,
 `MODELFLOW_ENCRYPTION_KEY`, the bootstrap password, PostgreSQL credentials, and MinIO
 credentials in a secret manager for production.
 
-## Demo data and PostgreSQL source
+When OIDC is enabled, configure `MODELFLOW_OIDC_*` in `.env` (see `.env.example`). Local
+login remains available for break-glass access.
+
+## Demo data and data sources
 
 Seed a running stack with a demo project and `samples/iris.csv`:
 
@@ -123,9 +137,18 @@ Use the generated `SOURCE_POSTGRES_USER`, `SOURCE_POSTGRES_PASSWORD`, and
 `SOURCE_POSTGRES_DB` values from `.env`. The host is `postgres-source` from Compose
 services and `localhost:${SOURCE_POSTGRES_HOST_PORT}` from the host.
 
-In the UI, PostgreSQL data sources support **Host / Port** fields or a **Connection URL / DSN**
-mode. Secrets (`password`, `dsn`, `url`) are encrypted at rest, never returned by the API, and
-blank password/URL fields on edit keep the saved value. See `docs/DECISIONS.md` (D-034).
+In the UI, relational connectors support typed connection forms (and DSN/URL modes where
+applicable). Secrets (`password`, `dsn`, `url`, tokens) are encrypted at rest, never
+returned by the API, and blank secret fields on edit keep the saved value when the mode
+semantics allow it. See `docs/DECISIONS.md` (D-034 and connector decisions) and
+`docs/phase-4-connectors.md`.
+
+## Kubernetes / Helm
+
+For replicated deployments, use the Helm chart under `deploy/helm/model-flow` with
+external/shared PostgreSQL and S3-compatible object storage. Compose remains supported
+for local and simple self-hosted setups; it is not HA by itself. See
+`docs/DEPLOYMENT_KUBERNETES.md`.
 
 ## Backup, restore, and reset
 
@@ -210,11 +233,14 @@ npm run dev
 
 - Product and architecture: `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/DECISIONS.md`
 - Acceptance and progress: `docs/ACCEPTANCE_CRITERIA.md`, `docs/PROGRESS.md`
-- Enhancement roadmap (post-RC): `docs/ENHANCEMENT_ROADMAP.md`
+- Enhancement roadmap (Phases 1–9 complete; Phase 10 GA readiness): `docs/ENHANCEMENT_ROADMAP.md`
+- Phase 10 GA readiness audit: `docs/phase-10-ga-release-readiness.md`
 - Scheduling / automation: `docs/SCHEDULING.md`
-- Traefik GPU server deployment: `docs/DEPLOYMENT_TRAEFIK.md`
+- Connectors: `docs/phase-4-connectors.md`
+- Traefik deployment: `docs/DEPLOYMENT_TRAEFIK.md`
+- Kubernetes / Helm: `docs/DEPLOYMENT_KUBERNETES.md`
 - Known limitations: `docs/KNOWN_LIMITATIONS.md`
-- RC release notes: `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
+- Historical RC release notes: `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
 
 ## Security
 

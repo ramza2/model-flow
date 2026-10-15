@@ -1,14 +1,35 @@
-# Known limitations (v1.0 RC)
+# Known limitations
 
-- Single-node Docker Compose deployment only (no Kubernetes / HA).
-- Inference runs in the API process (in-memory model cache); not a separate serving mesh.
-- No SSO/LDAP; local JWT + bcrypt users only.
-- No GPU / distributed training; sklearn tabular models only.
-- Visual pipeline engine is DB-worker DAG execution, not Airflow/Prefect.
-- Soft-deleted projects/users are hidden; hard purge follows retention settings.
-- Inference payloads are not stored by default (`store_inference_payloads=false`).
-- Retrain automation never auto-promotes models to PRODUCTION.
-- Compose credentials are generated into an ignored `.env` for local/self-hosted trust boundaries only — do not expose the stack to the public internet.
+Current GA-candidate documentation (Phase 10). This is **not** a claim that
+`v1.0.0` has been tagged or published.
+
+## Deployment and serving
+
+- **Docker Compose** remains a supported local/self-hosted deployment mode. A single Compose stack is **not** high availability by itself.
+- **Helm / Kubernetes** supports replicated **stateless** ModelFlow services. Real HA depends on **operator-managed external** PostgreSQL and S3-compatible object storage (not embedded single-node Postgres/MinIO state). See `docs/DEPLOYMENT_KUBERNETES.md` and D-048.
+- Online and batch model execution run in a dedicated internal **`inference-runtime`** service (Phase 8-A). Backend and workers are control-plane clients. The runtime uses service-token auth and is **not** a public serving mesh.
+- Compose publishes PostgreSQL, MinIO, MLflow, and API ports for local development. Do **not** expose that raw configuration to the public internet without TLS, network controls, and operational hardening.
+
+## Identity
+
+- Optional **OIDC** Authorization Code + PKCE SSO is supported (`MODELFLOW_OIDC_*`; disabled by default). Local JWT + bcrypt login remains available (including bootstrap / break-glass).
+- **LDAP** is not supported.
+
+## Training and runtime product boundaries
+
+- Sklearn **tabular** classification/regression focus; no vision/audio/LLM-specialized training productization.
+- **No GPU / distributed training** productization. Worker `gpu` profiles are routing/capability infrastructure only; shipped sklearn workloads do not become GPU workloads automatically.
+- Visual pipeline engine is a **DB-worker DAG**, not Airflow/Prefect.
+- Soft-deleted projects/users are hidden; hard purge follows retention settings (D-023).
+- Inference payloads are not stored by default (`store_inference_payloads=false`; D-024).
+- Automation / closed-loop retrain **never auto-promotes** models to PRODUCTION (stops at CANDIDATE; D-025).
+
+## Deferred or constrained capabilities
+
+- Recursive forecasting, panel/entity features, and walk-forward cross-validation remain deferred (Phase 6 outs).
+- Visual data preparation executes with **Pandas in-memory** only (no Spark/Dask/distributed/chunked processing).
+- If an artifact upload to object storage succeeds but the final DB commit fails, an orphaned object may require cleanup/reconciliation.
+- Non-blocking frontend debt: Pipeline Run lifecycle summary and historical Run Detail can maintain independent active-run polling loops while a run is active.
 
 ## Dependency security gate
 

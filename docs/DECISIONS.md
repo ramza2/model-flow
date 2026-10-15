@@ -32,11 +32,12 @@ Format: Decision — Context — Choice — Consequences.
 - **Choice:** Classification: LogisticRegression, RandomForestClassifier, GradientBoostingClassifier. Regression: Ridge, RandomForestRegressor, GradientBoostingRegressor.
 - **Consequences:** Tabular only in v1.0; protocol allows future frameworks.
 
-## D-006: Inference in backend process
+## D-006: Inference in backend process → superseded by Phase 8-A
 
-- **Context:** Avoid separate model-serving mesh.
-- **Choice:** FastAPI loads pyfunc/sklearn model from MLflow URI; in-memory cache per endpoint.
-- **Consequences:** Single-node only; fine for Compose self-host.
+- **Status:** **Historical / superseded** by Phase 8-A inference-runtime separation (implementation on `main`; no new decision number required for this truth-up).
+- **Original context:** Avoid separate model-serving mesh for MVP/RC Compose.
+- **Original choice:** FastAPI loaded pyfunc/sklearn model from MLflow URI with in-memory cache per endpoint.
+- **Current consequence (Phase 8-A):** Model load/predict is delegated to a dedicated internal `inference-runtime` service. Backend and workers remain control-plane clients using `MODELFLOW_INFERENCE_SERVICE_TOKEN`. The runtime is internal-only (not a public serving mesh). Public Endpoint contracts stay on the API control plane.
 
 ## D-007: Frontend served as static build behind nginx in Compose
 
@@ -100,16 +101,20 @@ Historical; see D-016.
   - AIStor commercial images are not used without a separate license/compatibility decision
   - Follow-up: publish the built image digest to an organization-controlled registry (Option A) so CI/dev can pull immutable digests instead of rebuilding from source every time.
 
-## D-017: GitHub Actions CI runs the same verify.sh gate
+## D-017: GitHub Actions CI verification gates
 
-- **Choice:** `.github/workflows/ci.yml` on PR→main, push→main, workflow_dispatch; concurrency; least privilege; 60m timeout; failure artifacts.
-- **Consequences:** CI duration tracks full stack.
+- **Original choice (RC era):** `.github/workflows/ci.yml` ran the same full `./scripts/verify.sh` gate on PR→main, push→main, and `workflow_dispatch` (historically documented with a ~60m timeout).
+- **Current CI truth:**
+  - **Pull requests → `main`:** changed-file **PR Fast Gate** — docs-only lightweight checks; conditional parallel backend lint/pytest, frontend lint/typecheck/test, and infra/config jobs; aggregate job **`PR fast gate`**. PRs do **not** start the full Compose stack by default.
+  - **Push to `main` / `workflow_dispatch`:** **Full verification gate** runs `./scripts/verify.sh` end-to-end (timeout **90 minutes**).
+  - Historical exception: PR titles containing `Phase 8-F` could still force the full gate during that enterprise closeout slice.
+- **Consequences:** Local `./scripts/verify.sh` remains required before considering work complete; CI duration for PRs is shorter; full-stack attestation remains on `main` pushes.
 
 ## D-018: JWT access tokens + bcrypt passwords (v1.0)
 
-- **Context:** v1.0 requires real multi-user auth without SSO/LDAP.
-- **Choice:** bcrypt password hashes; JWT Bearer access tokens (HS256) with configurable expiry and per-user token versions. Bootstrap admin via env vars only.
-- **Consequences:** Stateless auth suitable for Compose; password changes, logout, or rotating `MODELFLOW_SECRET_KEY` invalidate tokens.
+- **Context:** v1.0 requires real multi-user auth. Original wording assumed no SSO/LDAP; **OIDC SSO was added later (Phase 8-C / D-046)** while LDAP remains out of scope.
+- **Choice:** bcrypt password hashes; JWT Bearer access tokens (HS256) with configurable expiry and per-user token versions. Bootstrap admin via env vars only. Optional OIDC Authorization Code + PKCE issues ModelFlow access tokens after SSO.
+- **Consequences:** Stateless local auth suitable for Compose; password changes, logout, or rotating `MODELFLOW_SECRET_KEY` invalidate tokens; OIDC is optional and off by default.
 
 ## D-019: Project roles as membership enum
 
