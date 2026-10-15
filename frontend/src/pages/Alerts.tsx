@@ -69,14 +69,14 @@ export default function Alerts() {
   }
 
   return (
-    <div className="ops-page">
+    <div className="page-stack ops-page alerts-page">
       <PageHeader
         title="Alerts"
         description="Review project alerts for data, model, and service events."
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      <div className="segmented" role="tablist" aria-label="Alert filters">
+      <div className="segmented alerts-filter" role="tablist" aria-label="Alert filters">
         <button type="button" className={filter === "open" ? "active" : ""} onClick={() => setFilterAndUrl("open")}>Open</button>
         <button type="button" className={filter === "resolved" ? "active" : ""} onClick={() => setFilterAndUrl("resolved")}>Resolved</button>
         <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilterAndUrl("all")}>All</button>
@@ -96,23 +96,29 @@ export default function Alerts() {
         <div className="alert-list">
           {alerts.map((alert) => (
             <article
-              className={`alert-card ${alert.is_read ? "" : "unread"}`}
+              className={[
+                "alert-card",
+                alert.is_read ? "is-read" : "unread",
+                alert.is_resolved ? "is-resolved" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               key={alert.id}
               data-testid={`alert-card-${alert.id}`}
             >
               <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
               <div className="alert-copy">
-                <div className="row-actions">
+                <div className="row-actions alert-meta-row">
                   <StatusBadge status={alert.severity} />
-                  <span>{formatDate(alert.created_at)}</span>
+                  <span className="catalog-meta-date">{formatDate(alert.created_at)}</span>
                   {!alert.is_read && <span className="unread-label">Unread</span>}
                   {alert.is_resolved && <StatusBadge status="resolved" />}
                 </div>
                 <h2>{alert.title}</h2>
                 <p>{alert.message}</p>
-                <div className="row-actions">
+                <div className="row-actions alert-actions">
                   {alert.link_path && (
-                    <Link to={alert.link_path} data-testid={`alert-link-${alert.id}`}>
+                    <Link className="btn link" to={alert.link_path} data-testid={`alert-link-${alert.id}`}>
                       View related resource →
                     </Link>
                   )}

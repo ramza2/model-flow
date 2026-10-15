@@ -581,7 +581,7 @@ export default function Schedules() {
           }
         />
       ) : (
-        <div className="table-wrap panel">
+        <div className="panel table-wrap catalog-table schedules-catalog-table">
           <table data-testid="schedules-catalog">
             <thead>
               <tr>
@@ -597,15 +597,15 @@ export default function Schedules() {
             </thead>
             <tbody>
               {schedules.map((schedule) => (
-                <tr key={schedule.id}>
+                <tr key={schedule.id} className={schedule.is_enabled ? undefined : "is-inactive"}>
                   <td>
-                    <strong>{schedule.name}</strong>
+                    <strong className="catalog-primary-text">{schedule.name}</strong>
                     {schedule.description ? (
                       <small className="table-subtitle">{schedule.description}</small>
                     ) : null}
                   </td>
                   <td>
-                    <div>{targetTypeLabel(schedule.target_type)}</div>
+                    <span className="type-chip">{targetTypeLabel(schedule.target_type)}</span>
                     <small className="table-subtitle break-word">
                       {scheduleTargetSummary(schedule, pipelines, datasets, endpoints, dataSources)}
                     </small>
@@ -614,12 +614,16 @@ export default function Schedules() {
                     <div>{cronPresetLabel(schedule.cron_expression)}</div>
                     <small className="table-subtitle mono break-word">{schedule.cron_expression}</small>
                   </td>
-                  <td>{schedule.timezone}</td>
+                  <td className="catalog-meta-date">{schedule.timezone}</td>
                   <td>
                     <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} />
                   </td>
-                  <td>{schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}</td>
-                  <td>{schedule.next_run_at ? formatDate(schedule.next_run_at) : "—"}</td>
+                  <td className="catalog-meta-date">
+                    {schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}
+                  </td>
+                  <td className="catalog-meta-date">
+                    {schedule.next_run_at ? formatDate(schedule.next_run_at) : "—"}
+                  </td>
                   <td>
                     <div className="schedule-actions">
                       <div className="row-actions schedule-actions-primary">
@@ -657,15 +661,18 @@ export default function Schedules() {
       )}
 
       {historySchedule && (
-        <section className="panel">
+        <section className="panel schedule-history-section">
           <div className="panel-header row-actions">
-            <h2>Run history — {historySchedule.name}</h2>
+            <div>
+              <span className="eyebrow">History</span>
+              <h2>Run history — {historySchedule.name}</h2>
+            </div>
             <button type="button" className="btn secondary" onClick={closeHistory}>Close</button>
           </div>
           {runs.length === 0 ? (
-            <p>No runs recorded yet.</p>
+            <p className="muted">No runs recorded yet.</p>
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap catalog-table">
               <table>
                 <thead>
                   <tr>
@@ -684,20 +691,22 @@ export default function Schedules() {
                     const href = projectId ? resourceLink(projectId, run) : null;
                     return (
                       <tr key={run.id}>
-                        <td>{formatDate(run.scheduled_for)}</td>
-                        <td>{run.attempt}</td>
+                        <td className="catalog-meta-date">{formatDate(run.scheduled_for)}</td>
+                        <td className="tabular-num">{run.attempt}</td>
                         <td>{run.trigger_source}</td>
                         <td><StatusBadge status={run.status} /></td>
-                        <td>
+                        <td className="mono">
                           {run.target_resource_id && href ? (
                             <Link to={href}>#{run.target_resource_id}</Link>
                           ) : (
                             run.target_resource_id ?? "—"
                           )}
                         </td>
-                        <td>{run.started_at ? formatDate(run.started_at) : "—"}</td>
-                        <td>{run.finished_at ? formatDate(run.finished_at) : "—"}</td>
-                        <td className="break-word">{run.error_message ?? "—"}</td>
+                        <td className="catalog-meta-date">{run.started_at ? formatDate(run.started_at) : "—"}</td>
+                        <td className="catalog-meta-date">{run.finished_at ? formatDate(run.finished_at) : "—"}</td>
+                        <td className={`break-word${run.error_message ? " danger-text" : ""}`}>
+                          {run.error_message ?? "—"}
+                        </td>
                       </tr>
                     );
                   })}

@@ -233,7 +233,7 @@ export default function Monitoring() {
   };
 
   return (
-    <div className="ops-page">
+    <div className="page-stack ops-page monitoring-page">
       <PageHeader
         title="Monitoring"
         description="Operational triage for service traffic, data quality, and model serving signals."
@@ -253,7 +253,10 @@ export default function Monitoring() {
         <Loading label="Loading monitoring metrics" />
       ) : (
         <>
-          <section className="panel ops-attention-panel" data-testid="monitoring-attention">
+          <section
+            className={`panel ops-attention-panel${attention.length > 0 ? " has-signals" : " is-clear"}`}
+            data-testid="monitoring-attention"
+          >
             <span className="eyebrow">Attention</span>
             {attention.length === 0 ? (
               <p className="muted">
@@ -279,13 +282,33 @@ export default function Monitoring() {
           </section>
 
           <DetailSection eyebrow="Service" title="Service health" testId="monitoring-service">
-            <div className="grid stats-grid">
-              <div className="stat"><div className="label">Requests</div><div className="value">{service.request_count.toLocaleString()}</div></div>
-              <div className="stat"><div className="label">Successes</div><div className="value">{service.success_count.toLocaleString()}</div></div>
-              <div className={`stat${service.error_count > 0 ? " is-attention" : ""}`}><div className="label">Errors</div><div className="value">{service.error_count.toLocaleString()}</div></div>
-              <div className="stat"><div className="label">Success rate</div><div className="value">{service.success_rate === null ? "—" : `${metric(service.success_rate * 100, 1)}%`}</div></div>
-              <div className="stat"><div className="label">Average latency</div><div className="value metric-value">{metric(service.average_latency_ms, 1)} ms</div></div>
-              <div className="stat"><div className="label">p95 latency</div><div className="value metric-value">{metric(service.p95_latency_ms, 1)} ms</div></div>
+            <div className="grid stats-grid monitoring-metrics">
+              <div className="stat metric-card">
+                <div className="label">Requests</div>
+                <div className="value tabular-num">{service.request_count.toLocaleString()}</div>
+              </div>
+              <div className="stat metric-card">
+                <div className="label">Successes</div>
+                <div className="value tabular-num">{service.success_count.toLocaleString()}</div>
+              </div>
+              <div className={`stat metric-card${service.error_count > 0 ? " is-attention" : ""}`}>
+                <div className="label">Errors</div>
+                <div className="value tabular-num">{service.error_count.toLocaleString()}</div>
+              </div>
+              <div className="stat metric-card">
+                <div className="label">Success rate</div>
+                <div className="value tabular-num">
+                  {service.success_rate === null ? "—" : `${metric(service.success_rate * 100, 1)}%`}
+                </div>
+              </div>
+              <div className="stat metric-card">
+                <div className="label">Average latency</div>
+                <div className="value metric-value tabular-num">{metric(service.average_latency_ms, 1)} ms</div>
+              </div>
+              <div className="stat metric-card">
+                <div className="label">p95 latency</div>
+                <div className="value metric-value tabular-num">{metric(service.p95_latency_ms, 1)} ms</div>
+              </div>
             </div>
             <div className="panel nested-panel">
               {service.series.length === 0 ? (
@@ -337,8 +360,12 @@ export default function Monitoring() {
                       ? String(card.latest_trigger_decision.reason)
                       : detail.reason;
                   return (
-                    <div className="panel nested-panel" key={card.policy_id} data-testid={`quality-card-${card.policy_id}`}>
-                      <div className="row-actions">
+                    <div
+                      className="panel nested-panel production-quality-card"
+                      key={card.policy_id}
+                      data-testid={`quality-card-${card.policy_id}`}
+                    >
+                      <div className="row-actions production-quality-card-head">
                         <strong>{card.endpoint_name || `Endpoint #${card.endpoint_id}`}</strong>
                         <StatusBadge status={card.latest_quality_status || "unknown"} />
                         {card.baseline_required ? (
@@ -472,7 +499,7 @@ export default function Monitoring() {
                         </Link>
                         <button
                           type="button"
-                          className="btn btn-secondary"
+                          className="btn secondary"
                           onClick={() => openHistoryForCard(card)}
                           data-testid={`view-quality-history-${card.policy_id}`}
                         >
@@ -494,7 +521,7 @@ export default function Monitoring() {
           </DetailSection>
 
           <DetailSection eyebrow="Models" title="Quality history" testId="monitoring-quality-trend">
-            <div className="row-actions" data-testid="quality-history-filters">
+            <div className="filter-bar catalog-filter" data-testid="quality-history-filters">
               <label>
                 Endpoint
                 <select
@@ -534,7 +561,7 @@ export default function Monitoring() {
               <p className="muted">No quality runs match the current filters.</p>
             ) : null}
             {!historyLoading && qualityRuns.length > 0 ? (
-              <div className="table-wrap">
+              <div className="table-wrap catalog-table">
                 <table>
                   <thead>
                     <tr>
@@ -586,7 +613,7 @@ export default function Monitoring() {
                             <td>
                               <button
                                 type="button"
-                                className="btn btn-secondary"
+                                className="btn secondary"
                                 onClick={() => setExpandedRunId(expanded ? null : run.id)}
                                 data-testid={`expand-quality-run-${run.id}`}
                               >
@@ -673,7 +700,7 @@ export default function Monitoring() {
             <div className="row-actions" data-testid="quality-history-pagination">
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn secondary"
                 disabled={historySkip <= 0 || historyLoading}
                 onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
                 data-testid="quality-history-prev"
@@ -687,7 +714,7 @@ export default function Monitoring() {
               </span>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn secondary"
                 disabled={historySkip + HISTORY_PAGE_SIZE >= qualityRunTotal || historyLoading}
                 onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
                 data-testid="quality-history-next"

@@ -72,8 +72,8 @@ The final direction is:
 | **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **complete** |
 | **9-C** | Models / Serving / Operations Visual Polish | **current** |
 | **9-C1** | Model Registry / Model Version Governance Visual Polish | **complete** |
-| **9-C2** | Deployments / Serving Visual Polish | **current / Draft** |
-| **9-C3** | Operations Visual Polish | planned |
+| **9-C2** | Deployments / Serving Visual Polish | **complete** |
+| **9-C3** | Operations Visual Polish | **current / Draft** |
 | **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
 
 ### 9-A — Design Foundation + App Shell
@@ -171,7 +171,7 @@ Scope:
 - lifecycle / gate / approval / RBAC / deployment eligibility semantics unchanged
 - Deployments / serving / operations pages excluded until 9-C2 / 9-C3
 
-#### 9-C2 — Deployments / Serving Visual Polish (current)
+#### 9-C2 — Deployments / Serving Visual Polish (complete)
 
 Scope:
 
@@ -186,9 +186,20 @@ Scope:
 - serving / API / security / polling semantics unchanged
 - operations pages excluded until 9-C3
 
-#### 9-C3 — Operations Visual Polish (planned)
+#### 9-C3 — Operations Visual Polish (current)
 
-Target: Schedules, Monitoring, Quality Policies, Alerts, Audit.
+Scope:
+
+- Schedules visual polish (catalog hierarchy, HISTORY section, Run now /
+  History primary operational actions; polling/session semantics unchanged)
+- Monitoring visual polish (service metric density, ATTENTION hierarchy,
+  Production Quality cards, Quality History filters/table)
+- Quality Policies visual polish (catalog/detail layout, selected/inactive
+  states, rules/baseline governance blocks; eligibility/payload logic unchanged)
+- Alerts visual polish (segmented filters, unread/resolved hierarchy, actions)
+- Audit Logs visual polish (compact filter toolbar, catalog table, project vs
+  global scope descriptions preserved)
+- operations / governance semantics unchanged
 
 ### 9-D — Final Accessibility / Responsive / Browser Regression
 
