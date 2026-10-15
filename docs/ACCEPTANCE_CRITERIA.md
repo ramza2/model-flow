@@ -105,7 +105,7 @@ A separate Full Gate SUCCESS on the future packaging tip is required before
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK; Full Gate #517 |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented and current | PASS | Doc present after Phase 10-B truth-up | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full Gate PASS on the **final packaging SHA** before `v1.0.0` tag | NOT_VERIFIED | Final packaging SHA does not exist yet | `.github/workflows/ci.yml`; Phase 10-D ordering | Phase 10-C baseline: Full Gate [#517](https://github.com/ramza2/model-flow/actions/runs/38696787666) SUCCESS on `1973860` (evidence only). **Pending Phase 10-D final packaging-SHA Full Gate.** |
+| AC-72 | GitHub Actions Full Gate PASS on the **final packaging SHA** before `v1.0.0` tag | NOT_VERIFIED | Phase 10-D packaging is prepared in a PR; the final packaging SHA is defined only after merge | `.github/workflows/ci.yml`; Phase 10-D ordering | Pre-packaging evidence: Full Gate [#519](https://github.com/ramza2/model-flow/actions/runs/38700493802) SUCCESS on `0835f98`. **Still pending:** Full Gate SUCCESS on the exact merged packaging SHA before tag. |
 
 ## Additional remediation checks (Release Review)
 
@@ -148,6 +148,6 @@ that every phase re-ran on SHA `1973860`.
 
 | ID | Item | Notes |
 |----|------|-------|
-| AC-72 | Final packaging-SHA Full Gate before `v1.0.0` tag | Pending Phase 10-D. Phase 10-C baseline #517 SUCCESS on `1973860` is evidence only and does **not** satisfy the packaging attestation. |
+| AC-72 | Final packaging-SHA Full Gate before `v1.0.0` tag | Phase 10-D packaging preparation is in progress. Pre-packaging Full Gate #519 SUCCESS on `0835f98` does **not** satisfy the final packaging attestation; verify the exact merged packaging SHA before tagging. |
 
 Accepted product limitations (sklearn-only, no LDAP, no auto-PRODUCTION, external-state K8s HA, etc.) are documented in `docs/KNOWN_LIMITATIONS.md` and are **not** listed as NOT_VERIFIED failures.
