@@ -5,7 +5,7 @@ Phases 1–9 landed on `main`. Phase 10-A was **planning / audit only**: no prod
 features, no version bump, no tag, no GitHub Release, no runtime or migration
 changes.
 
-**Phase 10-A status:** complete. **Phase 10-B status:** complete (documentation truth-up). **Phase 10-C:** next. **Phase 10 overall:** in progress — **not GA ready**.
+**Phase 10-A status:** complete. **Phase 10-B status:** complete. **Phase 10-C status:** complete (acceptance/evidence refresh). **Phase 10-D:** next. **Phase 10 overall:** in progress — **not GA ready**.
 
 ## Current GA candidate baseline
 
@@ -14,16 +14,19 @@ changes.
 | Phase 10 starting baseline | `9e3f6e356795a1a063d2472b05520aa0009a0fd9` |
 | Tip summary | Phase 9-D merge (`#96`) — accessibility / responsive closeout |
 | 10-A merge on main | `3e271e172580932ce7ae61d89b62c3625c54ce7a` (PR #97) |
+| Phase 10-C evidence baseline | `1973860d4d3d7d0fd87ddbb662c940397b1735a7` (PR #98) |
 | Prior release identity | `v1.0.0-rc.1` only (no GA tag / GA release notes yet) |
 | Alembic head | `024_oidc_enterprise_identity` |
 | Enhancement phases on tip | **1 through 9 complete** (incl. 8-A–F, 9-A–D) |
 | Primary verify gate | `./scripts/verify.sh` (Full Gate on `main` push / `workflow_dispatch`) |
-| PR CI | PR Fast Gate (full gate exception only when PR title contains `Phase 8-F`) |
-| Baseline Full Gate | **CI run #512** / id [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) — event `push`, exact head `9e3f6e3`, **completed SUCCESS** (main Full verification gate) |
+| PR CI | PR Fast Gate (docs-only / conditional fast jobs); Full Gate on `main` push / `workflow_dispatch`. Residual Phase 8-F PR-title full-gate exception is historical closeout only. |
+| Starting-baseline Full Gate | **CI run #512** / id [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) — event `push`, exact head `9e3f6e3`, **SUCCESS** |
+| Phase 10-C evidence Full Gate | **CI run #517** / id [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) — event `push`, exact head `1973860`, **SUCCESS** |
 
-**Full Gate scope note:** #512 attests the Phase 10 **starting** baseline `9e3f6e3` only.
-Later Phase 10 commits create newer candidate SHAs. The **final GA packaging SHA**
-must receive its **own** Full Gate SUCCESS before `v1.0.0` is tagged or published.
+**Full Gate scope note:** #512 attests the Phase 10 **starting** baseline `9e3f6e3`.
+#517 attests the Phase **10-C evidence baseline** `1973860` only.
+The **final GA packaging SHA** must receive its **own** Full Gate SUCCESS before
+`v1.0.0` is tagged or published.
 
 Source of truth for capabilities is the **current implementation and merged
 phase docs**, not RC-era acceptance/limitations text.
@@ -83,11 +86,11 @@ phase docs**, not RC-era acceptance/limitations text.
 
 | File | Factual drift |
 |---|---|
-| `docs/ACCEPTANCE_CRITERIA.md` | Tip `2d2f3da`; Alembic evidence `005_…`; stale test counts; AC-27 vs Fast Gate — **10-C** |
+| `docs/ACCEPTANCE_CRITERIA.md` | Refreshed in **10-C** against evidence baseline `1973860` / Full Gate #517; AC-72 final packaging attestation still **NOT_VERIFIED** until **10-D** |
 | `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Correct as RC history; GA notes belong to **10-D** |
 | Phase 0 branch protection | Still listed pending — process item **G-09**, not fabricated complete |
 
-Rough current test surface (counts only; not a tip attestation): ~673 backend `def test_*`, ~371 frontend Vitest `it(` matches. Playwright suite has grown beyond the RC “18 tests” figure.
+Test-count claims for AC-13/14/15 use Full Gate #517 PASS outcomes (not brittle source-level counts).
 
 ## True remaining limitations (still accurate)
 
@@ -113,21 +116,21 @@ Treat as **accepted product boundaries** unless GA explicitly expands scope:
 
 | ID | Item | Severity | Notes |
 |---|---|---|---|
-| G-01 | Release identity still not GA (only `v1.0.0-rc.1` tag; no GA release notes / version bump) | **BLOCKER** | README no longer claims released GA, but packaging remains **10-D** |
-| G-03 | `ACCEPTANCE_CRITERIA.md` tip/counts/head/AC-27 stale; enhancement phases unattested | **BLOCKER** | Refresh attestation in **10-C** |
+| G-01 | Release identity still not GA (only `v1.0.0-rc.1` tag; no GA release notes / version bump) | **BLOCKER** | Packaging remains **10-D** |
 
 ### Cleared evidence
 
 | ID | Item | Status | Evidence |
 |---|---|---|---|
 | G-02 | Starting-baseline Full Gate for `9e3f6e3` | **CLEARED / VERIFIED** | CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) push Full Gate **SUCCESS** on exact SHA `9e3f6e356795a1a063d2472b05520aa0009a0fd9` |
+| G-03 | Stale acceptance criteria / GA evidence document | **CLEARED** | Phase 10-C refresh of `ACCEPTANCE_CRITERIA.md`; evidence baseline Full Gate **#517** / [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) SUCCESS on `1973860`. AC-72 final packaging attestation remains intentionally **NOT_VERIFIED** until 10-D. |
 | G-04 | `KNOWN_LIMITATIONS.md` Phase-8 conflict | **CLEARED** | Phase 10-B rewrite |
 | G-05 | README / `PRODUCT_SPEC.md` capability & non-goal drift | **CLEARED** | Phase 10-B truth-up |
 | G-06 | `DECISIONS.md` D-006 / D-017 drift | **CLEARED** | Phase 10-B annotations |
 | G-07 | Remaining Draft PR #96 wording | **CLEARED** | Phase 10-B (`phase-9-final-visual-redesign.md`) |
 | G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Neutral GA-candidate framing in KNOWN/PRODUCT/ARCHITECTURE |
 
-**Still required before the GA tag:** a Full Gate SUCCESS on the **final packaging SHA** (not only #512 on the Phase 10 start tip). See 10-D ordering below. Do not treat an in-progress or later main Full Gate (#515, etc.) as the packaging attestation unless it is SUCCESS on the exact packaging SHA.
+**Still required before the GA tag:** a Full Gate SUCCESS on the **final packaging SHA** (AC-72). #512 and #517 are **not** packaging attestations. See 10-D ordering below.
 
 ### Other rows
 
@@ -143,8 +146,8 @@ No evidence that Phase 8–9 **implementation** of inference-runtime, OIDC, Helm
 
 1. **Baseline attestation (done):** Full Gate #512 SUCCESS on starting tip `9e3f6e3`.
 2. **Doc truth-up (done — 10-B):** `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE, DECISIONS D-006/D-017, Draft #96 wording.
-3. **Acceptance refresh (10-C — next):** Update AC tip/counts/head, AC-27 aligned with Fast Gate, additive ACs (or explicit “covered by phase verify docs”) for 1.5–9.
-4. **GA packaging (10-D):** Follow the release ordering below — never tag an unverified packaging commit.
+3. **Acceptance refresh (done — 10-C):** `ACCEPTANCE_CRITERIA.md` GA-candidate framing; evidence baseline `1973860` / Full Gate #517; AC-27 Fast vs Full; AC-72 NOT_VERIFIED pending packaging; post-RC enhancement evidence matrix.
+4. **GA packaging (10-D — next):** Follow the release ordering below — never tag an unverified packaging commit.
 5. **No invented features:** GA validates shipped behavior; deferred forecasting/LDAP/Spark stay documented limitations.
 
 ## Final GA release ordering (10-D)
@@ -165,7 +168,7 @@ Safe sequence — **do not tag an unverified packaging commit**:
 |---|---|---|
 | **10-A** | GA readiness baseline & gap audit (this document) | **complete** |
 | **10-B** | Documentation truth-up — `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE framing, DECISIONS supersede notes, merge-status wording | **complete** |
-| **10-C** | Acceptance & evidence refresh — AC table update, CI wording (Fast vs Full), GA tip attestation linkage | **next** |
-| **10-D** | GA release packaging — version + notes merge, then exact-SHA Full Gate, then tag + GitHub Release | planned |
+| **10-C** | Acceptance & evidence refresh — AC table update, CI wording (Fast vs Full), evidence baseline #517 | **complete** |
+| **10-D** | GA release packaging — version + notes merge, then exact-SHA Full Gate, then tag + GitHub Release | **next** |
 
-Phase 10 overall remains **in progress / not GA ready**. **Do not claim v1.0 GA readiness from 10-B alone.**
+Phase 10 overall remains **in progress / not GA ready**. **Do not claim v1.0 GA readiness from 10-C alone.**

@@ -388,15 +388,15 @@ See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
 
 ## Phase 10 — v1.0 GA Release Readiness
 
-**Status:** in progress — **not GA ready.** **10-A and 10-B complete.** **10-C is next.**
+**Status:** in progress — **not GA ready.** **10-A, 10-B, and 10-C complete.** **10-D is next.**
 
 | Slice | Scope | Status |
 |-------|-------|--------|
 | **10-A** | GA Readiness Baseline & Gap Audit | **complete** |
 | **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | **complete** |
-| **10-C** | Acceptance & evidence refresh (AC table, CI wording, GA tip linkage) | **next** |
-| **10-D** | GA release packaging (version + notes, then exact-SHA Full Gate, then tag/Release) | planned |
+| **10-C** | Acceptance & evidence refresh (AC table, CI wording, evidence baseline #517) | **complete** |
+| **10-D** | GA release packaging (version + notes, then exact-SHA Full Gate, then tag/Release) | **next** |
 
-Phase 10 is release-readiness work after Phases 1–9. Starting baseline Full Gate #512 SUCCESS on `9e3f6e3` is recorded; G-04–G-08 cleared in 10-B; active blockers remain **G-01** (release identity/packaging) and **G-03** (stale acceptance). See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+Phase 10 is release-readiness work after Phases 1–9. Evidence baselines: Full Gate #512 on `9e3f6e3`, Full Gate #517 on `1973860`. G-02–G-08 cleared; active GA blocker remains **G-01** (release identity/packaging). AC-72 final packaging Full Gate stays NOT_VERIFIED until 10-D. See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
 
 **Depends on:** completed Phase 9 on `main`; Full Gate on the final packaging SHA before `v1.0.0` tag.
