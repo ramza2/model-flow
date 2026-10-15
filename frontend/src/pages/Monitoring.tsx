@@ -683,7 +683,7 @@ export default function Monitoring() {
                                     </dd>
                                   </div>
                                 </dl>
-                                <details>
+                                <details className="advanced-json">
                                   <summary>Advanced JSON</summary>
                                   <pre className="code-block">{JSON.stringify({ evaluation: evalObj, trigger_decision: decision }, null, 2)}</pre>
                                 </details>

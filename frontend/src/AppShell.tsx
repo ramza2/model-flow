@@ -206,33 +206,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("click", guardLinkNavigation, true);
   }, []);
 
-  useEffect(() => {
-    if (!isDrawerViewport || !navOpen) {
-      return;
-    }
-    const sidebar = sidebarRef.current;
-    const focusTarget =
-      sidebar?.querySelector<HTMLElement>("a[href], button:not([disabled])")
-      ?? sidebar;
-    focusTarget?.focus();
-  }, [navOpen, isDrawerViewport]);
-
-  useEffect(() => {
-    if (!isDrawerViewport || !navOpen) {
-      return;
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      setNavOpen(false);
-      queueMicrotask(() => navToggleRef.current?.focus());
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navOpen, isDrawerViewport]);
-
+  // Remove inert before the focus-transfer effect runs. Real browsers block
+  // focus inside inert subtrees; effect order is the synchronization point.
   useEffect(() => {
     const sidebar = sidebarRef.current;
     if (!sidebar) {
@@ -245,6 +220,48 @@ export default function AppShell({ children }: { children: ReactNode }) {
     }
   }, [drawerClosed]);
 
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+
+    // Wait until after the toggle click/default focus lifecycle completes;
+    // queueMicrotask still lost to Chrome's button focus retention.
+    const frameId = window.requestAnimationFrame(() => {
+      const sidebar = sidebarRef.current;
+      if (!sidebar || sidebar.hasAttribute("inert")) {
+        return;
+      }
+
+      const focusTarget =
+        sidebar.querySelector<HTMLElement>("a[href], button:not([disabled])")
+        ?? sidebar;
+
+      focusTarget.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [navOpen, isDrawerViewport]);
+
+  useEffect(() => {
+    if (!isDrawerViewport || !navOpen) {
+      return;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      // Focus toggle before aria-hidden/inert on the closing render.
+      navToggleRef.current?.focus();
+      setNavOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navOpen, isDrawerViewport]);
+
   async function signOut() {
     if (!confirmUnsavedNavigation()) return;
     await logout();
@@ -252,10 +269,18 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   function closeNav(options?: { restoreFocus?: boolean }) {
-    setNavOpen(false);
-    if (options?.restoreFocus) {
-      queueMicrotask(() => navToggleRef.current?.focus());
+    const sidebar = sidebarRef.current;
+    const activeElement = document.activeElement;
+    const focusInsideSidebar =
+      activeElement instanceof HTMLElement
+      && Boolean(sidebar?.contains(activeElement));
+
+    // Move focus out before aria-hidden/inert apply on the closing render.
+    if (isDrawerViewport && (options?.restoreFocus || focusInsideSidebar)) {
+      navToggleRef.current?.focus();
     }
+
+    setNavOpen(false);
   }
 
   return (
