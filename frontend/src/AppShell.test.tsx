@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import AppShell from "./AppShell";
@@ -175,10 +175,14 @@ describe("AppShell drawer accessibility", () => {
     const nav = await screen.findByRole("navigation", { name: "Main navigation" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(document.getElementById("app-sidebar")?.hasAttribute("inert")).toBe(false);
-    expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+    await waitFor(() => {
+      expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+    });
 
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(await screen.findByRole("button", { name: /Open navigation/i })).toHaveFocus();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Open navigation/i })).toHaveFocus();
+    });
     expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
   });
 

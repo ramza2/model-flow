@@ -224,11 +224,31 @@ export default function AppShell({ children }: { children: ReactNode }) {
     if (!isDrawerViewport || !navOpen) {
       return;
     }
-    const sidebar = sidebarRef.current;
-    const focusTarget =
-      sidebar?.querySelector<HTMLElement>("a[href], button:not([disabled])")
-      ?? sidebar;
-    focusTarget?.focus();
+
+    let cancelled = false;
+
+    // Defer past the toggle click/default focus lifecycle so the Home link
+    // receives focus in real browsers (synchronous focus is overwritten).
+    queueMicrotask(() => {
+      if (cancelled) {
+        return;
+      }
+
+      const sidebar = sidebarRef.current;
+      if (!sidebar || sidebar.hasAttribute("inert")) {
+        return;
+      }
+
+      const focusTarget =
+        sidebar.querySelector<HTMLElement>("a[href], button:not([disabled])")
+        ?? sidebar;
+
+      focusTarget.focus();
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [navOpen, isDrawerViewport]);
 
   useEffect(() => {
