@@ -354,7 +354,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
-**Status:** complete. **9-A through 9-D complete.** Draft PR #96 Chrome browser review PASS (drawer focus/inert, 768/390 overflow 0, dense catalog internal scroll, builder canvas overflow, focus-visible, reduced-motion).
+**Status:** complete. **9-A through 9-D complete** (PR #96 merged on `main@9e3f6e3`; Chrome browser review PASS).
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -368,7 +368,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 | **9-C1** | Model Registry / Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
 | **9-C3** | Operations Visual Polish | **complete** (PR #95) |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (Draft PR #96) |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **complete** (PR #96) |
 
 - Figma-driven product-wide final visual redesign
 - final typography, color, spacing, iconography, components, and charts
@@ -383,3 +383,20 @@ https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u
 See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
 
 **Depends on:** completed Phase 8 and stabilized IA/workflows from Phases 1.5–3 and later product depth.
+
+---
+
+## Phase 10 — v1.0 GA Release Readiness
+
+**Status:** in progress — **not GA ready.** **10-A complete.** **10-B is next.**
+
+| Slice | Scope | Status |
+|-------|-------|--------|
+| **10-A** | GA Readiness Baseline & Gap Audit | **complete** |
+| **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | **next / planned** |
+| **10-C** | Acceptance & evidence refresh (AC table, CI wording, GA tip linkage) | planned |
+| **10-D** | GA release packaging (version + notes, then exact-SHA Full Gate, then tag/Release) | planned |
+
+Phase 10 is release-readiness work after Phases 1–9. Starting baseline Full Gate #512 SUCCESS on `9e3f6e3` is recorded; active blockers remain G-01 (release identity) and G-03 (stale acceptance). See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+
+**Depends on:** completed Phase 9 on `main`; Full Gate on the final packaging SHA before `v1.0.0` tag.
