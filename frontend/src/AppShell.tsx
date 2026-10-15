@@ -245,6 +245,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
     };
   }, [navOpen, isDrawerViewport]);
 
+  function closeNav(options?: { restoreFocus?: boolean }) {
+    const sidebar = sidebarRef.current;
+    const activeElement = document.activeElement;
+    const focusInsideSidebar =
+      activeElement instanceof HTMLElement
+      && Boolean(sidebar?.contains(activeElement));
+
+    // Move focus out before aria-hidden/inert apply on the closing render.
+    if (isDrawerViewport && (options?.restoreFocus || focusInsideSidebar)) {
+      navToggleRef.current?.focus();
+    }
+
+    setNavOpen(false);
+  }
+
   useEffect(() => {
     if (!isDrawerViewport || !navOpen) {
       return;
@@ -254,8 +269,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         return;
       }
       event.preventDefault();
-      setNavOpen(false);
-      queueMicrotask(() => navToggleRef.current?.focus());
+      closeNav({ restoreFocus: true });
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -265,13 +279,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     if (!confirmUnsavedNavigation()) return;
     await logout();
     navigate("/login", { replace: true });
-  }
-
-  function closeNav(options?: { restoreFocus?: boolean }) {
-    setNavOpen(false);
-    if (options?.restoreFocus) {
-      queueMicrotask(() => navToggleRef.current?.focus());
-    }
   }
 
   return (

@@ -198,4 +198,26 @@ describe("AppShell drawer accessibility", () => {
     expect(await screen.findByRole("button", { name: /Open navigation/i })).toHaveFocus();
     expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
   });
+
+  it("moves focus out of the sidebar before closing on nav link click", async () => {
+    mockDrawerViewport(true);
+    mockFetch({ systemAdmin: true });
+    renderShell("/projects/9/datasets");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Open navigation/i }));
+    const nav = await screen.findByRole("navigation", { name: "Main navigation" });
+    const trainingJobs = within(nav).getByRole("link", { name: /Training Jobs/ });
+    await waitFor(() => {
+      expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+    });
+
+    fireEvent.click(trainingJobs);
+
+    const sidebar = document.getElementById("app-sidebar");
+    expect(sidebar).toHaveAttribute("aria-hidden", "true");
+    expect(sidebar?.hasAttribute("inert")).toBe(true);
+    expect(sidebar?.contains(document.activeElement)).toBe(false);
+    expect(screen.getByRole("button", { name: /Open navigation/i })).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Main navigation" })).not.toBeInTheDocument();
+  });
 });

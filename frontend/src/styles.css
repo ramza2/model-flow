@@ -720,7 +720,11 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   white-space: nowrap;
 }
 .version-chip.is-neutral { color: var(--muted); font-weight: 500; }
-.catalog-table table { width: 100%; border-collapse: collapse; }
+.catalog-table table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
 .catalog-table th {
   padding: 0.7rem 0.85rem;
   color: var(--muted);
@@ -2928,10 +2932,16 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .quality-check-item summary:focus-visible {
   color: var(--text);
 }
-.catalog-table td,
-.ops-page td,
+/* Dense catalogs scroll inside .table-wrap; keep wrap for ops/audit technical cells */
+.ops-page td {
+  overflow-wrap: anywhere;
+}
+.catalog-table td {
+  overflow-wrap: normal;
+}
 .audit-catalog-table td {
   overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 @media (prefers-reduced-motion: reduce) {
