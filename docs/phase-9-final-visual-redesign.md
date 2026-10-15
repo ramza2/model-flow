@@ -70,11 +70,11 @@ The final direction is:
 | **9-B2** | Training / Experiments Visual Polish | **complete** |
 | **9-B3** | Preparation Builder / Pipeline Builder Visual Polish | **complete** |
 | **9-B4** | Feedback / Pipeline Catalog & Run Views Polish | **complete** |
-| **9-C** | Models / Serving / Operations Visual Polish | **current** |
+| **9-C** | Models / Serving / Operations Visual Polish | **complete** |
 | **9-C1** | Model Registry / Model Version Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
-| **9-C3** | Operations Visual Polish | **current / Draft** |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
+| **9-C3** | Operations Visual Polish | **complete** (merged via PR #95) |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **current** |
 
 ### 9-A — Design Foundation + App Shell
 
@@ -186,7 +186,7 @@ Scope:
 - serving / API / security / polling semantics unchanged
 - operations pages excluded until 9-C3
 
-#### 9-C3 — Operations Visual Polish (current)
+#### 9-C3 — Operations Visual Polish (complete)
 
 Scope:
 
@@ -203,13 +203,26 @@ Scope:
 
 ### 9-D — Final Accessibility / Responsive / Browser Regression
 
-Closeout only:
+**Status:** current. Closeout only — no new screens, features, or Figma frames.
 
-- keyboard/focus/contrast review
-- mobile/tablet shell and dense-page behavior
-- representative browser regression with realistic data
-- full visual consistency sweep
-- no new product features
+Completed in this slice (pending representative browser review):
+
+- keyboard / focus-visible closeout (`summary` + library item outline restore)
+- `prefers-reduced-motion` support for sidebar, spinner, live pulse, hover translate, library transitions
+- tablet / mobile shell regression (`100dvh` fallback, menu popover max-width, drawer breakpoint preserved at 1023px)
+- dense page / table overflow regression (safe `minmax(min(100%, …))` grids, `.code-block` wrap/scroll, catalog/ops cell wrap)
+- builder workspace regression (min-width / max-width guards at ≤1023 without changing zone stack breakpoints)
+- browser compatibility presentation-only (`-webkit-backdrop-filter` beside solid topbar fallback)
+- AppShell drawer a11y and Drawer dialog semantics preserved (tests unchanged)
+
+Still required before Phase 9 complete:
+
+- representative browser review at 1440 / 1280 / 1024 / 1023 / 768 / 390
+- keyboard pass on App Shell drawer, user menu `<summary>`, Drawer focus trap
+- reduced-motion visual spot-check
+- dense catalog / builder overflow spot-check with realistic data
+
+Phase 9 itself remains incomplete until that browser review lands.
 
 ## 9-A token baseline
 

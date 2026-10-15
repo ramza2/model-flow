@@ -354,7 +354,7 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 
 ## Phase 9 — Final Visual Redesign
 
-**Status:** current. **9-A, 9-B, 9-C1, and 9-C2 complete on `main`.** **9-C3 — Operations Visual Polish is current / Draft.**
+**Status:** current. **9-A through 9-C3 complete on `main`.** **9-D — Final Accessibility / Responsive / Browser Regression is current / Draft.** Phase 9 remains incomplete until representative browser review.
 
 | Slice | Scope | Status |
 |-------|-------|--------|
@@ -364,11 +364,11 @@ See [`phase-8-enterprise-scale.md`](./phase-8-enterprise-scale.md).
 | **9-B2** | Training / Experiments Visual Polish | **complete** |
 | **9-B3** | Builder Visual Polish | **complete** |
 | **9-B4** | Feedback / Pipeline Catalog & Runs | **complete** |
-| **9-C** | Models / Serving / Operations Visual Polish | **current** |
+| **9-C** | Models / Serving / Operations Visual Polish | **complete** |
 | **9-C1** | Model Registry / Governance Visual Polish | **complete** |
 | **9-C2** | Deployments / Serving Visual Polish | **complete** |
-| **9-C3** | Operations Visual Polish | **current / Draft** |
-| **9-D** | Final Accessibility / Responsive / Browser Regression | planned |
+| **9-C3** | Operations Visual Polish | **complete** (PR #95) |
+| **9-D** | Final Accessibility / Responsive / Browser Regression | **current / Draft** |
 
 - Figma-driven product-wide final visual redesign
 - final typography, color, spacing, iconography, components, and charts
