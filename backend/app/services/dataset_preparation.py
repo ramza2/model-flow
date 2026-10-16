@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import defaultdict, deque
 from typing import Any
 
@@ -59,7 +60,19 @@ FILTER_OPERATORS = frozenset(
 FILTER_NULLARY_OPS = frozenset({"is_null", "not_null"})
 CAST_TYPES = frozenset({"integer", "float", "string", "boolean", "datetime"})
 DEDUP_KEEP = frozenset({"first", "last"})
-DERIVED_OPS = frozenset({"add", "subtract", "multiply", "divide", "concat"})
+DERIVED_OPS = frozenset(
+    {
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "concat",
+        "regex_extract",
+        "datetime_parse",
+        "datetime_add_hours",
+        "datetime_format",
+    }
+)
 GROUP_BY_OPS = frozenset({"sum", "avg", "min", "max", "count"})
 ROLLING_AGGREGATIONS = frozenset({"avg", "sum", "min", "max"})
 OPERAND_KINDS = frozenset({"column", "literal"})
@@ -574,10 +587,49 @@ def _validate_derived_column_config(
     if operation not in DERIVED_OPS:
         errors.append(
             f"derived_column node '{node_id}': operation must be one of "
-            "add, subtract, multiply, divide, concat"
+            "add, subtract, multiply, divide, concat, regex_extract, "
+            "datetime_parse, datetime_add_hours, datetime_format"
         )
-    errors.extend(_validate_operand(node_id, "left", config.get("left")))
-    errors.extend(_validate_operand(node_id, "right", config.get("right")))
+    left = config.get("left")
+    right = config.get("right")
+    errors.extend(_validate_operand(node_id, "left", left))
+    errors.extend(_validate_operand(node_id, "right", right))
+
+    temporal_ops = {
+        "regex_extract",
+        "datetime_parse",
+        "datetime_add_hours",
+        "datetime_format",
+    }
+    if operation in temporal_ops:
+        if not isinstance(left, dict) or left.get("kind") != "column":
+            errors.append(
+                f"derived_column node '{node_id}': {operation} requires a column as the left operand"
+            )
+
+    if operation in {"regex_extract", "datetime_parse", "datetime_format"}:
+        right_value = right.get("value") if isinstance(right, dict) else None
+        if (
+            not isinstance(right, dict)
+            or right.get("kind") != "literal"
+            or not isinstance(right_value, str)
+            or not right_value
+        ):
+            errors.append(
+                f"derived_column node '{node_id}': {operation} requires a non-empty string literal as the right operand"
+            )
+        elif operation == "regex_extract":
+            try:
+                compiled = re.compile(right_value)
+            except re.error as exc:
+                errors.append(
+                    f"derived_column node '{node_id}': regex_extract pattern is invalid ({exc})"
+                )
+            else:
+                if compiled.groups != 1:
+                    errors.append(
+                        f"derived_column node '{node_id}': regex_extract pattern must contain exactly one capture group"
+                    )
     return errors, warnings
 
 

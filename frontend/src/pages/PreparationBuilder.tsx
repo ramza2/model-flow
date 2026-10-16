@@ -2406,6 +2406,7 @@ function DerivedInspector({
   });
   const [leftError, setLeftError] = useState<string | null>(null);
   const [rightError, setRightError] = useState<string | null>(null);
+  const operation = String(config.operation || "add");
 
   useEffect(() => {
     const errors = [leftError, rightError].filter(
@@ -2434,8 +2435,21 @@ function DerivedInspector({
         <select
           data-testid="preparation-derived-operation"
           disabled={!canWrite}
-          value={String(config.operation || "add")}
-          onChange={(event) => onChange({ ...config, operation: event.target.value })}
+          value={operation}
+          onChange={(event) => {
+            const nextOperation = event.target.value;
+            if (
+              ["regex_extract", "datetime_parse", "datetime_format"].includes(nextOperation)
+            ) {
+              onChange({
+                ...config,
+                operation: nextOperation,
+                right: { kind: "literal", value_type: "string", value: "" },
+              });
+              return;
+            }
+            onChange({ ...config, operation: nextOperation });
+          }}
         >
           {DERIVED_OPERATIONS.map((operation) => (
             <option key={operation} value={operation}>
@@ -2444,6 +2458,27 @@ function DerivedInspector({
           ))}
         </select>
       </label>
+      {operation === "regex_extract" && (
+        <small className="muted">
+          Left: source column. Right: regex string with exactly one capture group, for example
+          _(\d+)HR$.
+        </small>
+      )}
+      {operation === "datetime_parse" && (
+        <small className="muted">
+          Left: source column. Right: datetime format such as %Y%m%d.
+        </small>
+      )}
+      {operation === "datetime_add_hours" && (
+        <small className="muted">
+          Left: datetime column. Right: numeric hour column or literal.
+        </small>
+      )}
+      {operation === "datetime_format" && (
+        <small className="muted">
+          Left: datetime column. Right: output format such as %Y-%m-%d %H:%M.
+        </small>
+      )}
       <OperandFields
         label="Left"
         testIdPrefix="preparation-derived-left"

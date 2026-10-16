@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections import defaultdict, deque
 from datetime import date, datetime
 from typing import Any
@@ -616,6 +617,82 @@ def _execute_derived_column(
     if operation == "concat":
         # Null becomes "" for both column and literal operands.
         out[column_name] = _as_concat_text(left) + _as_concat_text(right)
+        return out
+
+    if operation == "regex_extract":
+        if not isinstance(left, pd.Series):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': regex_extract requires a column as the left operand."
+            )
+        if not isinstance(right, str) or not right:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': regex_extract requires a non-empty string pattern."
+            )
+        try:
+            compiled = re.compile(right)
+        except re.error as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': regex_extract pattern is invalid ({exc})."
+            ) from exc
+        if compiled.groups != 1:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': regex_extract pattern must contain exactly one capture group."
+            )
+        out[column_name] = left.astype("string").str.extract(compiled, expand=False)
+        return out
+
+    if operation == "datetime_parse":
+        if not isinstance(left, pd.Series):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_parse requires a column as the left operand."
+            )
+        if not isinstance(right, str) or not right:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_parse requires a non-empty format string."
+            )
+        try:
+            out[column_name] = pd.to_datetime(
+                left.astype("string"),
+                format=right,
+                errors="raise",
+            )
+        except (TypeError, ValueError) as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_parse could not parse the source column with format '{right}'."
+            ) from exc
+        return out
+
+    if operation == "datetime_add_hours":
+        if not isinstance(left, pd.Series):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_add_hours requires a column as the left operand."
+            )
+        try:
+            base = pd.to_datetime(left, errors="raise")
+            hours = _as_numeric_operand(right, node_id)
+            out[column_name] = base + pd.to_timedelta(hours, unit="h")
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_add_hours requires datetime values and numeric hours."
+            ) from exc
+        return out
+
+    if operation == "datetime_format":
+        if not isinstance(left, pd.Series):
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_format requires a column as the left operand."
+            )
+        if not isinstance(right, str) or not right:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_format requires a non-empty format string."
+            )
+        try:
+            parsed = pd.to_datetime(left, errors="raise")
+            out[column_name] = parsed.dt.strftime(right).astype("string")
+        except (TypeError, ValueError) as exc:
+            raise PreparationExecutionError(
+                f"Node '{node_id}': datetime_format could not format the source column."
+            ) from exc
         return out
 
     left_num = _as_numeric_operand(left, node_id)

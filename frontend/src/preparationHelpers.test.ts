@@ -4,6 +4,7 @@ import {
   apiGraphToFlow,
   coerceDerivedLiteral,
   coerceFilterValue,
+  DERIVED_OPERATIONS,
   defaultConfigForPreparation,
   emptyPreparationGraph,
   flowToApiGraph,
@@ -228,6 +229,20 @@ describe("preparationHelpers", () => {
     expect(invalid.errors.length).toBeGreaterThan(0);
     expect(invalid.values).toEqual({});
     expect(Object.values(invalid.values)).not.toContain(0);
+  });
+
+  it("exposes temporal and regex derived operations", () => {
+    expect(DERIVED_OPERATIONS).toEqual([
+      "add",
+      "subtract",
+      "multiply",
+      "divide",
+      "concat",
+      "regex_extract",
+      "datetime_parse",
+      "datetime_add_hours",
+      "datetime_format",
+    ]);
   });
 
   it("coerces derived literals without collapsing numeric-looking strings", () => {
