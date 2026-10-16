@@ -632,12 +632,53 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   overflow-wrap: anywhere;
 }
 .source-card-facts { margin-top: 0.15rem; }
-.source-card .row-actions {
+.source-card > .source-card-actions {
   margin-top: auto;
   padding-top: 0.85rem;
   flex-wrap: wrap;
 }
-.source-import-panel { margin-top: 1rem; }
+.source-card.is-importing {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+.source-card.is-importing .source-card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 1.25rem;
+}
+.source-import-panel {
+  min-width: 0;
+  margin-top: 0.25rem;
+}
+.source-rest-preview-table-wrap {
+  max-width: 100%;
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.source-rest-preview-table-wrap table {
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+}
+.source-rest-preview-table-wrap th,
+.source-rest-preview-table-wrap td {
+  white-space: nowrap;
+  font-size: 0.78rem;
+}
+.source-rest-preview-table-wrap th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
+}
+@media (max-width: 768px) {
+  .source-card.is-importing .source-card-facts {
+    grid-template-columns: 1fr;
+  }
+}
+.source-import-status { margin-top: .75rem; display: grid; gap: .5rem; }
 .source-import-status { margin-top: .75rem; display: grid; gap: .5rem; }
 .source-recent-jobs { margin-top: .15rem; }
 .source-recent-jobs ul { list-style: none; margin: .35rem 0 0; padding: 0; display: grid; gap: .35rem; }
