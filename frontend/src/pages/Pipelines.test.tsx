@@ -1092,6 +1092,100 @@ describe("PipelineRunDetail", () => {
   });
 });
 
+describe("Pipeline deletion", () => {
+  beforeEach(() => {
+    apiMock.mockReset();
+    canWriteRef.value = true;
+  });
+
+  it("deletes a pipeline with no run history after confirmation", async () => {
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines" && method === "GET") {
+        return [{ ...pipeline, id: 31, name: "Disposable pipe" }];
+      }
+      if (path === "/projects/7/pipelines/31" && method === "DELETE") {
+        return { detail: "Pipeline deleted.", hint: null };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/pipelines"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Disposable pipe")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-delete-31"));
+
+    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining('Delete pipeline "Disposable pipe"?'));
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledWith("/projects/7/pipelines/31", { method: "DELETE" });
+      expect(screen.queryByText("Disposable pipe")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Pipeline "Disposable pipe" deleted.')).toBeInTheDocument();
+    confirmMock.mockRestore();
+  });
+
+  it("keeps the pipeline and explains the run-history delete block", async () => {
+    const confirmMock = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines" && method === "GET") {
+        return [{ ...pipeline, id: 32, name: "Audited pipe" }];
+      }
+      if (path === "/projects/7/pipelines/32" && method === "DELETE") {
+        throw new ApiRequestError(409, "A pipeline with run history cannot be deleted.");
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/pipelines"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Audited pipe")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-delete-32"));
+
+    expect(
+      await screen.findByText(
+        "This pipeline has run history and cannot be deleted. Run history is retained for auditability.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Audited pipe")).toBeInTheDocument();
+    confirmMock.mockRestore();
+  });
+
+  it("does not expose delete controls to read-only users", async () => {
+    canWriteRef.value = false;
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipelines") {
+        return [{ ...pipeline, id: 33, name: "Read-only pipe" }];
+      }
+      throw new Error(`Unhandled api call GET ${path}`);
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/pipelines"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines" element={<Pipelines />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Read-only pipe")).toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-delete-33")).not.toBeInTheDocument();
+  });
+});
+
 describe("Pipeline contextual scheduling gates", () => {
   beforeEach(() => {
     apiMock.mockReset();

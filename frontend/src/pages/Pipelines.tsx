@@ -28,6 +28,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Link, useBeforeUnload, useNavigate, useParams } from "react-router-dom";
 import {
+  ApiRequestError,
   api,
   type Dataset,
   type DatasetVersion,
@@ -47,6 +48,7 @@ import {
   PageHeader,
   StatusBadge,
   SuccessNotice,
+  confirmAction,
   formatDate,
 } from "../components";
 import { Drawer } from "../Drawer";
@@ -242,6 +244,8 @@ export function Pipelines() {
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
 
   const load = useCallback(async () => {
@@ -261,6 +265,7 @@ export function Pipelines() {
   async function create(event: FormEvent) {
     event.preventDefault();
     setError("");
+    setSuccess("");
     try {
       const pipeline = await api<Pipeline>(`/projects/${projectId}/pipelines`, {
         method: "POST",
@@ -269,6 +274,33 @@ export function Pipelines() {
       navigate(`/projects/${projectId}/pipelines/${pipeline.id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Pipeline could not be created.");
+    }
+  }
+
+  async function deletePipeline(pipeline: Pipeline) {
+    if (!projectId || deletingId !== null) return;
+    const confirmed = confirmAction(
+      `Delete pipeline "${pipeline.name}"?\n\nThis permanently deletes the pipeline and its saved versions. Pipelines with run history cannot be deleted.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(pipeline.id);
+    setError("");
+    setSuccess("");
+    try {
+      await api(`/projects/${projectId}/pipelines/${pipeline.id}`, { method: "DELETE" });
+      setPipelines((current) => current.filter((row) => row.id !== pipeline.id));
+      setSuccess(`Pipeline "${pipeline.name}" deleted.`);
+    } catch (reason) {
+      if (reason instanceof ApiRequestError && reason.status === 409) {
+        setError(
+          "This pipeline has run history and cannot be deleted. Run history is retained for auditability.",
+        );
+      } else {
+        setError(reason instanceof Error ? reason.message : "Pipeline could not be deleted.");
+      }
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -286,6 +318,7 @@ export function Pipelines() {
         }
       />
       <ErrorNotice message={error} />
+      <SuccessNotice message={success} />
       {canWrite && showCreate && (
         <form className="panel inline-form pipeline-create-form" onSubmit={create} data-testid="pipeline-create-form">
           <label>
@@ -380,6 +413,18 @@ export function Pipelines() {
                           aria-label="Schedule unavailable. Publish this pipeline before scheduling."
                         >
                           Schedule
+                        </button>
+                      )}
+                      {canWrite && (
+                        <button
+                          type="button"
+                          className="btn link danger-text"
+                          data-testid={`pipeline-delete-${pipeline.id}`}
+                          disabled={deletingId !== null}
+                          aria-label={`Delete ${pipeline.name}`}
+                          onClick={() => void deletePipeline(pipeline)}
+                        >
+                          {deletingId === pipeline.id ? "Deleting…" : "Delete"}
                         </button>
                       )}
                     </div>
