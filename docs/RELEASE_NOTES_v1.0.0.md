@@ -1,11 +1,12 @@
 # ModelFlow v1.0.0
 
-ModelFlow v1.0.0 is the GA packaging candidate for the self-hosted tabular MLOps
+ModelFlow v1.0.0 is the first GA release of the self-hosted tabular MLOps
 platform delivered through the MVP/RC baseline and Enhancement Phases 1–9.
 
-> Packaging status: this file prepares the GA release artifact. The `v1.0.0`
-> tag and GitHub Release must not be created until the exact merged packaging SHA
-> passes the `main` Full verification gate.
+- **Git tag:** `v1.0.0`
+- **GitHub Release:** [ModelFlow v1.0.0](https://github.com/ramza2/model-flow/releases/tag/v1.0.0)
+- **Release commit:** `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`
+- **Release verification:** CI #521 / run `38708716981` — Full verification gate **SUCCESS** on the exact release commit
 
 ## Highlights
 
@@ -61,20 +62,16 @@ Major accepted v1.0 boundaries include:
 The complete current list is maintained in
 [KNOWN_LIMITATIONS.md](./KNOWN_LIMITATIONS.md).
 
-## Verification and release gate
+## Verification and release evidence
 
-The Phase 10-C evidence baseline and subsequent pre-packaging `main` verification
-demonstrate release readiness before packaging, but they are **not** the final release
-attestation.
+The final packaging commit
+`78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` passed the `main` Full verification
+gate in **CI #521** / run `38708716981`. Only after that SUCCESS result was the
+annotated `v1.0.0` tag created on the same commit and the GitHub GA Release
+published.
 
-The mandatory GA sequence is:
-
-1. merge the v1.0.0 packaging identity and this release-note artifact to `main`;
-2. wait for the **Full verification gate** to succeed on that exact merged packaging SHA;
-3. create the `v1.0.0` tag on that exact verified SHA;
-4. publish the GitHub GA Release from that tag.
-
-No future run number or packaging SHA is recorded here before it exists.
+This file on `main` records the post-release closeout state; the immutable release
+tag continues to identify the verified release commit above.
 
 ## Historical release
 
