@@ -89,13 +89,13 @@ phase docs**, not RC-era acceptance/limitations text.
 | `docs/DECISIONS.md` | D-006 marked superseded by Phase 8-A; D-017 annotated for Fast vs Full gates (90m) |
 | `docs/phase-9-final-visual-redesign.md` | Draft PR #96 → PR #96 merged |
 
-### Remaining for later slices
+### Follow-up status after 10-D
 
-| File | Factual drift |
+| File / item | Final status |
 |---|---|
-| `docs/ACCEPTANCE_CRITERIA.md` | Refreshed in **10-C** against evidence baseline `1973860` / Full Gate #517; AC-72 final packaging attestation still **NOT_VERIFIED** until **10-D** |
-| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Correct as RC history; GA notes belong to **10-D** |
-| Phase 0 branch protection | Still listed pending — process item **G-09**, not fabricated complete |
+| `docs/ACCEPTANCE_CRITERIA.md` | Finalized in **10-D** with AC-72 **PASS** from Full Gate #521 on exact release commit `78abe33` before tag/release |
+| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Preserved as immutable RC history; GA release notes are in `docs/RELEASE_NOTES_v1.0.0.md` |
+| Phase 0 branch protection | Still pending as process item **G-09**; not fabricated complete |
 
 Test-count claims for AC-13/14/15 use Full Gate #517 PASS outcomes (not brittle source-level counts).
 
@@ -135,7 +135,7 @@ None for v1.0 GA release closeout. G-09 remains a repository-governance
 | G-05 | README / `PRODUCT_SPEC.md` capability & non-goal drift | **CLEARED** | Phase 10-B truth-up |
 | G-06 | `DECISIONS.md` D-006 / D-017 drift | **CLEARED** | Phase 10-B annotations |
 | G-07 | Remaining Draft PR #96 wording | **CLEARED** | Phase 10-B (`phase-9-final-visual-redesign.md`) |
-| G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Neutral GA-candidate framing in KNOWN/PRODUCT/ARCHITECTURE |
+| G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Phase 10-B neutralized RC framing; Phase 10-D closeout updates current KNOWN/PRODUCT/ARCHITECTURE status to published v1.0.0 GA |
 
 **GA release gate completed:** AC-72 is **PASS** from Full Gate #521 on the exact
 release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` before tag/release.
@@ -150,7 +150,7 @@ release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` before tag/release.
 
 No evidence that Phase 8–9 **implementation** of inference-runtime, OIDC, Helm, or Phase 9-D is missing on tip.
 
-## Exact verification plan (later Phase 10 slices)
+## Completed verification plan
 
 1. **Baseline attestation (done):** Full Gate #512 SUCCESS on starting tip `9e3f6e3`.
 2. **Doc truth-up (done — 10-B):** `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE, DECISIONS D-006/D-017, Draft #96 wording.
@@ -168,7 +168,7 @@ Completed sequence — the release preserved the rule **do not tag an unverified
 4. **Completed:** non-prerelease GitHub GA Release published from that tag.
 5. No separate mandatory post-release smoke was defined; this closeout does not invent one.
 
-## Proposed Phase 10 slices
+## Phase 10 slices
 
 | Slice | Scope | Status |
 |---|---|---|
