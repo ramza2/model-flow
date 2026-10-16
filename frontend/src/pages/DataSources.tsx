@@ -1067,7 +1067,11 @@ export default function DataSources() {
           </div>
           <div className="card-grid source-catalog-grid">
           {sources.map((source) => (
-            <article className="source-card" key={source.id} data-testid={`data-source-card-${source.id}`}>
+            <article
+              className={`source-card${importingId === source.id ? " is-importing" : ""}`}
+              key={source.id}
+              data-testid={`data-source-card-${source.id}`}
+            >
               <div className="source-card-header">
                 <div className="source-card-identity">
                   <span className="source-icon" aria-hidden="true">
@@ -1124,7 +1128,7 @@ export default function DataSources() {
                 </div>
               )}
               {canWrite && (
-                <div className="row-actions">
+                <div className="row-actions source-card-actions">
                   {source.is_active && (
                     <button
                       className="btn secondary"
@@ -1260,7 +1264,10 @@ export default function DataSources() {
                       </div>
                       {importState.previewError && <ErrorNotice message={importState.previewError} />}
                       {importState.preview && (
-                        <div className="table-wrap" data-testid="import-rest-preview-table">
+                        <div
+                          className="table-wrap source-rest-preview-table-wrap"
+                          data-testid="import-rest-preview-table"
+                        >
                           <table>
                             <thead>
                               <tr>

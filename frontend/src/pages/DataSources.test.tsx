@@ -872,6 +872,7 @@ describe("DataSources operations UX", () => {
     renderPage();
     fireEvent.click(await screen.findByTestId("import-data-6"));
     expect(await screen.findByText("Import from REST API")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-card-6")).toHaveClass("is-importing");
     expect(screen.queryByTestId("import-schema")).not.toBeInTheDocument();
     expect(screen.queryByTestId("import-mode-sql")).not.toBeInTheDocument();
     expect(screen.getByTestId("import-rest-resource")).toHaveValue("/customers");
@@ -879,6 +880,7 @@ describe("DataSources operations UX", () => {
 
     fireEvent.click(screen.getByTestId("import-rest-preview"));
     const preview = await screen.findByTestId("import-rest-preview-table");
+    expect(preview).toHaveClass("source-rest-preview-table-wrap");
     expect(within(preview).getByText("Ada")).toBeInTheDocument();
     expect(within(preview).getByText("Linus")).toBeInTheDocument();
 
