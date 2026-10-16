@@ -313,6 +313,9 @@ export default function PreparationBuilder() {
           );
         }
         if (matched && String(matched.status).toLowerCase() === "succeeded") {
+          // A newly successful run becomes the primary result. Do not leave an
+          // older failure traceback expanded above it.
+          setExpandedRunId(null);
           try {
             const datasetRows = await api<Dataset[]>(`/projects/${projectId}/datasets`);
             setDatasets(datasetRows);
@@ -365,6 +368,22 @@ export default function PreparationBuilder() {
     if (preparation?.output_dataset_id == null) return null;
     return datasets.find((dataset) => dataset.id === preparation.output_dataset_id) || null;
   }, [datasets, preparation]);
+
+  const successOutputDataset = useMemo(() => {
+    if (successRun?.output_dataset_id == null) return null;
+    return datasets.find((dataset) => dataset.id === successRun.output_dataset_id) || null;
+  }, [datasets, successRun]);
+
+  const latestRunId = useMemo(
+    () => runs.reduce((latest, run) => Math.max(latest, run.id), 0),
+    [runs],
+  );
+
+  const sampledJoinPreviewEmpty = Boolean(
+    preview?.sampled &&
+      preview.row_count === 0 &&
+      nodes.some((node) => node.data.node_type === "join"),
+  );
 
   useEffect(() => {
     if (!selectedNode || selectedNode.data.node_type !== "source" || !projectId) {
@@ -877,25 +896,43 @@ export default function PreparationBuilder() {
           data-testid="preparation-success-cta"
           role="status"
         >
-          <div>
+          <div className="preparation-success-main">
             <span className="eyebrow">Preparation succeeded</span>
             <h2>
               Output Dataset
-              {(() => {
-                const dataset =
-                  successRun.output_dataset_id == null
-                    ? null
-                    : datasets.find((row) => row.id === successRun.output_dataset_id);
-                if (!dataset) {
-                  return successRun.output_dataset_id != null
-                    ? ` · #${successRun.output_dataset_id}`
-                    : "";
-                }
-                const versionLabel =
-                  dataset.latest_version > 0 ? ` · v${dataset.latest_version}` : "";
-                return ` · ${dataset.name}${versionLabel}`;
-              })()}
+              {successOutputDataset
+                ? ` · ${successOutputDataset.name}${successOutputDataset.latest_version > 0 ? ` · v${successOutputDataset.latest_version}` : ""}`
+                : successRun.output_dataset_id != null
+                  ? ` · #${successRun.output_dataset_id}`
+                  : ""}
             </h2>
+            <div
+              className="preparation-success-summary"
+              data-testid="preparation-success-summary"
+            >
+              <span>
+                <small>Run</small>
+                <strong>#{successRun.id}</strong>
+              </span>
+              <span>
+                <small>Rows</small>
+                <strong data-testid="preparation-success-rows">
+                  {successOutputDataset ? successOutputDataset.row_count.toLocaleString() : "—"}
+                </strong>
+              </span>
+              <span>
+                <small>Columns</small>
+                <strong data-testid="preparation-success-columns">
+                  {successOutputDataset ? successOutputDataset.column_count.toLocaleString() : "—"}
+                </strong>
+              </span>
+              <span>
+                <small>Duration</small>
+                <strong data-testid="preparation-success-duration">
+                  {formatRunDuration(successRun)}
+                </strong>
+              </span>
+            </div>
           </div>
           <div className="row-actions" data-testid="preparation-success-actions">
             {successRun.output_dataset_id != null && (
@@ -1282,14 +1319,25 @@ export default function PreparationBuilder() {
                     <Fragment key={run.id}>
                       <tr data-testid={`preparation-run-row-${run.id}`}>
                         <td>
-                          <button
-                            type="button"
-                            className="btn link"
-                            data-testid={`preparation-run-expand-${run.id}`}
-                            onClick={() => void expandRun(run.id)}
-                          >
-                            #{run.id}
-                          </button>
+                          <div className="preparation-run-id">
+                            <button
+                              type="button"
+                              className="btn link"
+                              data-testid={`preparation-run-expand-${run.id}`}
+                              aria-expanded={expandedRunId === run.id}
+                              onClick={() => void expandRun(run.id)}
+                            >
+                              #{run.id}
+                            </button>
+                            {run.id === latestRunId && (
+                              <span
+                                className="preparation-latest-run-badge"
+                                data-testid={`preparation-run-latest-${run.id}`}
+                              >
+                                Latest
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td>
                           {recipeVersion != null
@@ -1340,9 +1388,10 @@ export default function PreparationBuilder() {
                               type="button"
                               className="btn link"
                               data-testid={`preparation-run-show-error-${run.id}`}
+                              aria-expanded={expandedRunId === run.id}
                               onClick={() => void expandRun(run.id)}
                             >
-                              Show error
+                              {expandedRunId === run.id ? "Hide error" : "Show error"}
                             </button>
                           )}
                         </td>
@@ -1428,6 +1477,17 @@ export default function PreparationBuilder() {
                   ))}
                 </div>
               )}
+              {sampledJoinPreviewEmpty && (
+                <div
+                  className="preparation-preview-empty-note"
+                  role="status"
+                  data-testid="preparation-preview-empty-join"
+                >
+                  Sampled preview found no matching join rows. Preview samples each source
+                  independently, so exact join keys may be absent even when the full preparation
+                  run succeeds. Run preparation to evaluate the complete datasets.
+                </div>
+              )}
               <div className="preparation-preview-table-wrap">
                 {preview.columns.length === 0 ? (
                   <p className="muted">No columns in preview result.</p>
@@ -1458,6 +1518,18 @@ export default function PreparationBuilder() {
       )}
     </div>
   );
+}
+
+function formatRunDuration(run: DatasetPreparationRun): string {
+  if (!run.started_at || !run.finished_at) return "—";
+  const started = Date.parse(run.started_at);
+  const finished = Date.parse(run.finished_at);
+  if (!Number.isFinite(started) || !Number.isFinite(finished) || finished < started) return "—";
+  const seconds = Math.max(0, Math.round((finished - started) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
 }
 
 function formatPreviewCell(value: unknown): string {
