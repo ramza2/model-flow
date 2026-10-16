@@ -558,7 +558,7 @@ describe("PreparationBuilder", () => {
             ],
           },
         },
-      },
+      } as typeof preparation,
       preview: {
         node_id: "join-1",
         columns: ["id", "weather"],
