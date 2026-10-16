@@ -147,3 +147,110 @@ def test_rest_connector_rejects_resource_path_escape():
 
     with pytest.raises(ValueError, match="remain under"):
         connector.read_frame("../admin")
+
+
+
+def test_rest_connector_uses_encrypted_secret_query_parameter():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params["serviceKey"] == "safety-secret"
+        assert request.url.params["returnType"] == "json"
+        return httpx.Response(200, json={"body": [{"value": 7}]})
+
+    connector = RestApiConnector(
+        {
+            "base_url": "https://api.example.com",
+            "resource_path": "/values",
+            "data_path": "body",
+            "auth_type": "none",
+            "query_params": {"returnType": "json"},
+            "secret_query_param_name": "serviceKey",
+        },
+        {"query_param_secret": "safety-secret"},
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert connector.read_frame("").to_dict(orient="records") == [{"value": 7}]
+
+
+def test_rest_connector_page_number_pagination_collects_all_rows():
+    requested_pages: list[int] = []
+    rows = [
+        {"id": 1},
+        {"id": 2},
+        {"id": 3},
+        {"id": 4},
+        {"id": 5},
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["pageNo"])
+        page_size = int(request.url.params["numOfRows"])
+        requested_pages.append(page)
+        start = (page - 1) * page_size
+        return httpx.Response(
+            200,
+            json={
+                "pageNo": page,
+                "numOfRows": page_size,
+                "totalCount": len(rows),
+                "body": rows[start : start + page_size],
+            },
+        )
+
+    connector = RestApiConnector(
+        {
+            "base_url": "https://api.example.com",
+            "resource_path": "/values",
+            "data_path": "body",
+            "auth_type": "none",
+            "pagination_mode": "page_number",
+            "pagination_page_param": "pageNo",
+            "pagination_page_size_param": "numOfRows",
+            "pagination_page_size": 2,
+            "pagination_start_page": 1,
+            "pagination_total_count_path": "totalCount",
+            "pagination_max_pages": 10,
+        },
+        {},
+        transport=httpx.MockTransport(handler),
+    )
+
+    frame = connector.read_frame("")
+    assert frame.to_dict(orient="records") == rows
+    assert requested_pages == [1, 2, 3]
+
+
+def test_rest_connector_preview_only_requests_first_paginated_page():
+    requested_pages: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["pageNo"])
+        requested_pages.append(page)
+        return httpx.Response(
+            200,
+            json={
+                "totalCount": 50,
+                "body": [{"id": page * 10 + index} for index in range(10)],
+            },
+        )
+
+    connector = RestApiConnector(
+        {
+            "base_url": "https://api.example.com",
+            "resource_path": "/values",
+            "data_path": "body",
+            "auth_type": "none",
+            "pagination_mode": "page_number",
+            "pagination_page_param": "pageNo",
+            "pagination_page_size_param": "numOfRows",
+            "pagination_page_size": 10,
+            "pagination_start_page": 1,
+            "pagination_total_count_path": "totalCount",
+        },
+        {},
+        transport=httpx.MockTransport(handler),
+    )
+
+    preview = connector.preview("", limit=2).as_dict()
+    assert len(preview["rows"]) == 2
+    assert requested_pages == [1]

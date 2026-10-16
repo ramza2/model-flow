@@ -38,6 +38,7 @@ _SECRET_KEYS = {
     "bearer_token",
     "authorization",
     "api_key",
+    "query_param_secret",
     "url",
     "dsn",
 }

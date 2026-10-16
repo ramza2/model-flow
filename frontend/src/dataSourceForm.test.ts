@@ -490,4 +490,86 @@ describe("REST API data source form helpers", () => {
       }),
     ).toThrow(/relative/i);
   });
+
+  it("moves a query API key into encrypted secret storage and configures pagination", () => {
+    const payload = buildRestApiSavePayload({
+      form: {
+        ...DEFAULT_REST_API_FORM,
+        baseUrl: "https://www.safetydata.go.kr",
+        resourcePath: "/V2/api/DSSP-IF-20390",
+        dataPath: "body",
+        queryParams:
+          '{"serviceKey":"public-for-migration","returnType":"json","pageNo":1,"numOfRows":5}',
+        secretQueryParamName: "serviceKey",
+        paginationMode: "page_number",
+        paginationPageParam: "pageNo",
+        paginationPageSizeParam: "numOfRows",
+        paginationPageSize: "100",
+        paginationStartPage: "1",
+        paginationTotalCountPath: "totalCount",
+        paginationMaxPages: "20",
+      },
+      bearerToken: "",
+      apiKey: "",
+      editing: false,
+      previousAuthType: null,
+      hasSecrets: false,
+    });
+
+    expect(payload.config).toEqual({
+      base_url: "https://www.safetydata.go.kr",
+      resource_path: "/V2/api/DSSP-IF-20390",
+      data_path: "body",
+      auth_type: "none",
+      timeout_seconds: 10,
+      secret_query_param_name: "serviceKey",
+      pagination_mode: "page_number",
+      pagination_page_param: "pageNo",
+      pagination_page_size_param: "numOfRows",
+      pagination_page_size: 100,
+      pagination_start_page: 1,
+      pagination_max_pages: 20,
+      pagination_total_count_path: "totalCount",
+      query_params: { returnType: "json" },
+    });
+    expect(payload.secrets).toEqual({ query_param_secret: "public-for-migration" });
+    expect(JSON.stringify(payload.config)).not.toContain("public-for-migration");
+  });
+
+  it("loads pagination fields and keeps an existing secret query value on edit", () => {
+    const form = restApiFormFromConfig({
+      base_url: "https://api.example.com",
+      resource_path: "/values",
+      data_path: "body",
+      auth_type: "none",
+      secret_query_param_name: "serviceKey",
+      query_params: { returnType: "json" },
+      pagination_mode: "page_number",
+      pagination_page_param: "pageNo",
+      pagination_page_size_param: "numOfRows",
+      pagination_page_size: 100,
+      pagination_start_page: 1,
+      pagination_total_count_path: "totalCount",
+      pagination_max_pages: 25,
+    });
+    expect(form.secretQueryParamName).toBe("serviceKey");
+    expect(form.paginationMode).toBe("page_number");
+    expect(form.paginationPageSize).toBe("100");
+    expect(form.paginationTotalCountPath).toBe("totalCount");
+
+    const payload = buildRestApiSavePayload({
+      form,
+      bearerToken: "",
+      apiKey: "",
+      editing: true,
+      previousAuthType: "none",
+      hasSecrets: true,
+      secretQueryParamValue: "",
+      previousSecretQueryParamName: "serviceKey",
+    });
+    expect(payload.secrets).toEqual({});
+    expect(payload.config.query_params).toEqual({ returnType: "json" });
+    expect(payload.clear_secrets).toEqual(["bearer_token", "token", "api_key"]);
+  });
+
 });
