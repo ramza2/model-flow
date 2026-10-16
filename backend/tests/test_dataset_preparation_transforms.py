@@ -465,6 +465,77 @@ def test_derived_add_sub_mul_div_concat_literal_missing_conflict_divzero():
         )
 
 
+def test_derived_regex_and_datetime_ops_build_hourly_join_key():
+    frame = _frame(
+        PRFMNC_DT=[20261004, 20261004],
+        HOUR_KEY=["HTDND_AMNT_1HR", "HTDND_AMNT_24HR"],
+    )
+    extracted = _run(
+        "derived_column",
+        {
+            "name": "HOUR_NUM",
+            "operation": "regex_extract",
+            "left": {"kind": "column", "value": "HOUR_KEY"},
+            "right": {"kind": "literal", "value": r"_(\d+)HR$"},
+        },
+        frame,
+    )
+    assert extracted["HOUR_NUM"].tolist() == ["1", "24"]
+
+    parsed = _run(
+        "derived_column",
+        {
+            "name": "BASE_DATE",
+            "operation": "datetime_parse",
+            "left": {"kind": "column", "value": "PRFMNC_DT"},
+            "right": {"kind": "literal", "value": "%Y%m%d"},
+        },
+        extracted,
+    )
+    joined = _run(
+        "derived_column",
+        {
+            "name": "JOIN_TIME",
+            "operation": "datetime_add_hours",
+            "left": {"kind": "column", "value": "BASE_DATE"},
+            "right": {"kind": "column", "value": "HOUR_NUM"},
+        },
+        parsed,
+    )
+    assert joined["JOIN_TIME"].tolist() == [
+        pd.Timestamp("2026-10-04 01:00:00"),
+        pd.Timestamp("2026-10-05 00:00:00"),
+    ]
+
+    formatted = _run(
+        "derived_column",
+        {
+            "name": "JOIN_TIME_TEXT",
+            "operation": "datetime_format",
+            "left": {"kind": "column", "value": "JOIN_TIME"},
+            "right": {"kind": "literal", "value": "%Y-%m-%d %H:%M"},
+        },
+        joined,
+    )
+    assert formatted["JOIN_TIME_TEXT"].tolist() == [
+        "2026-10-04 01:00",
+        "2026-10-05 00:00",
+    ]
+
+    errors, _ = _validate_transform_config(
+        "d",
+        "derived_column",
+        {
+            "name": "hour",
+            "operation": "regex_extract",
+            "left": {"kind": "column", "value": "HOUR_KEY"},
+            "right": {"kind": "literal", "value": r"\d+"},
+        },
+        strict=True,
+    )
+    assert any("exactly one capture group" in err for err in errors)
+
+
 # ---------------------------------------------------------------------------
 # Chain integration
 # ---------------------------------------------------------------------------

@@ -72,6 +72,10 @@ export const DERIVED_OPERATIONS = [
   "multiply",
   "divide",
   "concat",
+  "regex_extract",
+  "datetime_parse",
+  "datetime_add_hours",
+  "datetime_format",
 ] as const;
 
 export type PreparationLibraryItem = {
