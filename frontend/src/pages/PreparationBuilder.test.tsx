@@ -539,6 +539,48 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("explains zero-row sampled join previews without implying the full run is empty", async () => {
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version,
+          graph: {
+            ...preparation.version.graph,
+            nodes: [
+              ...preparation.version.graph.nodes,
+              {
+                id: "join-1",
+                type: "join" as const,
+                config: { how: "inner", left_on: ["id"], right_on: ["id"] },
+                position: { x: 240, y: 60 },
+              },
+            ],
+          },
+        },
+      },
+      preview: {
+        node_id: "join-1",
+        columns: ["id", "weather"],
+        dtypes: { id: "int64", weather: "float64" },
+        rows: [],
+        row_count: 0,
+        sampled: true,
+        warnings: [
+          "Preview uses stored DatasetVersion sample rows and may not represent the full dataset.",
+        ],
+      },
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-preview"));
+    expect(await screen.findByTestId("preparation-preview-empty-join")).toHaveTextContent(
+      "Sampled preview found no matching join rows",
+    );
+    expect(screen.getByTestId("preparation-preview-empty-join")).toHaveTextContent(
+      "Run preparation to evaluate the complete datasets",
+    );
+  });
+
   it("unlocks actions when an in-flight preview is aborted by graph edit", async () => {
     let resolvePreview!: (value: Record<string, unknown>) => void;
     const previewDeferred = new Promise<Record<string, unknown>>((resolve) => {
@@ -1273,6 +1315,89 @@ describe("PreparationBuilder", () => {
     vi.useRealTimers();
   });
 
+  it("summarizes a newly successful result and collapses an older expanded failure", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const failedRun = {
+      id: 49,
+      project_id: 7,
+      preparation_id: 9,
+      preparation_version_id: 1,
+      status: "failed",
+      output_dataset_id: 3,
+      output_dataset_version_id: null,
+      logs: "Traceback: old failure",
+      error_message: "Old materialization failure",
+      created_at: "2026-09-11T00:59:00Z",
+      started_at: "2026-09-11T00:59:01Z",
+      finished_at: "2026-09-11T00:59:02Z",
+    };
+    stubPreparationApi({
+      preparation: { ...preparation, output_dataset_id: 3 },
+      runs: [failedRun],
+    });
+    const base = apiMock.getMockImplementation()!;
+    let queuedReads = 0;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (
+        path === "/projects/7/dataset-preparations/9/runs" &&
+        method === "GET" &&
+        runsState.some((row) => row.id === 50)
+      ) {
+        queuedReads += 1;
+        if (queuedReads >= 2) {
+          const succeeded = {
+            id: 50,
+            project_id: 7,
+            preparation_id: 9,
+            preparation_version_id: 1,
+            status: "succeeded",
+            output_dataset_id: 3,
+            output_dataset_version_id: 21,
+            logs: "done",
+            error_message: null,
+            created_at: "2026-09-11T01:00:00Z",
+            started_at: "2026-09-11T01:00:01Z",
+            finished_at: "2026-09-11T01:00:05Z",
+          };
+          runsState = [succeeded, failedRun];
+          return runsState;
+        }
+      }
+      if (path === "/projects/7/datasets" && method === "GET" && queuedReads >= 2) {
+        return datasets.map((dataset) =>
+          dataset.id === 3
+            ? {
+                ...dataset,
+                latest_version: 2,
+                row_count: 263,
+                column_count: 48,
+              }
+            : dataset,
+        );
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-run-show-error-49"));
+    expect(await screen.findByTestId("preparation-run-detail-49")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-run"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-run-row-50")).toBeInTheDocument();
+    });
+    await vi.advanceTimersByTimeAsync(2100);
+
+    expect(await screen.findByTestId("preparation-success-cta")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-success-rows")).toHaveTextContent("263");
+    expect(screen.getByTestId("preparation-success-columns")).toHaveTextContent("48");
+    expect(screen.getByTestId("preparation-success-duration")).toHaveTextContent("4s");
+    expect(screen.getByTestId("preparation-run-latest-50")).toHaveTextContent("Latest");
+    expect(screen.queryByTestId("preparation-run-detail-49")).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it("shows failed run logs and created Execute action", async () => {
     stubPreparationApi({
       preparation: { ...preparation, output_dataset_id: 3 },
@@ -1308,11 +1433,20 @@ describe("PreparationBuilder", () => {
       ],
     });
     renderBuilder();
-    fireEvent.click(await screen.findByTestId("preparation-run-show-error-70"));
+    expect(await screen.findByTestId("preparation-run-latest-71")).toHaveTextContent("Latest");
+    const showError = screen.getByTestId("preparation-run-show-error-70");
+    expect(showError).toHaveTextContent("Show error");
+    fireEvent.click(showError);
     expect(await screen.findByTestId("preparation-run-error-70")).toHaveTextContent(
       "Materialization failed",
     );
     expect(screen.getByTestId("preparation-run-logs-70")).toHaveTextContent("Traceback: boom");
+    expect(showError).toHaveTextContent("Hide error");
+    fireEvent.click(showError);
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-run-detail-70")).not.toBeInTheDocument();
+    });
+    expect(showError).toHaveTextContent("Show error");
     expect(screen.getByTestId("preparation-run-execute-71")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("preparation-run-execute-71"));
     await waitFor(() => {
