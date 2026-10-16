@@ -1,7 +1,6 @@
 # ModelFlow Product Spec
 
-Status: GA-candidate documentation under Phase 10. This is **not** a claim that
-`v1.0.0` has been tagged or published.
+Status: **ModelFlow v1.0.0 GA** product documentation.
 
 ## One-liner
 
@@ -86,6 +85,10 @@ Interfaces remain replaceable for future runners, identity providers, and orches
 8. **Schedule:** enable automation → history / run-now without auto-PRODUCTION.
 9. **Clean install:** empty volumes → migrate → bootstrap → healthy → core E2E (Compose); or Helm with external durable state for replicated deploys.
 
-## Success metric (GA candidate)
+## Success metric (v1.0 GA)
 
-Clean Compose volumes + `./scripts/verify.sh` PASS on the release tip, acceptance criteria refreshed for the tip (Phase 10-C), GitHub Actions Full verification gate green on the packaging SHA before tag (Phase 10-D), README-only Compose install works, and GA release documentation matches the tagged tip. Phase 10 tracks readiness; it does not by itself publish `v1.0.0`.
+The v1.0.0 release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`
+passed GitHub Actions Full verification gate **CI #521** before the `v1.0.0`
+annotated tag was created and the non-prerelease GitHub Release was published.
+The acceptance criteria and current release documentation record that verified
+release baseline.
