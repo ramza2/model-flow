@@ -763,6 +763,10 @@ describe("DataSources operations UX", () => {
     });
 
     expect(screen.getByTestId("data-source-rest-base-url")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-rest-secret-query-name")).toBeInTheDocument();
+    expect(screen.getByTestId("data-source-rest-secret-query-value")).toHaveAttribute("type", "password");
+    expect(screen.getByTestId("data-source-rest-pagination-mode")).toHaveValue("none");
+    expect(screen.queryByTestId("data-source-rest-page-param")).not.toBeInTheDocument();
     expect(screen.queryByTestId("data-source-config")).not.toBeInTheDocument();
     expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
 

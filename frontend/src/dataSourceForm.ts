@@ -340,6 +340,7 @@ export const buildSqlSavePayload = buildPostgresSavePayload;
 
 
 export type RestApiAuthType = "none" | "bearer" | "api_key";
+export type RestApiPaginationMode = "none" | "page_number";
 
 export type RestApiConnectionForm = {
   baseUrl: string;
@@ -349,6 +350,14 @@ export type RestApiConnectionForm = {
   authType: RestApiAuthType;
   apiKeyHeader: string;
   queryParams: string;
+  secretQueryParamName: string;
+  paginationMode: RestApiPaginationMode;
+  paginationPageParam: string;
+  paginationPageSizeParam: string;
+  paginationPageSize: string;
+  paginationStartPage: string;
+  paginationTotalCountPath: string;
+  paginationMaxPages: string;
 };
 
 export type RestApiSavePayload = {
@@ -365,6 +374,14 @@ export const DEFAULT_REST_API_FORM: RestApiConnectionForm = {
   authType: "none",
   apiKeyHeader: "X-API-Key",
   queryParams: "{}",
+  secretQueryParamName: "",
+  paginationMode: "none",
+  paginationPageParam: "pageNo",
+  paginationPageSizeParam: "numOfRows",
+  paginationPageSize: "100",
+  paginationStartPage: "1",
+  paginationTotalCountPath: "",
+  paginationMaxPages: "100",
 };
 
 export function restApiFormFromConfig(
@@ -378,6 +395,8 @@ export function restApiFormFromConfig(
     config.auth_type === "bearer" || config.auth_type === "api_key"
       ? config.auth_type
       : "none";
+  const paginationMode =
+    config.pagination_mode === "page_number" ? "page_number" : "none";
   return {
     baseUrl: String(config.base_url ?? ""),
     resourcePath: String(config.resource_path ?? ""),
@@ -386,6 +405,18 @@ export function restApiFormFromConfig(
     authType,
     apiKeyHeader: String(config.api_key_header ?? "X-API-Key"),
     queryParams,
+    secretQueryParamName: String(config.secret_query_param_name ?? ""),
+    paginationMode,
+    paginationPageParam: String(config.pagination_page_param ?? "pageNo"),
+    paginationPageSizeParam: String(
+      config.pagination_page_size_param ?? "numOfRows",
+    ),
+    paginationPageSize: String(config.pagination_page_size ?? 100),
+    paginationStartPage: String(config.pagination_start_page ?? 1),
+    paginationTotalCountPath: String(
+      config.pagination_total_count_path ?? "",
+    ),
+    paginationMaxPages: String(config.pagination_max_pages ?? 100),
   };
 }
 
@@ -414,6 +445,19 @@ function parseRestApiTimeout(value: string): number {
   return parsed;
 }
 
+function parseRestApiInteger(
+  value: string,
+  label: string,
+  minimum: number,
+  maximum: number,
+): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    throw new Error(`${label} must be between ${minimum} and ${maximum}.`);
+  }
+  return parsed;
+}
+
 function parseRestApiQueryParams(value: string): Record<string, unknown> {
   const trimmed = value.trim();
   if (!trimmed) return {};
@@ -421,7 +465,14 @@ function parseRestApiQueryParams(value: string): Record<string, unknown> {
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
     throw new Error("Query parameters must be a JSON object.");
   }
-  return parsed as Record<string, unknown>;
+  return { ...(parsed as Record<string, unknown>) };
+}
+
+function queryParamSecretValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value).trim();
+  }
+  throw new Error("Secret query parameter value must be a string, number, or boolean.");
 }
 
 export function buildRestApiSavePayload(options: {
@@ -431,19 +482,40 @@ export function buildRestApiSavePayload(options: {
   editing: boolean;
   previousAuthType: RestApiAuthType | null;
   hasSecrets: boolean;
+  secretQueryParamValue?: string;
+  previousSecretQueryParamName?: string | null;
 }): RestApiSavePayload {
-  const { form, bearerToken, apiKey, editing, previousAuthType, hasSecrets } = options;
+  const {
+    form,
+    bearerToken,
+    apiKey,
+    editing,
+    previousAuthType,
+    hasSecrets,
+    secretQueryParamValue = "",
+    previousSecretQueryParamName = null,
+  } = options;
   const baseUrl = parseRestApiBaseUrl(form.baseUrl);
   const queryParams = parseRestApiQueryParams(form.queryParams);
   const resourcePath = form.resourcePath.trim();
   const dataPath = form.dataPath.trim();
   const apiKeyHeader = form.apiKeyHeader.trim();
+  const secretQueryParamName = form.secretQueryParamName.trim();
 
   if (resourcePath && /^https?:\/\//i.test(resourcePath)) {
     throw new Error("Resource path must be relative to the Base URL.");
   }
   if (form.authType === "api_key" && !apiKeyHeader) {
     throw new Error("API key header is required.");
+  }
+
+  let migratedQuerySecret = "";
+  if (
+    secretQueryParamName &&
+    Object.prototype.hasOwnProperty.call(queryParams, secretQueryParamName)
+  ) {
+    migratedQuerySecret = queryParamSecretValue(queryParams[secretQueryParamName]);
+    delete queryParams[secretQueryParamName];
   }
 
   const config: Record<string, unknown> = {
@@ -453,8 +525,54 @@ export function buildRestApiSavePayload(options: {
     timeout_seconds: parseRestApiTimeout(form.timeoutSeconds),
   };
   if (dataPath) config.data_path = dataPath;
-  if (Object.keys(queryParams).length > 0) config.query_params = queryParams;
   if (form.authType === "api_key") config.api_key_header = apiKeyHeader;
+  if (secretQueryParamName) {
+    config.secret_query_param_name = secretQueryParamName;
+  }
+
+  if (form.paginationMode === "page_number") {
+    const pageParam = form.paginationPageParam.trim();
+    const pageSizeParam = form.paginationPageSizeParam.trim();
+    if (!pageParam || !pageSizeParam) {
+      throw new Error("Pagination parameter names are required.");
+    }
+    if (pageParam === pageSizeParam) {
+      throw new Error("Page and page-size parameter names must differ.");
+    }
+    if (secretQueryParamName === pageParam || secretQueryParamName === pageSizeParam) {
+      throw new Error("Secret query parameter cannot be a pagination parameter.");
+    }
+
+    delete queryParams[pageParam];
+    delete queryParams[pageSizeParam];
+    config.pagination_mode = "page_number";
+    config.pagination_page_param = pageParam;
+    config.pagination_page_size_param = pageSizeParam;
+    config.pagination_page_size = parseRestApiInteger(
+      form.paginationPageSize,
+      "Page size",
+      1,
+      10000,
+    );
+    config.pagination_start_page = parseRestApiInteger(
+      form.paginationStartPage,
+      "Start page",
+      0,
+      2147483647,
+    );
+    config.pagination_max_pages = parseRestApiInteger(
+      form.paginationMaxPages,
+      "Max pages",
+      1,
+      1000,
+    );
+    const totalCountPath = form.paginationTotalCountPath.trim();
+    if (totalCountPath) {
+      config.pagination_total_count_path = totalCountPath;
+    }
+  }
+
+  if (Object.keys(queryParams).length > 0) config.query_params = queryParams;
 
   const secrets: Record<string, string> = {};
   const clear: string[] = [];
@@ -481,9 +599,28 @@ export function buildRestApiSavePayload(options: {
     if (editing) clear.push("bearer_token", "token");
   }
 
+  if (secretQueryParamName) {
+    const enteredSecret = secretQueryParamValue.trim();
+    const querySecret = enteredSecret || migratedQuerySecret;
+    const canKeepExisting =
+      editing &&
+      previousSecretQueryParamName === secretQueryParamName &&
+      hasSecrets &&
+      !querySecret;
+    if (!querySecret && !canKeepExisting) {
+      throw new Error("Secret query parameter value is required.");
+    }
+    if (querySecret) {
+      secrets.query_param_secret = querySecret;
+    }
+  } else if (editing && previousSecretQueryParamName) {
+    clear.push("query_param_secret");
+  }
+
+  const clearSecrets = [...new Set(clear)];
   return {
     config,
     secrets,
-    ...(clear.length > 0 ? { clear_secrets: clear } : {}),
+    ...(clearSecrets.length > 0 ? { clear_secrets: clearSecrets } : {}),
   };
 }

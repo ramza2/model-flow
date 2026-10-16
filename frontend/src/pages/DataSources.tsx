@@ -31,6 +31,7 @@ import {
   restApiFormFromConfig,
   type PostgresConnectionMode,
   type RestApiAuthType,
+  type RestApiPaginationMode,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
 
@@ -140,6 +141,9 @@ export default function DataSources() {
   const [restApiForm, setRestApiForm] = useState(DEFAULT_REST_API_FORM);
   const [bearerToken, setBearerToken] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [secretQueryParamValue, setSecretQueryParamValue] = useState("");
+  const [previousSecretQueryParamName, setPreviousSecretQueryParamName] =
+    useState<string | null>(null);
   const [previousRestAuthType, setPreviousRestAuthType] =
     useState<RestApiAuthType | null>(null);
   const [loading, setLoading] = useState(true);
@@ -203,6 +207,8 @@ export default function DataSources() {
     setRestApiForm(DEFAULT_REST_API_FORM);
     setBearerToken("");
     setApiKey("");
+    setSecretQueryParamValue("");
+    setPreviousSecretQueryParamName(null);
     setPreviousRestAuthType(null);
     setShowForm(false);
   }
@@ -227,6 +233,10 @@ export default function DataSources() {
     setRestApiForm(restForm);
     setBearerToken("");
     setApiKey("");
+    setSecretQueryParamValue("");
+    setPreviousSecretQueryParamName(
+      source.source_type === "rest_api" ? restForm.secretQueryParamName || null : null,
+    );
     setPreviousRestAuthType(source.source_type === "rest_api" ? restForm.authType : null);
     setShowForm(true);
   }
@@ -289,6 +299,8 @@ export default function DataSources() {
           editing: Boolean(editing),
           previousAuthType: previousRestAuthType,
           hasSecrets: Boolean(editing?.has_secrets),
+          secretQueryParamValue,
+          previousSecretQueryParamName,
         });
         if (editing) {
           await api(`/projects/${projectId}/data-sources/${editing.id}`, {
@@ -1019,6 +1031,175 @@ export default function DataSources() {
                 />
                 <small>Optional non-secret JSON object appended to every REST request.</small>
               </label>
+              <div className="form-grid">
+                <label htmlFor="data-source-rest-secret-query-name">
+                  Secret query parameter name
+                  <input
+                    id="data-source-rest-secret-query-name"
+                    value={restApiForm.secretQueryParamName}
+                    onChange={(event) =>
+                      setRestApiForm((current) => ({
+                        ...current,
+                        secretQueryParamName: event.target.value,
+                      }))
+                    }
+                    placeholder="serviceKey"
+                    autoComplete="off"
+                    data-testid="data-source-rest-secret-query-name"
+                  />
+                </label>
+                <label htmlFor="data-source-rest-secret-query-value">
+                  Secret query parameter value
+                  <input
+                    id="data-source-rest-secret-query-value"
+                    type="password"
+                    autoComplete="new-password"
+                    value={secretQueryParamValue}
+                    onChange={(event) => setSecretQueryParamValue(event.target.value)}
+                    placeholder={
+                      editing?.has_secrets &&
+                      previousSecretQueryParamName === restApiForm.secretQueryParamName &&
+                      restApiForm.secretQueryParamName
+                        ? "Leave blank to keep saved value"
+                        : "Secret value"
+                    }
+                    data-testid="data-source-rest-secret-query-value"
+                  />
+                </label>
+              </div>
+              <small>
+                Stored encrypted and never returned by the API. If this key also exists in Query
+                parameters, its value is moved into secret storage on save.
+              </small>
+              <label htmlFor="data-source-rest-pagination-mode">
+                Pagination
+                <select
+                  id="data-source-rest-pagination-mode"
+                  value={restApiForm.paginationMode}
+                  onChange={(event) =>
+                    setRestApiForm((current) => ({
+                      ...current,
+                      paginationMode: event.target.value as RestApiPaginationMode,
+                    }))
+                  }
+                  data-testid="data-source-rest-pagination-mode"
+                >
+                  <option value="none">None</option>
+                  <option value="page_number">Page number</option>
+                </select>
+              </label>
+              {restApiForm.paginationMode === "page_number" && (
+                <>
+                  <div className="form-grid">
+                    <label htmlFor="data-source-rest-page-param">
+                      Page parameter
+                      <input
+                        id="data-source-rest-page-param"
+                        value={restApiForm.paginationPageParam}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationPageParam: event.target.value,
+                          }))
+                        }
+                        required
+                        data-testid="data-source-rest-page-param"
+                      />
+                    </label>
+                    <label htmlFor="data-source-rest-page-size-param">
+                      Page-size parameter
+                      <input
+                        id="data-source-rest-page-size-param"
+                        value={restApiForm.paginationPageSizeParam}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationPageSizeParam: event.target.value,
+                          }))
+                        }
+                        required
+                        data-testid="data-source-rest-page-size-param"
+                      />
+                    </label>
+                  </div>
+                  <div className="form-grid">
+                    <label htmlFor="data-source-rest-page-size">
+                      Page size
+                      <input
+                        id="data-source-rest-page-size"
+                        type="number"
+                        min={1}
+                        max={10000}
+                        value={restApiForm.paginationPageSize}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationPageSize: event.target.value,
+                          }))
+                        }
+                        required
+                        data-testid="data-source-rest-page-size"
+                      />
+                    </label>
+                    <label htmlFor="data-source-rest-start-page">
+                      Start page
+                      <input
+                        id="data-source-rest-start-page"
+                        type="number"
+                        min={0}
+                        value={restApiForm.paginationStartPage}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationStartPage: event.target.value,
+                          }))
+                        }
+                        required
+                        data-testid="data-source-rest-start-page"
+                      />
+                    </label>
+                  </div>
+                  <div className="form-grid">
+                    <label htmlFor="data-source-rest-total-count-path">
+                      Total count JSON path
+                      <input
+                        id="data-source-rest-total-count-path"
+                        value={restApiForm.paginationTotalCountPath}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationTotalCountPath: event.target.value,
+                          }))
+                        }
+                        placeholder="totalCount"
+                        data-testid="data-source-rest-total-count-path"
+                      />
+                    </label>
+                    <label htmlFor="data-source-rest-max-pages">
+                      Max pages
+                      <input
+                        id="data-source-rest-max-pages"
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={restApiForm.paginationMaxPages}
+                        onChange={(event) =>
+                          setRestApiForm((current) => ({
+                            ...current,
+                            paginationMaxPages: event.target.value,
+                          }))
+                        }
+                        required
+                        data-testid="data-source-rest-max-pages"
+                      />
+                    </label>
+                  </div>
+                  <small>
+                    Import requests pages until Total count is reached or a short page is returned.
+                    Preview and connection tests request only the first page.
+                  </small>
+                </>
+              )}
             </>
           ) : (
             <label>

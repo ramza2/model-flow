@@ -39,6 +39,8 @@ PostgreSQL moved behind this contract in Phase 4-A with its existing Host/Port a
 
 ## Phase 4-A — Connector Foundation + REST API Source (complete)
 
+Post-GA v1.0.1 hardening adds optional page-number pagination for REST imports and an encrypted secret query parameter (for APIs that require keys such as `serviceKey`). Preview/test requests only the first page; worker import follows configured pages until `total_count_path` is satisfied or a short page is returned. Existing REST sources remain pagination-off by default.
+
 Phase 4-A is complete on `main` (PR #52 / `09ced60c7a3b5ebaae697c9d4e51dea23b6d23f1`, post-merge CI #254 PASS). See [`phase-4a-verification.md`](./phase-4a-verification.md).
 
 ## Phase 4-B — MySQL / MariaDB (complete)
