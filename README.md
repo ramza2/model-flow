@@ -2,10 +2,9 @@
 
 [![CI](https://github.com/ramza2/model-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/ramza2/model-flow/actions/workflows/ci.yml)
 
-Self-hosted, end-to-end tabular MLOps platform. Enhancement Phases 1–9 are complete
-on `main`; Phase 10-D is preparing the **v1.0.0 GA packaging candidate**. The
-`v1.0.0` tag and GitHub Release are created only after the exact merged packaging
-SHA passes the Full verification gate (historical RC: `v1.0.0-rc.1`).
+Self-hosted, end-to-end tabular MLOps platform. **ModelFlow v1.0.0 is the current
+GA release**, tagged from verified release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`
+after CI #521 Full verification gate SUCCESS. Historical RC: `v1.0.0-rc.1`.
 
 ## Host prerequisites
 
@@ -241,7 +240,7 @@ npm run dev
 - Traefik deployment: `docs/DEPLOYMENT_TRAEFIK.md`
 - Kubernetes / Helm: `docs/DEPLOYMENT_KUBERNETES.md`
 - Known limitations: `docs/KNOWN_LIMITATIONS.md`
-- v1.0.0 GA packaging notes: `docs/RELEASE_NOTES_v1.0.0.md`
+- v1.0.0 GA release notes: `docs/RELEASE_NOTES_v1.0.0.md`
 - Historical RC release notes: `docs/RELEASE_NOTES_v1.0.0-rc.1.md`
 
 ## Security

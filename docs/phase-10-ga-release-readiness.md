@@ -5,9 +5,9 @@ Phases 1–9 landed on `main`. Phase 10-A was **planning / audit only**: no prod
 features, no version bump, no tag, no GitHub Release, no runtime or migration
 changes.
 
-**Phase 10-A status:** complete. **Phase 10-B status:** complete. **Phase 10-C status:** complete. **Phase 10-D:** in progress (GA packaging preparation). **Phase 10 overall:** in progress — **not GA ready**.
+**Phase 10-A status:** complete. **Phase 10-B status:** complete. **Phase 10-C status:** complete. **Phase 10-D:** complete. **Phase 10 overall:** **complete — v1.0.0 GA released**.
 
-## Current GA candidate baseline
+## Final v1.0 GA release baseline
 
 | Field | Value |
 |---|---|
@@ -16,7 +16,11 @@ changes.
 | 10-A merge on main | `3e271e172580932ce7ae61d89b62c3625c54ce7a` (PR #97) |
 | Phase 10-C evidence baseline | `1973860d4d3d7d0fd87ddbb662c940397b1735a7` (PR #98) |
 | 10-D pre-packaging base | `0835f9866f8ab5336778d27d74af25b6105aae82` (PR #99) |
-| Published release identity | `v1.0.0-rc.1` only; v1.0.0 packaging is being prepared but is not tagged/published |
+| Published release identity | `v1.0.0` GA (historical pre-release: `v1.0.0-rc.1`) |
+| Final packaging / release commit | `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` (PR #100 squash merge) |
+| Final packaging Full Gate | **CI run #521** / id [`38708716981`](https://github.com/ramza2/model-flow/actions/runs/38708716981) — event `push`, exact head `78abe33`, **SUCCESS** |
+| GA tag | annotated `v1.0.0` → `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` |
+| GitHub GA Release | [ModelFlow v1.0.0](https://github.com/ramza2/model-flow/releases/tag/v1.0.0) — published, non-prerelease |
 | Alembic head | `024_oidc_enterprise_identity` |
 | Enhancement phases on tip | **1 through 9 complete** (incl. 8-A–F, 9-A–D) |
 | Primary verify gate | `./scripts/verify.sh` (Full Gate on `main` push / `workflow_dispatch`) |
@@ -25,11 +29,11 @@ changes.
 | Phase 10-C evidence Full Gate | **CI run #517** / id [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) — event `push`, exact head `1973860`, **SUCCESS** |
 | 10-D pre-packaging Full Gate | **CI run #519** / id [`38700493802`](https://github.com/ramza2/model-flow/actions/runs/38700493802) — event `push`, exact head `0835f98`, **SUCCESS** |
 
-**Full Gate scope note:** #512 attests the Phase 10 **starting** baseline `9e3f6e3`.
-#517 attests the Phase **10-C evidence baseline** `1973860`; #519 attests the
-Phase **10-D pre-packaging base** `0835f98`. Neither is the final packaging
-attestation. The **final GA packaging SHA** must receive its **own** Full Gate SUCCESS before
-`v1.0.0` is tagged or published.
+**Full Gate scope note:** #512 attests the Phase 10 starting baseline `9e3f6e3`,
+#517 the Phase 10-C evidence baseline `1973860`, and #519 the pre-packaging
+base `0835f98`. The final release attestation is **CI #521 SUCCESS** on exact
+commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`, before the `v1.0.0` tag and
+GitHub GA Release were created.
 
 Source of truth for capabilities is the **current implementation and merged
 phase docs**, not RC-era acceptance/limitations text.
@@ -85,13 +89,13 @@ phase docs**, not RC-era acceptance/limitations text.
 | `docs/DECISIONS.md` | D-006 marked superseded by Phase 8-A; D-017 annotated for Fast vs Full gates (90m) |
 | `docs/phase-9-final-visual-redesign.md` | Draft PR #96 → PR #96 merged |
 
-### Remaining for later slices
+### Follow-up status after 10-D
 
-| File | Factual drift |
+| File / item | Final status |
 |---|---|
-| `docs/ACCEPTANCE_CRITERIA.md` | Refreshed in **10-C** against evidence baseline `1973860` / Full Gate #517; AC-72 final packaging attestation still **NOT_VERIFIED** until **10-D** |
-| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Correct as RC history; GA notes belong to **10-D** |
-| Phase 0 branch protection | Still listed pending — process item **G-09**, not fabricated complete |
+| `docs/ACCEPTANCE_CRITERIA.md` | Finalized in **10-D** with AC-72 **PASS** from Full Gate #521 on exact release commit `78abe33` before tag/release |
+| `docs/RELEASE_NOTES_v1.0.0-rc.1.md` | Preserved as immutable RC history; GA release notes are in `docs/RELEASE_NOTES_v1.0.0.md` |
+| Phase 0 branch protection | Still pending as process item **G-09**; not fabricated complete |
 
 Test-count claims for AC-13/14/15 use Full Gate #517 PASS outcomes (not brittle source-level counts).
 
@@ -117,23 +121,24 @@ Treat as **accepted product boundaries** unless GA explicitly expands scope:
 
 ### Active blockers
 
-| ID | Item | Severity | Notes |
-|---|---|---|---|
-| G-01 | GA release identity / packaging not yet published | **BLOCKER** | 10-D packaging preparation sets runtime version `1.0.0` and adds GA notes, but remains blocked until merge → exact packaging-SHA Full Gate SUCCESS → `v1.0.0` tag → GitHub Release |
+None for v1.0 GA release closeout. G-09 remains a repository-governance
+**SHOULD-FIX** process item, not a GA blocker.
 
 ### Cleared evidence
 
 | ID | Item | Status | Evidence |
 |---|---|---|---|
+| G-01 | GA release identity / packaging | **CLEARED / VERIFIED** | Final release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`; Full Gate #521 SUCCESS before annotated `v1.0.0` tag; [GitHub GA Release](https://github.com/ramza2/model-flow/releases/tag/v1.0.0) published |
 | G-02 | Starting-baseline Full Gate for `9e3f6e3` | **CLEARED / VERIFIED** | CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) push Full Gate **SUCCESS** on exact SHA `9e3f6e356795a1a063d2472b05520aa0009a0fd9` |
-| G-03 | Stale acceptance criteria / GA evidence document | **CLEARED** | Phase 10-C refresh of `ACCEPTANCE_CRITERIA.md`; evidence baseline Full Gate **#517** / [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) SUCCESS on `1973860`. AC-72 final packaging attestation remains intentionally **NOT_VERIFIED** until 10-D. |
+| G-03 | Stale acceptance criteria / GA evidence document | **CLEARED** | Phase 10-C refreshed the baseline; Phase 10-D closeout records AC-72 **PASS** from final Full Gate #521 on `78abe33` before tag/release. |
 | G-04 | `KNOWN_LIMITATIONS.md` Phase-8 conflict | **CLEARED** | Phase 10-B rewrite |
 | G-05 | README / `PRODUCT_SPEC.md` capability & non-goal drift | **CLEARED** | Phase 10-B truth-up |
 | G-06 | `DECISIONS.md` D-006 / D-017 drift | **CLEARED** | Phase 10-B annotations |
 | G-07 | Remaining Draft PR #96 wording | **CLEARED** | Phase 10-B (`phase-9-final-visual-redesign.md`) |
-| G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Neutral GA-candidate framing in KNOWN/PRODUCT/ARCHITECTURE |
+| G-08 | Stale “(v1.0 RC)” titles / framing in touched GA docs | **CLEARED** | Phase 10-B neutralized RC framing; Phase 10-D closeout updates current KNOWN/PRODUCT/ARCHITECTURE status to published v1.0.0 GA |
 
-**Still required before the GA tag:** a Full Gate SUCCESS on the **final packaging SHA** (AC-72). #512, #517, and #519 are **not** final packaging attestations. See 10-D ordering below.
+**GA release gate completed:** AC-72 is **PASS** from Full Gate #521 on the exact
+release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` before tag/release.
 
 ### Other rows
 
@@ -145,33 +150,32 @@ Treat as **accepted product boundaries** unless GA explicitly expands scope:
 
 No evidence that Phase 8–9 **implementation** of inference-runtime, OIDC, Helm, or Phase 9-D is missing on tip.
 
-## Exact verification plan (later Phase 10 slices)
+## Completed verification plan
 
 1. **Baseline attestation (done):** Full Gate #512 SUCCESS on starting tip `9e3f6e3`.
 2. **Doc truth-up (done — 10-B):** `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE, DECISIONS D-006/D-017, Draft #96 wording.
-3. **Acceptance refresh (done — 10-C):** `ACCEPTANCE_CRITERIA.md` GA-candidate framing; evidence baseline `1973860` / Full Gate #517; AC-27 Fast vs Full; AC-72 NOT_VERIFIED pending packaging; post-RC enhancement evidence matrix.
-4. **GA packaging (10-D — in progress):** Prepare version `1.0.0` + GA notes, merge without tag, then verify the exact merged packaging SHA before tagging.
+3. **Acceptance refresh (done — 10-C):** `ACCEPTANCE_CRITERIA.md` evidence baseline `1973860` / Full Gate #517; AC-27 Fast vs Full; post-RC enhancement evidence matrix.
+4. **GA packaging and release (done — 10-D):** Version `1.0.0` + GA notes merged as `78abe33`; Full Gate #521 SUCCESS; annotated `v1.0.0` tag created on that exact commit; GitHub GA Release published.
 5. **No invented features:** GA validates shipped behavior; deferred forecasting/LDAP/Spark stay documented limitations.
 
 ## Final GA release ordering (10-D)
 
-Safe sequence — **do not tag an unverified packaging commit**:
+Completed sequence — the release preserved the rule **do not tag an unverified packaging commit**:
 
-1. **Prepare / merge GA identity** — version metadata + `RELEASE_NOTES_v1.0.0.md` (+ related GA branding docs as needed) **without** creating the tag or GitHub Release yet.
-2. **Wait for Full verification gate SUCCESS** on that exact `main` SHA (push Full Gate or equivalent attested `./scripts/verify.sh`).
-3. **Create the `v1.0.0` tag** on that exact verified SHA (annotated or lightweight per existing repository convention).
-4. **Publish the GitHub GA Release** from that tag.
-5. **Post-release smoke** if the Phase 10 plan for 10-D requires it.
+1. **Completed:** GA identity/version + `RELEASE_NOTES_v1.0.0.md` merged in PR #100 as `78abe33`, without tag/Release.
+2. **Completed:** Full verification gate **CI #521 SUCCESS** on exact `78abe33`.
+3. **Completed:** annotated `v1.0.0` tag created on exact verified commit `78abe33`.
+4. **Completed:** non-prerelease GitHub GA Release published from that tag.
+5. No separate mandatory post-release smoke was defined; this closeout does not invent one.
 
-#512 does **not** substitute for step 2 on a newer packaging SHA.
-
-## Proposed Phase 10 slices
+## Phase 10 slices
 
 | Slice | Scope | Status |
 |---|---|---|
 | **10-A** | GA readiness baseline & gap audit (this document) | **complete** |
 | **10-B** | Documentation truth-up — `KNOWN_LIMITATIONS`, README/PRODUCT_SPEC/ARCHITECTURE framing, DECISIONS supersede notes, merge-status wording | **complete** |
 | **10-C** | Acceptance & evidence refresh — AC table update, CI wording (Fast vs Full), evidence baseline #517 | **complete** |
-| **10-D** | GA release packaging — version + notes merge, then exact-SHA Full Gate, then tag + GitHub Release | **in progress** |
+| **10-D** | GA release packaging — version + notes merge, exact-SHA Full Gate, tag + GitHub Release | **complete** |
 
-Phase 10 overall remains **in progress / not GA ready**. Packaging preparation alone does not clear G-01 or AC-72.
+Phase 10 is **complete**. ModelFlow **v1.0.0 GA is released**; G-01 is cleared and
+AC-72 is PASS. G-09 remains a non-blocking repository-governance process item.

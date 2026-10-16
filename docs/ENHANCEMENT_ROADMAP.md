@@ -1,6 +1,8 @@
 # Enhancement Roadmap
 
-Post–v1.0.0-rc.1 planning. This document tracks **future** work; the RC1 MVP scope is frozen in [`BACKLOG.md`](./BACKLOG.md) and [`RELEASE_NOTES_v1.0.0-rc.1.md`](./RELEASE_NOTES_v1.0.0-rc.1.md).
+Post–v1.0.0-rc.1 enhancement history through the published **v1.0.0 GA** release.
+The RC1 MVP scope remains frozen in [`BACKLOG.md`](./BACKLOG.md) and
+[`RELEASE_NOTES_v1.0.0-rc.1.md`](./RELEASE_NOTES_v1.0.0-rc.1.md).
 
 **Dependency principle:** scheduling and retraining foundations precede broader pipeline/data-prep expansion; enterprise scale and final visual redesign come after core product depth.
 
@@ -388,15 +390,15 @@ See [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md).
 
 ## Phase 10 — v1.0 GA Release Readiness
 
-**Status:** in progress — **not GA ready.** **10-A, 10-B, and 10-C complete.** **10-D packaging preparation is in progress.**
+**Status:** **complete — ModelFlow v1.0.0 GA released.** **10-A through 10-D complete.**
 
 | Slice | Scope | Status |
 |-------|-------|--------|
 | **10-A** | GA Readiness Baseline & Gap Audit | **complete** |
 | **10-B** | Documentation truth-up (limitations, README/PRODUCT_SPEC, decisions) | **complete** |
 | **10-C** | Acceptance & evidence refresh (AC table, CI wording, evidence baseline #517) | **complete** |
-| **10-D** | GA release packaging (version + notes, then exact-SHA Full Gate, then tag/Release) | **in progress** |
+| **10-D** | GA release packaging (version + notes, exact-SHA Full Gate, tag/Release) | **complete** |
 
-Phase 10 is release-readiness work after Phases 1–9. Evidence baselines: Full Gate #512 on `9e3f6e3`, Full Gate #517 on `1973860`, and pre-packaging Full Gate #519 on `0835f98`. G-02–G-08 cleared; active GA blocker remains **G-01** (release identity/packaging). AC-72 stays NOT_VERIFIED until the exact merged packaging SHA passes its own Full Gate. See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+Phase 10 closed the v1.0 release after Phases 1–9. Final evidence: packaging/release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`; Full Gate **#521 SUCCESS** on that exact commit before the annotated `v1.0.0` tag; [GitHub GA Release](https://github.com/ramza2/model-flow/releases/tag/v1.0.0) published. **G-01 CLEARED; AC-72 PASS.** G-09 remains a non-blocking process SHOULD-FIX item. See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
 
-**Depends on:** completed Phase 9 on `main`; Full Gate on the final packaging SHA before `v1.0.0` tag.
+**Completed dependency:** Phase 9 complete; final packaging SHA passed Full Gate #521 before `v1.0.0` tag creation.

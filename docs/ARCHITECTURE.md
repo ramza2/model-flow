@@ -1,7 +1,6 @@
 # ModelFlow Architecture
 
-Status: GA-candidate documentation under Phase 10. This is **not** a claim that
-`v1.0.0` has been tagged or published.
+Status: architecture documentation for the published **ModelFlow v1.0.0 GA** release.
 
 ## Overview
 

@@ -2,9 +2,9 @@
 
 ## Current phase
 
-**Enhancement Phase 10 — v1.0 GA Release Readiness is current (not GA ready).** **Phase 9 — Final Visual Redesign is complete on `main`** (PR #96 merged at `9e3f6e3`; Chrome browser review PASS). **Phase 8 — Enterprise / Scale is complete on `main`.** **9-A through 9-D are complete.** **Phase 10-A, 10-B, and 10-C are complete.** **Phase 10-D — GA Release Packaging is in progress.**
+**ModelFlow v1.0.0 GA is released. Enhancement Phase 10 — v1.0 GA Release Readiness is complete.** Phase 10-A through 10-D are complete; Phase 9 and Phase 8 remain complete on `main`.
 
-Phase 10-A baseline: `main@9e3f6e356795a1a063d2472b05520aa0009a0fd9` (Phase 9-D PR #96 merged; Alembic head remains `024_oidc_enterprise_identity`). Starting Full Gate: CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) **SUCCESS** on exact SHA `9e3f6e3`. Phase 10-A merged as `main@3e271e1` (PR #97). Phase 10-B/C evidence baseline: `main@1973860d4d3d7d0fd87ddbb662c940397b1735a7` (PR #98); Full Gate **#517** / [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) **SUCCESS**. Phase 10-D pre-packaging base: `main@0835f9866f8ab5336778d27d74af25b6105aae82` (PR #99); Full Gate **#519** / [`38700493802`](https://github.com/ramza2/model-flow/actions/runs/38700493802) **SUCCESS**. Planning doc: [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
+Phase 10-A baseline: `main@9e3f6e356795a1a063d2472b05520aa0009a0fd9` (Phase 9-D PR #96 merged; Alembic head remains `024_oidc_enterprise_identity`). Starting Full Gate: CI run **#512** / [`38692158110`](https://github.com/ramza2/model-flow/actions/runs/38692158110) **SUCCESS** on exact SHA `9e3f6e3`. Phase 10-A merged as `main@3e271e1` (PR #97). Phase 10-B/C evidence baseline: `main@1973860d4d3d7d0fd87ddbb662c940397b1735a7` (PR #98); Full Gate **#517** / [`38696787666`](https://github.com/ramza2/model-flow/actions/runs/38696787666) **SUCCESS**. Phase 10-D pre-packaging base: `main@0835f9866f8ab5336778d27d74af25b6105aae82` (PR #99); Full Gate **#519** / [`38700493802`](https://github.com/ramza2/model-flow/actions/runs/38700493802) **SUCCESS**. Final packaging/release commit: `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` (PR #100); Full Gate **#521** / [`38708716981`](https://github.com/ramza2/model-flow/actions/runs/38708716981) **SUCCESS** before annotated tag `v1.0.0`; [GitHub GA Release](https://github.com/ramza2/model-flow/releases/tag/v1.0.0) published. Planning doc: [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md).
 
 Phase 9-A baseline: `main@2669c996872df30a905b3e298740e3ffd36bac5e` (Phase 8-F PR #86 merged; exact-head CI #472 PASS; post-merge main CI #473 PASS; Alembic head remains `024_oidc_enterprise_identity`). Figma source: `ModelFlow Phase 9 — Final Visual Redesign` at https://www.figma.com/design/BSC61v5iuERhccl4HXdi6u.
 
@@ -505,7 +505,7 @@ Historical PipelineVersion graph lookup for Pipeline Run is implemented in Phase
 
 ## Next step
 
-**Phase 8 and Phase 9 are complete on `main`.** **Phase 10-A, 10-B, and 10-C are complete** (audit + doc truth-up + acceptance refresh; Full Gate #512 on `9e3f6e3`, Full Gate #517 on `1973860`; G-02–G-08 cleared). **Phase 10-D GA release packaging is in progress.** Active GA blocker: **G-01** (release identity/packaging). AC-72 final packaging Full Gate remains **NOT_VERIFIED** until the exact merged packaging SHA passes the Full Gate. G-09 (branch protection) stays unresolved/process. Do not claim v1.0 GA ready; do not tag until Full Gate SUCCESS on the final packaging SHA.
+**Phase 8, Phase 9, and Phase 10 are complete on `main`. ModelFlow v1.0.0 GA is released.** G-01 is **CLEARED** and AC-72 is **PASS** from Full Gate #521 on exact release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0` before tag/release. G-09 (branch protection/repository governance) remains an unresolved non-blocking process **SHOULD-FIX** item.
 
 Phase 10 slice plan:
 
@@ -513,16 +513,16 @@ Phase 10 slice plan:
 10-A GA Readiness Baseline & Gap Audit   (complete)
 10-B Documentation Truth-up              (complete)
 10-C Acceptance & Evidence Refresh       (complete)
-10-D GA Release Packaging                (in progress)
+10-D GA Release Packaging                (complete)
 ```
 
-10-D release ordering (mandatory):
+10-D release ordering (completed):
 
-1. merge GA identity + version + `RELEASE_NOTES_v1.0.0.md` **without** tag/Release
-2. wait for Full Gate SUCCESS on that exact `main` SHA
-3. create `v1.0.0` tag on that exact verified SHA
-4. publish GitHub GA Release from the tag
-5. post-release smoke if required
+1. GA identity + version + `RELEASE_NOTES_v1.0.0.md` merged as `78abe33`
+2. Full Gate #521 SUCCESS on exact `78abe33`
+3. annotated `v1.0.0` tag created on exact verified commit
+4. GitHub GA Release published as a non-prerelease
+5. no separate mandatory post-release smoke was defined
 
 See [`phase-10-ga-release-readiness.md`](./phase-10-ga-release-readiness.md) and [`ENHANCEMENT_ROADMAP.md`](./ENHANCEMENT_ROADMAP.md).
 

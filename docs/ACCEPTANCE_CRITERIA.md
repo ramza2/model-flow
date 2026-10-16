@@ -1,11 +1,10 @@
-# Acceptance Criteria — v1.0 GA Candidate
+# Acceptance Criteria — v1.0 GA
 
-This document records **v1.0 GA readiness evidence**. It does **not** mean
-`v1.0.0` has been tagged or published.
+This document records the acceptance evidence for the published **ModelFlow v1.0.0
+GA** release.
 
 Status values are `PASS`, `FAIL`, and `NOT_VERIFIED`. `PASS` requires repeatable
 evidence for the referenced revision; implementation alone is not evidence.
-Final packaging-SHA Full Gate attestation remains **Phase 10-D** work.
 
 ## Phase 10-C evidence baseline
 
@@ -21,9 +20,9 @@ Final packaging-SHA Full Gate attestation remains **Phase 10-D** work.
 | Alembic head | `024_oidc_enterprise_identity` |
 | Clean gate | `./scripts/verify.sh` (isolated Compose project; does not rewrite project `.env`) |
 
-This is the **Phase 10-C evidence baseline**, not the final GA packaging SHA.
-A separate Full Gate SUCCESS on the future packaging tip is required before
-`v1.0.0` is tagged (see AC-72).
+This remains the historical **Phase 10-C evidence baseline**. The final GA release
+evidence is the packaging commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`,
+which passed Full Gate CI #521 before the `v1.0.0` tag was created (see AC-72).
 
 ## MVP criteria (retained)
 
@@ -105,7 +104,7 @@ A separate Full Gate SUCCESS on the future packaging tip is required before
 | AC-69 | E2E-09 Clean installation | PASS | down -v + init-env + verify | required final command | RESULT=OK; Full Gate #517 |
 | AC-70 | Forbidden placeholder scan | PASS | verify section 7 | `scripts/verify.sh` | RESULT |
 | AC-71 | Known limitations documented and current | PASS | Doc present after Phase 10-B truth-up | `docs/KNOWN_LIMITATIONS.md` | doc |
-| AC-72 | GitHub Actions Full Gate PASS on the **final packaging SHA** before `v1.0.0` tag | NOT_VERIFIED | Phase 10-D packaging is prepared in a PR; the final packaging SHA is defined only after merge | `.github/workflows/ci.yml`; Phase 10-D ordering | Pre-packaging evidence: Full Gate [#519](https://github.com/ramza2/model-flow/actions/runs/38700493802) SUCCESS on `0835f98`. **Still pending:** Full Gate SUCCESS on the exact merged packaging SHA before tag. |
+| AC-72 | GitHub Actions Full Gate PASS on the **final packaging SHA** before `v1.0.0` tag | PASS | Verified exact release commit before tag creation | `.github/workflows/ci.yml`; Phase 10-D ordering | Final packaging/release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`; Full Gate [#521](https://github.com/ramza2/model-flow/actions/runs/38708716981) / run `38708716981` **SUCCESS**; annotated tag `v1.0.0` points to the same commit; GitHub GA Release published. |
 
 ## Additional remediation checks (Release Review)
 
@@ -144,10 +143,10 @@ that every phase re-ran on SHA `1973860`.
 | Phase 8 — Enterprise / Scale (inference-runtime, workers, OIDC, `*_FILE`, Helm/K8s) | PASS | [`phase-8a-verification.md`](./phase-8a-verification.md); [`phase-8b-verification.md`](./phase-8b-verification.md); [`phase-8f-verification.md`](./phase-8f-verification.md); PRs #76–#86 |
 | Phase 9 — Final Visual Redesign / Accessibility / Responsive | PASS | [`phase-9-final-visual-redesign.md`](./phase-9-final-visual-redesign.md); PR #96; Chrome browser review PASS; Full Gate #512 on `9e3f6e3` |
 
-## Remaining NOT_VERIFIED
+## GA release closeout
 
-| ID | Item | Notes |
-|----|------|-------|
-| AC-72 | Final packaging-SHA Full Gate before `v1.0.0` tag | Phase 10-D packaging preparation is in progress. Pre-packaging Full Gate #519 SUCCESS on `0835f98` does **not** satisfy the final packaging attestation; verify the exact merged packaging SHA before tagging. |
+All v1.0 GA acceptance criteria are **PASS**. AC-72 is satisfied by Full Gate
+CI #521 on exact release commit `78abe33bf1ef8e153fc1dc108575e1f06ecdbad0`
+before the `v1.0.0` tag and GitHub GA Release were created.
 
-Accepted product limitations (sklearn-only, no LDAP, no auto-PRODUCTION, external-state K8s HA, etc.) are documented in `docs/KNOWN_LIMITATIONS.md` and are **not** listed as NOT_VERIFIED failures.
+Accepted product limitations (sklearn-only, no LDAP, no auto-PRODUCTION, external-state K8s HA, etc.) remain documented in `docs/KNOWN_LIMITATIONS.md` and are not acceptance failures.
