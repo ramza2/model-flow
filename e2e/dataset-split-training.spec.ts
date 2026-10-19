@@ -50,15 +50,15 @@ test("saved dataset split drives training job", async ({ page }) => {
   await expect(page.getByTestId("job-data-split")).toBeVisible();
   await expect(page.getByTestId("job-data-split")).toContainText("e2e-split");
   await page.getByTestId("job-data-split").selectOption({
-    label: "e2e-split · Random · 70/15/15",
+    label: "e2e-split · 무작위 (Random) · 70/15/15",
   });
   await page.getByTestId("job-submit").click();
 
   await expect(page.getByTestId("job-logs")).toBeVisible();
-  await expect(page.getByTestId("job-data-split")).toContainText(/Saved split/i, {
+  await expect(page.getByTestId("job-data-split")).toContainText(/Saved split|저장된 분할/i, {
     timeout: 30_000,
   });
   await expect(page.getByTestId("register-model")).toBeVisible({ timeout: 180_000 });
-  await expect(page.getByTestId("job-data-split")).toContainText(/Saved split/i);
+  await expect(page.getByTestId("job-data-split")).toContainText(/Saved split|저장된 분할/i);
   await expect(page.getByTestId("job-logs")).toContainText(/saved split/i);
 });
