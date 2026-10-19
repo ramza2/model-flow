@@ -634,7 +634,7 @@ export default function DatasetDetail() {
             <div className="stat"><div className="label">행</div><div className="value">{selected?.row_count.toLocaleString() ?? "—"}</div></div>
             <div className="stat"><div className="label">컬럼</div><div className="value">{selected?.column_count ?? "—"}</div></div>
             <div className="stat" data-testid="quality-active-count"><div className="label">활성 규칙</div><div className="value">{activeRules.length}</div></div>
-            <div className="stat" data-testid="quality-latest-result"><div className="label">최근 품질 결과</div><div className="value">{latestResult}</div></div>
+            <div className="stat" data-testid="quality-latest-result"><div className="label">최근 품질 결과</div><div className="value">{qualityResultLabel(latestResult)}</div></div>
             <div className="stat" data-testid="quality-check-count"><div className="label">품질 검사</div><div className="value">{checks.length}</div></div>
             <div className="stat"><div className="label">저장된 분할</div><div className="value">{splits.length}</div></div>
           </div>

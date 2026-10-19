@@ -179,7 +179,7 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
     timeout: 30_000,
   });
   await page.getByTestId("preparation-open-output-dataset").click();
-  await expect(page.getByText(/Column statistics|컬럼 통계/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("컬럼 통계")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("columnheader", { name: "sales_lag_1" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "sales_roll_avg_3" })).toBeVisible();
 });
