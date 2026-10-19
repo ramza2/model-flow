@@ -90,8 +90,8 @@ test.beforeAll(async ({ request }) => {
 test("viewer menus and project actions are read-only", async ({ page }) => {
   await login(page, emails.viewer);
 
-  await expect(page.getByRole("link", { name: /Administration/ })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Audit Logs/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /시스템 관리|Administration/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /감사 로그|Audit Logs/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/datasets`);
   await expect(page.getByRole("heading", { name: "Datasets", exact: true })).toBeVisible();

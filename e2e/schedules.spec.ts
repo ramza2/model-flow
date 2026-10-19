@@ -25,7 +25,7 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Pipelines", exact: true }).click();
+  await page.getByRole("link", { name: "파이프라인", exact: true }).click();
   await page.getByRole("button", { name: /New pipeline/i }).click();
   await page.getByTestId("pipeline-name").fill(`sched-pipe-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
@@ -38,7 +38,7 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await page.getByTestId("pipeline-publish").click();
   await expect(page.getByText(/Pipeline published/i)).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("link", { name: "Schedules", exact: true }).click();
+  await page.getByRole("link", { name: "스케줄", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Schedules", exact: true })).toBeVisible();
   await page.getByTestId("schedule-create-open").click();
   await expect(page.getByTestId("schedule-drawer")).toBeVisible();

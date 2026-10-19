@@ -520,7 +520,7 @@ describe("PreparationBuilder", () => {
 
     stubPreparationApi({ validate: { valid: true, errors: [], warnings: ["soft note"] } });
     fireEvent.click(screen.getByTestId("preparation-validate"));
-    expect(await screen.findByText("Graph is valid")).toBeInTheDocument();
+    expect(await screen.findByText("그래프가 유효합니다")).toBeInTheDocument();
     expect(screen.getByText("soft note")).toBeInTheDocument();
   });
 
@@ -574,10 +574,10 @@ describe("PreparationBuilder", () => {
     renderBuilder();
     fireEvent.click(await screen.findByTestId("preparation-preview"));
     expect(await screen.findByTestId("preparation-preview-empty-join")).toHaveTextContent(
-      "Sampled preview found no matching join rows",
+      "샘플 미리보기에서 일치하는 연결(Join) 행을 찾지 못했습니다",
     );
     expect(screen.getByTestId("preparation-preview-empty-join")).toHaveTextContent(
-      "Run preparation to evaluate the complete datasets",
+      "전체 데이터셋으로 확인하려면 준비 실행을 사용하세요",
     );
   });
 
@@ -641,7 +641,7 @@ describe("PreparationBuilder", () => {
       expect(screen.getByTestId("preparation-source-version")).toHaveValue("");
     });
     expect(screen.getByTestId("preparation-source-known-columns")).toHaveTextContent(
-      /Select a dataset\/version to inspect columns/,
+      /컬럼을 보려면 데이터셋\/버전을 선택하세요/,
     );
 
     fireEvent.click(screen.getByTestId("preparation-save-version"));
@@ -681,19 +681,19 @@ describe("PreparationBuilder", () => {
     fireEvent.click(screen.getByTestId("preparation-library-join"));
     fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
     expect(screen.getByTestId("preparation-join-hint")).toHaveTextContent(
-      "Connect one edge to LEFT and one edge to RIGHT.",
+      "LEFT 포트와 RIGHT 포트에 각각 하나의 입력을 연결하세요.",
     );
 
     fireEvent.click(screen.getByTestId("preparation-library-union"));
     fireEvent.click(await screen.findByTestId("canvas-node-union-1"));
     expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
-      "Requires identical column names and order.",
+      "컬럼 이름과 순서가 동일해야 합니다.",
     );
     fireEvent.change(screen.getByTestId("preparation-union-mode"), {
       target: { value: "align_by_name" },
     });
     expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
-      "Matches columns by name and fills missing values with null.",
+      "컬럼 이름으로 맞추고 없는 값은 null로 채웁니다.",
     );
   });
 
@@ -1174,7 +1174,7 @@ describe("PreparationBuilder", () => {
     renderBuilder();
     await screen.findByTestId("preparation-output-empty");
     expect(screen.getByTestId("preparation-output-empty")).toHaveTextContent(
-      "No output dataset configured.",
+      "결과 데이터셋이 아직 설정되지 않았습니다.",
     );
     fireEvent.change(screen.getByTestId("preparation-output-name"), {
       target: { value: "prepared-iris" },
@@ -1200,7 +1200,7 @@ describe("PreparationBuilder", () => {
     renderBuilder();
     const runButton = await screen.findByTestId("preparation-run");
     expect(runButton).toBeDisabled();
-    expect(runButton).toHaveAttribute("title", "Configure an output dataset before running");
+    expect(runButton).toHaveAttribute("title", "실행 전에 결과 데이터셋을 설정하세요");
 
     fireEvent.change(screen.getByTestId("preparation-output-name"), {
       target: { value: "out-ds" },
@@ -1213,7 +1213,10 @@ describe("PreparationBuilder", () => {
     fireEvent.click(screen.getByTestId("preparation-library-select"));
     await waitFor(() => {
       expect(screen.getByTestId("preparation-run")).toBeDisabled();
-      expect(screen.getByTestId("preparation-run")).toHaveAttribute("title", "Save first");
+      expect(screen.getByTestId("preparation-run")).toHaveAttribute(
+        "title",
+        "먼저 버전을 저장하세요",
+      );
     });
 
     fireEvent.click(screen.getByTestId("preparation-save-version"));
@@ -1393,7 +1396,7 @@ describe("PreparationBuilder", () => {
     expect(screen.getByTestId("preparation-success-rows")).toHaveTextContent("263");
     expect(screen.getByTestId("preparation-success-columns")).toHaveTextContent("48");
     expect(screen.getByTestId("preparation-success-duration")).toHaveTextContent("4s");
-    expect(screen.getByTestId("preparation-run-latest-50")).toHaveTextContent("Latest");
+    expect(screen.getByTestId("preparation-run-latest-50")).toHaveTextContent("최신");
     expect(screen.queryByTestId("preparation-run-detail-49")).not.toBeInTheDocument();
     vi.useRealTimers();
   });
@@ -1433,20 +1436,20 @@ describe("PreparationBuilder", () => {
       ],
     });
     renderBuilder();
-    expect(await screen.findByTestId("preparation-run-latest-71")).toHaveTextContent("Latest");
+    expect(await screen.findByTestId("preparation-run-latest-71")).toHaveTextContent("최신");
     const showError = screen.getByTestId("preparation-run-show-error-70");
-    expect(showError).toHaveTextContent("Show error");
+    expect(showError).toHaveTextContent("오류 보기");
     fireEvent.click(showError);
     expect(await screen.findByTestId("preparation-run-error-70")).toHaveTextContent(
       "Materialization failed",
     );
     expect(screen.getByTestId("preparation-run-logs-70")).toHaveTextContent("Traceback: boom");
-    expect(showError).toHaveTextContent("Hide error");
+    expect(showError).toHaveTextContent("오류 숨기기");
     fireEvent.click(showError);
     await waitFor(() => {
       expect(screen.queryByTestId("preparation-run-detail-70")).not.toBeInTheDocument();
     });
-    expect(showError).toHaveTextContent("Show error");
+    expect(showError).toHaveTextContent("오류 보기");
     expect(screen.getByTestId("preparation-run-execute-71")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("preparation-run-execute-71"));
     await waitFor(() => {
@@ -1527,6 +1530,8 @@ describe("PreparationBuilder", () => {
       "href",
       "/projects/7/jobs/new?datasetId=5&datasetVersionId=21",
     );
+    expect(screen.getByTestId("preparation-train-result-10")).toHaveTextContent("이 결과로 학습");
+    expect(screen.getByTestId("preparation-run-open-10")).toHaveTextContent("데이터셋 열기");
     expect(screen.getByTestId("preparation-train-result-11")).toHaveAttribute(
       "href",
       "/projects/7/jobs/new?datasetId=5&datasetVersionId=22",
@@ -2338,7 +2343,7 @@ describe("PreparationBuilder", () => {
       "Time column is required",
     );
     expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent(
-      "Lag uses only earlier rows",
+      "이전 행만 사용합니다",
     );
 
     const previewBefore = previewCalls;
@@ -2371,7 +2376,7 @@ describe("PreparationBuilder", () => {
       "Time column is required",
     );
     expect(screen.getByTestId("preparation-rolling-help")).toHaveTextContent(
-      "past rows only",
+      "과거 행만 사용",
     );
 
     fireEvent.change(screen.getByTestId("preparation-rolling-time-column"), {
@@ -2477,5 +2482,50 @@ describe("PreparationBuilder", () => {
     expect(screen.getByTestId("preparation-rolling-aggregation-0")).toBeDisabled();
     expect(screen.getByTestId("preparation-rolling-output-0")).toBeDisabled();
     expect(screen.queryByTestId("preparation-rolling-add")).not.toBeInTheDocument();
+  });
+
+  it("shows Korean-first node library labels without changing node type contracts", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    expect(screen.getByTestId("preparation-library-source")).toHaveTextContent(
+      "데이터 소스 (Source)",
+    );
+    expect(screen.getByTestId("preparation-library-join")).toHaveTextContent(
+      "데이터 연결 (Join)",
+    );
+    expect(screen.getByTestId("preparation-library-derived_column")).toHaveTextContent(
+      "파생 컬럼 (Derived)",
+    );
+    expect(screen.getByTestId("preparation-library-group_by")).toHaveTextContent(
+      "그룹 집계 (Group By)",
+    );
+    expect(screen.getByTestId("preparation-library-rolling_window")).toHaveTextContent(
+      "이동 집계 (Rolling Window)",
+    );
+    expect(screen.getByTestId("preparation-validate")).toHaveTextContent("검증 (Validate)");
+    expect(screen.getByTestId("preparation-preview")).toHaveTextContent("미리보기 (Preview)");
+  });
+
+  it("explains derived column beginner guidance and bilingual operations", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    fireEvent.click(screen.getByTestId("preparation-library-derived_column"));
+    expect(await screen.findByTestId("preparation-derived-help")).toHaveTextContent(
+      "파생 컬럼",
+    );
+    const derivedHelp = screen.getByTestId("preparation-derived-help");
+    const tip = within(derivedHelp).getByRole("note");
+    expect(tip).toHaveAttribute(
+      "title",
+      expect.stringContaining("새 컬럼을 만들어 결과에 추가합니다"),
+    );
+    expect(tip).toHaveAttribute("title", expect.stringContaining("Column은 기존 입력"));
+    expect(tip).toHaveAttribute("title", expect.stringContaining("Literal은 컬럼이 아니라"));
+    const operation = screen.getByTestId("preparation-derived-operation");
+    expect(operation).toHaveValue("add");
+    expect(within(operation).getByRole("option", { name: "더하기 (add)" })).toBeInTheDocument();
+    expect(
+      within(operation).getByRole("option", { name: "정규식 추출 (regex_extract)" }),
+    ).toBeInTheDocument();
   });
 });

@@ -28,7 +28,7 @@ test("experiment run detail navigation from training job", async ({ page }) => {
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(dataset);
   await page.getByTestId("dataset-upload").click();
@@ -40,13 +40,15 @@ test("experiment run detail navigation from training job", async ({ page }) => {
   await page.getByTestId("target-power_usage").check();
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-logs")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Open experiment" })).toBeVisible({ timeout: 180_000 });
-  await page.getByRole("link", { name: "Open experiment" }).click();
+  await expect(page.getByRole("link", { name: /실험 결과 보기|Open experiment/ })).toBeVisible({
+    timeout: 180_000,
+  });
+  await page.getByRole("link", { name: /실험 결과 보기|Open experiment/ }).click();
   await expect(page.getByRole("heading", { name: /e2e-run-detail|run/i })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Logged metrics")).toBeVisible();
   await expect(page.getByText("Run parameters")).toBeVisible();
   await expect(page.getByTestId("open-training-job")).toBeVisible();
   await page.getByTestId("open-training-job").click();
   await expect(page.getByRole("heading", { name: /e2e-run-detail/i })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("link", { name: "Open experiment" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /실험 결과 보기|Open experiment/ })).toBeVisible();
 });

@@ -16,6 +16,7 @@ import {
   inferFilterValueType,
   isPreparationRunActive,
   isPreparationTransformType,
+  labelForPreparationType,
   nextPreparationNodeId,
   parseCasts,
   parseDerivedOperand,
@@ -147,6 +148,20 @@ describe("preparationHelpers", () => {
     expect(isPreparationTransformType("lag")).toBe(true);
     expect(isPreparationTransformType("rolling_window")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
+  });
+
+  it("uses Korean-first display labels for preparation node types", () => {
+    expect(labelForPreparationType("source")).toBe("데이터 소스 (Source)");
+    expect(labelForPreparationType("join")).toBe("데이터 연결 (Join)");
+    expect(labelForPreparationType("union")).toBe("행 합치기 (Union)");
+    expect(labelForPreparationType("derived_column")).toBe("파생 컬럼 (Derived)");
+    expect(labelForPreparationType("group_by")).toBe("그룹 집계 (Group By)");
+    expect(labelForPreparationType("lag")).toBe("이전값 생성 (Lag)");
+    expect(labelForPreparationType("rolling_window")).toBe("이동 집계 (Rolling Window)");
+    expect(labelForPreparationType("output")).toBe("결과 데이터 (Output)");
+    expect(PREPARATION_NODE_LIBRARY_GROUPS.find((group) => group.id === "sources")?.label).toBe(
+      "소스 · 결합",
+    );
   });
 
   it("parses and formats rename mappings", () => {
@@ -346,7 +361,7 @@ describe("preparationHelpers", () => {
       id: "source-1",
       type: PREPARATION_FLOW_NODE_TYPE,
       position: { x: 12, y: 34 },
-      data: { node_type: "source", label: "Source" },
+      data: { node_type: "source", label: "데이터 소스 (Source)" },
     });
     expect(nodes[1].position).toEqual(staggerPreparationPosition(1));
     expect(nodes[2].data.node_type).toBe("select");
@@ -367,7 +382,7 @@ describe("preparationHelpers", () => {
           type: PREPARATION_FLOW_NODE_TYPE,
           position: { x: 100, y: 200 },
           data: {
-            label: "Source",
+            label: "데이터 소스 (Source)",
             node_type: "source",
             config: { dataset_id: 7, version_strategy: "fixed", dataset_version_id: 11 },
           },
@@ -377,7 +392,7 @@ describe("preparationHelpers", () => {
           type: PREPARATION_FLOW_NODE_TYPE,
           position: { x: 320, y: 200 },
           data: {
-            label: "Join",
+            label: "데이터 연결 (Join)",
             node_type: "join",
             config: { how: "inner", left_on: ["a"], right_on: ["b"] },
           },
@@ -434,7 +449,10 @@ describe("preparationHelpers", () => {
   it("summarizes configs and parses key lists", () => {
     expect(
       preparationConfigSummary("source", { dataset_id: 2, version_strategy: "latest" }),
-    ).toContain("Latest version");
+    ).toEqual(["데이터셋 #2", "최신 버전"]);
+    expect(
+      preparationConfigSummary("source", { dataset_id: null, version_strategy: "fixed" }),
+    ).toContain("데이터셋 미선택");
     expect(
       preparationConfigSummary("join", {
         how: "full",
@@ -442,14 +460,20 @@ describe("preparationHelpers", () => {
         right_on: ["uid"],
       }),
     ).toEqual(["full", "id = uid"]);
-    expect(preparationConfigSummary("union", { mode: "align_by_name" })).toContain(
-      "Align by name",
+    expect(preparationConfigSummary("join", { how: "inner", left_on: [], right_on: [] })).toContain(
+      "키 미설정",
     );
+    expect(preparationConfigSummary("union", { mode: "align_by_name" })).toContain(
+      "이름 기준 정렬",
+    );
+    expect(preparationConfigSummary("union", { mode: "strict" })).toContain("엄격 모드 (Strict)");
     expect(preparationConfigSummary("select", { columns: ["a", "b"] })).toContain("a, b");
+    expect(preparationConfigSummary("drop", { columns: ["x"] })).toContain("삭제: x");
     expect(preparationConfigSummary("filter", { combine: "and", conditions: [{}] })).toEqual([
       "AND",
-      "1 condition",
+      "조건 1개",
     ]);
+    expect(preparationConfigSummary("output", {})).toEqual(["준비된 결과"]);
     expect(parseKeyList("a, b\nc")).toEqual(["a", "b", "c"]);
     expect(formatKeyList(["x", "y"])).toBe("x, y");
     expect(PREPARATION_NODE_TYPES).toEqual([
@@ -476,10 +500,10 @@ describe("preparationHelpers", () => {
         group_by: ["region", "category"],
         aggregations: [{}, {}, {}],
       }),
-    ).toEqual(["By region, category", "3 aggregations"]);
+    ).toEqual(["기준: region, category", "집계 3개"]);
     expect(preparationConfigSummary("group_by", { group_by: [], aggregations: [] })).toEqual([
-      "No group keys",
-      "No aggregations",
+      "그룹 키 없음",
+      "집계 없음",
     ]);
     expect(
       preparationConfigSummary("unpivot", {
@@ -489,9 +513,9 @@ describe("preparationHelpers", () => {
         value_column: "sales",
       }),
     ).toEqual([
-      "IDs: customer_id, region",
-      "Values: sales_2024, sales_2025",
-      "Output: year / sales",
+      "식별자: customer_id, region",
+      "값: sales_2024, sales_2025",
+      "출력: year / sales",
     ]);
     expect(
       preparationConfigSummary("unpivot", {
@@ -500,7 +524,7 @@ describe("preparationHelpers", () => {
         variable_column: "variable",
         value_column: "value",
       }),
-    ).toEqual(["No ID columns", "No value columns", "Output: variable / value"]);
+    ).toEqual(["식별자 컬럼 없음", "값 컬럼 없음", "출력: variable / value"]);
     expect(
       serializeGroupByConfig({
         groupKeys: ["region", "region"],
@@ -609,10 +633,10 @@ describe("preparationHelpers", () => {
         ],
       }),
     ).toEqual([
-      "Index: customer_id, region",
-      "Columns: month",
-      "Value: sales · SUM",
-      "Outputs: 2",
+      "인덱스: customer_id, region",
+      "피벗 컬럼: month",
+      "값: sales · SUM",
+      "출력 2개",
     ]);
     expect(
       preparationConfigSummary("pivot", {
@@ -623,10 +647,10 @@ describe("preparationHelpers", () => {
         pivot_values: [],
       }),
     ).toEqual([
-      "No index columns",
-      "Pivot column not set",
-      "Value column not set",
-      "No pivot values",
+      "인덱스 컬럼 없음",
+      "피벗 컬럼 미설정",
+      "값 컬럼 미설정",
+      "피벗 값 없음",
     ]);
     expect(
       serializePivotConfig({
@@ -790,14 +814,14 @@ describe("preparationHelpers", () => {
         source_column: "sales",
         lags: [{ periods: 1 }, { periods: 7 }],
       }),
-    ).toEqual(["Time: event_time", "Source: sales", "2 lags"]);
+    ).toEqual(["시간: event_time", "소스: sales", "Lag 2개"]);
     expect(
       preparationConfigSummary("rolling_window", {
         time_column: "",
         source_column: "",
         windows: [],
       }),
-    ).toEqual(["Time column not set", "Source column not set", "No windows"]);
+    ).toEqual(["시간 컬럼 미설정", "소스 컬럼 미설정", "윈도우 없음"]);
 
     expect(
       serializeLagConfig({

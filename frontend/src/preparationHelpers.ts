@@ -94,20 +94,20 @@ export type PreparationLibraryGroup = {
 const SOURCE_COMBINE_ITEMS: PreparationLibraryItem[] = [
   {
     type: "source",
-    label: "Source",
-    description: "Load a project dataset version into the graph.",
+    label: "데이터 소스 (Source)",
+    description: "프로젝트 데이터셋 버전을 그래프에 불러옵니다.",
     icon: "▤",
   },
   {
     type: "join",
-    label: "Join",
-    description: "Join two inputs on matching keys.",
+    label: "데이터 연결 (Join)",
+    description: "같은 키로 두 입력을 가로로 연결합니다.",
     icon: "⋈",
   },
   {
     type: "union",
-    label: "Union",
-    description: "Stack rows from two or more inputs.",
+    label: "행 합치기 (Union)",
+    description: "둘 이상 입력의 행을 세로로 이어 붙입니다.",
     icon: "⋃",
   },
 ];
@@ -115,80 +115,80 @@ const SOURCE_COMBINE_ITEMS: PreparationLibraryItem[] = [
 const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
   {
     type: "select",
-    label: "Select",
-    description: "Keep only the listed columns.",
+    label: "컬럼 선택 (Select)",
+    description: "지정한 컬럼만 남깁니다.",
     icon: "⊂",
   },
   {
     type: "drop",
-    label: "Drop",
-    description: "Remove the listed columns.",
+    label: "컬럼 삭제 (Drop)",
+    description: "지정한 컬럼을 제거합니다.",
     icon: "⊖",
   },
   {
     type: "rename",
-    label: "Rename",
-    description: "Rename columns with old = new mappings.",
+    label: "컬럼 이름 변경 (Rename)",
+    description: "old = new 형식으로 컬럼 이름을 바꿉니다.",
     icon: "✎",
   },
   {
     type: "filter",
-    label: "Filter",
-    description: "Keep rows that match conditions.",
+    label: "행 필터 (Filter)",
+    description: "조건에 맞는 행만 남깁니다.",
     icon: "▽",
   },
   {
     type: "cast",
-    label: "Cast",
-    description: "Convert column types.",
+    label: "자료형 변환 (Cast)",
+    description: "컬럼의 자료형을 변환합니다.",
     icon: "Τ",
   },
   {
     type: "deduplicate",
-    label: "Deduplicate",
-    description: "Drop duplicate rows by key columns.",
+    label: "중복 제거 (Deduplicate)",
+    description: "키 컬럼 기준으로 중복 행을 제거합니다.",
     icon: "≡",
   },
   {
     type: "fill_constant",
-    label: "Fill",
-    description: "Fill missing values with constants.",
+    label: "결측값 채우기 (Fill)",
+    description: "비어 있는 값을 상수로 채웁니다.",
     icon: "◈",
   },
   {
     type: "derived_column",
-    label: "Derived",
-    description: "Add a column from an arithmetic or concat expression.",
+    label: "파생 컬럼 (Derived)",
+    description: "계산식·문자열 조합으로 새 컬럼을 만듭니다.",
     icon: "ƒ",
   },
   {
     type: "group_by",
-    label: "Group By",
-    description: "Group rows and calculate aggregate values.",
+    label: "그룹 집계 (Group By)",
+    description: "행을 그룹으로 묶어 집계 값을 계산합니다.",
     icon: "Σ",
   },
   {
     type: "unpivot",
-    label: "Unpivot",
-    description: "Turn selected columns into variable/value rows.",
+    label: "언피벗 (Unpivot)",
+    description: "선택한 컬럼을 변수/값 행으로 펼칩니다.",
     icon: "⇅",
   },
   {
     type: "pivot",
-    label: "Pivot",
-    description: "Turn configured row values into aggregate columns.",
+    label: "피벗 (Pivot)",
+    description: "행 값을 집계 컬럼으로 펼칩니다.",
     icon: "⟷",
   },
   {
     type: "lag",
-    label: "Lag",
-    description: "Create features from earlier rows in time order.",
+    label: "이전값 생성 (Lag)",
+    description: "시간 순으로 이전 행 값을 새 컬럼으로 만듭니다.",
     icon: "⟲",
   },
   {
     type: "rolling_window",
-    label: "Rolling Window",
-    description: "Create past-only rolling aggregate features.",
+    label: "이동 집계 (Rolling Window)",
+    description: "과거 구간만 사용하는 이동 집계 피처를 만듭니다.",
     icon: "▥",
   },
 ];
@@ -196,8 +196,8 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
 const OUTPUT_ITEMS: PreparationLibraryItem[] = [
   {
     type: "output",
-    label: "Output",
-    description: "Final prepared dataset for this graph.",
+    label: "결과 데이터 (Output)",
+    description: "이 그래프의 최종 준비 데이터셋입니다.",
     icon: "◎",
   },
 ];
@@ -210,9 +210,9 @@ export const PREPARATION_NODE_LIBRARY: PreparationLibraryItem[] = [
 ];
 
 export const PREPARATION_NODE_LIBRARY_GROUPS: PreparationLibraryGroup[] = [
-  { id: "sources", label: "Sources & Combine", items: SOURCE_COMBINE_ITEMS },
-  { id: "transform", label: "Transform", items: TRANSFORM_ITEMS },
-  { id: "output", label: "Output", items: OUTPUT_ITEMS },
+  { id: "sources", label: "소스 · 결합", items: SOURCE_COMBINE_ITEMS },
+  { id: "transform", label: "변환", items: TRANSFORM_ITEMS },
+  { id: "output", label: "결과", items: OUTPUT_ITEMS },
 ];
 
 export type PreparationFlowNodeData = {
@@ -484,13 +484,13 @@ export function preparationConfigSummary(
   switch (nodeType) {
     case "source":
       if (config.dataset_id != null && config.dataset_id !== "") {
-        lines.push(`Dataset #${config.dataset_id}`);
+        lines.push(`데이터셋 #${config.dataset_id}`);
       } else {
-        lines.push("Dataset not selected");
+        lines.push("데이터셋 미선택");
       }
-      lines.push(config.version_strategy === "fixed" ? "Fixed version" : "Latest version");
+      lines.push(config.version_strategy === "fixed" ? "고정 버전" : "최신 버전");
       if (config.version_strategy === "fixed" && config.dataset_version_id != null) {
-        lines.push(`Version id ${config.dataset_version_id}`);
+        lines.push(`버전 ID ${config.dataset_version_id}`);
       }
       break;
     case "join": {
@@ -500,21 +500,21 @@ export function preparationConfigSummary(
       if (left.length || right.length) {
         lines.push(`${left.join(", ") || "?"} = ${right.join(", ") || "?"}`);
       } else {
-        lines.push("Keys not set");
+        lines.push("키 미설정");
       }
       break;
     }
     case "union":
-      lines.push(config.mode === "align_by_name" ? "Align by name" : "Strict");
+      lines.push(config.mode === "align_by_name" ? "이름 기준 정렬" : "엄격 모드 (Strict)");
       break;
     case "select": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(columns.length ? columns.map(String).join(", ") : "No columns");
+      lines.push(columns.length ? columns.map(String).join(", ") : "컬럼 없음");
       break;
     }
     case "drop": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(columns.length ? `Drop ${columns.map(String).join(", ")}` : "No columns");
+      lines.push(columns.length ? `삭제: ${columns.map(String).join(", ")}` : "컬럼 없음");
       break;
     }
     case "rename": {
@@ -523,17 +523,13 @@ export function preparationConfigSummary(
           ? (config.mapping as Record<string, unknown>)
           : {};
       const count = Object.keys(mapping).length;
-      lines.push(count ? `${count} rename${count === 1 ? "" : "s"}` : "No renames");
+      lines.push(count ? `이름 변경 ${count}개` : "이름 변경 없음");
       break;
     }
     case "filter": {
       const conditions = Array.isArray(config.conditions) ? config.conditions : [];
       lines.push(String(config.combine || "and").toUpperCase());
-      lines.push(
-        conditions.length
-          ? `${conditions.length} condition${conditions.length === 1 ? "" : "s"}`
-          : "No conditions",
-      );
+      lines.push(conditions.length ? `조건 ${conditions.length}개` : "조건 없음");
       break;
     }
     case "cast": {
@@ -542,13 +538,13 @@ export function preparationConfigSummary(
           ? (config.casts as Record<string, unknown>)
           : {};
       const count = Object.keys(casts).length;
-      lines.push(count ? `${count} cast${count === 1 ? "" : "s"}` : "No casts");
+      lines.push(count ? `자료형 변환 ${count}개` : "변환 없음");
       break;
     }
     case "deduplicate": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(config.keep === "last" ? "Keep last" : "Keep first");
-      lines.push(columns.length ? columns.map(String).join(", ") : "All columns");
+      lines.push(config.keep === "last" ? "마지막 행 유지" : "첫 행 유지");
+      lines.push(columns.length ? columns.map(String).join(", ") : "전체 컬럼");
       break;
     }
     case "fill_constant": {
@@ -557,24 +553,20 @@ export function preparationConfigSummary(
           ? (config.values as Record<string, unknown>)
           : {};
       const count = Object.keys(values).length;
-      lines.push(count ? `${count} fill${count === 1 ? "" : "s"}` : "No fills");
+      lines.push(count ? `결측값 채우기 ${count}개` : "채우기 없음");
       break;
     }
     case "derived_column": {
       const name = String(config.name || "").trim();
-      lines.push(name || "Unnamed column");
+      lines.push(name || "컬럼 이름 미지정");
       lines.push(String(config.operation || "add"));
       break;
     }
     case "group_by": {
       const keys = Array.isArray(config.group_by) ? config.group_by.map(String).filter(Boolean) : [];
       const aggregations = Array.isArray(config.aggregations) ? config.aggregations : [];
-      lines.push(keys.length ? `By ${keys.join(", ")}` : "No group keys");
-      lines.push(
-        aggregations.length
-          ? `${aggregations.length} aggregation${aggregations.length === 1 ? "" : "s"}`
-          : "No aggregations",
-      );
+      lines.push(keys.length ? `기준: ${keys.join(", ")}` : "그룹 키 없음");
+      lines.push(aggregations.length ? `집계 ${aggregations.length}개` : "집계 없음");
       break;
     }
     case "unpivot": {
@@ -586,9 +578,9 @@ export function preparationConfigSummary(
         : [];
       const variableName = String(config.variable_column || "").trim() || "variable";
       const valueName = String(config.value_column || "").trim() || "value";
-      lines.push(ids.length ? `IDs: ${ids.join(", ")}` : "No ID columns");
-      lines.push(values.length ? `Values: ${values.join(", ")}` : "No value columns");
-      lines.push(`Output: ${variableName} / ${valueName}`);
+      lines.push(ids.length ? `식별자: ${ids.join(", ")}` : "식별자 컬럼 없음");
+      lines.push(values.length ? `값: ${values.join(", ")}` : "값 컬럼 없음");
+      lines.push(`출력: ${variableName} / ${valueName}`);
       break;
     }
     case "pivot": {
@@ -599,44 +591,36 @@ export function preparationConfigSummary(
       const valueColumn = String(config.value_column || "").trim();
       const aggregation = String(config.aggregation || "sum").trim().toLowerCase() || "sum";
       const pivotValues = Array.isArray(config.pivot_values) ? config.pivot_values : [];
-      lines.push(indexColumns.length ? `Index: ${indexColumns.join(", ")}` : "No index columns");
-      lines.push(columnsColumn ? `Columns: ${columnsColumn}` : "Pivot column not set");
+      lines.push(indexColumns.length ? `인덱스: ${indexColumns.join(", ")}` : "인덱스 컬럼 없음");
+      lines.push(columnsColumn ? `피벗 컬럼: ${columnsColumn}` : "피벗 컬럼 미설정");
       lines.push(
         valueColumn
-          ? `Value: ${valueColumn} · ${aggregation.toUpperCase()}`
-          : "Value column not set",
+          ? `값: ${valueColumn} · ${aggregation.toUpperCase()}`
+          : "값 컬럼 미설정",
       );
-      lines.push(
-        pivotValues.length
-          ? `Outputs: ${pivotValues.length}`
-          : "No pivot values",
-      );
+      lines.push(pivotValues.length ? `출력 ${pivotValues.length}개` : "피벗 값 없음");
       break;
     }
     case "lag": {
       const timeColumn = String(config.time_column || "").trim();
       const sourceColumn = String(config.source_column || "").trim();
       const lags = Array.isArray(config.lags) ? config.lags : [];
-      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
-      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
-      lines.push(lags.length ? `${lags.length} lag${lags.length === 1 ? "" : "s"}` : "No lags");
+      lines.push(timeColumn ? `시간: ${timeColumn}` : "시간 컬럼 미설정");
+      lines.push(sourceColumn ? `소스: ${sourceColumn}` : "소스 컬럼 미설정");
+      lines.push(lags.length ? `Lag ${lags.length}개` : "Lag 없음");
       break;
     }
     case "rolling_window": {
       const timeColumn = String(config.time_column || "").trim();
       const sourceColumn = String(config.source_column || "").trim();
       const windows = Array.isArray(config.windows) ? config.windows : [];
-      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
-      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
-      lines.push(
-        windows.length
-          ? `${windows.length} window${windows.length === 1 ? "" : "s"}`
-          : "No windows",
-      );
+      lines.push(timeColumn ? `시간: ${timeColumn}` : "시간 컬럼 미설정");
+      lines.push(sourceColumn ? `소스: ${sourceColumn}` : "소스 컬럼 미설정");
+      lines.push(windows.length ? `윈도우 ${windows.length}개` : "윈도우 없음");
       break;
     }
     case "output":
-      lines.push("Prepared output");
+      lines.push("준비된 결과");
       break;
     default:
       break;

@@ -24,16 +24,16 @@ test("login protects routes and restores the authenticated shell", async ({ page
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
   await expect(page.getByRole("heading", { name: "Administration" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Projects/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Global Audit Logs/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Administration/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /프로젝트|Projects/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /전체 감사 로그|Global Audit Logs/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /시스템 관리|Administration/ })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/00-authenticated-shell.png", fullPage: true });
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Administration" })).toBeVisible();
 
   await page.locator("details.user-menu summary").click();
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("button", { name: /로그아웃|Sign out/ }).click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 });

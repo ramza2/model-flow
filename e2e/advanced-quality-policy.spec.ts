@@ -44,7 +44,7 @@ test("quality policies page is reachable and supports admin write UI", async ({
 
   await page.goto(`/projects/${projectId}/model-quality/policies`);
   await expect(page.getByTestId("quality-policies-page")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Quality Policies/i }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /품질 정책|Quality Policies/i }).first()).toBeVisible();
   await expect(page.getByTestId("create-policy-btn")).toBeVisible();
 
   await page.getByTestId("create-policy-btn").click();

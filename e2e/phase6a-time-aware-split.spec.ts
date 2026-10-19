@@ -41,7 +41,7 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(csvPath);
   await page.getByTestId("dataset-upload").click();
@@ -64,9 +64,11 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("job-name").fill("e2e-time-ordered-job");
   await expect(page.getByTestId("job-data-split")).toBeVisible();
   await page.getByTestId("job-data-split").selectOption({
-    label: "e2e-time-split · Time ordered · event_time · 70/15/15",
+    label: "e2e-time-split · 시간 순서 (Time ordered · event_time) · 70/15/15",
   });
-  await expect(page.getByTestId("job-saved-split-summary")).toContainText(/Time ordered · event_time/i);
+  await expect(page.getByTestId("job-saved-split-summary")).toContainText(
+    /Time ordered · event_time|시간 순서 \(Time ordered · event_time\)/i,
+  );
   await page.getByTestId("job-submit").click();
 
   await expect(page.getByTestId("job-logs")).toBeVisible();
