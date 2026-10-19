@@ -151,7 +151,7 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
   await expect(page.getByTestId("preparation-lag-time-column")).toHaveValue("event_time");
   await expect(page.getByTestId("preparation-lag-source-column")).toHaveValue("sales");
   await expect(page.getByTestId("preparation-lag-help")).toContainText(
-    "Lag uses only earlier rows",
+    "이전 행만 사용합니다",
   );
 
   await page
