@@ -17,10 +17,12 @@ import {
   Loading,
   PageHeader,
   StatusBadge,
+  TermLabel,
   SuccessNotice,
   formatDate,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
+import { UI_HELP } from "../uiTerminology";
 
 type ConditionDraft = {
   column: string;
@@ -857,8 +859,8 @@ export default function DatasetDetail() {
             <section className="panel">
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Reproducibility</span>
-                  <h2>Data splits</h2>
+                  <span className="eyebrow">재현성</span>
+                  <h2>데이터 분할 (Data splits)</h2>
                 </div>
                 {canWrite && (
                   <button
@@ -878,7 +880,7 @@ export default function DatasetDetail() {
                       setSplitTimeColumn("");
                     }}
                   >
-                    {showSplitForm ? "Cancel" : "Create split"}
+                    {showSplitForm ? "취소" : "분할 만들기"}
                   </button>
                 )}
               </div>
@@ -886,7 +888,7 @@ export default function DatasetDetail() {
                 <div className="form" data-testid="create-split-form">
                   <div className="form-grid">
                     <label>
-                      Name
+                      이름 (Name)
                       <input
                         value={splitName}
                         onChange={(event) => setSplitName(event.target.value)}
@@ -894,7 +896,7 @@ export default function DatasetDetail() {
                       />
                     </label>
                     <label>
-                      Split strategy
+                      <TermLabel ko="분할 방식" en="Split strategy" help={UI_HELP.dataSplit} />
                       <select
                         value={splitStrategy}
                         onChange={(event) => {
@@ -905,13 +907,13 @@ export default function DatasetDetail() {
                         }}
                         data-testid="split-strategy"
                       >
-                        <option value="random">Random</option>
-                        <option value="time">Time ordered</option>
+                        <option value="random">무작위 (Random)</option>
+                        <option value="time">시간 순서 (Time ordered)</option>
                       </select>
                     </label>
                     {splitStrategy === "time" ? (
                       <label>
-                        Time column
+                        <TermLabel ko="시간 기준 컬럼" en="Time column" help={UI_HELP.timeOrderedSplit} />
                         <select
                           value={splitTimeColumn}
                           onChange={(event) => {
@@ -921,7 +923,7 @@ export default function DatasetDetail() {
                           data-testid="split-time-column"
                           required
                         >
-                          <option value="">Select time column…</option>
+                          <option value="">시간 기준 컬럼 선택…</option>
                           {(selected?.columns?.length ? selected.columns : columns).map((column) => (
                             <option key={column} value={column}>
                               {column}
@@ -931,7 +933,7 @@ export default function DatasetDetail() {
                       </label>
                     ) : null}
                     <label>
-                      Train ratio
+                      학습 비율 (Train ratio)
                       <input
                         value={splitTrainRatio}
                         onChange={(event) => {
@@ -942,7 +944,7 @@ export default function DatasetDetail() {
                       />
                     </label>
                     <label>
-                      Validation ratio
+                      검증 비율 (Validation ratio)
                       <input
                         value={splitValRatio}
                         onChange={(event) => {
@@ -953,7 +955,7 @@ export default function DatasetDetail() {
                       />
                     </label>
                     <label>
-                      Test ratio
+                      테스트 비율 (Test ratio)
                       <input
                         value={splitTestRatio}
                         onChange={(event) => {
@@ -964,7 +966,7 @@ export default function DatasetDetail() {
                       />
                     </label>
                     <label>
-                      Random seed
+                      난수 시드 (Random seed)
                       <input
                         value={splitSeed}
                         onChange={(event) => {
@@ -977,7 +979,7 @@ export default function DatasetDetail() {
                   </div>
                   {splitStrategy === "time" ? (
                     <p className="form-hint" data-testid="split-time-seed-hint">
-                      Rows are ordered by time. The seed does not shuffle this split.
+                      시간 순서대로 나누므로 미래 구간을 평가하는 데 적합합니다. (Random seed does not shuffle this split.)
                     </p>
                   ) : null}
                   {splitFormError ? (
@@ -993,20 +995,20 @@ export default function DatasetDetail() {
                       onClick={createSplit}
                       data-testid="create-split-submit"
                     >
-                      {busy === "split" ? "Creating…" : "Save split"}
+                      {busy === "split" ? "저장 중…" : "분할 저장"}
                     </button>
                   </div>
                 </div>
               )}
               {splits.length === 0 ? (
-                <EmptyState title="No saved splits" description="Create a deterministic split for repeatable training." />
+                <EmptyState title="저장된 데이터 분할이 없습니다" description="동일한 학습/검증/테스트 구성을 반복 사용하려면 데이터 분할을 저장하세요." />
               ) : (
                 <div className="activity-list compact" data-testid="saved-splits-list">
                   {splits.map((split) => {
                     const strategyLabel =
                       (split.split_strategy || "random") === "time"
-                        ? `Time ordered · ${split.time_column || "—"}`
-                        : "Random";
+                        ? `시간 순서 (Time ordered · ${split.time_column || "—"})`
+                        : "무작위 (Random)";
                     return (
                       <div key={split.id} data-testid={`saved-split-${split.id}`}>
                         <div>

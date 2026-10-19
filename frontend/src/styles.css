@@ -3086,3 +3086,38 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     transition: none;
   }
 }
+
+
+/* Beginner-friendly terminology helpers */
+.term-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .28rem;
+  min-width: 0;
+}
+.term-label-en {
+  color: var(--muted);
+  font-size: .78em;
+  font-weight: 500;
+}
+.help-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(69, 200, 174, .45);
+  border-radius: 50%;
+  background: rgba(69, 200, 174, .08);
+  color: var(--accent);
+  font-size: .7rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+}
+.help-tip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

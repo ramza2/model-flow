@@ -8,12 +8,20 @@ import {
   Loading,
   PageHeader,
   StatusBadge,
+  TermLabel,
   SuccessNotice,
   confirmAction,
   formatDate,
 } from "../components";
 import { DetailSection, EntityLineage, MetricSummary, TargetChips } from "../lifecycleComponents";
 import { resolveDisplayProblemType } from "../metricHelpers";
+import {
+  UI_HELP,
+  problemTypeLabel,
+  splitStrategyLabel,
+  trainingModeLabel,
+  trainingTaskLabel,
+} from "../uiTerminology";
 import { userCanProject, useProject } from "../ProjectContext";
 import type { AlgorithmSpec } from "../trainingConfig";
 import JobContinueTrainingDialog from "./JobContinueTrainingDialog";
@@ -123,8 +131,8 @@ export default function JobDetail() {
   return (
     <div>
       <PageHeader
-        title={job?.name ?? "Training job"}
-        description="Live status, metrics, training setup, lineage, and execution logs."
+        title={job?.name ?? "모델 학습"}
+        description="학습 상태와 성능, 사용한 데이터·설정, 실행 로그를 확인합니다."
         actions={
           <>
             {job ? (
@@ -146,7 +154,7 @@ export default function JobDetail() {
                   onClick={() => setShowRegister(true)}
                   data-testid="register-model"
                 >
-                  {busy === "register" ? "Registering…" : "Register model"}
+                  {busy === "register" ? "모델 등록 중…" : "모델 등록"}
                 </button>
               )}
               {showRetrainAction && !(canRegister && job?.model_uri) && (
@@ -177,7 +185,7 @@ export default function JobDetail() {
             )}
             {canTrain && ["failed", "cancelled"].includes(job.status) && (
               <p className="form-hint" data-testid="retry-hint">
-                Retry reruns this job with the same configuration. Use Clone configuration to modify settings.
+                Retry reruns this job with the same configuration. Use 설정 복제 to modify settings.
               </p>
             )}
             {canTrain && (
@@ -191,7 +199,7 @@ export default function JobDetail() {
             )}
             {job.mlflow_run_id && (
               <Link className="btn secondary" to={`/projects/${projectId}/experiments/runs/${job.mlflow_run_id}`}>
-                Open experiment
+                실험 결과 보기
               </Link>
             )}
             {showRetrainAction && canRegister && job.model_uri && (
@@ -208,15 +216,14 @@ export default function JobDetail() {
 
           {showRetrainAction && (
             <p className="form-hint" data-testid="retrain-continue-hint">
-              <strong>Full retrain</strong> trains a fresh model and preprocessing pipeline from scratch.
+              <strong>전체 재학습 (Full retrain)</strong>은 모델과 전처리를 처음부터 다시 학습합니다.
               {supportsContinued ? (
                 <>
                   {" "}
-                  <strong>Continue training</strong> reuses fitted preprocessing and updates the estimator
-                  via partial_fit on a newer DatasetVersion of the same Dataset.
+                  <strong>이어서 학습 (Continue training)</strong>은 기존 전처리를 재사용하고 같은 데이터셋의 새 버전으로 지원되는 모델을 추가 학습합니다.
                 </>
               ) : algorithmSpec ? (
-                <> Continued training unavailable for {algorithmSpec.display_name}.</>
+                <> {algorithmSpec.display_name}은 이어서 학습을 지원하지 않습니다.</>
               ) : null}
             </p>
           )}
@@ -224,8 +231,8 @@ export default function JobDetail() {
           <section className="metric-summary-panel" aria-label="Training metrics">
             <div className="panel-title">
               <div>
-                <span className="eyebrow">Performance</span>
-                <h2>Metrics</h2>
+                <span className="eyebrow">성능</span>
+                <h2>평가 지표 (Metrics)</h2>
               </div>
             </div>
             <MetricSummary
@@ -236,7 +243,7 @@ export default function JobDetail() {
           </section>
 
           <div className="two-column detail-two-column">
-            <DetailSection eyebrow="Configuration" title="Training setup">
+            <DetailSection eyebrow="설정" title="학습 설정 (Training setup)">
               {job.is_retrain && job.retrain_source_job_id && (
                 <p data-testid="job-retrain-lineage">
                   Retrained from{" "}
@@ -254,28 +261,28 @@ export default function JobDetail() {
                 </p>
               )}
               <dl className="key-values">
-                <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
+                <div><dt><TermLabel ko="학습 알고리즘" en="Algorithm" help={UI_HELP.algorithm} /></dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
                 {job.training_mode && (
                   <div data-testid="job-training-mode">
-                    <dt>Training mode</dt>
-                    <dd>{job.training_mode.replaceAll("_", " ")}</dd>
+                    <dt><TermLabel ko="학습 방식" en="Training mode" help={UI_HELP.trainingMode} /></dt>
+                    <dd>{trainingModeLabel(job.training_mode)}</dd>
                   </div>
                 )}
                 <div data-testid="job-training-task">
-                  <dt>Task</dt>
-                  <dd>{job.training_task === "forecasting" ? "Forecasting" : "Tabular"}</dd>
+                  <dt><TermLabel ko="학습 유형" en="Task" help={UI_HELP.trainingTask} /></dt>
+                  <dd>{trainingTaskLabel(job.training_task)}</dd>
                 </div>
                 <div data-testid="job-problem-type">
-                  <dt>Problem type</dt>
-                  <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
+                  <dt><TermLabel ko="예측 문제 유형" en="Problem type" help={UI_HELP.problemType} /></dt>
+                  <dd>{problemTypeLabel(resolveDisplayProblemType(job.problem_type, job.metrics))}</dd>
                 </div>
                 <div data-testid="job-target-columns">
                   <dt>
                     {job.training_task === "forecasting"
-                      ? "Forecast target"
+                      ? "예측 대상 (Forecast target)"
                       : isMultiOutputJob(job)
-                        ? "Targets"
-                        : "Target"}
+                        ? "예측 대상들 (Targets)"
+                        : "예측 대상 (Target)"}
                   </dt>
                   <dd><TargetChips targets={targets} /></dd>
                 </div>
@@ -310,11 +317,11 @@ export default function JobDetail() {
                   </>
                 ) : null}
                 <div>
-                  <dt>Features</dt>
-                  <dd>{job.feature_columns?.length ? `${job.feature_columns.length} columns` : "—"}</dd>
+                  <dt><TermLabel ko="입력 항목" en="Features" help={UI_HELP.features} /></dt>
+                  <dd>{job.feature_columns?.length ? `${job.feature_columns.length}개 컬럼` : "—"}</dd>
                 </div>
                 <div>
-                  <dt>Dataset</dt>
+                  <dt>데이터셋 (Dataset)</dt>
                   <dd>
                     <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>
                       Dataset #{job.dataset_id}
@@ -325,23 +332,22 @@ export default function JobDetail() {
                   </dd>
                 </div>
                 <div data-testid="job-data-split">
-                  <dt>Data split</dt>
+                  <dt><TermLabel ko="데이터 분할" en="Data split" help={UI_HELP.dataSplit} /></dt>
                   <dd>
                     {job.split_id ? (
                       <>
-                        <div>Saved split #{job.split_id}</div>
+                        <div>저장된 분할 (Saved split #{job.split_id})</div>
                         <div data-testid="job-split-strategy-label">
-                          Split:{" "}
-                          {(job.split_strategy || "random") === "time" ? "Time ordered" : "Random"}
+                          방식: {splitStrategyLabel(job.split_strategy)}
                         </div>
                         {(job.split_strategy || "random") === "time" && job.time_column ? (
                           <div data-testid="job-time-column-label">
-                            Time column: {job.time_column}
+                            시간 기준 컬럼 (Time column): {job.time_column}
                           </div>
                         ) : null}
                         <small>
                           {job.ratios
-                            ? `${Math.round(job.ratios.train * 100)}% train · ${Math.round(job.ratios.validation * 100)}% validation · ${Math.round(job.ratios.test * 100)}% test`
+                            ? `학습 ${Math.round(job.ratios.train * 100)}% · 검증 ${Math.round(job.ratios.validation * 100)}% · 테스트 ${Math.round(job.ratios.test * 100)}%`
                             : "—"}
                           {(job.split_strategy || "random") === "random" &&
                           typeof job.random_seed === "number"
@@ -351,14 +357,13 @@ export default function JobDetail() {
                       </>
                     ) : (
                       <>
-                        <div>Runtime split</div>
+                        <div>실행 시 분할 (Runtime split)</div>
                         <div data-testid="job-split-strategy-label">
-                          Split:{" "}
-                          {(job.split_strategy || "random") === "time" ? "Time ordered" : "Random"}
+                          방식: {splitStrategyLabel(job.split_strategy)}
                         </div>
                         {(job.split_strategy || "random") === "time" && job.time_column ? (
                           <div data-testid="job-time-column-label">
-                            Time column: {job.time_column}
+                            시간 기준 컬럼 (Time column): {job.time_column}
                           </div>
                         ) : null}
                         <small>
@@ -375,8 +380,8 @@ export default function JobDetail() {
                     )}
                   </dd>
                 </div>
-                <div><dt>Started</dt><dd>{formatDate(job.started_at)}</dd></div>
-                <div><dt>Finished</dt><dd data-testid="job-finished-at">{formatDate(job.finished_at)}</dd></div>
+                <div><dt>시작 시각 (Started)</dt><dd>{formatDate(job.started_at)}</dd></div>
+                <div><dt>완료 시각 (Finished)</dt><dd data-testid="job-finished-at">{formatDate(job.finished_at)}</dd></div>
               </dl>
             </DetailSection>
 
@@ -417,15 +422,15 @@ export default function JobDetail() {
             />
           </div>
 
-          <DetailSection eyebrow="Parameters" title="Hyperparameters">
+          <DetailSection eyebrow="모델 설정" title="세부 학습 설정 (Hyperparameters)">
             <div className="engineering-surface">
               <pre className="json-view">{JSON.stringify(job.hyperparameters, null, 2)}</pre>
             </div>
           </DetailSection>
 
           <DetailSection
-            eyebrow="Execution"
-            title="Logs"
+            eyebrow="실행"
+            title="실행 로그 (Logs)"
             actions={active ? <span className="live-indicator"><span /> Live</span> : undefined}
           >
             <div className="engineering-surface">

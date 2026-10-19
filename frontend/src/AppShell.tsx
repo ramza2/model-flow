@@ -8,73 +8,73 @@ import {
   shouldGuardAnchorNavigation,
 } from "./unsavedChanges";
 
-type NavItem = { label: string; to: string; icon: string; end?: boolean };
-type ProjectNavItem = { label: string; path: string; icon: string; end?: boolean };
+type NavItem = { label: string; to: string; icon: string; end?: boolean; hint?: string };
+type ProjectNavItem = { label: string; path: string; icon: string; end?: boolean; hint?: string };
 
 const DRAWER_MEDIA_QUERY = "(max-width: 1023px)";
 
 const projectGroups: { label: string; items: ProjectNavItem[] }[] = [
   {
-    label: "Data",
+    label: "데이터",
     items: [
-      { label: "Data Sources", path: "data-sources", icon: "⌁" },
-      { label: "Datasets", path: "datasets", icon: "▤" },
-      { label: "Preparations", path: "preparations", icon: "⧉" },
-      { label: "Feedback", path: "feedback", icon: "☑" },
+      { label: "데이터 소스", path: "data-sources", icon: "⌁", hint: "외부 API, DB, 파일 등 원천 데이터를 ModelFlow에 연결합니다." },
+      { label: "데이터셋", path: "datasets", icon: "▤", hint: "수집하거나 가공한 버전별 데이터를 확인하고 학습에 사용합니다." },
+      { label: "데이터 가공", path: "preparations", icon: "⧉", hint: "필터, 조인, 파생변수 등 학습 전 데이터 변환을 구성합니다." },
+      { label: "피드백", path: "feedback", icon: "☑", hint: "예측 결과에 대한 사용자 피드백을 확인합니다." },
     ],
   },
   {
-    label: "Build",
+    label: "모델 개발",
     items: [
-      { label: "Pipelines", path: "pipelines", icon: "⌘" },
-      { label: "Training Jobs", path: "jobs", icon: "▶" },
-      { label: "Experiments", path: "experiments", icon: "⌇" },
+      { label: "파이프라인", path: "pipelines", icon: "⌘", hint: "데이터 처리와 학습 작업을 순서대로 연결해 반복 실행합니다." },
+      { label: "모델 학습", path: "jobs", icon: "▶", hint: "데이터를 선택해 모델을 학습하고 검증·테스트 성능을 확인합니다." },
+      { label: "실험 비교", path: "experiments", icon: "⌇", hint: "여러 학습 실행의 설정과 성능 지표를 비교합니다." },
     ],
   },
   {
-    label: "Models & Serving",
+    label: "모델 운영",
     items: [
-      { label: "Model Registry", path: "models", icon: "◆" },
-      { label: "Deployments", path: "deployments", icon: "↗" },
+      { label: "모델 관리", path: "models", icon: "◆", hint: "학습된 모델의 버전, 검증, 승인, 운영 상태를 관리합니다." },
+      { label: "모델 배포", path: "deployments", icon: "↗", hint: "승인된 모델을 예측 API로 사용할 수 있도록 배포합니다." },
     ],
   },
   {
-    label: "Operations",
+    label: "운영 관리",
     items: [
-      { label: "Schedules", path: "schedules", icon: "⏱" },
-      { label: "Monitoring", path: "monitoring", icon: "◉" },
-      { label: "Quality Policies", path: "model-quality/policies", icon: "▤" },
-      { label: "Alerts", path: "alerts", icon: "⚑" },
+      { label: "스케줄", path: "schedules", icon: "⏱", hint: "반복 실행 일정과 상태를 관리합니다." },
+      { label: "모니터링", path: "monitoring", icon: "◉", hint: "배포 모델과 예측 서비스의 상태를 확인합니다." },
+      { label: "품질 정책", path: "model-quality/policies", icon: "▤", hint: "모델 승인에 사용할 품질 기준을 관리합니다." },
+      { label: "알림", path: "alerts", icon: "⚑", hint: "운영 중 발생한 경고와 확인이 필요한 항목을 봅니다." },
     ],
   },
 ];
 
 const crumbLabels: Record<string, string> = {
-  projects: "Projects",
-  "data-sources": "Data Sources",
-  datasets: "Datasets",
-  preparations: "Preparations",
-  feedback: "Feedback",
-  experiments: "Experiments",
-  jobs: "Training Jobs",
-  pipelines: "Pipelines",
-  schedules: "Schedules",
-  "pipeline-runs": "Pipeline Runs",
-  models: "Model Registry",
-  deployments: "Deployments",
-  predict: "Prediction Test",
-  batch: "Batch Inference",
-  monitoring: "Monitoring",
-  "model-quality": "Model Quality",
-  policies: "Quality Policies",
-  alerts: "Alerts",
-  audit: "Audit Logs",
-  admin: "Administration",
-  password: "Change Password",
-  new: "Create",
-  compare: "Compare",
-  runs: "Run",
-  api: "API Usage",
+  projects: "프로젝트",
+  "data-sources": "데이터 소스",
+  datasets: "데이터셋",
+  preparations: "데이터 가공",
+  feedback: "피드백",
+  experiments: "실험 비교",
+  jobs: "모델 학습",
+  pipelines: "파이프라인",
+  schedules: "스케줄",
+  "pipeline-runs": "파이프라인 실행",
+  models: "모델 관리",
+  deployments: "모델 배포",
+  predict: "예측 테스트",
+  batch: "일괄 예측",
+  monitoring: "모니터링",
+  "model-quality": "모델 품질",
+  policies: "품질 정책",
+  alerts: "알림",
+  audit: "감사 로그",
+  admin: "시스템 관리",
+  password: "비밀번호 변경",
+  new: "만들기",
+  compare: "비교",
+  runs: "실행",
+  api: "API 사용",
 };
 
 function Breadcrumbs() {
@@ -85,17 +85,17 @@ function Breadcrumbs() {
     const path = `/${segments.slice(0, index + 1).join("/")}`;
     let label = crumbLabels[segment];
     if (segment === "audit" && !segments.includes("projects")) {
-      label = "Global Audit Logs";
+      label = "전체 감사 로그";
     }
     if (!label && segments[index - 1] === "projects") {
-      label = projects.find((project) => String(project.id) === segment)?.name || "Project";
+      label = projects.find((project) => String(project.id) === segment)?.name || "프로젝트";
     }
     if (!label && /^\d+$/.test(segment)) label = `#${segment}`;
     return { path, label: label || segment };
   });
   return (
     <nav className="breadcrumbs" aria-label="Breadcrumb">
-      <Link to="/">Home</Link>
+      <Link to="/">홈</Link>
       {crumbs.map((crumb, index) => (
         <span key={crumb.path}>
           <span aria-hidden="true">/</span>
@@ -112,7 +112,7 @@ function Breadcrumbs() {
 
 function NavItemLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   return (
-    <NavLink to={item.to} end={item.end} onClick={onNavigate}>
+    <NavLink to={item.to} end={item.end} onClick={onNavigate} title={item.hint}>
       <span className="nav-icon" aria-hidden="true">{item.icon}</span>
       <span className="nav-text">{item.label}</span>
     </NavLink>
@@ -301,7 +301,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           Model<span>Flow</span>
         </Link>
         <div className="project-picker">
-          <label htmlFor="project-select">Project</label>
+          <label htmlFor="project-select">프로젝트</label>
           <select
             key={projectPickerKey}
             id="project-select"
@@ -317,7 +317,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               navigate(`/projects/${id}`);
             }}
           >
-            {projects.length === 0 && <option value="">No projects</option>}
+            {projects.length === 0 && <option value="">프로젝트 없음</option>}
             {projects.map((project) => (
               <option value={project.id} key={project.id}>{project.name}</option>
             ))}
@@ -337,13 +337,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <span className="avatar">{(user?.full_name || user?.email || "U").slice(0, 1).toUpperCase()}</span>
               <span className="user-copy">
                 <strong>{user?.full_name || "ModelFlow user"}</strong>
-                <small>{user?.is_system_admin ? "System administrator" : user?.email}</small>
+                <small>{user?.is_system_admin ? "시스템 관리자" : user?.email}</small>
               </span>
             </summary>
             <div className="menu-popover">
               <div className="menu-email">{user?.email}</div>
-              <Link to="/password">Change password</Link>
-              <button type="button" onClick={signOut}>Sign out</button>
+              <Link to="/password">비밀번호 변경</Link>
+              <button type="button" onClick={signOut}>로그아웃</button>
             </div>
           </details>
         </div>
@@ -367,17 +367,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
       >
         <nav className="nav" aria-label="Main navigation">
           <div className="nav-group">
-            <span className="nav-label">Workspace</span>
-            <NavItemLink item={{ label: "Home", to: "/", icon: "⌂", end: true }} onNavigate={() => closeNav()} />
-            <NavItemLink item={{ label: "Projects", to: "/projects", icon: "▦", end: true }} onNavigate={() => closeNav()} />
+            <span className="nav-label">작업공간</span>
+            <NavItemLink item={{ label: "홈", to: "/", icon: "⌂", end: true, hint: "ModelFlow 전체 현황으로 이동합니다." }} onNavigate={() => closeNav()} />
+            <NavItemLink item={{ label: "프로젝트", to: "/projects", icon: "▦", end: true, hint: "프로젝트를 만들거나 선택합니다." }} onNavigate={() => closeNav()} />
           </div>
 
           <div className="nav-group">
-            <span className="nav-label">Project</span>
-            {!selectedProject && <p className="nav-hint">Select or create a project to continue.</p>}
+            <span className="nav-label">프로젝트</span>
+            {!selectedProject && <p className="nav-hint">계속하려면 프로젝트를 선택하거나 새로 만드세요.</p>}
             {selectedProject && (
               <NavItemLink
-                item={{ label: "Overview", to: projectBase, icon: "◎", end: true }}
+                item={{ label: "개요", to: projectBase, icon: "◎", end: true, hint: "현재 프로젝트의 주요 현황을 확인합니다." }}
                 onNavigate={() => closeNav()}
               />
             )}
@@ -389,7 +389,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               {group.items.map((item) => (
                 <NavItemLink
                   key={item.path}
-                  item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end }}
+                  item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end, hint: item.hint }}
                   onNavigate={() => closeNav()}
                 />
               ))}
@@ -398,9 +398,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
           {canProjectAudit && (
             <div className="nav-group">
-              <span className="nav-label">Governance</span>
+              <span className="nav-label">거버넌스</span>
               <NavItemLink
-                item={{ label: "Audit Logs", to: `${projectBase}/audit`, icon: "≡" }}
+                item={{ label: "감사 로그", to: `${projectBase}/audit`, icon: "≡", hint: "프로젝트의 주요 변경과 작업 이력을 확인합니다." }}
                 onNavigate={() => closeNav()}
               />
             </div>
@@ -408,20 +408,20 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
           {user?.is_system_admin && (
             <div className="nav-group">
-              <span className="nav-label">System</span>
+              <span className="nav-label">시스템</span>
               <NavItemLink
-                item={{ label: "Global Audit Logs", to: "/audit", icon: "☷" }}
+                item={{ label: "전체 감사 로그", to: "/audit", icon: "☷", hint: "전체 프로젝트의 감사 이력을 확인합니다." }}
                 onNavigate={() => closeNav()}
               />
               <NavItemLink
-                item={{ label: "Administration", to: "/admin", icon: "⚙" }}
+                item={{ label: "시스템 관리", to: "/admin", icon: "⚙", hint: "사용자와 시스템 설정을 관리합니다." }}
                 onNavigate={() => closeNav()}
               />
             </div>
           )}
         </nav>
         <div className="sidebar-foot">
-          <span className="status-dot" /> Connected to ModelFlow
+          <span className="status-dot" /> ModelFlow 연결됨
         </div>
       </aside>
 

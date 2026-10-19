@@ -345,7 +345,7 @@ describe("JobCreate UX", () => {
     fireEvent.click(screen.getByTestId("feature-petal length (cm)"));
     fireEvent.click(screen.getByTestId("feature-petal width (cm)"));
     expect(screen.getByTestId("job-submit")).toBeDisabled();
-    expect(screen.getByTestId("feature-columns")).toHaveTextContent("0 selected");
+    expect(screen.getByTestId("feature-columns")).toHaveTextContent("0개 선택");
   });
 
   it("removes target from features when target changes", async () => {
@@ -1098,7 +1098,7 @@ describe("JobCreate UX", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByTestId("detecting-problem-type")).toHaveTextContent("Detecting problem type");
+    expect(await screen.findByTestId("detecting-problem-type")).toHaveTextContent("예측 문제 유형을 자동 판별하는 중");
     expect(screen.getByTestId("job-submit")).toBeDisabled();
     expect(screen.getByTestId("job-algorithm")).toBeDisabled();
 
@@ -1239,7 +1239,7 @@ describe("JobCreate UX", () => {
     await screen.findByTestId("detected-problem-type");
     fireEvent.click(screen.getByTestId("target-sepal length (cm)"));
     expect(await screen.findByTestId("multi-target-hint")).toHaveTextContent(
-      "Multiple targets are trained as multi-output regression.",
+      "여러 예측 대상을 선택하면 하나의 모델에서 여러 수치 값을 함께 예측합니다.",
     );
     expect(screen.getByTestId("job-problem-type")).toHaveValue("regression");
     expect(screen.getByTestId("job-problem-type")).toBeDisabled();
@@ -1328,7 +1328,7 @@ describe("JobCreate UX", () => {
     );
 
     expect(await screen.findByTestId("problem-type-detection-error")).toHaveTextContent(
-      "Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.",
+      "예측 문제 유형을 자동 판별하지 못했습니다. 예측 대상을 바꾸거나 분류(Classification)/수치 예측(Regression)을 직접 선택하세요.",
     );
     expect(screen.getByTestId("job-submit")).toBeDisabled();
 
@@ -1788,7 +1788,7 @@ describe("JobCreate time-aware split", () => {
     fireEvent.change(screen.getByTestId("job-time-column"), { target: { value: "event_time" } });
     expect(screen.queryByTestId("target-event_time")).not.toBeInTheDocument();
     expect(screen.queryByTestId("feature-event_time")).not.toBeInTheDocument();
-    expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(/does not shuffle/i);
+    expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(/행을 섞지 않습니다/);
 
     await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("job-submit"));
