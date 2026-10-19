@@ -405,7 +405,7 @@ describe("JobDetail retrain", () => {
     expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
     expect(screen.queryByTestId("job-continue")).not.toBeInTheDocument();
     expect(screen.getByTestId("retrain-continue-hint")).toHaveTextContent(
-      "Continued training unavailable",
+      "이어서 학습을 지원하지 않습니다",
     );
   });
 
@@ -444,7 +444,7 @@ describe("JobDetail retrain", () => {
     const lineage = await screen.findByTestId("job-continue-lineage");
     expect(lineage).toHaveTextContent("Job #10");
     expect(lineage.querySelector("a")).toHaveAttribute("href", "/projects/7/jobs/10");
-    expect(screen.getByTestId("job-training-mode")).toHaveTextContent("continued");
+    expect(screen.getByTestId("job-training-mode")).toHaveTextContent("이어서 학습");
     expect(screen.getByText("Continued training source")).toBeInTheDocument();
   });
 

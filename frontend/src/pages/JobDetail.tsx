@@ -216,7 +216,7 @@ export default function JobDetail() {
 
           {showRetrainAction && (
             <p className="form-hint" data-testid="retrain-continue-hint">
-              <strong>Full retrain</strong> trains a fresh model and preprocessing pipeline from scratch.
+              <strong>전체 재학습 (Full retrain)</strong>은 모델과 전처리를 처음부터 다시 학습합니다.
               {supportsContinued ? (
                 <>
                   {" "}
