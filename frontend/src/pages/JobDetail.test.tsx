@@ -272,7 +272,7 @@ describe("JobDetail retrain", () => {
       return [];
     });
     renderPage("42");
-    expect(await screen.findByTestId("job-problem-type")).toHaveTextContent("regression");
+    expect(await screen.findByTestId("job-problem-type")).toHaveTextContent("Regression");
   });
 
   it("shows Continue training for eligible SGD jobs and submits continue endpoint", async () => {

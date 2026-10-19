@@ -1328,7 +1328,7 @@ describe("JobCreate UX", () => {
     );
 
     expect(await screen.findByTestId("problem-type-detection-error")).toHaveTextContent(
-      "Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.",
+      "예측 문제 유형을 자동 판별하지 못했습니다. 예측 대상을 바꾸거나 분류(Classification)/수치 예측(Regression)을 직접 선택하세요.",
     );
     expect(screen.getByTestId("job-submit")).toBeDisabled();
 
