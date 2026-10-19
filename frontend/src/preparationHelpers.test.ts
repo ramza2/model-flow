@@ -16,6 +16,7 @@ import {
   inferFilterValueType,
   isPreparationRunActive,
   isPreparationTransformType,
+  labelForPreparationType,
   nextPreparationNodeId,
   parseCasts,
   parseDerivedOperand,
@@ -147,6 +148,20 @@ describe("preparationHelpers", () => {
     expect(isPreparationTransformType("lag")).toBe(true);
     expect(isPreparationTransformType("rolling_window")).toBe(true);
     expect(isPreparationTransformType("join")).toBe(false);
+  });
+
+  it("uses Korean-first display labels for preparation node types", () => {
+    expect(labelForPreparationType("source")).toBe("데이터 소스 (Source)");
+    expect(labelForPreparationType("join")).toBe("데이터 연결 (Join)");
+    expect(labelForPreparationType("union")).toBe("행 합치기 (Union)");
+    expect(labelForPreparationType("derived_column")).toBe("파생 컬럼 (Derived)");
+    expect(labelForPreparationType("group_by")).toBe("그룹 집계 (Group By)");
+    expect(labelForPreparationType("lag")).toBe("이전값 생성 (Lag)");
+    expect(labelForPreparationType("rolling_window")).toBe("이동 집계 (Rolling Window)");
+    expect(labelForPreparationType("output")).toBe("결과 데이터 (Output)");
+    expect(PREPARATION_NODE_LIBRARY_GROUPS.find((group) => group.id === "sources")?.label).toBe(
+      "소스 · 결합",
+    );
   });
 
   it("parses and formats rename mappings", () => {
@@ -346,7 +361,7 @@ describe("preparationHelpers", () => {
       id: "source-1",
       type: PREPARATION_FLOW_NODE_TYPE,
       position: { x: 12, y: 34 },
-      data: { node_type: "source", label: "Source" },
+      data: { node_type: "source", label: "데이터 소스 (Source)" },
     });
     expect(nodes[1].position).toEqual(staggerPreparationPosition(1));
     expect(nodes[2].data.node_type).toBe("select");
@@ -367,7 +382,7 @@ describe("preparationHelpers", () => {
           type: PREPARATION_FLOW_NODE_TYPE,
           position: { x: 100, y: 200 },
           data: {
-            label: "Source",
+            label: "데이터 소스 (Source)",
             node_type: "source",
             config: { dataset_id: 7, version_strategy: "fixed", dataset_version_id: 11 },
           },
@@ -377,7 +392,7 @@ describe("preparationHelpers", () => {
           type: PREPARATION_FLOW_NODE_TYPE,
           position: { x: 320, y: 200 },
           data: {
-            label: "Join",
+            label: "데이터 연결 (Join)",
             node_type: "join",
             config: { how: "inner", left_on: ["a"], right_on: ["b"] },
           },

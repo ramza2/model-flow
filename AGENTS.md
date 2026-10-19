@@ -186,3 +186,16 @@ Phase 1.5 is split into reviewable slices:
 4. `1.5-D` — Operations & overview UX
 
 Phase 1.5 normalizes the current dark engineering UI; the broad Figma-driven final visual redesign remains Phase 9.
+
+The Phase 1.5 “English product-language baseline” rule above is **historical** for that phase’s delivery. For **post-GA** frontend UX work, follow the section below instead when updating user-visible copy.
+
+### Post-GA frontend UX (Korean-first copy)
+
+Applies to incremental, screen-scoped UX improvements after v1.0 GA packaging. Does not replace Phase 1.5 IA/design docs as presentation architecture sources.
+
+- Prefer **한국어** for user-visible labels, actions, empty states, and help copy.
+- For important MLOps / Data terms, show **`한국어 (English)`** (reuse `TermLabel` when practical).
+- When a concept is hard for beginners, use the existing `TermLabel` / `HelpTip` / `UI_HELP` patterns rather than inventing a parallel help system.
+- Do **not** translate internal contracts: API field names, node types, operator/operation values, `data-testid`, persisted config/schema, logs, or raw backend error text.
+- Change display copy only unless the task explicitly changes behavior; apply screen-by-screen without wholesale rewrites.
+- Preserve routes, RBAC/read-only, unsaved-change guards, validation/preview/run/save semantics, and regression coverage.

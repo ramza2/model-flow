@@ -19,6 +19,24 @@ export const UI_HELP = {
     "알고리즘의 학습 동작을 조정하는 세부 설정입니다. 잘 모르는 경우 기본값으로 시작한 뒤 실험 비교로 조정하는 것이 좋습니다.",
   savedSplit:
     "미리 저장한 학습/검증/테스트 행 구성을 재사용합니다. 동일한 데이터 분할로 여러 모델을 비교할 때 사용합니다.",
+  preparationJoin:
+    "두 입력을 같은 키 값으로 맞춰 가로로 연결합니다. LEFT·RIGHT 포트에 각각 한 개의 입력을 연결하세요.",
+  preparationUnion:
+    "여러 입력의 행을 세로로 이어 붙입니다. strict는 컬럼 이름·순서가 같아야 하고, align_by_name은 이름 기준으로 맞춥니다.",
+  preparationCast:
+    "선택한 컬럼의 자료형(정수·실수·문자열·불리언·날짜시간)을 변환합니다. 변환할 수 없는 값은 Preview/Run에서 실패할 수 있습니다.",
+  preparationDerived:
+    "새 컬럼을 만들어 결과에 추가합니다. ‘새 컬럼 이름’은 결과로 붙일 이름이고, operand의 Column은 기존 입력 데이터에 있는 컬럼명을 정확히 적어야 합니다. 없거나 오타인 컬럼명은 Preview/Run 실패 원인이 됩니다. Literal은 컬럼이 아니라 직접 지정한 고정값입니다.",
+  preparationGroupBy:
+    "같은 그룹 키를 가진 행을 묶고, 합계·평균·최소·최대·개수 같은 집계 값을 계산합니다.",
+  preparationUnpivot:
+    "여러 컬럼을 ‘변수 이름 / 값’ 형태의 긴 행으로 펼칩니다. 식별자 컬럼은 그대로 두고, 펼칠 컬럼만 지정합니다.",
+  preparationPivot:
+    "행에 있던 값을 가로 컬럼으로 펼치고 집계합니다. 설정한 pivot 값만 출력 컬럼이 됩니다.",
+  preparationLag:
+    "시간 순으로 정렬한 뒤, 이전 행의 값을 새 컬럼으로 만듭니다. 이력이 부족한 앞쪽 행은 비어 있을 수 있습니다.",
+  preparationRollingWindow:
+    "과거 구간만 사용해 이동 평균·합계 등 집계 피처를 만듭니다. 현재 행은 포함하지 않으며, 창이 부족한 행은 비어 있을 수 있습니다.",
 } as const;
 
 export function trainingTaskLabel(value?: string | null): string {
@@ -47,4 +65,30 @@ export function splitStrategyLabel(value?: string | null): string {
   return String(value || "random").toLowerCase() === "time"
     ? "시간 순서 (Time ordered)"
     : "무작위 (Random)";
+}
+
+/** Display-only labels for derived_column operations. Persisted values stay English. */
+export function derivedOperationLabel(value?: string | null): string {
+  switch (String(value || "")) {
+    case "add":
+      return "더하기 (add)";
+    case "subtract":
+      return "빼기 (subtract)";
+    case "multiply":
+      return "곱하기 (multiply)";
+    case "divide":
+      return "나누기 (divide)";
+    case "concat":
+      return "문자열 이어붙이기 (concat)";
+    case "regex_extract":
+      return "정규식 추출 (regex_extract)";
+    case "datetime_parse":
+      return "날짜시간 파싱 (datetime_parse)";
+    case "datetime_add_hours":
+      return "시간 더하기 (datetime_add_hours)";
+    case "datetime_format":
+      return "날짜시간 포맷 (datetime_format)";
+    default:
+      return value || "—";
+  }
 }

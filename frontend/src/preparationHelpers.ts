@@ -94,20 +94,20 @@ export type PreparationLibraryGroup = {
 const SOURCE_COMBINE_ITEMS: PreparationLibraryItem[] = [
   {
     type: "source",
-    label: "Source",
-    description: "Load a project dataset version into the graph.",
+    label: "데이터 소스 (Source)",
+    description: "프로젝트 데이터셋 버전을 그래프에 불러옵니다.",
     icon: "▤",
   },
   {
     type: "join",
-    label: "Join",
-    description: "Join two inputs on matching keys.",
+    label: "데이터 연결 (Join)",
+    description: "같은 키로 두 입력을 가로로 연결합니다.",
     icon: "⋈",
   },
   {
     type: "union",
-    label: "Union",
-    description: "Stack rows from two or more inputs.",
+    label: "행 합치기 (Union)",
+    description: "둘 이상 입력의 행을 세로로 이어 붙입니다.",
     icon: "⋃",
   },
 ];
@@ -115,80 +115,80 @@ const SOURCE_COMBINE_ITEMS: PreparationLibraryItem[] = [
 const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
   {
     type: "select",
-    label: "Select",
-    description: "Keep only the listed columns.",
+    label: "컬럼 선택 (Select)",
+    description: "지정한 컬럼만 남깁니다.",
     icon: "⊂",
   },
   {
     type: "drop",
-    label: "Drop",
-    description: "Remove the listed columns.",
+    label: "컬럼 삭제 (Drop)",
+    description: "지정한 컬럼을 제거합니다.",
     icon: "⊖",
   },
   {
     type: "rename",
-    label: "Rename",
-    description: "Rename columns with old = new mappings.",
+    label: "컬럼 이름 변경 (Rename)",
+    description: "old = new 형식으로 컬럼 이름을 바꿉니다.",
     icon: "✎",
   },
   {
     type: "filter",
-    label: "Filter",
-    description: "Keep rows that match conditions.",
+    label: "행 필터 (Filter)",
+    description: "조건에 맞는 행만 남깁니다.",
     icon: "▽",
   },
   {
     type: "cast",
-    label: "Cast",
-    description: "Convert column types.",
+    label: "자료형 변환 (Cast)",
+    description: "컬럼의 자료형을 변환합니다.",
     icon: "Τ",
   },
   {
     type: "deduplicate",
-    label: "Deduplicate",
-    description: "Drop duplicate rows by key columns.",
+    label: "중복 제거 (Deduplicate)",
+    description: "키 컬럼 기준으로 중복 행을 제거합니다.",
     icon: "≡",
   },
   {
     type: "fill_constant",
-    label: "Fill",
-    description: "Fill missing values with constants.",
+    label: "결측값 채우기 (Fill)",
+    description: "비어 있는 값을 상수로 채웁니다.",
     icon: "◈",
   },
   {
     type: "derived_column",
-    label: "Derived",
-    description: "Add a column from an arithmetic or concat expression.",
+    label: "파생 컬럼 (Derived)",
+    description: "계산식·문자열 조합으로 새 컬럼을 만듭니다.",
     icon: "ƒ",
   },
   {
     type: "group_by",
-    label: "Group By",
-    description: "Group rows and calculate aggregate values.",
+    label: "그룹 집계 (Group By)",
+    description: "행을 그룹으로 묶어 집계 값을 계산합니다.",
     icon: "Σ",
   },
   {
     type: "unpivot",
-    label: "Unpivot",
-    description: "Turn selected columns into variable/value rows.",
+    label: "언피벗 (Unpivot)",
+    description: "선택한 컬럼을 변수/값 행으로 펼칩니다.",
     icon: "⇅",
   },
   {
     type: "pivot",
-    label: "Pivot",
-    description: "Turn configured row values into aggregate columns.",
+    label: "피벗 (Pivot)",
+    description: "행 값을 집계 컬럼으로 펼칩니다.",
     icon: "⟷",
   },
   {
     type: "lag",
-    label: "Lag",
-    description: "Create features from earlier rows in time order.",
+    label: "이전값 생성 (Lag)",
+    description: "시간 순으로 이전 행 값을 새 컬럼으로 만듭니다.",
     icon: "⟲",
   },
   {
     type: "rolling_window",
-    label: "Rolling Window",
-    description: "Create past-only rolling aggregate features.",
+    label: "이동 집계 (Rolling Window)",
+    description: "과거 구간만 사용하는 이동 집계 피처를 만듭니다.",
     icon: "▥",
   },
 ];
@@ -196,8 +196,8 @@ const TRANSFORM_ITEMS: PreparationLibraryItem[] = [
 const OUTPUT_ITEMS: PreparationLibraryItem[] = [
   {
     type: "output",
-    label: "Output",
-    description: "Final prepared dataset for this graph.",
+    label: "결과 데이터 (Output)",
+    description: "이 그래프의 최종 준비 데이터셋입니다.",
     icon: "◎",
   },
 ];
@@ -210,9 +210,9 @@ export const PREPARATION_NODE_LIBRARY: PreparationLibraryItem[] = [
 ];
 
 export const PREPARATION_NODE_LIBRARY_GROUPS: PreparationLibraryGroup[] = [
-  { id: "sources", label: "Sources & Combine", items: SOURCE_COMBINE_ITEMS },
-  { id: "transform", label: "Transform", items: TRANSFORM_ITEMS },
-  { id: "output", label: "Output", items: OUTPUT_ITEMS },
+  { id: "sources", label: "소스 · 결합", items: SOURCE_COMBINE_ITEMS },
+  { id: "transform", label: "변환", items: TRANSFORM_ITEMS },
+  { id: "output", label: "결과", items: OUTPUT_ITEMS },
 ];
 
 export type PreparationFlowNodeData = {

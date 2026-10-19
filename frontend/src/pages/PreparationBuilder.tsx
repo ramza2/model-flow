@@ -40,7 +40,16 @@ import {
   type DatasetVersion,
 } from "../api";
 import { useAuth } from "../AuthContext";
-import { ErrorNotice, Loading, StatusBadge, SuccessNotice, formatDate } from "../components";
+import {
+  ErrorNotice,
+  HelpTip,
+  Loading,
+  StatusBadge,
+  SuccessNotice,
+  TermLabel,
+  formatDate,
+} from "../components";
+import { UI_HELP, derivedOperationLabel } from "../uiTerminology";
 import {
   CAST_TYPES,
   DERIVED_OPERATIONS,
@@ -273,7 +282,7 @@ export default function PreparationBuilder() {
       setPreview(null);
       setError("");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Preparation could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "준비 작업을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -567,7 +576,7 @@ export default function PreparationBuilder() {
         { method: "POST", body: JSON.stringify({ graph }) },
       );
       setDirty(false);
-      setSuccess("Version saved.");
+      setSuccess("버전을 저장했습니다.");
       setPrepVersions((rows) => {
         const without = rows.filter((row) => row.id !== version.id);
         return [...without, version].sort((a, b) => b.version - a.version);
@@ -582,7 +591,7 @@ export default function PreparationBuilder() {
           : prev,
       );
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Version could not be saved.");
+      setError(reason instanceof Error ? reason.message : "버전을 저장하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -599,7 +608,7 @@ export default function PreparationBuilder() {
       );
       setValidation(result);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Validation failed.");
+      setError(reason instanceof Error ? reason.message : "검증에 실패했습니다.");
     } finally {
       setBusy("");
     }
@@ -632,7 +641,7 @@ export default function PreparationBuilder() {
       setPreview(result);
     } catch (reason) {
       if (controller.signal.aborted || previewAbortRef.current !== controller) return;
-      setError(reason instanceof Error ? reason.message : "Preview failed.");
+      setError(reason instanceof Error ? reason.message : "미리보기에 실패했습니다.");
       setPreview(null);
     } finally {
       // Only the active controller may clear preview busy — never a superseded request.
@@ -666,12 +675,12 @@ export default function PreparationBuilder() {
       );
       setSuccess(
         datasetId == null
-          ? "Output dataset cleared."
-          : "Output dataset updated.",
+          ? "결과 데이터셋 연결을 해제했습니다."
+          : "결과 데이터셋을 업데이트했습니다.",
       );
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Output dataset could not be updated.",
+        reason instanceof Error ? reason.message : "결과 데이터셋을 업데이트하지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -682,7 +691,7 @@ export default function PreparationBuilder() {
     if (!canWrite) return;
     const name = newOutputName.trim();
     if (!name) {
-      setError("Dataset name is required.");
+      setError("데이터셋 이름이 필요합니다.");
       return;
     }
     setBusy("output-create");
@@ -713,10 +722,10 @@ export default function PreparationBuilder() {
       });
       setNewOutputName("");
       setNewOutputDescription("");
-      setSuccess(`Output dataset “${result.output_dataset.name}” created.`);
+      setSuccess(`결과 데이터셋 “${result.output_dataset.name}”을(를) 만들었습니다.`);
     } catch (reason) {
       setError(
-        reason instanceof Error ? reason.message : "Output dataset could not be created.",
+        reason instanceof Error ? reason.message : "결과 데이터셋을 만들지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -740,10 +749,10 @@ export default function PreparationBuilder() {
         { method: "POST" },
       );
       setSuccessRun(queued);
-      setSuccess("Preparation run queued.");
+      setSuccess("준비 실행이 대기열에 등록되었습니다.");
       await loadRuns();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Preparation run failed to start.");
+      setError(reason instanceof Error ? reason.message : "준비 실행을 시작하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -759,10 +768,10 @@ export default function PreparationBuilder() {
         { method: "POST" },
       );
       setSuccessRun(queued);
-      setSuccess(`Run #${runId} queued.`);
+      setSuccess(`실행 #${runId}이(가) 대기열에 등록되었습니다.`);
       await loadRuns();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Run could not be executed.");
+      setError(reason instanceof Error ? reason.message : "실행하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -780,32 +789,32 @@ export default function PreparationBuilder() {
       );
       setRuns((rows) => rows.map((row) => (row.id === runId ? { ...row, ...detail } : row)));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Run details could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "실행 상세를 불러오지 못했습니다.");
     }
   }
 
   function onBack(event: MouseEvent<HTMLAnchorElement>) {
     if (!dirty) return;
-    if (!window.confirm("You have unsaved changes. Leave without saving?")) {
+    if (!window.confirm("저장되지 않은 변경이 있습니다. 저장하지 않고 나가시겠습니까?")) {
       event.preventDefault();
     }
   }
 
   const runDisabledReason = dirty
-    ? "Save first"
+    ? "먼저 버전을 저장하세요"
     : preparation?.output_dataset_id == null
-      ? "Configure an output dataset before running"
+      ? "실행 전에 결과 데이터셋을 설정하세요"
       : busy
-        ? "Busy"
+        ? "처리 중"
         : "";
   const runDisabled = Boolean(runDisabledReason) || !canWrite;
 
-  if (loading) return <Loading label="Loading preparation" />;
+  if (loading) return <Loading label="준비 그래프 불러오는 중" />;
   if (!preparation) {
     return (
       <div>
-        <ErrorNotice message={error || "Preparation not found."} />
-        <Link to={`/projects/${projectId}/preparations`}>Back to preparations</Link>
+        <ErrorNotice message={error || "준비 작업을 찾을 수 없습니다."} />
+        <Link to={`/projects/${projectId}/preparations`}>준비 목록으로</Link>
       </div>
     );
   }
@@ -820,13 +829,13 @@ export default function PreparationBuilder() {
             onClick={onBack}
             data-testid="preparation-back"
           >
-            ← Preparations
+            ← 준비 목록
           </Link>
           <div>
-            <span className="eyebrow">Dataset preparation</span>
+            <span className="eyebrow">데이터 준비 (Dataset preparation)</span>
             <h1>{preparation.name}</h1>
             <p className="muted builder-header-subcopy">
-              {preparation.description || "Visual dataset preparation graph."}
+              {preparation.description || "시각적 데이터셋 준비 그래프입니다."}
               {" · "}
               <span className="version-chip">v{preparation.latest_version}</span>
             </p>
@@ -840,7 +849,7 @@ export default function PreparationBuilder() {
             disabled={busy !== ""}
             onClick={() => void runValidate()}
           >
-            {busy === "validate" ? "Validating…" : "Validate"}
+            {busy === "validate" ? "검증 중…" : "검증 (Validate)"}
           </button>
           <button
             type="button"
@@ -849,7 +858,7 @@ export default function PreparationBuilder() {
             disabled={busy !== ""}
             onClick={() => void runPreview()}
           >
-            {busy === "preview" ? "Previewing…" : "Preview"}
+            {busy === "preview" ? "미리보기 중…" : "미리보기 (Preview)"}
           </button>
           {canWrite && (
             <>
@@ -860,7 +869,7 @@ export default function PreparationBuilder() {
                 disabled={busy !== ""}
                 onClick={() => void saveVersion()}
               >
-                {busy === "save" ? "Saving…" : "Save version"}
+                {busy === "save" ? "저장 중…" : "버전 저장"}
               </button>
               <button
                 type="button"
@@ -870,7 +879,7 @@ export default function PreparationBuilder() {
                 title={runDisabledReason || undefined}
                 onClick={() => void runPreparation()}
               >
-                {busy === "run" ? "Starting…" : "Run preparation"}
+                {busy === "run" ? "시작 중…" : "준비 실행"}
               </button>
             </>
           )}
@@ -884,9 +893,9 @@ export default function PreparationBuilder() {
       <SuccessNotice message={success} />
       {dirty ? (
         <div className="builder-state-band is-dirty" data-testid="preparation-dirty-hint" role="status">
-          <span className="builder-state-badge">Unsaved changes</span>
+          <span className="builder-state-badge">저장되지 않은 변경</span>
           <span className="builder-state-copy">
-            Save a version to keep your graph. Changes are not auto-saved.
+            그래프를 유지하려면 버전을 저장하세요. 자동 저장되지 않습니다.
           </span>
         </div>
       ) : null}
@@ -897,9 +906,9 @@ export default function PreparationBuilder() {
           role="status"
         >
           <div className="preparation-success-main">
-            <span className="eyebrow">Preparation succeeded</span>
+            <span className="eyebrow">준비 실행 성공</span>
             <h2>
-              Output Dataset
+              결과 데이터셋
               {successOutputDataset
                 ? ` · ${successOutputDataset.name}${successOutputDataset.latest_version > 0 ? ` · v${successOutputDataset.latest_version}` : ""}`
                 : successRun.output_dataset_id != null
@@ -911,23 +920,23 @@ export default function PreparationBuilder() {
               data-testid="preparation-success-summary"
             >
               <span>
-                <small>Run</small>
+                <small>실행</small>
                 <strong>#{successRun.id}</strong>
               </span>
               <span>
-                <small>Rows</small>
+                <small>행</small>
                 <strong data-testid="preparation-success-rows">
                   {successOutputDataset ? successOutputDataset.row_count.toLocaleString() : "—"}
                 </strong>
               </span>
               <span>
-                <small>Columns</small>
+                <small>컬럼</small>
                 <strong data-testid="preparation-success-columns">
                   {successOutputDataset ? successOutputDataset.column_count.toLocaleString() : "—"}
                 </strong>
               </span>
               <span>
-                <small>Duration</small>
+                <small>소요 시간</small>
                 <strong data-testid="preparation-success-duration">
                   {formatRunDuration(successRun)}
                 </strong>
@@ -941,7 +950,7 @@ export default function PreparationBuilder() {
                 to={`/projects/${projectId}/datasets/${successRun.output_dataset_id}`}
                 data-testid="preparation-open-output-dataset"
               >
-                Open dataset
+                데이터셋 열기
               </Link>
             )}
             {canWrite &&
@@ -952,7 +961,7 @@ export default function PreparationBuilder() {
                   to={`/projects/${projectId}/jobs/new?datasetId=${successRun.output_dataset_id}&datasetVersionId=${successRun.output_dataset_version_id}`}
                   data-testid="preparation-train-this-result"
                 >
-                  Train this result
+                  이 결과로 학습
                 </Link>
               )}
           </div>
@@ -966,8 +975,8 @@ export default function PreparationBuilder() {
       >
         {canWrite && (
           <aside className="preparation-node-library panel">
-            <span className="eyebrow">Node library</span>
-            <p className="form-hint">Click a node type to add it to the canvas.</p>
+            <span className="eyebrow">노드 라이브러리</span>
+            <p className="form-hint">노드 유형을 클릭하면 캔버스에 추가됩니다.</p>
             {PREPARATION_NODE_LIBRARY_GROUPS.map((group) => (
               <div
                 key={group.id}
@@ -1005,10 +1014,10 @@ export default function PreparationBuilder() {
             <div className="preparation-empty-canvas">
               {canWrite ? (
                 <>
-                  <h2>Start with a source</h2>
+                  <h2>데이터 소스부터 시작하세요</h2>
                   <p className="muted">
-                    Add dataset sources, then transform, join, or union them into a single
-                    output.
+                    데이터 소스를 추가한 뒤 변환·연결(Join)·행 합치기(Union)로 하나의 결과
+                    데이터를 만듭니다.
                   </p>
                   <button
                     className="btn"
@@ -1016,13 +1025,13 @@ export default function PreparationBuilder() {
                     onClick={() => addNodeOfType("source")}
                     data-testid="preparation-add-source-empty"
                   >
-                    Add Source
+                    데이터 소스 추가
                   </button>
                 </>
               ) : (
                 <>
-                  <h2>This preparation version contains no nodes.</h2>
-                  <p className="muted">There is nothing to inspect on this empty graph.</p>
+                  <h2>이 준비 버전에는 노드가 없습니다.</h2>
+                  <p className="muted">빈 그래프에서 확인할 설정이 없습니다.</p>
                 </>
               )}
             </div>
@@ -1055,16 +1064,16 @@ export default function PreparationBuilder() {
         <aside className="preparation-inspector panel" data-testid="preparation-inspector">
           {!selectedNode ? (
             <>
-              <span className="eyebrow">Preparation</span>
+              <span className="eyebrow">데이터 준비</span>
               <h2>{preparation.name}</h2>
-              <p className="muted">{preparation.description || "No description yet."}</p>
+              <p className="muted">{preparation.description || "설명이 없습니다."}</p>
               <dl className="preparation-inspector-meta">
                 <div>
-                  <dt>Version</dt>
+                  <dt>버전</dt>
                   <dd>v{preparation.latest_version}</dd>
                 </div>
                 <div>
-                  <dt>Nodes</dt>
+                  <dt>노드</dt>
                   <dd>{nodes.length}</dd>
                 </div>
               </dl>
@@ -1083,19 +1092,19 @@ export default function PreparationBuilder() {
               />
               <p className="form-hint">
                 {canWrite
-                  ? "Select a node on the canvas to configure it, or add one from the node library."
-                  : "Select a node on the canvas to inspect its configuration."}
+                  ? "캔버스에서 노드를 선택해 설정하거나, 노드 라이브러리에서 추가하세요."
+                  : "캔버스에서 노드를 선택하면 설정을 확인할 수 있습니다."}
               </p>
             </>
           ) : (
             <>
-              <span className="eyebrow">Node</span>
+              <span className="eyebrow">노드</span>
               <h2>{selectedNode.data.label}</h2>
               <p className="form-hint" data-testid="preparation-node-type">
-                Type: {labelForPreparationType(selectedNode.data.node_type)}
+                유형: {labelForPreparationType(selectedNode.data.node_type)}
               </p>
               <small className="muted" data-testid="preparation-node-id">
-                Node id: {selectedNode.id}
+                노드 id: {selectedNode.id}
               </small>
               <hr />
               <span className="eyebrow">Configuration</span>
@@ -1125,7 +1134,7 @@ export default function PreparationBuilder() {
               {selectedNode.data.node_type === "select" && (
                 <ColumnsInspector
                   testId="preparation-select-inspector"
-                  label="Columns to keep"
+                  label="남길 컬럼"
                   columns={selectedNode.data.config.columns}
                   canWrite={canWrite}
                   onChange={(columns) =>
@@ -1136,7 +1145,7 @@ export default function PreparationBuilder() {
               {selectedNode.data.node_type === "drop" && (
                 <ColumnsInspector
                   testId="preparation-drop-inspector"
-                  label="Columns to drop"
+                  label="삭제할 컬럼"
                   columns={selectedNode.data.config.columns}
                   canWrite={canWrite}
                   onChange={(columns) =>
@@ -1254,7 +1263,7 @@ export default function PreparationBuilder() {
                     data-testid="preparation-remove-node"
                     onClick={removeSelected}
                   >
-                    Remove node
+                    노드 제거
                   </button>
                 </>
               )}
@@ -1284,26 +1293,26 @@ export default function PreparationBuilder() {
       >
         <div className="panel-title">
           <div>
-            <span className="eyebrow">Runs</span>
-            <h2>Run history</h2>
+            <span className="eyebrow">실행</span>
+            <h2>실행 기록</h2>
           </div>
         </div>
         {runs.length === 0 ? (
           <p className="muted" data-testid="preparation-run-history-empty">
-            No preparation runs yet.
+            아직 준비 실행 기록이 없습니다.
           </p>
         ) : (
           <div className="preparation-run-table-wrap">
             <table data-testid="preparation-run-table">
               <thead>
                 <tr>
-                  <th>Run</th>
-                  <th>Recipe version</th>
-                  <th>Status</th>
-                  <th>Started</th>
-                  <th>Finished</th>
-                  <th>Output</th>
-                  <th>Actions</th>
+                  <th>실행</th>
+                  <th>레시피 버전</th>
+                  <th>상태</th>
+                  <th>시작</th>
+                  <th>종료</th>
+                  <th>결과</th>
+                  <th>작업</th>
                 </tr>
               </thead>
               <tbody>
@@ -1334,7 +1343,7 @@ export default function PreparationBuilder() {
                                 className="preparation-latest-run-badge"
                                 data-testid={`preparation-run-latest-${run.id}`}
                               >
-                                Latest
+                                최신
                               </span>
                             )}
                           </div>
@@ -1359,7 +1368,7 @@ export default function PreparationBuilder() {
                               disabled={busy !== ""}
                               onClick={() => void executeExistingRun(run.id)}
                             >
-                              Execute
+                              실행
                             </button>
                           )}
                           {status === "succeeded" && run.output_dataset_id != null && (
@@ -1391,7 +1400,7 @@ export default function PreparationBuilder() {
                               aria-expanded={expandedRunId === run.id}
                               onClick={() => void expandRun(run.id)}
                             >
-                              {expandedRunId === run.id ? "Hide error" : "Show error"}
+                              {expandedRunId === run.id ? "오류 숨기기" : "오류 보기"}
                             </button>
                           )}
                         </td>
@@ -1412,7 +1421,7 @@ export default function PreparationBuilder() {
         )}
         {outputDataset && (
           <p className="form-hint" data-testid="preparation-output-dataset-hint">
-            Current output dataset: {outputDataset.name} (#{outputDataset.id})
+            현재 결과 데이터셋: {outputDataset.name} (#{outputDataset.id})
           </p>
         )}
       </section>
@@ -1423,16 +1432,16 @@ export default function PreparationBuilder() {
             <div className="preparation-validation" data-testid="preparation-validation">
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Validation</span>
+                  <span className="eyebrow">검증 (Validation)</span>
                   <h2>
                     {validation.valid
-                      ? "Graph is valid"
-                      : `${validation.errors.length} issue${validation.errors.length === 1 ? "" : "s"}`}
+                      ? "그래프가 유효합니다"
+                      : `문제 ${validation.errors.length}건`}
                   </h2>
                 </div>
               </div>
               {validation.valid ? (
-                <p className="muted">Validation passed.</p>
+                <p className="muted">검증을 통과했습니다.</p>
               ) : (
                 <ul className="preparation-validation-list">
                   {validation.errors.map((message) => (
@@ -1454,10 +1463,10 @@ export default function PreparationBuilder() {
             <div className="preparation-preview" data-testid="preparation-preview-panel">
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Preview</span>
+                  <span className="eyebrow">미리보기 (Preview)</span>
                   <h2>
-                    {preview.node_id ? `Node ${preview.node_id}` : "Preview"} ·{" "}
-                    {preview.row_count} row{preview.row_count === 1 ? "" : "s"}
+                    {preview.node_id ? `노드 ${preview.node_id}` : "미리보기"} ·{" "}
+                    {preview.row_count}행
                   </h2>
                 </div>
               </div>
@@ -1470,7 +1479,7 @@ export default function PreparationBuilder() {
                   {(preview.warnings && preview.warnings.length > 0
                     ? preview.warnings
                     : [
-                        "Preview uses stored DatasetVersion sample rows and may not represent the full dataset.",
+                        "미리보기는 저장된 DatasetVersion 샘플 행을 사용하므로 전체 데이터를 대표하지 않을 수 있습니다.",
                       ]
                   ).map((message) => (
                     <p key={message}>{message}</p>
@@ -1483,14 +1492,14 @@ export default function PreparationBuilder() {
                   role="status"
                   data-testid="preparation-preview-empty-join"
                 >
-                  Sampled preview found no matching join rows. Preview samples each source
-                  independently, so exact join keys may be absent even when the full preparation
-                  run succeeds. Run preparation to evaluate the complete datasets.
+                  샘플 미리보기에서 일치하는 연결(Join) 행을 찾지 못했습니다. 미리보기는 각
+                  소스를 독립적으로 샘플링하므로, 전체 준비 실행은 성공할 때도 조인 키가
+                  샘플에 없을 수 있습니다. 전체 데이터셋으로 확인하려면 준비 실행을 사용하세요.
                 </div>
               )}
               <div className="preparation-preview-table-wrap">
                 {preview.columns.length === 0 ? (
-                  <p className="muted">No columns in preview result.</p>
+                  <p className="muted">미리보기 결과에 컬럼이 없습니다.</p>
                 ) : (
                   <table data-testid="preparation-preview-table">
                     <thead>
@@ -1577,19 +1586,19 @@ function OutputDatasetPanel({
       className={`preparation-output-dataset${compact ? " is-compact" : ""}`}
       data-testid="preparation-output-dataset"
     >
-      <span className="eyebrow">Output dataset</span>
+      <span className="eyebrow">결과 데이터셋 (Output)</span>
       {!configured && (
         <p className="muted" data-testid="preparation-output-empty">
-          No output dataset configured.
+          결과 데이터셋이 아직 설정되지 않았습니다.
         </p>
       )}
       {!configured && (
         <p className="form-hint">
-          Choose an existing dataset or create a new one before running.
+          실행 전에 기존 데이터셋을 선택하거나 새로 만드세요.
         </p>
       )}
       <label>
-        Existing dataset
+        기존 데이터셋
         <select
           data-testid="preparation-output-select"
           disabled={!canWrite || busy.startsWith("output")}
@@ -1603,7 +1612,7 @@ function OutputDatasetPanel({
             onSelect(value ? Number(value) : null);
           }}
         >
-          <option value="">Select dataset…</option>
+          <option value="">데이터셋 선택…</option>
           {datasets.map((dataset) => {
             const usedAsSource = usedSourceDatasetIds.has(dataset.id);
             return (
@@ -1613,7 +1622,7 @@ function OutputDatasetPanel({
                 disabled={usedAsSource}
               >
                 {dataset.name}
-                {usedAsSource ? " (used as source)" : ""}
+                {usedAsSource ? " (소스로 사용 중)" : ""}
               </option>
             );
           })}
@@ -1621,14 +1630,14 @@ function OutputDatasetPanel({
       </label>
       {canWrite && usedSourceDatasetIds.size > 0 && (
         <p className="form-hint" data-testid="preparation-output-source-warn">
-          Datasets used as graph sources are disabled to avoid writing over inputs.
+          그래프 소스로 쓰인 데이터셋은 입력을 덮어쓰지 않도록 선택할 수 없습니다.
         </p>
       )}
       {canWrite && (
         <div className="preparation-output-create" data-testid="preparation-output-create">
-          <span className="eyebrow">Create new</span>
+          <span className="eyebrow">새로 만들기</span>
           <label>
-            Name
+            이름
             <input
               data-testid="preparation-output-name"
               value={newOutputName}
@@ -1638,7 +1647,7 @@ function OutputDatasetPanel({
             />
           </label>
           <label>
-            Description
+            설명
             <input
               data-testid="preparation-output-description"
               value={newOutputDescription}
@@ -1653,7 +1662,7 @@ function OutputDatasetPanel({
             disabled={busy !== "" || !newOutputName.trim()}
             onClick={onCreate}
           >
-            {busy === "output-create" ? "Creating…" : "Create output dataset"}
+            {busy === "output-create" ? "만드는 중…" : "결과 데이터셋 만들기"}
           </button>
         </div>
       )}
@@ -1671,7 +1680,7 @@ function RunDetailPanel({ run }: { run: DatasetPreparationRun }) {
       )}
       {run.inputs && run.inputs.length > 0 && (
         <div data-testid={`preparation-run-inputs-${run.id}`}>
-          <strong>Inputs</strong>
+          <strong>입력</strong>
           <ul>
             {run.inputs.map((input) => (
               <li key={input.id}>
@@ -1690,7 +1699,7 @@ function RunDetailPanel({ run }: { run: DatasetPreparationRun }) {
           {run.logs}
         </pre>
       ) : (
-        <p className="muted">No logs yet.</p>
+        <p className="muted">아직 로그가 없습니다.</p>
       )}
     </div>
   );
@@ -1734,7 +1743,7 @@ function SourceInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-source-inspector">
       <label>
-        Dataset
+        <TermLabel ko="데이터셋" en="Dataset" />
         <select
           data-testid="preparation-source-dataset"
           disabled={!canWrite}
@@ -1754,7 +1763,7 @@ function SourceInspector({
             onChange(next);
           }}
         >
-          <option value="">Select dataset…</option>
+          <option value="">데이터셋 선택…</option>
           {datasets.map((dataset) => (
             <option key={dataset.id} value={dataset.id}>
               {dataset.name}
@@ -1763,7 +1772,7 @@ function SourceInspector({
         </select>
       </label>
       <label>
-        Version strategy
+        <TermLabel ko="버전 전략" en="Version strategy" />
         <select
           data-testid="preparation-source-strategy"
           disabled={!canWrite}
@@ -1782,13 +1791,13 @@ function SourceInspector({
             onChange(next);
           }}
         >
-          <option value="latest">Latest</option>
-          <option value="fixed">Fixed</option>
+          <option value="latest">최신 (Latest)</option>
+          <option value="fixed">고정 (Fixed)</option>
         </select>
       </label>
       {strategy === "fixed" && (
         <label>
-          Dataset version
+          <TermLabel ko="데이터셋 버전" en="Dataset version" />
           <select
             data-testid="preparation-source-version"
             disabled={!canWrite}
@@ -1804,7 +1813,7 @@ function SourceInspector({
               });
             }}
           >
-            <option value="">Select version…</option>
+            <option value="">버전 선택…</option>
             {versions.map((version) => (
               <option key={version.id} value={version.id}>
                 v{version.version} · {version.original_filename}
@@ -1817,13 +1826,13 @@ function SourceInspector({
         className="preparation-known-columns"
         data-testid="preparation-source-known-columns"
       >
-        <span className="preparation-known-columns-label">Known columns</span>
+        <span className="preparation-known-columns-label">알려진 컬럼</span>
         {!knownColumnsReady ? (
           <p className="muted preparation-known-columns-empty">
-            Select a dataset/version to inspect columns.
+            컬럼을 보려면 데이터셋/버전을 선택하세요.
           </p>
         ) : !knownColumns || knownColumns.length === 0 ? (
-          <p className="muted preparation-known-columns-empty">No columns available.</p>
+          <p className="muted preparation-known-columns-empty">사용 가능한 컬럼이 없습니다.</p>
         ) : (
           <ul className="preparation-known-columns-list">
             {knownColumns.map((column) => (
@@ -1848,10 +1857,11 @@ function JoinInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-join-inspector">
       <p className="muted preparation-inspector-hint" data-testid="preparation-join-hint">
-        Connect one edge to LEFT and one edge to RIGHT.
+        LEFT 포트와 RIGHT 포트에 각각 하나의 입력을 연결하세요.
+        <HelpTip text={UI_HELP.preparationJoin} />
       </p>
       <label>
-        How
+        <TermLabel ko="연결 방식" en="How" help={UI_HELP.preparationJoin} />
         <select
           data-testid="preparation-join-how"
           disabled={!canWrite}
@@ -1865,7 +1875,7 @@ function JoinInspector({
         </select>
       </label>
       <label>
-        Left keys
+        <TermLabel ko="왼쪽 키" en="Left keys" />
         <input
           data-testid="preparation-join-left-on"
           disabled={!canWrite}
@@ -1875,10 +1885,10 @@ function JoinInspector({
             onChange({ ...config, left_on: parseKeyList(event.target.value) })
           }
         />
-        <small>Comma-separated column names from the left input.</small>
+        <small>왼쪽 입력의 컬럼명을 쉼표로 구분하세요.</small>
       </label>
       <label>
-        Right keys
+        <TermLabel ko="오른쪽 키" en="Right keys" />
         <input
           data-testid="preparation-join-right-on"
           disabled={!canWrite}
@@ -1888,7 +1898,7 @@ function JoinInspector({
             onChange({ ...config, right_on: parseKeyList(event.target.value) })
           }
         />
-        <small>Comma-separated column names from the right input.</small>
+        <small>오른쪽 입력의 컬럼명을 쉼표로 구분하세요.</small>
       </label>
     </div>
   );
@@ -1907,7 +1917,7 @@ function UnionInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-union-inspector">
       <label>
-        Mode
+        <TermLabel ko="모드" en="Mode" help={UI_HELP.preparationUnion} />
         <select
           data-testid="preparation-union-mode"
           disabled={!canWrite}
@@ -1920,8 +1930,8 @@ function UnionInspector({
       </label>
       <p className="muted preparation-inspector-hint" data-testid="preparation-union-hint">
         {mode === "align_by_name"
-          ? "Matches columns by name and fills missing values with null."
-          : "Requires identical column names and order."}
+          ? "컬럼 이름으로 맞추고 없는 값은 null로 채웁니다."
+          : "컬럼 이름과 순서가 동일해야 합니다."}
       </p>
     </div>
   );
@@ -1951,7 +1961,7 @@ function ColumnsInspector({
           placeholder="col_a, col_b"
           onChange={(event) => onChange(parseKeyList(event.target.value))}
         />
-        <small>Comma-separated column names.</small>
+        <small>컬럼명을 쉼표로 구분하세요.</small>
       </label>
     </div>
   );
@@ -1969,7 +1979,7 @@ function RenameInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-rename-inspector">
       <label>
-        Renames
+        <TermLabel ko="이름 매핑" en="Renames" />
         <textarea
           data-testid="preparation-rename-mapping"
           disabled={!canWrite}
@@ -1980,7 +1990,7 @@ function RenameInspector({
             onChange({ ...config, mapping: parseRenameMapping(event.target.value) })
           }
         />
-        <small>One mapping per line: old = new</small>
+        <small>한 줄에 하나씩: old = new</small>
       </label>
     </div>
   );
@@ -2029,7 +2039,7 @@ function FilterInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-filter-inspector">
       <label>
-        Combine
+        <TermLabel ko="조건 결합" en="Combine" />
         <select
           data-testid="preparation-filter-combine"
           disabled={!canWrite}
@@ -2167,7 +2177,7 @@ function FilterInspector({
                   data-testid={`preparation-filter-remove-${index}`}
                   onClick={() => publish(drafts.filter((_, i) => i !== index))}
                 >
-                  Remove
+                  제거
                 </button>
               )}
             </div>
@@ -2193,7 +2203,7 @@ function FilterInspector({
             ])
           }
         >
-          Add condition
+          조건 추가
         </button>
       )}
     </div>
@@ -2221,6 +2231,9 @@ function CastInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-cast-inspector">
+      <p className="form-hint" data-testid="preparation-cast-help">
+        <TermLabel ko="자료형 변환" en="Cast" help={UI_HELP.preparationCast} />
+      </p>
       <div className="preparation-cast-rows">
         {rows.map((row, index) => (
           <div
@@ -2262,7 +2275,7 @@ function CastInspector({
                 data-testid={`preparation-cast-remove-${index}`}
                 onClick={() => commit(rows.filter((_, i) => i !== index))}
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -2275,7 +2288,7 @@ function CastInspector({
           data-testid="preparation-cast-add"
           onClick={() => commit([...rows, { column: "", dtype: "string" }])}
         >
-          Add cast
+          변환 추가
         </button>
       )}
     </div>
@@ -2294,20 +2307,20 @@ function DeduplicateInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-deduplicate-inspector">
       <label>
-        Key columns
+        <TermLabel ko="키 컬럼" en="Key columns" />
         <input
           data-testid="preparation-deduplicate-columns"
           disabled={!canWrite}
           value={formatKeyList(config.columns)}
-          placeholder="Leave empty to use all columns"
+          placeholder="비우면 모든 컬럼 사용"
           onChange={(event) =>
             onChange({ ...config, columns: parseKeyList(event.target.value) })
           }
         />
-        <small>Comma-separated. Empty means all columns.</small>
+        <small>쉼표로 구분. 비우면 모든 컬럼입니다.</small>
       </label>
       <label>
-        Keep
+        <TermLabel ko="유지" en="Keep" />
         <select
           data-testid="preparation-deduplicate-keep"
           disabled={!canWrite}
@@ -2430,7 +2443,7 @@ function FillInspector({
                 data-testid={`preparation-fill-remove-${index}`}
                 onClick={() => commit(rows.filter((_, i) => i !== index))}
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -2452,7 +2465,7 @@ function FillInspector({
             commit([...rows, { column: "", kind: "string", value: "" }])
           }
         >
-          Add fill
+          채우기 추가
         </button>
       )}
     </div>
@@ -2493,8 +2506,11 @@ function DerivedInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-derived-inspector">
+      <p className="form-hint" data-testid="preparation-derived-help">
+        <TermLabel ko="파생 컬럼" en="Derived column" help={UI_HELP.preparationDerived} />
+      </p>
       <label>
-        Column name
+        <TermLabel ko="새 컬럼 이름" en="Column name" help={UI_HELP.preparationDerived} />
         <input
           data-testid="preparation-derived-name"
           disabled={!canWrite}
@@ -2503,7 +2519,7 @@ function DerivedInspector({
         />
       </label>
       <label>
-        Operation
+        <TermLabel ko="연산" en="Operation" />
         <select
           data-testid="preparation-derived-operation"
           disabled={!canWrite}
@@ -2525,34 +2541,33 @@ function DerivedInspector({
         >
           {DERIVED_OPERATIONS.map((operation) => (
             <option key={operation} value={operation}>
-              {operation}
+              {derivedOperationLabel(operation)}
             </option>
           ))}
         </select>
       </label>
       {operation === "regex_extract" && (
         <small className="muted">
-          Left: source column. Right: regex string with exactly one capture group, for example
-          _(\d+)HR$.
+          Left: 소스 컬럼. Right: 캡처 그룹이 정확히 하나인 정규식 문자열(예: _(\d+)HR$).
         </small>
       )}
       {operation === "datetime_parse" && (
         <small className="muted">
-          Left: source column. Right: datetime format such as %Y%m%d.
+          Left: 소스 컬럼. Right: 날짜시간 형식(예: %Y%m%d).
         </small>
       )}
       {operation === "datetime_add_hours" && (
         <small className="muted">
-          Left: datetime column. Right: numeric hour column or literal.
+          Left: 날짜시간 컬럼. Right: 시간(숫자) 컬럼 또는 Literal.
         </small>
       )}
       {operation === "datetime_format" && (
         <small className="muted">
-          Left: datetime column. Right: output format such as %Y-%m-%d %H:%M.
+          Left: 날짜시간 컬럼. Right: 출력 형식(예: %Y-%m-%d %H:%M).
         </small>
       )}
       <OperandFields
-        label="Left"
+        label="왼쪽 (Left)"
         testIdPrefix="preparation-derived-left"
         operand={left}
         canWrite={canWrite}
@@ -2560,7 +2575,7 @@ function DerivedInspector({
         onValidationChange={setLeftError}
       />
       <OperandFields
-        label="Right"
+        label="오른쪽 (Right)"
         testIdPrefix="preparation-derived-right"
         operand={right}
         canWrite={canWrite}
@@ -2637,7 +2652,7 @@ function OperandFields({
     <fieldset className="preparation-operand-fields">
       <legend>{label}</legend>
       <label>
-        Kind
+        <TermLabel ko="종류" en="Kind" />
         <select
           data-testid={`${testIdPrefix}-kind`}
           disabled={!canWrite}
@@ -2656,14 +2671,14 @@ function OperandFields({
             onChange({ kind: "column", value: "" });
           }}
         >
-          <option value="column">column</option>
-          <option value="literal">literal</option>
+          <option value="column">컬럼 (Column)</option>
+          <option value="literal">고정값 (Literal)</option>
         </select>
       </label>
       {operand.kind === "literal" ? (
         <>
           <label>
-            Value type
+            <TermLabel ko="값 유형" en="Value type" />
             <select
               data-testid={`${testIdPrefix}-value-type`}
               disabled={!canWrite}
@@ -2685,7 +2700,7 @@ function OperandFields({
             </select>
           </label>
           <label>
-            Value
+            <TermLabel ko="값" en="Value" />
             {literalType === "boolean" ? (
               <select
                 data-testid={`${testIdPrefix}-value`}
@@ -2714,7 +2729,7 @@ function OperandFields({
         </>
       ) : (
         <label>
-          Value
+          <TermLabel ko="값" en="Value" />
           <input
             data-testid={`${testIdPrefix}-value`}
             disabled={!canWrite}
@@ -2782,8 +2797,11 @@ function GroupByInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-groupby-inspector">
+      <p className="form-hint" data-testid="preparation-groupby-help">
+        <TermLabel ko="그룹 집계" en="Group By" help={UI_HELP.preparationGroupBy} />
+      </p>
       <label>
-        Group keys
+        <TermLabel ko="그룹 키" en="Group keys" help={UI_HELP.preparationGroupBy} />
         <textarea
           data-testid="preparation-groupby-keys"
           disabled={!canWrite}
@@ -2845,7 +2863,7 @@ function GroupByInspector({
                 data-testid={`preparation-groupby-remove-${index}`}
                 onClick={() => commit(groupKeysText, rows.filter((_, i) => i !== index))}
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -2867,7 +2885,7 @@ function GroupByInspector({
             commit(groupKeysText, [...rows, { column: "", op: "sum", output: "" }])
           }
         >
-          Add aggregation
+          집계 추가
         </button>
       )}
     </div>
@@ -2952,7 +2970,7 @@ function UnpivotInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-unpivot-inspector">
       <label>
-        Identifier columns
+        <TermLabel ko="식별자 컬럼" en="Identifier columns" help={UI_HELP.preparationUnpivot} />
         <textarea
           data-testid="preparation-unpivot-ids"
           disabled={!canWrite}
@@ -2965,7 +2983,7 @@ function UnpivotInspector({
         />
       </label>
       <label>
-        Columns to unpivot
+        <TermLabel ko="언피벗할 컬럼" en="Columns to unpivot" />
         <textarea
           data-testid="preparation-unpivot-values"
           disabled={!canWrite}
@@ -2978,10 +2996,10 @@ function UnpivotInspector({
         />
       </label>
       <p className="muted" data-testid="preparation-unpivot-help">
-        Columns not listed as identifiers or unpivot values are omitted from the result.
+        식별자나 언피벗 대상으로 지정하지 않은 컬럼은 결과에서 제외됩니다.
       </p>
       <label>
-        Variable column
+        <TermLabel ko="변수 컬럼" en="Variable column" />
         <input
           data-testid="preparation-unpivot-variable"
           disabled={!canWrite}
@@ -2992,7 +3010,7 @@ function UnpivotInspector({
         />
       </label>
       <label>
-        Value column
+        <TermLabel ko="값 컬럼" en="Value column" />
         <input
           data-testid="preparation-unpivot-value"
           disabled={!canWrite}
@@ -3130,7 +3148,7 @@ function PivotInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-pivot-inspector">
       <label>
-        Index columns
+        <TermLabel ko="인덱스 컬럼" en="Index columns" help={UI_HELP.preparationPivot} />
         <textarea
           data-testid="preparation-pivot-index"
           disabled={!canWrite}
@@ -3149,7 +3167,7 @@ function PivotInspector({
         />
       </label>
       <label>
-        Pivot column
+        <TermLabel ko="피벗 컬럼" en="Pivot column" />
         <input
           data-testid="preparation-pivot-columns-column"
           disabled={!canWrite}
@@ -3167,7 +3185,7 @@ function PivotInspector({
         />
       </label>
       <label>
-        Value column
+        <TermLabel ko="값 컬럼" en="Value column" />
         <input
           data-testid="preparation-pivot-value-column"
           disabled={!canWrite}
@@ -3185,7 +3203,7 @@ function PivotInspector({
         />
       </label>
       <label>
-        Aggregation
+        <TermLabel ko="집계" en="Aggregation" />
         <select
           data-testid="preparation-pivot-aggregation"
           disabled={!canWrite}
@@ -3208,7 +3226,7 @@ function PivotInspector({
         </select>
       </label>
       <div className="preparation-inspector-list" data-testid="preparation-pivot-values">
-        <span className="eyebrow">Pivot values</span>
+        <span className="eyebrow">피벗 값</span>
         {pivotValues.map((row, index) => (
           <div
             key={`pivot-value-${index}`}
@@ -3263,7 +3281,7 @@ function PivotInspector({
                   commit(indexColumnsText, columnsColumn, valueColumn, aggregation, next);
                 }}
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -3280,13 +3298,12 @@ function PivotInspector({
               ])
             }
           >
-            Add pivot value
+            피벗 값 추가
           </button>
         )}
       </div>
       <p className="muted" data-testid="preparation-pivot-help">
-        Only configured pivot values become output columns; other or null pivot values are
-        ignored.
+        설정한 피벗 값만 출력 컬럼이 되고, 그 외 값이나 null은 무시됩니다.
       </p>
       {errors.length > 0 && (
         <ul className="preparation-inspector-errors" data-testid="preparation-pivot-errors">
@@ -3361,7 +3378,7 @@ function LagInspector({
   return (
     <div className="preparation-inspector-form" data-testid="preparation-lag-inspector">
       <label>
-        Time column
+        <TermLabel ko="시간 컬럼" en="Time column" help={UI_HELP.preparationLag} />
         <input
           data-testid="preparation-lag-time-column"
           disabled={!canWrite}
@@ -3371,7 +3388,7 @@ function LagInspector({
         />
       </label>
       <label>
-        Source column
+        <TermLabel ko="소스 컬럼" en="Source column" />
         <input
           data-testid="preparation-lag-source-column"
           disabled={!canWrite}
@@ -3381,7 +3398,7 @@ function LagInspector({
         />
       </label>
       <div className="preparation-inspector-list" data-testid="preparation-lag-rows">
-        <span className="eyebrow">Lag rows</span>
+        <span className="eyebrow">Lag 행</span>
         {lags.map((row, index) => (
           <div
             key={`lag-row-${index}`}
@@ -3423,7 +3440,7 @@ function LagInspector({
                   )
                 }
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -3445,12 +3462,12 @@ function LagInspector({
             commit(timeColumn, sourceColumn, [...lags, { periods: "", output: "" }])
           }
         >
-          Add lag
+          Lag 추가
         </button>
       )}
       <p className="muted" data-testid="preparation-lag-help">
-        Lag uses only earlier rows after sorting by the selected time column. Initial rows
-        without enough history remain null.
+        선택한 시간 컬럼으로 정렬한 뒤 이전 행만 사용합니다. 이력이 부족한 앞쪽 행은 null로
+        남습니다.
       </p>
     </div>
   );
@@ -3523,7 +3540,7 @@ function RollingWindowInspector({
       data-testid="preparation-rolling-inspector"
     >
       <label>
-        Time column
+        <TermLabel ko="시간 컬럼" en="Time column" help={UI_HELP.preparationRollingWindow} />
         <input
           data-testid="preparation-rolling-time-column"
           disabled={!canWrite}
@@ -3533,7 +3550,7 @@ function RollingWindowInspector({
         />
       </label>
       <label>
-        Source column
+        <TermLabel ko="소스 컬럼" en="Source column" />
         <input
           data-testid="preparation-rolling-source-column"
           disabled={!canWrite}
@@ -3543,7 +3560,7 @@ function RollingWindowInspector({
         />
       </label>
       <div className="preparation-inspector-list" data-testid="preparation-rolling-rows">
-        <span className="eyebrow">Window rows</span>
+        <span className="eyebrow">윈도우 행</span>
         {windows.map((row, index) => (
           <div
             key={`rolling-row-${index}`}
@@ -3601,7 +3618,7 @@ function RollingWindowInspector({
                   )
                 }
               >
-                Remove
+                제거
               </button>
             )}
           </div>
@@ -3626,12 +3643,12 @@ function RollingWindowInspector({
             ])
           }
         >
-          Add window
+          윈도우 추가
         </button>
       )}
       <p className="muted" data-testid="preparation-rolling-help">
-        Rolling features use past rows only. The current row is excluded. Rows without a full
-        history window remain null.
+        이동 집계는 과거 행만 사용하며 현재 행은 포함하지 않습니다. 창이 부족한 행은 null로
+        남습니다.
       </p>
     </div>
   );
