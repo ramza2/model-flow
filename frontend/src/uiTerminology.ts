@@ -37,6 +37,12 @@ export const UI_HELP = {
     "시간 순으로 정렬한 뒤, 이전 행의 값을 새 컬럼으로 만듭니다. 이력이 부족한 앞쪽 행은 비어 있을 수 있습니다.",
   preparationRollingWindow:
     "과거 구간만 사용해 이동 평균·합계 등 집계 피처를 만듭니다. 현재 행은 포함하지 않으며, 창이 부족한 행은 비어 있을 수 있습니다.",
+  dataQuality:
+    "데이터가 학습에 사용하기 적절한지 규칙으로 검사합니다. 필수값 누락, 중복, 허용 범위 등을 확인할 수 있으며 검사 결과는 선택한 데이터셋 버전에 기록됩니다.",
+  qualityBlocking:
+    "이 옵션을 켠 규칙이 실패하면 해당 데이터로 학습을 시작하지 못하도록 차단합니다. 중요한 데이터 오류를 발견했을 때 잘못된 모델 학습을 방지하는 용도입니다.",
+  qualitySeverity:
+    "실패(Fail)는 품질 문제로 판정하고, 경고(Warning)는 문제를 기록하되 경고 수준으로 처리합니다.",
 } as const;
 
 export function trainingTaskLabel(value?: string | null): string {

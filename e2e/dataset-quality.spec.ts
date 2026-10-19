@@ -76,9 +76,9 @@ test("dataset quality blocking scopes fail to dataset and clears on deactivate",
   await page.getByTestId("quality-rule-name").fill("Unique site ID");
   await page.getByTestId("quality-rule-blocking").check();
   await page.getByTestId("quality-condition-type-0").selectOption("unique");
-  await page.locator('select[aria-label="Condition 1 column"]').selectOption("site_id");
+  await page.locator('select[aria-label="조건 1 컬럼"]').selectOption("site_id");
   await page.getByTestId("quality-save-rule").click();
-  await expect(page.getByText("Quality rule created.")).toBeVisible();
+  await expect(page.getByText("품질 규칙을 만들었습니다.")).toBeVisible();
 
   await page.getByTestId("quality-run-all").click();
   await expect(page.getByTestId("quality-latest-result")).toContainText("FAIL", {
@@ -123,8 +123,8 @@ test("dataset quality blocking scopes fail to dataset and clears on deactivate",
   const afterBlocked = await request.get(`/api/v1/projects/${projectId}/jobs`, { headers });
   expect((await afterBlocked.json()).length).toBe(beforeCount);
 
-  await page.getByRole("button", { name: "Deactivate", exact: true }).click();
-  await expect(page.getByText("Rule deactivated.")).toBeVisible();
+  await page.getByRole("button", { name: "비활성화", exact: true }).click();
+  await expect(page.getByText("품질 규칙을 비활성화했습니다.")).toBeVisible();
 
   const allowed = await request.post(`/api/v1/projects/${projectId}/jobs`, {
     headers,
