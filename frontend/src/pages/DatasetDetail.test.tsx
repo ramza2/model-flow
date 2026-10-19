@@ -167,13 +167,30 @@ describe("DatasetDetail quality management", () => {
     await screen.findByTestId("quality-rule-12");
     const train = screen.getByTestId("train-on-dataset");
     expect(train).toHaveAttribute("href", "/projects/7/jobs/new?datasetId=3&datasetVersionId=11");
-    expect(train).toHaveTextContent(/Train on dataset/i);
+    expect(train).toHaveTextContent(/이 데이터셋으로 학습/);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("sites");
+    expect(screen.getByText(/3행 · 3컬럼 · 1개 버전/)).toBeInTheDocument();
+    expect(screen.getByText("데이터셋 버전")).toBeInTheDocument();
+    expect(screen.getByText("행", { selector: ".stat .label" })).toBeInTheDocument();
+    expect(screen.getByText("컬럼", { selector: ".stat .label" })).toBeInTheDocument();
+    expect(screen.getByText("저장된 분할")).toBeInTheDocument();
+    expect(screen.getByTestId("dataset-lifecycle-entry")).toHaveTextContent("학습 흐름");
+    expect(screen.getByTestId("dataset-lifecycle-entry")).toHaveTextContent("이 데이터셋으로 학습 시작");
+    expect(screen.getByRole("heading", { name: "컬럼 통계" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "자료형" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "데이터 미리보기" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "버전" })).toBeInTheDocument();
+    expect(screen.getByText("버전 1")).toBeInTheDocument();
+    expect(screen.getByText("3행")).toBeInTheDocument();
     expect(screen.getByTestId("quality-panel")).toHaveTextContent("데이터 품질");
     expect(screen.getByTestId("quality-panel")).toHaveTextContent("Data quality");
     expect(screen.getByTestId("quality-run-all")).toHaveTextContent("전체 검사 실행");
     expect(screen.getByTestId("quality-create")).toHaveTextContent("새 규칙");
     expect(screen.getByTestId("quality-active-count")).toHaveTextContent("활성 규칙");
     expect(screen.getByTestId("quality-latest-result")).toHaveTextContent("최근 품질 결과");
+    await waitFor(() => {
+      expect(screen.getByTestId("quality-latest-result")).toHaveTextContent("실패 (FAIL)");
+    });
     expect(screen.getByTestId("quality-check-count")).toHaveTextContent("품질 검사");
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Unique site ID")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-12")).getByText("활성")).toBeInTheDocument();
@@ -419,7 +436,9 @@ describe("DatasetDetail saved splits", () => {
     fireEvent.change(screen.getByTestId("split-val-ratio"), { target: { value: "0.5" } });
     fireEvent.change(screen.getByTestId("split-test-ratio"), { target: { value: "0.5" } });
     fireEvent.click(screen.getByTestId("create-split-submit"));
-    expect(await screen.findByTestId("split-form-error")).toHaveTextContent("must equal 1.0");
+    expect(await screen.findByTestId("split-form-error")).toHaveTextContent(
+      "학습 + 검증 + 테스트 비율의 합은 1.0이어야 합니다.",
+    );
     expect(apiMock.mock.calls.some((call) => String(call[0]).includes("/splits") && call[1]?.method === "POST")).toBe(false);
   });
 
@@ -453,7 +472,9 @@ describe("DatasetDetail saved splits", () => {
     fireEvent.change(screen.getByTestId("split-name"), { target: { value: "split-custom" } });
     fireEvent.click(screen.getByTestId("create-split-submit"));
     expect(await screen.findByTestId("saved-split-77")).toHaveTextContent("split-custom");
-    expect(screen.getByTestId("saved-split-77")).toHaveTextContent("Random");
+    expect(screen.getByTestId("saved-split-77")).toHaveTextContent("무작위 (Random)");
+    expect(screen.getByTestId("saved-split-77")).toHaveTextContent("시드 42");
+    expect(screen.getByText(/데이터 분할 #77을 저장했습니다/)).toBeInTheDocument();
     const post = apiMock.mock.calls.find(
       (call) => String(call[0]).includes("/splits") && (call[1] as RequestInit | undefined)?.method === "POST",
     );
@@ -498,14 +519,19 @@ describe("DatasetDetail saved splits", () => {
     fireEvent.click(screen.getByTestId("open-create-split"));
     fireEvent.change(screen.getByTestId("split-strategy"), { target: { value: "time" } });
     expect(screen.getByTestId("split-time-column")).toBeInTheDocument();
-    expect(screen.getByTestId("split-time-seed-hint")).toHaveTextContent(/does not shuffle/i);
+    expect(screen.getByTestId("split-time-seed-hint")).toHaveTextContent(
+      "시간 순서 분할에서는 난수 시드가 행 순서를 섞지 않습니다.",
+    );
     fireEvent.click(screen.getByTestId("create-split-submit"));
-    expect(await screen.findByTestId("split-form-error")).toHaveTextContent(/time column/i);
+    expect(await screen.findByTestId("split-form-error")).toHaveTextContent(
+      "시간 순서 분할에 사용할 시간 기준 컬럼을 선택하세요.",
+    );
 
     fireEvent.change(screen.getByTestId("split-time-column"), { target: { value: "site_id" } });
     fireEvent.change(screen.getByTestId("split-name"), { target: { value: "timed-split" } });
     fireEvent.click(screen.getByTestId("create-split-submit"));
-    expect(await screen.findByTestId("saved-split-88")).toHaveTextContent("Time ordered · site_id");
+    expect(await screen.findByTestId("saved-split-88")).toHaveTextContent("시간 순서 (Time ordered) · site_id");
+    expect(screen.getByText(/데이터 분할 #88을 저장했습니다/)).toBeInTheDocument();
     const post = apiMock.mock.calls.find(
       (call) => String(call[0]).includes("/splits") && (call[1] as RequestInit | undefined)?.method === "POST",
     );
@@ -574,15 +600,19 @@ describe("DatasetDetail upstream lineage", () => {
     );
 
     const card = await screen.findByTestId("dataset-upstream-lineage");
-    expect(card).toHaveTextContent("Prepared from recipe");
+    expect(card).toHaveTextContent("데이터 가공으로 생성됨");
+    expect(card).toHaveTextContent("데이터 가공");
     expect(card).toHaveTextContent("Demo prep");
     expect(card).toHaveTextContent("v1");
+    expect(card).toHaveTextContent("성공");
     expect(screen.getByTestId("dataset-upstream-preparation-link")).toHaveAttribute(
       "href",
       "/projects/7/preparations/9",
     );
     expect(screen.getByTestId("dataset-upstream-inputs")).toHaveTextContent("iris");
     expect(screen.getByTestId("dataset-upstream-inputs")).toHaveTextContent("source-1");
+    expect(screen.getByTestId("dataset-upstream-inputs")).toHaveTextContent("노드");
+    expect(screen.getByText("데이터 가공", { selector: ".badge-label" })).toBeInTheDocument();
   });
 
   it("keeps normal lineage unchanged for upload versions", async () => {
@@ -591,6 +621,7 @@ describe("DatasetDetail upstream lineage", () => {
     await screen.findByTestId("quality-rule-12");
     expect(screen.queryByTestId("dataset-upstream-lineage")).not.toBeInTheDocument();
     expect(screen.getByTestId("dataset-lifecycle-entry")).toBeInTheDocument();
+    expect(screen.getByText("업로드", { selector: ".badge-label" })).toBeInTheDocument();
   });
 
   it("keeps Train on dataset pinned to the selected non-latest version", async () => {
@@ -657,7 +688,7 @@ describe("DatasetDetail upstream lineage", () => {
     });
     renderPage();
     expect(screen.queryByTestId("train-on-dataset")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /Train on dataset/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /이 데이터셋으로 학습/ })).not.toBeInTheDocument();
 
     resolveVersions!([
       { ...version, id: 22, version: 2, original_filename: "sites-v2.csv" },

@@ -35,7 +35,7 @@ test("saved dataset split drives training job", async ({ page }) => {
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "iris.csv" }).click();
-  await expect(page.getByText(/Column statistics/i)).toBeVisible();
+  await expect(page.getByText("컬럼 통계")).toBeVisible();
 
   await page.getByTestId("open-create-split").click();
   await expect(page.getByTestId("create-split-form")).toBeVisible();

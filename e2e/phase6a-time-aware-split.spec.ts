@@ -47,7 +47,7 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText(/phase6a-timed-/i)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: /phase6a-timed-/i }).click();
-  await expect(page.getByText(/Column statistics/i)).toBeVisible();
+  await expect(page.getByText("컬럼 통계")).toBeVisible();
 
   await page.getByTestId("open-create-split").click();
   await expect(page.getByTestId("create-split-form")).toBeVisible();
@@ -56,9 +56,12 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("split-time-column").selectOption("event_time");
   await expect(page.getByTestId("split-time-seed-hint")).toBeVisible();
   await page.getByTestId("create-split-submit").click();
-  await expect(page.getByTestId("saved-splits-list")).toContainText("Time ordered · event_time", {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId("saved-splits-list")).toContainText(
+    "시간 순서 (Time ordered) · event_time",
+    {
+      timeout: 30_000,
+    },
+  );
 
   await page.getByTestId("train-on-dataset").click();
   await page.getByTestId("job-name").fill("e2e-time-ordered-job");

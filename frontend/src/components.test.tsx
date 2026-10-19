@@ -24,6 +24,21 @@ describe("shared status and notice presentation", () => {
     expect(document.querySelector(".badge.warn")).toBeTruthy();
   });
 
+  it("keeps tone from status when an optional display label is provided", () => {
+    const { rerender } = render(<StatusBadge status="FAIL" label="실패 (FAIL)" />);
+    expect(screen.getByText("실패 (FAIL)")).toBeInTheDocument();
+    expect(screen.queryByText("fail")).not.toBeInTheDocument();
+    expect(document.querySelector(".badge.err")).toBeTruthy();
+
+    rerender(<StatusBadge status="preparation" label="데이터 가공" />);
+    expect(screen.getByText("데이터 가공")).toBeInTheDocument();
+    expect(screen.queryByText("preparation")).not.toBeInTheDocument();
+
+    rerender(<StatusBadge status="succeeded" />);
+    expect(screen.getByText("succeeded")).toBeInTheDocument();
+    expect(document.querySelector(".badge.ok")).toBeTruthy();
+  });
+
   it("renders notice variants with optional next-step action", () => {
     render(
       <Notice
