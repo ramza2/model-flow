@@ -188,7 +188,9 @@ describe("DatasetDetail quality management", () => {
     expect(screen.getByTestId("quality-create")).toHaveTextContent("새 규칙");
     expect(screen.getByTestId("quality-active-count")).toHaveTextContent("활성 규칙");
     expect(screen.getByTestId("quality-latest-result")).toHaveTextContent("최근 품질 결과");
-    expect(screen.getByTestId("quality-latest-result")).toHaveTextContent("실패 (FAIL)");
+    await waitFor(() => {
+      expect(screen.getByTestId("quality-latest-result")).toHaveTextContent("실패 (FAIL)");
+    });
     expect(screen.getByTestId("quality-check-count")).toHaveTextContent("품질 검사");
     expect(within(screen.getByTestId("quality-rule-12")).getByText("Unique site ID")).toBeInTheDocument();
     expect(within(screen.getByTestId("quality-rule-12")).getByText("활성")).toBeInTheDocument();
