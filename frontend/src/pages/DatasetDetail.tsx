@@ -119,6 +119,26 @@ function qualityResultLabel(result: string) {
   return result || "—";
 }
 
+/** Display-only dataset source_type labels; persisted values stay English. */
+function datasetSourceTypeLabel(sourceType?: string | null) {
+  const normalized = String(sourceType || "").toLowerCase();
+  if (normalized === "preparation") return "데이터 가공";
+  if (normalized === "upload") return "업로드";
+  if (normalized === "feedback_materialization") return "피드백 반영";
+  return sourceType || "—";
+}
+
+/** Display-only run status labels; persisted values stay English. */
+function runStatusLabel(status?: string | null) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "succeeded") return "성공";
+  if (normalized === "failed") return "실패";
+  if (normalized === "running") return "실행 중";
+  if (normalized === "created") return "생성됨";
+  if (normalized === "queued") return "대기 중";
+  return status || "—";
+}
+
 function summarizeCondition(rule: Record<string, unknown>) {
   const type = String(rule.type ?? "");
   const column = String(rule.column ?? "—");
@@ -226,7 +246,7 @@ export default function DatasetDetail() {
       );
       await loadRules();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Dataset could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "데이터셋을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -257,7 +277,7 @@ export default function DatasetDetail() {
         setPreview(previewRows);
         setLineage(lineageRow);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Version details could not be loaded."));
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "데이터셋 버전 정보를 불러오지 못했습니다."));
   }, [datasetId, projectId, selectedVersionId, versions]);
 
   function resetForm(fallbackColumn?: string) {
@@ -434,31 +454,31 @@ export default function DatasetDetail() {
     const test = Number(splitTestRatio);
     const seed = Number(splitSeed);
     if (!Number.isFinite(train) || !Number.isFinite(val) || !Number.isFinite(test)) {
-      setSplitFormError("Enter numeric train, validation, and test ratios.");
+      setSplitFormError("학습/검증/테스트 비율을 숫자로 입력하세요.");
       return null;
     }
     if (!(train > 0 && train < 1 && val > 0 && val < 1 && test > 0 && test < 1)) {
-      setSplitFormError("Each ratio must be greater than 0 and less than 1.");
+      setSplitFormError("각 비율은 0보다 크고 1보다 작아야 합니다.");
       return null;
     }
     if (Math.abs(train + val + test - 1) > 1e-6) {
-      setSplitFormError("Train + validation + test ratios must equal 1.0.");
+      setSplitFormError("학습 + 검증 + 테스트 비율의 합은 1.0이어야 합니다.");
       return null;
     }
     if (!Number.isInteger(seed)) {
-      setSplitFormError("Random seed must be an integer.");
+      setSplitFormError("난수 시드는 정수여야 합니다.");
       return null;
     }
     if (splitStrategy === "time") {
       const column = splitTimeColumn.trim();
       if (!column) {
-        setSplitFormError("Select a time column for a time-ordered split.");
+        setSplitFormError("시간 순서 분할에 사용할 시간 기준 컬럼을 선택하세요.");
         return null;
       }
       const version = versions.find((row) => row.id === selectedVersionId);
       const versionColumns = version?.columns?.length ? version.columns : (ds?.columns ?? []);
       if (!versionColumns.includes(column)) {
-        setSplitFormError("Time column must be one of the dataset version columns.");
+        setSplitFormError("시간 기준 컬럼은 현재 데이터셋 버전에 존재하는 컬럼이어야 합니다.");
         return null;
       }
       setSplitFormError("");
@@ -493,15 +513,18 @@ export default function DatasetDetail() {
       );
       setSplits((rows) => [split, ...rows.filter((row) => row.id !== split.id)]);
       setShowSplitForm(false);
+      const ratios = `${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}`;
       const strategyLabel =
         (split.split_strategy || "random") === "time"
-          ? `Time ordered · ${split.time_column || "—"}`
-          : "Random";
-      setSuccess(
-        `Saved split #${split.id} ready (${strategyLabel}; ${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}, seed ${split.random_seed}).`,
-      );
+          ? `시간 순서 (Time ordered) · ${split.time_column || "—"}`
+          : "무작위 (Random)";
+      const successDetail =
+        (split.split_strategy || "random") === "time"
+          ? `${strategyLabel}, ${ratios}`
+          : `${strategyLabel}, ${ratios}, 시드 ${split.random_seed}`;
+      setSuccess(`데이터 분할 #${split.id}을 저장했습니다. (${successDetail})`);
     } catch (reason) {
-      setSplitFormError(reason instanceof Error ? reason.message : "Dataset split could not be created.");
+      setSplitFormError(reason instanceof Error ? reason.message : "데이터 분할을 저장하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -580,41 +603,45 @@ export default function DatasetDetail() {
   return (
     <div>
       <PageHeader
-        title={ds?.name ?? "Dataset"}
-        description={ds ? `${ds.row_count.toLocaleString()} rows · ${ds.column_count} columns · ${versions.length} version${versions.length === 1 ? "" : "s"}` : "Dataset profile and history."}
+        title={ds?.name ?? "데이터셋"}
+        description={ds ? `${ds.row_count.toLocaleString()}행 · ${ds.column_count}컬럼 · ${versions.length}개 버전` : "데이터셋 정보와 버전 이력입니다."}
         actions={canWrite && selectedVersionId != null ? (
           <Link
             className="btn"
             to={`/projects/${projectId}/jobs/new?datasetId=${datasetId}&datasetVersionId=${selectedVersionId}`}
             data-testid="train-on-dataset"
           >
-            ▶ Train on dataset
+            ▶ 이 데이터셋으로 학습
           </Link>
         ) : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      {loading ? <Loading label="Loading dataset" /> : (
+      {loading ? <Loading label="데이터셋 불러오는 중" /> : (
         <>
           <div className="detail-toolbar">
-            <label>Dataset version<select value={selectedVersionId ?? ""} onChange={(event) => setSelectedVersionId(Number(event.target.value))}>
+            <label>데이터셋 버전<select value={selectedVersionId ?? ""} onChange={(event) => setSelectedVersionId(Number(event.target.value))}>
               {versions.map((version) => <option key={version.id} value={version.id}>v{version.version} · {formatDate(version.created_at)}</option>)}
             </select></label>
-            {selected && <StatusBadge status={selected.source_type} />}
+            {selected && (
+              <StatusBadge
+                status={selected.source_type}
+                label={datasetSourceTypeLabel(selected.source_type)}
+              />
+            )}
           </div>
           <div className="grid stats-grid">
-            <div className="stat"><div className="label">Rows</div><div className="value">{selected?.row_count.toLocaleString() ?? "—"}</div></div>
-            <div className="stat"><div className="label">Columns</div><div className="value">{selected?.column_count ?? "—"}</div></div>
+            <div className="stat"><div className="label">행</div><div className="value">{selected?.row_count.toLocaleString() ?? "—"}</div></div>
+            <div className="stat"><div className="label">컬럼</div><div className="value">{selected?.column_count ?? "—"}</div></div>
             <div className="stat" data-testid="quality-active-count"><div className="label">활성 규칙</div><div className="value">{activeRules.length}</div></div>
             <div className="stat" data-testid="quality-latest-result"><div className="label">최근 품질 결과</div><div className="value">{latestResult}</div></div>
             <div className="stat" data-testid="quality-check-count"><div className="label">품질 검사</div><div className="value">{checks.length}</div></div>
-            <div className="stat"><div className="label">Saved splits</div><div className="value">{splits.length}</div></div>
+            <div className="stat"><div className="label">저장된 분할</div><div className="value">{splits.length}</div></div>
           </div>
           <section className="panel" data-testid="dataset-lifecycle-entry">
-            <div className="panel-title"><div><span className="eyebrow">Lifecycle</span><h2>Start training from this dataset</h2></div></div>
+            <div className="panel-title"><div><span className="eyebrow">학습 흐름</span><h2>이 데이터셋으로 학습 시작</h2></div></div>
             <p className="form-hint">
-              Datasets feed Training Jobs → Experiment Runs → Model Versions → Deployments.
-              Use Train on dataset to open Job Create with this dataset preselected.
+              데이터셋 → 모델 학습 → 실험 실행 → 모델 버전 → 모델 배포 순서로 이어집니다. ‘이 데이터셋으로 학습’ 버튼을 누르면 현재 선택한 데이터셋 버전이 미리 지정된 학습 생성 화면으로 이동합니다.
             </p>
           </section>
           {lineage?.upstream && (
@@ -624,13 +651,13 @@ export default function DatasetDetail() {
             >
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Upstream</span>
-                  <h2>Prepared from recipe</h2>
+                  <span className="eyebrow">생성 경로</span>
+                  <h2>데이터 가공으로 생성됨</h2>
                 </div>
               </div>
               <dl>
                 <div>
-                  <dt>Preparation</dt>
+                  <dt>데이터 가공</dt>
                   <dd>
                     <Link
                       to={`/projects/${projectId}/preparations/${lineage.upstream.preparation.id}`}
@@ -641,27 +668,30 @@ export default function DatasetDetail() {
                   </dd>
                 </div>
                 <div>
-                  <dt>Recipe version</dt>
+                  <dt>가공 버전</dt>
                   <dd>v{lineage.upstream.preparation_version.version}</dd>
                 </div>
                 <div>
-                  <dt>Preparation run</dt>
+                  <dt>가공 실행</dt>
                   <dd>
                     #{lineage.upstream.preparation_run.id} ·{" "}
-                    <StatusBadge status={lineage.upstream.preparation_run.status} />
+                    <StatusBadge
+                      status={lineage.upstream.preparation_run.status}
+                      label={runStatusLabel(lineage.upstream.preparation_run.status)}
+                    />
                   </dd>
                 </div>
               </dl>
               {lineage.upstream.input_versions.length > 0 && (
                 <div>
-                  <span className="eyebrow">Input versions</span>
+                  <span className="eyebrow">입력 데이터 버전</span>
                   <ul className="dataset-upstream-inputs" data-testid="dataset-upstream-inputs">
                     {lineage.upstream.input_versions.map((input) => (
                       <li key={`${input.node_id}-${input.dataset_version_id}`}>
                         <Link to={`/projects/${projectId}/datasets/${input.dataset_id}`}>
-                          {input.dataset_name || `Dataset #${input.dataset_id}`}
+                          {input.dataset_name || `데이터셋 #${input.dataset_id}`}
                         </Link>
-                        {input.version != null ? ` · v${input.version}` : ""} · node{" "}
+                        {input.version != null ? ` · v${input.version}` : ""} · 노드{" "}
                         {input.node_id}
                       </li>
                     ))}
@@ -671,15 +701,15 @@ export default function DatasetDetail() {
             </section>
           )}
           <section className="panel">
-            <div className="panel-title"><div><span className="eyebrow">Profile</span><h2>Column statistics</h2></div></div>
+            <div className="panel-title"><div><span className="eyebrow">데이터 정보</span><h2>컬럼 통계</h2></div></div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>Column</th><th>Type</th><th>Nulls</th><th>Unique</th><th>Summary</th></tr></thead>
+                <thead><tr><th>컬럼</th><th>자료형</th><th>결측값</th><th>고유값</th><th>요약</th></tr></thead>
                 <tbody>
                   {selected?.columns.map((column) => {
                     const stat = selected.stats[column] || {};
                     const summary = stat.mean !== undefined
-                      ? `min ${String(stat.min)} · max ${String(stat.max)} · mean ${Number(stat.mean).toFixed(3)}`
+                      ? `최솟값 ${String(stat.min)} · 최댓값 ${String(stat.max)} · 평균 ${Number(stat.mean).toFixed(3)}`
                       : stat.top_values ? JSON.stringify(stat.top_values) : "—";
                     return <tr key={column}><td className="mono">{column}</td><td>{selected.dtypes[column]}</td><td>{String(stat.null_count ?? 0)}</td><td>{String(stat.unique_count ?? 0)}</td><td className="mono muted">{summary}</td></tr>;
                   })}
@@ -688,8 +718,8 @@ export default function DatasetDetail() {
             </div>
           </section>
           <section className="panel">
-            <div className="panel-title"><div><span className="eyebrow">Sample</span><h2>Data preview</h2></div></div>
-            {!preview ? <Loading label="Loading preview" /> : preview.rows.length === 0 ? <EmptyState title="No preview rows" description="This dataset version does not contain displayable rows." /> : (
+            <div className="panel-title"><div><span className="eyebrow">샘플</span><h2>데이터 미리보기</h2></div></div>
+            {!preview ? <Loading label="미리보기 불러오는 중" /> : preview.rows.length === 0 ? <EmptyState title="미리보기 데이터가 없습니다" description="이 데이터셋 버전에는 표시할 수 있는 행이 없습니다." /> : (
               <div className="table-wrap">
                 <table><thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
                   <tbody>{preview.rows.slice(0, 10).map((row, index) => <tr key={index}>{preview.columns.map((column) => <td key={column}>{String(row[column] ?? "—")}</td>)}</tr>)}</tbody>
@@ -854,7 +884,7 @@ export default function DatasetDetail() {
                       >
                         <summary>
                           <strong>검사 #{check.id}</strong>
-                          <StatusBadge status={check.result} />
+                          <StatusBadge status={check.result} label={qualityResultLabel(check.result)} />
                           <small>{formatDate(check.created_at)}</small>
                         </summary>
                         <div className="quality-check-details">
@@ -1009,7 +1039,7 @@ export default function DatasetDetail() {
                   </div>
                   {splitStrategy === "time" ? (
                     <p className="form-hint" data-testid="split-time-seed-hint">
-                      시간 순서대로 나누므로 미래 구간을 평가하는 데 적합합니다. (Random seed does not shuffle this split.)
+                      시간 순서대로 나누므로 미래 구간을 평가하는 데 적합합니다. 시간 순서 분할에서는 난수 시드가 행 순서를 섞지 않습니다.
                     </p>
                   ) : null}
                   {splitFormError ? (
@@ -1037,7 +1067,7 @@ export default function DatasetDetail() {
                   {splits.map((split) => {
                     const strategyLabel =
                       (split.split_strategy || "random") === "time"
-                        ? `시간 순서 (Time ordered · ${split.time_column || "—"})`
+                        ? `시간 순서 (Time ordered) · ${split.time_column || "—"}`
                         : "무작위 (Random)";
                     return (
                       <div key={split.id} data-testid={`saved-split-${split.id}`}>
@@ -1046,7 +1076,7 @@ export default function DatasetDetail() {
                           <small>
                             #{split.id} · {strategyLabel}
                             {(split.split_strategy || "random") === "random"
-                              ? ` · seed ${split.random_seed}`
+                              ? ` · 시드 ${split.random_seed}`
                               : ""}
                           </small>
                         </div>
@@ -1061,8 +1091,8 @@ export default function DatasetDetail() {
             </section>
           </div>
           <section className="panel">
-            <div className="panel-title"><div><span className="eyebrow">History</span><h2>Versions</h2></div></div>
-            <div className="activity-list">{versions.map((version) => <button className="activity-button" key={version.id} onClick={() => setSelectedVersionId(version.id)}><div><strong>Version {version.version}</strong><small>{version.original_filename} · {formatDate(version.created_at)}</small></div><span>{version.row_count.toLocaleString()} rows</span></button>)}</div>
+            <div className="panel-title"><div><span className="eyebrow">이력</span><h2>버전</h2></div></div>
+            <div className="activity-list">{versions.map((version) => <button className="activity-button" key={version.id} onClick={() => setSelectedVersionId(version.id)}><div><strong>버전 {version.version}</strong><small>{version.original_filename} · {formatDate(version.created_at)}</small></div><span>{version.row_count.toLocaleString()}행</span></button>)}</div>
           </section>
         </>
       )}

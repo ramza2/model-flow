@@ -206,12 +206,20 @@ function resolveStatusTone(value: string): StatusTone {
   return "warning";
 }
 
-export function StatusBadge({ status }: { status?: string | null }) {
+export function StatusBadge({
+  status,
+  label: labelOverride,
+}: {
+  status?: string | null;
+  /** Optional display-only text. Tone/class still derive from `status`. */
+  label?: string | null;
+}) {
   const raw = status || "unknown";
   const value = raw.toLowerCase();
   const tone = resolveStatusTone(value);
   const { className, icon } = statusCatalog[tone];
-  const label = value.replaceAll("_", " ");
+  const fallbackLabel = value.replaceAll("_", " ");
+  const label = labelOverride?.trim() ? labelOverride : fallbackLabel;
   return (
     <span className={`badge ${className}`} title={label}>
       <span aria-hidden="true">{icon}</span>

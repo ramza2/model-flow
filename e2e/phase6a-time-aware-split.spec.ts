@@ -47,7 +47,7 @@ test("time-ordered dataset split drives training job detail", async ({ page }) =
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText(/phase6a-timed-/i)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: /phase6a-timed-/i }).click();
-  await expect(page.getByText(/Column statistics/i)).toBeVisible();
+  await expect(page.getByText(/Column statistics|컬럼 통계/i)).toBeVisible();
 
   await page.getByTestId("open-create-split").click();
   await expect(page.getByTestId("create-split-form")).toBeVisible();
