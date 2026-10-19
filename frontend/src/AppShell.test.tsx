@@ -81,17 +81,17 @@ describe("AppShell Phase 1.5-A navigation", () => {
     renderShell("/projects/9/jobs");
 
     const nav = await screen.findByRole("navigation", { name: "Main navigation" });
-    expect(within(nav).getByText("Workspace")).toBeInTheDocument();
-    expect(within(nav).getByText("Data")).toBeInTheDocument();
-    expect(within(nav).getByText("Build")).toBeInTheDocument();
-    expect(within(nav).getByText("Models & Serving")).toBeInTheDocument();
-    expect(within(nav).getByText("Operations")).toBeInTheDocument();
-    expect(within(nav).getByText("Governance")).toBeInTheDocument();
-    expect(within(nav).getByText("System")).toBeInTheDocument();
+    expect(within(nav).getByText("작업공간")).toBeInTheDocument();
+    expect(within(nav).getByText("데이터")).toBeInTheDocument();
+    expect(within(nav).getByText("모델 개발")).toBeInTheDocument();
+    expect(within(nav).getByText("모델 운영")).toBeInTheDocument();
+    expect(within(nav).getByText("운영 관리")).toBeInTheDocument();
+    expect(within(nav).getByText("거버넌스")).toBeInTheDocument();
+    expect(within(nav).getByText("시스템")).toBeInTheDocument();
 
-    expect(within(nav).getByRole("link", { name: /Overview/ })).toHaveAttribute("href", "/projects/9");
-    expect(within(nav).getByRole("link", { name: /^Datasets$/ })).toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: /^Preparations$/ })).toHaveAttribute(
+    expect(within(nav).getByRole("link", { name: /개요/ })).toHaveAttribute("href", "/projects/9");
+    expect(within(nav).getByRole("link", { name: /^데이터셋$/ })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /^데이터 가공$/ })).toHaveAttribute(
       "href",
       "/projects/9/preparations",
     );
@@ -123,10 +123,10 @@ describe("AppShell Phase 1.5-A navigation", () => {
     mockFetch({ systemAdmin: true });
     renderShell("/projects/9/jobs/3");
 
-    const picker = await screen.findByLabelText("Project");
+    const picker = await screen.findByLabelText("프로젝트");
     fireEvent.change(picker, { target: { value: "11" } });
     expect(picker).toHaveValue("11");
-    expect(await screen.findByRole("link", { name: /Overview/ })).toHaveAttribute("href", "/projects/11");
+    expect(await screen.findByRole("link", { name: /개요/ })).toHaveAttribute("href", "/projects/11");
   });
 });
 

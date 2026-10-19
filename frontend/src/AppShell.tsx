@@ -389,7 +389,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               {group.items.map((item) => (
                 <NavItemLink
                   key={item.path}
-                  item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end }}
+                  item={{ label: item.label, to: `${projectBase}/${item.path}`, icon: item.icon, end: item.end, hint: item.hint }}
                   onNavigate={() => closeNav()}
                 />
               ))}

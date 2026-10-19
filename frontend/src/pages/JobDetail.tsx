@@ -220,11 +220,10 @@ export default function JobDetail() {
               {supportsContinued ? (
                 <>
                   {" "}
-                  <strong>이어서 학습</strong> reuses fitted preprocessing and updates the estimator
-                  via partial_fit on a newer DatasetVersion of the same Dataset.
+                  <strong>이어서 학습 (Continue training)</strong>은 기존 전처리를 재사용하고 같은 데이터셋의 새 버전으로 지원되는 모델을 추가 학습합니다.
                 </>
               ) : algorithmSpec ? (
-                <> Continued training unavailable for {algorithmSpec.display_name}.</>
+                <> {algorithmSpec.display_name}은 이어서 학습을 지원하지 않습니다.</>
               ) : null}
             </p>
           )}
@@ -322,7 +321,7 @@ export default function JobDetail() {
                   <dd>{job.feature_columns?.length ? `${job.feature_columns.length}개 컬럼` : "—"}</dd>
                 </div>
                 <div>
-                  <dt>Dataset</dt>
+                  <dt>데이터셋 (Dataset)</dt>
                   <dd>
                     <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>
                       Dataset #{job.dataset_id}
@@ -360,8 +359,7 @@ export default function JobDetail() {
                       <>
                         <div>실행 시 분할 (Runtime split)</div>
                         <div data-testid="job-split-strategy-label">
-                          Split:{" "}
-                          {(job.split_strategy || "random") === "time" ? "Time ordered" : "Random"}
+                          방식: {splitStrategyLabel(job.split_strategy)}
                         </div>
                         {(job.split_strategy || "random") === "time" && job.time_column ? (
                           <div data-testid="job-time-column-label">

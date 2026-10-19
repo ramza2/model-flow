@@ -625,27 +625,27 @@ export default function JobCreate() {
             </div>
             {isForecasting && (
               <p className="form-hint" data-testid="forecasting-task-hint">
-                Forecasting trains direct multi-horizon regression on a single numeric target with a time-ordered split.
+                시계열 예측은 하나의 수치형 예측 대상을 시간 순서로 나눈 뒤 여러 미래 시점을 직접 예측합니다.
               </p>
             )}
             {isMultiTarget && (
               <p className="form-hint" data-testid="multi-target-hint">
-                Multiple targets are trained as multi-output regression.
+                여러 예측 대상을 선택하면 하나의 모델에서 여러 수치 값을 함께 예측합니다.
               </p>
             )}
             {!isForecasting && !isMultiTarget && problemType === "auto" && resolvingProblemType && (
               <p className="form-hint" data-testid="detecting-problem-type">
-                Detecting problem type…
+                예측 문제 유형을 자동 판별하는 중…
               </p>
             )}
             {!isForecasting && !isMultiTarget && problemType === "auto" && !resolvingProblemType && detectedType && (
               <p className="form-hint" data-testid="detected-problem-type">
-                Detected problem type: {titleCaseProblemType(detectedType)}
+                자동 판별 결과: {titleCaseProblemType(detectedType)}
               </p>
             )}
             {!isForecasting && !isMultiTarget && problemType === "auto" && !resolvingProblemType && problemTypeDetectionError && (
               <p className="form-hint" data-testid="problem-type-detection-error">
-                Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.
+                예측 문제 유형을 자동 판별하지 못했습니다. 예측 대상을 바꾸거나 분류(Classification)/수치 예측(Regression)을 직접 선택하세요.
               </p>
             )}
             <label>
@@ -704,7 +704,7 @@ export default function JobCreate() {
               )}
               {isForecasting && (
                 <p className="form-hint" data-testid="forecast-target-hint">
-                  Forecasting supports a single numeric target. Use lag/rolling features prepared in Phase 6-B when historical target context is needed.
+                  시계열 예측은 하나의 수치형 예측 대상을 사용합니다. 과거 값이 필요하면 데이터 가공에서 Lag/Rolling Window 입력 항목을 만들어 사용하세요.
                 </p>
               )}
             </fieldset>
@@ -813,7 +813,7 @@ export default function JobCreate() {
                 data-testid="job-data-split"
               >
                 <option value="">
-                  Manual runtime split · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
+                  직접 분할 (Manual runtime split) · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
                 </option>
                 {selectableSavedSplits.map((split) => {
                   const label =
@@ -830,7 +830,7 @@ export default function JobCreate() {
             </label>
             {isForecasting ? (
               <p className="form-hint" data-testid="job-forecast-split-hint">
-                Forecasting requires a time-ordered split. Random saved splits are hidden.
+                시계열 예측은 시간 순서 분할이 필요합니다. 무작위로 저장된 분할은 목록에서 제외됩니다.
               </p>
             ) : null}
             {selectedSavedSplit ? (
