@@ -105,13 +105,13 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("link", { name: "Pipelines", exact: true }).click();
+  await page.getByRole("link", { name: "파이프라인", exact: true }).click();
   await page.getByRole("button", { name: /New pipeline/i }).click();
   await page.getByTestId("pipeline-name").fill(`copilot-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();

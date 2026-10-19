@@ -30,7 +30,7 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
@@ -43,13 +43,13 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await expect(page.getByTestId("job-logs")).toBeVisible();
   await registerTrainedModel(page, "api-usage-rf");
 
-  await page.getByRole("link", { name: "Model Registry" }).click();
+  await page.getByRole("link", { name: /모델 관리|Model Registry/ }).click();
   await page.getByRole("link", { name: "api-usage-rf" }).click();
   await page.getByRole("button", { name: "Request approval" }).click();
   await page.getByTestId("approve-model").click();
   await expect(page.getByText("Model approved.")).toBeVisible();
 
-  await page.getByRole("link", { name: "Deployments" }).click();
+  await page.getByRole("link", { name: /모델 배포|Deployments/ }).click();
   await page.getByRole("button", { name: "New deployment" }).click();
   await page.getByTestId("endpoint-name").fill("api-usage-endpoint");
   await page.getByTestId("endpoint-create").click();

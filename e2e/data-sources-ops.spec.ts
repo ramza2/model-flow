@@ -61,7 +61,7 @@ test("data source lifecycle activate deactivate and permanent delete", async ({ 
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await page.getByTestId("add-data-source").click();
   await page.getByTestId("data-source-name").fill(unusedName);
   await page.getByTestId("data-source-type").selectOption("file");
@@ -154,7 +154,7 @@ test("postgres import discovery UI when source credentials are available", async
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await createPostgresSource(page, {
     name: sourceName,
     database: sourceDb!,
@@ -205,7 +205,7 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await page.getByTestId("add-data-source").click();
   await page.getByTestId("data-source-name").fill(sourceName);
   await page.getByTestId("data-source-type").selectOption("postgres");
@@ -279,7 +279,7 @@ test("typed postgres form connection test shows error styling on refused connect
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   // 127.0.0.1:1 is refused inside the API container; connect_timeout is 5s.
   await createPostgresSource(page, {
     name: sourceName,
@@ -348,7 +348,7 @@ async function importMysqlFamilyCustomers(
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await createMysqlSource(page, {
     name: options.sourceName,
     host: options.host,
@@ -454,7 +454,7 @@ test("mssql import discovery UI when source credentials are available", async ({
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await createMssqlSource(page, {
     name: sourceName,
     host: sourceHost,
@@ -536,7 +536,7 @@ test("oracle import discovery UI when source credentials are available", async (
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await createOracleSource(page, {
     name: sourceName,
     host: sourceHost,
@@ -587,7 +587,7 @@ test("REST API source test preview and import use the existing dataset lifecycle
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
-  await page.getByRole("link", { name: "Data Sources", exact: true }).click();
+  await page.getByRole("link", { name: "데이터 소스", exact: true }).click();
   await page.getByTestId("add-data-source").click();
   await page.getByTestId("data-source-name").fill(sourceName);
   await page.getByTestId("data-source-type").selectOption("rest_api");

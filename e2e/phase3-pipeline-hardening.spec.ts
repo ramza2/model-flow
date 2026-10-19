@@ -105,7 +105,7 @@ test("unsaved pipeline edits guard sidebar navigation and project switching", as
     expect(dialog.message()).toContain("Unsaved pipeline changes");
     await dialog.dismiss();
   });
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectAId}/pipelines/${pipelineId}$`));
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
 

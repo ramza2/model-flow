@@ -33,7 +33,7 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/02-project.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
@@ -52,7 +52,7 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await page.screenshot({ path: "artifacts/screenshots/04-job.png", fullPage: true });
   await registerTrainedModel(page, "e2e-rf");
 
-  await page.getByRole("link", { name: "Model Registry" }).click();
+  await page.getByRole("link", { name: /모델 관리|Model Registry/ }).click();
   await expect(page.getByRole("link", { name: "e2e-rf" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "e2e-rf" }).click();
   await page.getByRole("button", { name: "Request approval" }).click();
@@ -61,7 +61,7 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await expect(page.getByText("Model approved.")).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/05-registry.png", fullPage: true });
 
-  await page.getByRole("link", { name: "Deployments" }).click();
+  await page.getByRole("link", { name: /모델 배포|Deployments/ }).click();
   await page.getByRole("button", { name: "New deployment" }).click();
   await page.getByTestId("endpoint-name").fill("e2e-endpoint");
   await page.getByTestId("endpoint-create").click();

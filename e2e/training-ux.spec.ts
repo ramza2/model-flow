@@ -30,7 +30,7 @@ async function createProject(page: import("@playwright/test").Page, projectName:
 }
 
 async function uploadIrisAndOpenTrain(page: import("@playwright/test").Page) {
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Datasets", exact: true })).toBeVisible();
   const uploadToggle = page.getByRole("button", { name: "↑ Upload dataset", exact: true });
   await uploadToggle.click();
@@ -68,7 +68,7 @@ test("invalid algorithm API combination does not create a job", async ({ page, r
   await createProject(page, projectName);
   await uploadIrisAndOpenTrain(page);
   // Leave the create form; we only needed a dataset for the API call.
-  await page.getByRole("link", { name: "Datasets", exact: true }).click();
+  await page.getByRole("link", { name: "데이터셋", exact: true }).click();
 
   const token = await page.evaluate(() => localStorage.getItem("modelflow_token"));
   const projectId = page.url().match(/projects\/(\d+)/)?.[1];
