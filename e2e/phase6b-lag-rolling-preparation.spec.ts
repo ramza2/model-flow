@@ -159,7 +159,7 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
     .click();
   await expect(page.getByTestId("preparation-rolling-inspector")).toBeVisible();
   await expect(page.getByTestId("preparation-rolling-time-column")).toHaveValue("event_time");
-  await expect(page.getByTestId("preparation-rolling-help")).toContainText("past rows only");
+  await expect(page.getByTestId("preparation-rolling-help")).toContainText("과거 행만 사용");
 
   await page.getByTestId("preparation-preview").click();
   await expect(page.getByTestId("preparation-preview-panel")).toBeVisible({ timeout: 30_000 });
