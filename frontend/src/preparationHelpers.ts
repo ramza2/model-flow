@@ -484,13 +484,13 @@ export function preparationConfigSummary(
   switch (nodeType) {
     case "source":
       if (config.dataset_id != null && config.dataset_id !== "") {
-        lines.push(`Dataset #${config.dataset_id}`);
+        lines.push(`데이터셋 #${config.dataset_id}`);
       } else {
-        lines.push("Dataset not selected");
+        lines.push("데이터셋 미선택");
       }
-      lines.push(config.version_strategy === "fixed" ? "Fixed version" : "Latest version");
+      lines.push(config.version_strategy === "fixed" ? "고정 버전" : "최신 버전");
       if (config.version_strategy === "fixed" && config.dataset_version_id != null) {
-        lines.push(`Version id ${config.dataset_version_id}`);
+        lines.push(`버전 ID ${config.dataset_version_id}`);
       }
       break;
     case "join": {
@@ -500,21 +500,21 @@ export function preparationConfigSummary(
       if (left.length || right.length) {
         lines.push(`${left.join(", ") || "?"} = ${right.join(", ") || "?"}`);
       } else {
-        lines.push("Keys not set");
+        lines.push("키 미설정");
       }
       break;
     }
     case "union":
-      lines.push(config.mode === "align_by_name" ? "Align by name" : "Strict");
+      lines.push(config.mode === "align_by_name" ? "이름 기준 정렬" : "엄격 모드 (Strict)");
       break;
     case "select": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(columns.length ? columns.map(String).join(", ") : "No columns");
+      lines.push(columns.length ? columns.map(String).join(", ") : "컬럼 없음");
       break;
     }
     case "drop": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(columns.length ? `Drop ${columns.map(String).join(", ")}` : "No columns");
+      lines.push(columns.length ? `삭제: ${columns.map(String).join(", ")}` : "컬럼 없음");
       break;
     }
     case "rename": {
@@ -523,17 +523,13 @@ export function preparationConfigSummary(
           ? (config.mapping as Record<string, unknown>)
           : {};
       const count = Object.keys(mapping).length;
-      lines.push(count ? `${count} rename${count === 1 ? "" : "s"}` : "No renames");
+      lines.push(count ? `이름 변경 ${count}개` : "이름 변경 없음");
       break;
     }
     case "filter": {
       const conditions = Array.isArray(config.conditions) ? config.conditions : [];
       lines.push(String(config.combine || "and").toUpperCase());
-      lines.push(
-        conditions.length
-          ? `${conditions.length} condition${conditions.length === 1 ? "" : "s"}`
-          : "No conditions",
-      );
+      lines.push(conditions.length ? `조건 ${conditions.length}개` : "조건 없음");
       break;
     }
     case "cast": {
@@ -542,13 +538,13 @@ export function preparationConfigSummary(
           ? (config.casts as Record<string, unknown>)
           : {};
       const count = Object.keys(casts).length;
-      lines.push(count ? `${count} cast${count === 1 ? "" : "s"}` : "No casts");
+      lines.push(count ? `자료형 변환 ${count}개` : "변환 없음");
       break;
     }
     case "deduplicate": {
       const columns = Array.isArray(config.columns) ? config.columns : [];
-      lines.push(config.keep === "last" ? "Keep last" : "Keep first");
-      lines.push(columns.length ? columns.map(String).join(", ") : "All columns");
+      lines.push(config.keep === "last" ? "마지막 행 유지" : "첫 행 유지");
+      lines.push(columns.length ? columns.map(String).join(", ") : "전체 컬럼");
       break;
     }
     case "fill_constant": {
@@ -557,24 +553,20 @@ export function preparationConfigSummary(
           ? (config.values as Record<string, unknown>)
           : {};
       const count = Object.keys(values).length;
-      lines.push(count ? `${count} fill${count === 1 ? "" : "s"}` : "No fills");
+      lines.push(count ? `결측값 채우기 ${count}개` : "채우기 없음");
       break;
     }
     case "derived_column": {
       const name = String(config.name || "").trim();
-      lines.push(name || "Unnamed column");
+      lines.push(name || "컬럼 이름 미지정");
       lines.push(String(config.operation || "add"));
       break;
     }
     case "group_by": {
       const keys = Array.isArray(config.group_by) ? config.group_by.map(String).filter(Boolean) : [];
       const aggregations = Array.isArray(config.aggregations) ? config.aggregations : [];
-      lines.push(keys.length ? `By ${keys.join(", ")}` : "No group keys");
-      lines.push(
-        aggregations.length
-          ? `${aggregations.length} aggregation${aggregations.length === 1 ? "" : "s"}`
-          : "No aggregations",
-      );
+      lines.push(keys.length ? `기준: ${keys.join(", ")}` : "그룹 키 없음");
+      lines.push(aggregations.length ? `집계 ${aggregations.length}개` : "집계 없음");
       break;
     }
     case "unpivot": {
@@ -586,9 +578,9 @@ export function preparationConfigSummary(
         : [];
       const variableName = String(config.variable_column || "").trim() || "variable";
       const valueName = String(config.value_column || "").trim() || "value";
-      lines.push(ids.length ? `IDs: ${ids.join(", ")}` : "No ID columns");
-      lines.push(values.length ? `Values: ${values.join(", ")}` : "No value columns");
-      lines.push(`Output: ${variableName} / ${valueName}`);
+      lines.push(ids.length ? `식별자: ${ids.join(", ")}` : "식별자 컬럼 없음");
+      lines.push(values.length ? `값: ${values.join(", ")}` : "값 컬럼 없음");
+      lines.push(`출력: ${variableName} / ${valueName}`);
       break;
     }
     case "pivot": {
@@ -599,44 +591,36 @@ export function preparationConfigSummary(
       const valueColumn = String(config.value_column || "").trim();
       const aggregation = String(config.aggregation || "sum").trim().toLowerCase() || "sum";
       const pivotValues = Array.isArray(config.pivot_values) ? config.pivot_values : [];
-      lines.push(indexColumns.length ? `Index: ${indexColumns.join(", ")}` : "No index columns");
-      lines.push(columnsColumn ? `Columns: ${columnsColumn}` : "Pivot column not set");
+      lines.push(indexColumns.length ? `인덱스: ${indexColumns.join(", ")}` : "인덱스 컬럼 없음");
+      lines.push(columnsColumn ? `피벗 컬럼: ${columnsColumn}` : "피벗 컬럼 미설정");
       lines.push(
         valueColumn
-          ? `Value: ${valueColumn} · ${aggregation.toUpperCase()}`
-          : "Value column not set",
+          ? `값: ${valueColumn} · ${aggregation.toUpperCase()}`
+          : "값 컬럼 미설정",
       );
-      lines.push(
-        pivotValues.length
-          ? `Outputs: ${pivotValues.length}`
-          : "No pivot values",
-      );
+      lines.push(pivotValues.length ? `출력 ${pivotValues.length}개` : "피벗 값 없음");
       break;
     }
     case "lag": {
       const timeColumn = String(config.time_column || "").trim();
       const sourceColumn = String(config.source_column || "").trim();
       const lags = Array.isArray(config.lags) ? config.lags : [];
-      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
-      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
-      lines.push(lags.length ? `${lags.length} lag${lags.length === 1 ? "" : "s"}` : "No lags");
+      lines.push(timeColumn ? `시간: ${timeColumn}` : "시간 컬럼 미설정");
+      lines.push(sourceColumn ? `소스: ${sourceColumn}` : "소스 컬럼 미설정");
+      lines.push(lags.length ? `Lag ${lags.length}개` : "Lag 없음");
       break;
     }
     case "rolling_window": {
       const timeColumn = String(config.time_column || "").trim();
       const sourceColumn = String(config.source_column || "").trim();
       const windows = Array.isArray(config.windows) ? config.windows : [];
-      lines.push(timeColumn ? `Time: ${timeColumn}` : "Time column not set");
-      lines.push(sourceColumn ? `Source: ${sourceColumn}` : "Source column not set");
-      lines.push(
-        windows.length
-          ? `${windows.length} window${windows.length === 1 ? "" : "s"}`
-          : "No windows",
-      );
+      lines.push(timeColumn ? `시간: ${timeColumn}` : "시간 컬럼 미설정");
+      lines.push(sourceColumn ? `소스: ${sourceColumn}` : "소스 컬럼 미설정");
+      lines.push(windows.length ? `윈도우 ${windows.length}개` : "윈도우 없음");
       break;
     }
     case "output":
-      lines.push("Prepared output");
+      lines.push("준비된 결과");
       break;
     default:
       break;

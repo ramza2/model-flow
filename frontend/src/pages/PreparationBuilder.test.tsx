@@ -1530,6 +1530,8 @@ describe("PreparationBuilder", () => {
       "href",
       "/projects/7/jobs/new?datasetId=5&datasetVersionId=21",
     );
+    expect(screen.getByTestId("preparation-train-result-10")).toHaveTextContent("이 결과로 학습");
+    expect(screen.getByTestId("preparation-run-open-10")).toHaveTextContent("데이터셋 열기");
     expect(screen.getByTestId("preparation-train-result-11")).toHaveAttribute(
       "href",
       "/projects/7/jobs/new?datasetId=5&datasetVersionId=22",

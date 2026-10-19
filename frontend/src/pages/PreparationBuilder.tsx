@@ -1007,7 +1007,7 @@ export default function PreparationBuilder() {
 
         <div
           className="preparation-canvas"
-          aria-label="Preparation graph"
+          aria-label="데이터 준비 그래프"
           data-testid="preparation-canvas"
         >
           {nodes.length === 0 ? (
@@ -1377,7 +1377,7 @@ export default function PreparationBuilder() {
                               to={`/projects/${projectId}/datasets/${run.output_dataset_id}`}
                               data-testid={`preparation-run-open-${run.id}`}
                             >
-                              Open dataset
+                              데이터셋 열기
                             </Link>
                           )}
                           {canWrite &&
@@ -1389,7 +1389,7 @@ export default function PreparationBuilder() {
                                 to={`/projects/${projectId}/jobs/new?datasetId=${run.output_dataset_id}&datasetVersionId=${run.output_dataset_version_id}`}
                                 data-testid={`preparation-train-result-${run.id}`}
                               >
-                                Train this result
+                                이 결과로 학습
                               </Link>
                             )}
                           {status === "failed" && (
