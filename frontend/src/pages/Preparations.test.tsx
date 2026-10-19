@@ -85,17 +85,28 @@ describe("Preparations list", () => {
     );
   });
 
-  it("loads the preparations table with output labels", async () => {
+  it("loads the preparations table with Korean labels and output meta", async () => {
     renderPage();
-    expect(await screen.findByRole("heading", { name: "Preparations" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "데이터 가공" })).toBeInTheDocument();
     expect(
-      screen.getByText(/Scan preparation graphs/i),
+      screen.getByText(/데이터 가공 그래프를 만들고 관리합니다/),
     ).toBeInTheDocument();
+    expect(screen.getByText(/이 프로젝트의 데이터 가공/)).toHaveTextContent(
+      "이 프로젝트의 데이터 가공 2개",
+    );
+
     const table = await screen.findByTestId("preparations-table");
+    expect(within(table).getByRole("columnheader", { name: "데이터 가공명" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "최신 버전" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "결과 데이터셋" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "생성일시" })).toBeInTheDocument();
     expect(within(table).getByText("Join customers")).toBeInTheDocument();
-    expect(within(table).getByText("Not configured")).toBeInTheDocument();
+    expect(within(table).getByText("미설정")).toBeInTheDocument();
     expect(within(table).getByText("#12")).toBeInTheDocument();
     expect(within(table).getByText("v2")).toBeInTheDocument();
+    expect(within(table).getByText("설명 없음")).toBeInTheDocument();
+    expect(within(table).getAllByRole("link", { name: "열기" }).length).toBeGreaterThan(0);
+    expect(within(table).getByTestId("preparation-delete-3")).toHaveTextContent("삭제");
   });
 
   it("creates a preparation with an empty graph and opens the builder", async () => {
@@ -117,6 +128,8 @@ describe("Preparations list", () => {
 
     renderPage();
     fireEvent.click(await screen.findByTestId("preparation-create-toggle"));
+    expect(screen.getByText("데이터 가공 만들기")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-create")).toHaveTextContent("생성 후 편집");
     fireEvent.change(screen.getByTestId("preparation-name"), { target: { value: "New prep" } });
     fireEvent.change(screen.getByTestId("preparation-description"), {
       target: { value: "Demo" },

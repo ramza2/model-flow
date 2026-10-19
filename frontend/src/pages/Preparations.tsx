@@ -45,7 +45,7 @@ export default function Preparations() {
   useEffect(() => {
     refresh().catch((reason) => {
       setLoading(false);
-      setError(reason instanceof Error ? reason.message : "Preparations could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "데이터 가공 목록을 불러오지 못했습니다.");
     });
   }, [refresh]);
 
@@ -69,27 +69,27 @@ export default function Preparations() {
       );
       navigate(`/projects/${projectId}/preparations/${created.id}`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Preparation could not be created.");
+      setError(reason instanceof Error ? reason.message : "데이터 가공을 만들지 못했습니다.");
       setBusy(false);
     }
   }
 
   async function onDelete(preparation: DatasetPreparation) {
     if (!canWrite) return;
-    if (!window.confirm(`Delete preparation “${preparation.name}”?`)) return;
+    if (!window.confirm(`“${preparation.name}” 데이터 가공을 삭제하시겠습니까?`)) return;
     setError("");
     setSuccess("");
     try {
       await api(`/projects/${projectId}/dataset-preparations/${preparation.id}`, {
         method: "DELETE",
       });
-      setSuccess(`Deleted “${preparation.name}”.`);
+      setSuccess(`“${preparation.name}” 데이터 가공을 삭제했습니다.`);
       await refresh();
     } catch (reason) {
       if (reason instanceof ApiRequestError && reason.status === 409) {
         setError(reason.message);
       } else {
-        setError(reason instanceof Error ? reason.message : "Preparation could not be deleted.");
+        setError(reason instanceof Error ? reason.message : "데이터 가공을 삭제하지 못했습니다.");
       }
     }
   }
@@ -97,8 +97,8 @@ export default function Preparations() {
   return (
     <div>
       <PageHeader
-        title="Preparations"
-        description="Scan preparation graphs, then open a builder to combine datasets into an immutable output version."
+        title="데이터 가공"
+        description="데이터 가공 그래프를 만들고 관리합니다. 여러 데이터셋을 결합·변환해 학습에 사용할 결과 데이터셋을 만들 수 있습니다."
         actions={
           canWrite ? (
             <button
@@ -107,7 +107,7 @@ export default function Preparations() {
               data-testid="preparation-create-toggle"
               onClick={() => setShowCreate(!showCreate)}
             >
-              ＋ New preparation
+              ＋ 새 데이터 가공
             </button>
           ) : undefined
         }
@@ -118,51 +118,51 @@ export default function Preparations() {
         <form className="panel form workflow-create-panel" onSubmit={onCreate} data-testid="preparation-create-form">
           <div className="panel-title">
             <div>
-              <span className="eyebrow">New preparation</span>
-              <h2>Create graph</h2>
+              <span className="eyebrow">새 데이터 가공</span>
+              <h2>데이터 가공 만들기</h2>
             </div>
           </div>
           <label>
-            Name
+            이름
             <input
               name="name"
               value={name}
               required
-              placeholder="Customer features join"
+              placeholder="예: 고객 특성 데이터 결합"
               data-testid="preparation-name"
               onChange={(event) => setName(event.target.value)}
             />
           </label>
           <label>
-            Description (optional)
+            설명 (선택)
             <input
               name="description"
               value={description}
-              placeholder="What this preparation produces"
+              placeholder="이 데이터 가공의 목적이나 결과를 입력하세요"
               data-testid="preparation-description"
               onChange={(event) => setDescription(event.target.value)}
             />
           </label>
           <div className="row-actions">
             <button className="btn" type="submit" disabled={busy} data-testid="preparation-create">
-              {busy ? "Creating…" : "Create and open builder"}
+              {busy ? "생성 중…" : "생성 후 편집"}
             </button>
             <button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>
-              Cancel
+              취소
             </button>
           </div>
         </form>
       )}
       {loading ? (
-        <Loading label="Loading preparations" />
+        <Loading label="데이터 가공 불러오는 중" />
       ) : items.length === 0 ? (
         <EmptyState
-          title="No preparations"
-          description="Create a visual graph to join or union datasets before training."
+          title="데이터 가공이 없습니다"
+          description="학습 전에 데이터셋을 결합·변환할 데이터 가공 그래프를 만들어 보세요."
           action={
             canWrite ? (
               <button className="btn" type="button" onClick={() => setShowCreate(true)}>
-                New preparation
+                새 데이터 가공
               </button>
             ) : undefined
           }
@@ -170,21 +170,21 @@ export default function Preparations() {
       ) : (
         <div className="workflow-catalog">
           <div className="catalog-summary" aria-live="polite">
-            <span className="catalog-summary-count">{items.length}</span>
             <span className="catalog-summary-label">
-              {items.length === 1 ? "preparation in this project" : "preparations in this project"}
+              이 프로젝트의 데이터 가공{" "}
+              <span className="catalog-summary-count">{items.length}</span>개
             </span>
           </div>
           <div className="panel table-wrap catalog-table">
             <table data-testid="preparations-table">
               <thead>
                 <tr>
-                  <th>Preparation</th>
-                  <th>Latest version</th>
-                  <th>Output dataset</th>
-                  <th>Created</th>
+                  <th>데이터 가공명</th>
+                  <th>최신 버전</th>
+                  <th>결과 데이터셋</th>
+                  <th>생성일시</th>
                   <th>
-                    <span className="sr-only">Action</span>
+                    <span className="sr-only">작업</span>
                   </th>
                 </tr>
               </thead>
@@ -199,19 +199,19 @@ export default function Preparations() {
                         <strong>{preparation.name}</strong>
                       </Link>
                       <small className="table-subtitle">
-                        {preparation.description || "Dataset preparation"}
+                        {preparation.description || "설명 없음"}
                       </small>
                     </td>
                     <td>
-                      <span className="version-chip" title="Latest preparation graph version">
+                      <span className="version-chip" title="최신 데이터 가공 그래프 버전">
                         v{preparation.latest_version}
                       </span>
                     </td>
                     <td>
                       {preparation.output_dataset_id == null ? (
-                        <span className="catalog-empty-meta">Not configured</span>
+                        <span className="catalog-empty-meta">미설정</span>
                       ) : (
-                        <span className="version-chip is-neutral" title="Pinned output dataset">
+                        <span className="version-chip is-neutral" title="연결된 결과 데이터셋">
                           #{preparation.output_dataset_id}
                         </span>
                       )}
@@ -222,7 +222,7 @@ export default function Preparations() {
                         className="btn link"
                         to={`/projects/${projectId}/preparations/${preparation.id}`}
                       >
-                        Open
+                        열기
                       </Link>
                       {canWrite ? (
                         <button
@@ -231,7 +231,7 @@ export default function Preparations() {
                           data-testid={`preparation-delete-${preparation.id}`}
                           onClick={() => void onDelete(preparation)}
                         >
-                          Delete
+                          삭제
                         </button>
                       ) : null}
                     </td>
