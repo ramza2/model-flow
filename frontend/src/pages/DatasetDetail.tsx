@@ -14,6 +14,7 @@ import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
+  HelpTip,
   Loading,
   PageHeader,
   StatusBadge,
@@ -35,11 +36,11 @@ type ConditionDraft = {
 };
 
 const RULE_TYPES = [
-  { value: "not_null", label: "Not null" },
-  { value: "unique", label: "Unique" },
-  { value: "range", label: "Range" },
-  { value: "allowed_values", label: "Allowed values" },
-  { value: "regex", label: "Regex" },
+  { value: "not_null", label: "필수값 검사 (Not null)" },
+  { value: "unique", label: "중복 금지 (Unique)" },
+  { value: "range", label: "범위 검사 (Range)" },
+  { value: "allowed_values", label: "허용 값 검사 (Allowed values)" },
+  { value: "regex", label: "정규식 검사 (Regex)" },
 ] as const;
 
 type QualityActionError = {
@@ -102,11 +103,27 @@ function typeLabel(type: string) {
   return RULE_TYPES.find((item) => item.value === type)?.label ?? type;
 }
 
+/** Display-only severity labels; persisted values stay fail / warning. */
+function severityLabel(severity: string) {
+  const normalized = String(severity || "").toLowerCase();
+  if (normalized === "fail") return "실패 (Fail)";
+  if (normalized === "warning") return "경고 (Warning)";
+  return severity || "—";
+}
+
+/** Display-only check result labels; StatusBadge / API values stay PASS / FAIL. */
+function qualityResultLabel(result: string) {
+  const normalized = String(result || "").toUpperCase();
+  if (normalized === "PASS") return "통과 (PASS)";
+  if (normalized === "FAIL") return "실패 (FAIL)";
+  return result || "—";
+}
+
 function summarizeCondition(rule: Record<string, unknown>) {
   const type = String(rule.type ?? "");
   const column = String(rule.column ?? "—");
   const severity = String(rule.severity ?? "fail");
-  return `${column} · ${typeLabel(type)} · ${severity}`;
+  return `${column} · ${typeLabel(type)} · ${severityLabel(severity)}`;
 }
 
 export default function DatasetDetail() {
@@ -288,19 +305,19 @@ export default function DatasetDetail() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setSuccess("Quality rule created.");
+        setSuccess("품질 규칙을 만들었습니다.");
       } else {
         await api(`/projects/${projectId}/quality-rules/${editingRuleId}`, {
           method: "PATCH",
           body: JSON.stringify(payload),
         });
-        setSuccess("Quality rule updated.");
+        setSuccess("품질 규칙을 수정했습니다.");
       }
       resetForm();
       await loadRules();
     } catch (reason) {
       setQualityActionError({
-        message: reason instanceof Error ? reason.message : "Quality rule could not be saved.",
+        message: reason instanceof Error ? reason.message : "품질 규칙을 저장하지 못했습니다.",
         scope: "form",
       });
     } finally {
@@ -325,9 +342,9 @@ export default function DatasetDetail() {
       ]);
       setChecks(checkRows);
       setExpandedChecks((current) => ({ ...current, [result.id]: true }));
-      setSuccess(`Quality check completed: ${result.result}.`);
+      setSuccess(`품질 검사가 완료되었습니다: ${qualityResultLabel(result.result)}.`);
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "Quality check could not run.";
+      const message = reason instanceof Error ? reason.message : "품질 검사를 실행하지 못했습니다.";
       if (ruleId == null) {
         setQualityActionError({ message, scope: "panel" });
       } else {
@@ -347,11 +364,11 @@ export default function DatasetDetail() {
         method: "PATCH",
         body: JSON.stringify({ is_active: !rule.is_active }),
       });
-      setSuccess(rule.is_active ? "Rule deactivated." : "Rule activated.");
+      setSuccess(rule.is_active ? "품질 규칙을 비활성화했습니다." : "품질 규칙을 활성화했습니다.");
       await loadRules();
     } catch (reason) {
       setQualityActionError({
-        message: reason instanceof Error ? reason.message : "Rule status could not be updated.",
+        message: reason instanceof Error ? reason.message : "규칙 상태를 변경하지 못했습니다.",
         scope: "rule",
         ruleId: rule.id,
       });
@@ -366,16 +383,16 @@ export default function DatasetDetail() {
     setSuccess("");
     try {
       await api(`/projects/${projectId}/quality-rules/${rule.id}`, { method: "DELETE" });
-      setSuccess("Quality rule deleted.");
+      setSuccess("품질 규칙을 삭제했습니다.");
       if (editingRuleId === rule.id) resetForm();
       await loadRules();
     } catch (reason) {
       const message =
         reason instanceof ApiRequestError && reason.status === 409
-          ? "This rule has check history. Deactivate it instead."
+          ? "이 규칙에는 검사 기록이 있어 삭제할 수 없습니다. 대신 비활성화하세요."
           : reason instanceof Error
             ? reason.message
-            : "Quality rule could not be deleted.";
+            : "품질 규칙을 삭제하지 못했습니다.";
       setQualityActionError({ message, scope: "rule", ruleId: rule.id });
     } finally {
       setBusy("");
@@ -391,11 +408,11 @@ export default function DatasetDetail() {
         method: "PATCH",
         body: JSON.stringify({ dataset_id: numericDatasetId, is_active: true }),
       });
-      setSuccess("Legacy rule assigned to this dataset and activated.");
+      setSuccess("기존 규칙을 이 데이터셋에 연결하고 활성화했습니다.");
       await loadRules();
     } catch (reason) {
       setQualityActionError({
-        message: reason instanceof Error ? reason.message : "Legacy rule could not be assigned.",
+        message: reason instanceof Error ? reason.message : "기존 규칙을 연결하지 못했습니다.",
         scope: "rule",
         ruleId: rule.id,
       });
@@ -501,15 +518,15 @@ export default function DatasetDetail() {
           <div>
             <strong>{rule.name}</strong>
             <div className="quality-rule-meta">
-              <span className={`badge ${rule.is_active ? "ok" : "warn"}`}>{rule.is_active ? "Active" : "Inactive"}</span>
+              <span className={`badge ${rule.is_active ? "ok" : "warn"}`}>{rule.is_active ? "활성" : "비활성"}</span>
               <span className={`badge ${rule.block_training_on_fail ? "err" : "run"}`}>
-                {rule.block_training_on_fail ? "Blocking" : "Non-blocking"}
+                {rule.block_training_on_fail ? "학습 차단" : "비차단"}
               </span>
-              {legacy ? <span className="badge warn">Needs dataset assignment</span> : null}
+              {legacy ? <span className="badge warn">데이터셋 연결 필요</span> : null}
               <small>
-                {legacy ? "Unassigned" : rule.dataset_name || `Dataset #${rule.dataset_id}`}
+                {legacy ? "미할당" : rule.dataset_name || `데이터셋 #${rule.dataset_id}`}
                 {" · "}
-                {conditionLines.length} condition{conditionLines.length === 1 ? "" : "s"}
+                {`조건 ${conditionLines.length}개`}
               </small>
             </div>
           </div>
@@ -523,11 +540,11 @@ export default function DatasetDetail() {
                   disabled={busy !== "" || !rule.is_active}
                   onClick={() => void runQuality(rule.id)}
                 >
-                  {busy === `run-${rule.id}` ? "Running…" : "Run"}
+                  {busy === `run-${rule.id}` ? "검사 중…" : "검사 실행"}
                 </button>
               )}
               <button type="button" className="btn secondary" data-testid={`quality-edit-${rule.id}`} disabled={busy !== ""} onClick={() => startEdit(rule)}>
-                Edit
+                수정
               </button>
               {!legacy && (
                 <button
@@ -537,16 +554,16 @@ export default function DatasetDetail() {
                   disabled={busy !== ""}
                   onClick={() => void toggleActive(rule)}
                 >
-                  {rule.is_active ? "Deactivate" : "Activate"}
+                  {rule.is_active ? "비활성화" : "활성화"}
                 </button>
               )}
               {legacy ? (
                 <button type="button" className="btn secondary" data-testid={`quality-assign-${rule.id}`} disabled={busy !== ""} onClick={() => void assignLegacy(rule)}>
-                  Assign to dataset
+                  데이터셋에 연결
                 </button>
               ) : (
                 <button type="button" className="btn secondary" data-testid={`quality-delete-${rule.id}`} disabled={busy !== ""} onClick={() => void deleteRule(rule)}>
-                  Delete
+                  삭제
                 </button>
               )}
             </div>
@@ -588,9 +605,9 @@ export default function DatasetDetail() {
           <div className="grid stats-grid">
             <div className="stat"><div className="label">Rows</div><div className="value">{selected?.row_count.toLocaleString() ?? "—"}</div></div>
             <div className="stat"><div className="label">Columns</div><div className="value">{selected?.column_count ?? "—"}</div></div>
-            <div className="stat" data-testid="quality-active-count"><div className="label">Active rules</div><div className="value">{activeRules.length}</div></div>
-            <div className="stat" data-testid="quality-latest-result"><div className="label">Latest quality result</div><div className="value">{latestResult}</div></div>
-            <div className="stat" data-testid="quality-check-count"><div className="label">Quality checks</div><div className="value">{checks.length}</div></div>
+            <div className="stat" data-testid="quality-active-count"><div className="label">활성 규칙</div><div className="value">{activeRules.length}</div></div>
+            <div className="stat" data-testid="quality-latest-result"><div className="label">최근 품질 결과</div><div className="value">{latestResult}</div></div>
+            <div className="stat" data-testid="quality-check-count"><div className="label">품질 검사</div><div className="value">{checks.length}</div></div>
             <div className="stat"><div className="label">Saved splits</div><div className="value">{splits.length}</div></div>
           </div>
           <section className="panel" data-testid="dataset-lifecycle-entry">
@@ -683,19 +700,24 @@ export default function DatasetDetail() {
           <div className="two-column">
             <section className="panel" data-testid="quality-panel">
               <div className="panel-title">
-                <div><span className="eyebrow">Trust</span><h2>Data quality</h2></div>
+                <div>
+                  <span className="eyebrow">신뢰성</span>
+                  <h2>
+                    <TermLabel ko="데이터 품질" en="Data quality" help={UI_HELP.dataQuality} />
+                  </h2>
+                </div>
                 {canWrite && (
                   <div className="row-actions">
                     <button className="btn secondary" data-testid="quality-run-all" disabled={busy !== "" || activeRules.length === 0} onClick={() => void runQuality()}>
-                      {busy === "quality" ? "Running…" : "Run all checks"}
+                      {busy === "quality" ? "검사 중…" : "전체 검사 실행"}
                     </button>
-                    <button className="btn secondary" data-testid="quality-create" disabled={busy !== ""} onClick={startCreate}>New rule</button>
+                    <button className="btn secondary" data-testid="quality-create" disabled={busy !== ""} onClick={startCreate}>새 규칙</button>
                   </div>
                 )}
               </div>
               {renderQualityActionError("panel", undefined, "quality-action-error")}
               {rules.length === 0 ? (
-                <p className="muted">No quality rules are assigned to this dataset yet.</p>
+                <p className="muted">이 데이터셋에 등록된 품질 규칙이 없습니다. 새 규칙을 만들어 데이터 오류를 자동으로 검사할 수 있습니다.</p>
               ) : (
                 <div className="quality-rule-list" data-testid="quality-rule-list">
                   {rules.map((rule) => renderRuleCard(rule))}
@@ -703,48 +725,56 @@ export default function DatasetDetail() {
               )}
               {canWrite && showForm && (
                 <form className="quality-rule-form" data-testid="quality-rule-form" onSubmit={saveRule}>
-                  <div className="panel-title"><div><h3>{editingRuleId == null ? "Create rule" : "Edit rule"}</h3></div></div>
+                  <div className="panel-title"><div><h3>{editingRuleId == null ? "품질 규칙 만들기" : "품질 규칙 수정"}</h3></div></div>
                   {renderQualityActionError("form", undefined, "quality-form-error")}
                   <label>
-                    Rule name
-                    <input aria-label="Rule name" data-testid="quality-rule-name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
+                    규칙 이름
+                    <input aria-label="규칙 이름" data-testid="quality-rule-name" value={ruleName} onChange={(event) => setRuleName(event.target.value)} required />
                   </label>
                   <div className="quality-form-toggles">
-                    <label><input type="checkbox" data-testid="quality-rule-active" checked={ruleActive} onChange={(event) => setRuleActive(event.target.checked)} /> Active</label>
-                    <label><input type="checkbox" data-testid="quality-rule-blocking" checked={ruleBlocking} onChange={(event) => setRuleBlocking(event.target.checked)} /> Block training on fail</label>
+                    <label>
+                      <input type="checkbox" data-testid="quality-rule-active" checked={ruleActive} onChange={(event) => setRuleActive(event.target.checked)} />
+                      {" "}규칙 활성화
+                    </label>
+                    <label>
+                      <input type="checkbox" data-testid="quality-rule-blocking" checked={ruleBlocking} onChange={(event) => setRuleBlocking(event.target.checked)} />
+                      {" "}
+                      <TermLabel ko="실패 시 학습 차단" help={UI_HELP.qualityBlocking} />
+                    </label>
                   </div>
                   {conditions.map((condition, index) => (
                     <div className="quality-condition-editor" key={`condition-${index}`} data-testid={`quality-condition-${index}`}>
-                      <select aria-label={`Condition ${index + 1} column`} value={condition.column} onChange={(event) => {
+                      <select aria-label={`조건 ${index + 1} 컬럼`} value={condition.column} onChange={(event) => {
                         const next = [...conditions];
                         next[index] = { ...condition, column: event.target.value };
                         setConditions(next);
                       }}>
                         {columns.map((column) => <option key={column} value={column}>{column}</option>)}
                       </select>
-                      <select aria-label={`Condition ${index + 1} type`} data-testid={`quality-condition-type-${index}`} value={condition.type} onChange={(event) => {
+                      <select aria-label={`조건 ${index + 1} 검사 유형`} data-testid={`quality-condition-type-${index}`} value={condition.type} onChange={(event) => {
                         const next = [...conditions];
                         next[index] = { ...condition, type: event.target.value };
                         setConditions(next);
                       }}>
                         {RULE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
-                      <select aria-label={`Condition ${index + 1} severity`} value={condition.severity} onChange={(event) => {
+                      <select aria-label={`조건 ${index + 1} 심각도`} value={condition.severity} onChange={(event) => {
                         const next = [...conditions];
                         next[index] = { ...condition, severity: event.target.value };
                         setConditions(next);
                       }}>
-                        <option value="fail">Fail</option>
-                        <option value="warning">Warning</option>
+                        <option value="fail">실패 (Fail)</option>
+                        <option value="warning">경고 (Warning)</option>
                       </select>
+                      {index === 0 ? <HelpTip text={UI_HELP.qualitySeverity} /> : null}
                       {condition.type === "range" && (
                         <>
-                          <input aria-label={`Condition ${index + 1} min`} placeholder="Min" value={condition.min} onChange={(event) => {
+                          <input aria-label={`조건 ${index + 1} 최솟값`} placeholder="최솟값" value={condition.min} onChange={(event) => {
                             const next = [...conditions];
                             next[index] = { ...condition, min: event.target.value };
                             setConditions(next);
                           }} />
-                          <input aria-label={`Condition ${index + 1} max`} placeholder="Max" value={condition.max} onChange={(event) => {
+                          <input aria-label={`조건 ${index + 1} 최댓값`} placeholder="최댓값" value={condition.max} onChange={(event) => {
                             const next = [...conditions];
                             next[index] = { ...condition, max: event.target.value };
                             setConditions(next);
@@ -753,9 +783,9 @@ export default function DatasetDetail() {
                       )}
                       {condition.type === "allowed_values" && (
                         <input
-                          aria-label={`Condition ${index + 1} values`}
+                          aria-label={`조건 ${index + 1} 허용 값`}
                           data-testid={`quality-condition-values-${index}`}
-                          placeholder="Comma-separated values"
+                          placeholder="허용 값을 쉼표로 구분"
                           value={condition.values}
                           onChange={(event) => {
                             const next = [...conditions];
@@ -766,9 +796,9 @@ export default function DatasetDetail() {
                       )}
                       {condition.type === "regex" && (
                         <input
-                          aria-label={`Condition ${index + 1} pattern`}
+                          aria-label={`조건 ${index + 1} 정규식 패턴`}
                           data-testid={`quality-condition-pattern-${index}`}
-                          placeholder="Pattern"
+                          placeholder="정규식 패턴"
                           value={condition.pattern}
                           onChange={(event) => {
                             const next = [...conditions];
@@ -784,30 +814,30 @@ export default function DatasetDetail() {
                         disabled={conditions.length === 1}
                         onClick={() => setConditions(conditions.filter((_, itemIndex) => itemIndex !== index))}
                       >
-                        Remove condition
+                        조건 삭제
                       </button>
                     </div>
                   ))}
                   <div className="row-actions">
                     <button type="button" className="btn secondary" data-testid="quality-add-condition" onClick={() => setConditions([...conditions, emptyCondition(columns[0] || "target")])}>
-                      Add condition
+                      조건 추가
                     </button>
-                    <button className="btn" data-testid="quality-save-rule" disabled={busy === "rule"}>{busy === "rule" ? "Saving…" : "Save rule"}</button>
-                    <button type="button" className="btn secondary" data-testid="quality-cancel-rule" onClick={() => resetForm()}>Cancel</button>
+                    <button className="btn" data-testid="quality-save-rule" disabled={busy === "rule"}>{busy === "rule" ? "저장 중…" : "규칙 저장"}</button>
+                    <button type="button" className="btn secondary" data-testid="quality-cancel-rule" onClick={() => resetForm()}>취소</button>
                   </div>
                 </form>
               )}
               {legacyRules.length > 0 && (
                 <div className="legacy-quality-rules" data-testid="legacy-quality-rules">
-                  <h3>Legacy unassigned rules</h3>
-                  <p className="muted">Needs dataset assignment · Inactive until assigned.</p>
+                  <h3>기존 미할당 규칙</h3>
+                  <p className="muted">이전 규칙 중 아직 데이터셋에 연결되지 않은 항목입니다. 데이터셋에 연결하기 전에는 비활성 상태입니다.</p>
                   {legacyRules.map((rule) => renderRuleCard(rule, { legacy: true }))}
                 </div>
               )}
               <div className="quality-check-history" data-testid="quality-check-history">
-                <h3>Check history</h3>
+                <h3>검사 기록</h3>
                 {checks.length === 0 ? (
-                  <p className="muted">No quality checks have been run for this version.</p>
+                  <p className="muted">이 버전에서 실행한 품질 검사가 없습니다.</p>
                 ) : (
                   checks.map((check) => {
                     const open = expandedChecks[check.id] ?? false;
@@ -823,7 +853,7 @@ export default function DatasetDetail() {
                         }}
                       >
                         <summary>
-                          <strong>Check #{check.id}</strong>
+                          <strong>검사 #{check.id}</strong>
                           <StatusBadge status={check.result} />
                           <small>{formatDate(check.created_at)}</small>
                         </summary>
@@ -834,17 +864,17 @@ export default function DatasetDetail() {
                               <div key={`${check.id}-${index}`} className="quality-check-detail" data-testid={`quality-check-detail-${check.id}-${index}`}>
                                 <div className="quality-check-detail-heading">
                                   <strong data-testid={`quality-check-rule-name-${check.id}-${index}`}>
-                                    {detail.quality_rule_name || `Rule #${detail.quality_rule_id ?? "—"}`}
+                                    {detail.quality_rule_name || `규칙 #${detail.quality_rule_id ?? "—"}`}
                                   </strong>
                                   <small data-testid={`quality-check-condition-${check.id}-${index}`}>
-                                    {summarizeCondition(rule)} · {detail.passed ? "PASS" : "FAIL"}
+                                    {summarizeCondition(rule)} · {detail.passed ? "통과 (PASS)" : "실패 (FAIL)"}
                                   </small>
                                 </div>
                                 <div className="muted">{detail.message || "—"}</div>
                                 <small>
-                                  Severity: {detail.severity || String(rule.severity || "fail")}
+                                  심각도: {severityLabel(detail.severity || String(rule.severity || "fail"))}
                                   {" · "}
-                                  Blocks training: {detail.block_training_on_fail ? "Yes" : "No"}
+                                  학습 차단: {detail.block_training_on_fail ? "예" : "아니오"}
                                 </small>
                               </div>
                             );
