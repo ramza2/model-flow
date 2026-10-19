@@ -2,7 +2,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type Dataset, type DatasetSplit, type DatasetVersion, type Job } from "../api";
 import { effectiveTargetColumns } from "../jobHelpers";
-import { EmptyState, ErrorNotice, Loading, PageHeader } from "../components";
+import { EmptyState, ErrorNotice, Loading, Notice, PageHeader, TermLabel } from "../components";
+import { UI_HELP, problemTypeLabel } from "../uiTerminology";
 import {
   algorithmsForProblemType,
   algorithmsForTrainingTask,
@@ -23,9 +24,7 @@ type ResolveResponse = {
 };
 
 function titleCaseProblemType(value: string): string {
-  if (value === "classification") return "Classification";
-  if (value === "regression") return "Regression";
-  return value;
+  return problemTypeLabel(value);
 }
 
 const EMPTY_COLUMNS: string[] = [];
@@ -559,17 +558,29 @@ export default function JobCreate() {
 
   return (
     <div>
-      <PageHeader title="Create training job" description="Configure a reproducible run from a versioned dataset." />
+      <PageHeader
+        title="모델 학습 만들기"
+        description="데이터셋과 학습 조건을 선택해 재현 가능한 모델 학습을 시작합니다."
+      />
+      <Notice
+        variant="info"
+        title="처음 사용하는 경우"
+        message="예측 대상은 모델이 맞혀야 하는 값이고, 입력 항목은 예측에 사용할 정보입니다. 데이터 분할은 학습/검증/테스트 구간을 나눠 모델 성능을 공정하게 확인하기 위한 설정입니다."
+      />
       <ErrorNotice message={error} />
       {!formReady ? <Loading label="Loading datasets" /> : datasets.length === 0 ? (
         <EmptyState title="A dataset is required" description="Upload and profile data before creating a training job." />
       ) : (
         <form className="panel form form-wide" onSubmit={onSubmit}>
           <div className="form-section">
-            <span className="eyebrow">Job details</span>
+            <span className="eyebrow">학습 작업 정보</span>
             <div className="form-grid">
-              <label>Job name<input value={name} onChange={(event) => setName(event.target.value)} required data-testid="job-name" /></label>
-              <label>Training task
+              <label>
+                <TermLabel ko="학습 이름" en="Job name" />
+                <input value={name} onChange={(event) => setName(event.target.value)} required data-testid="job-name" />
+              </label>
+              <label>
+                <TermLabel ko="학습 유형" en="Training task" help={UI_HELP.trainingTask} />
                 <select
                   value={trainingTask}
                   onChange={(event) => {
@@ -591,11 +602,12 @@ export default function JobCreate() {
                   }}
                   data-testid="job-training-task"
                 >
-                  <option value="tabular">Tabular</option>
-                  <option value="forecasting">Forecasting</option>
+                  <option value="tabular">표 형식 데이터 (Tabular)</option>
+                  <option value="forecasting">시계열 예측 (Forecasting)</option>
                 </select>
               </label>
-              <label>Problem type
+              <label>
+                <TermLabel ko="예측 문제 유형" en="Problem type" help={UI_HELP.problemType} />
                 <select
                   value={isForecasting || isMultiTarget ? "regression" : problemType}
                   onChange={(event) => {
@@ -605,9 +617,9 @@ export default function JobCreate() {
                   disabled={isForecasting || isMultiTarget}
                   data-testid="job-problem-type"
                 >
-                  <option value="auto" disabled={isForecasting}>Detect automatically</option>
-                  <option value="classification" disabled={isForecasting || isMultiTarget}>Classification</option>
-                  <option value="regression">Regression</option>
+                  <option value="auto" disabled={isForecasting}>자동 판별 (Auto)</option>
+                  <option value="classification" disabled={isForecasting || isMultiTarget}>분류 (Classification)</option>
+                  <option value="regression">수치 예측·회귀 (Regression)</option>
                 </select>
               </label>
             </div>
@@ -636,12 +648,16 @@ export default function JobCreate() {
                 Problem type could not be detected. Retry by changing the target or select Classification/Regression manually.
               </p>
             )}
-            <label>Description<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Purpose or hypothesis" /></label>
+            <label>
+              <TermLabel ko="설명" en="Description" />
+              <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="학습 목적이나 가설을 입력하세요" />
+            </label>
           </div>
           <div className="form-section">
-            <span className="eyebrow">Training data</span>
+            <span className="eyebrow">학습 데이터</span>
             <div className="form-grid">
-              <label>Dataset
+              <label>
+                <TermLabel ko="데이터셋" en="Dataset" />
                 <select
                   value={datasetId}
                   onChange={(event) => {
@@ -665,7 +681,7 @@ export default function JobCreate() {
             </div>
             <fieldset className="feature-columns" data-testid="job-targets">
               <legend>
-                {isForecasting ? "Forecast target" : "Target columns"} · {targets.length} selected
+                {isForecasting ? "예측 대상 (Forecast target)" : "예측 대상 (Target columns)"} · {targets.length}개 선택
               </legend>
               <div className="feature-column-list">
                 {availableTargets.map((column) => (
@@ -683,7 +699,7 @@ export default function JobCreate() {
               </div>
               {targets.length === 0 && (
                 <p className="form-hint">
-                  {isForecasting ? "Select exactly one forecast target." : "Select at least one target column."}
+                  {isForecasting ? "미래에 예측할 값 하나를 선택하세요." : "모델이 맞혀야 하는 예측 대상을 하나 이상 선택하세요."}
                 </p>
               )}
               {isForecasting && (
@@ -722,7 +738,7 @@ export default function JobCreate() {
               </p>
             ) : null}
             {versions.length > 0 && (
-              <label>Dataset version
+              <label>데이터셋 버전 (Dataset version)
                 <select
                   value={datasetVersionId ?? ""}
                   onChange={(event) => {
@@ -742,7 +758,7 @@ export default function JobCreate() {
               </label>
             )}
             <fieldset className="feature-columns" data-testid="feature-columns">
-              <legend>Feature columns · {featureColumns.length} selected</legend>
+              <legend>입력 항목 (Feature columns) · {featureColumns.length}개 선택</legend>
               <div className="feature-column-list">
                 {availableFeatures.map((column) => (
                   <label key={column} className="feature-column-option">
@@ -756,10 +772,11 @@ export default function JobCreate() {
                   </label>
                 ))}
               </div>
-              {featureColumns.length === 0 && <p className="form-hint">Select at least one feature column.</p>}
+              {featureColumns.length === 0 && <p className="form-hint">예측에 사용할 입력 항목을 하나 이상 선택하세요.</p>}
+              <p className="form-hint">{UI_HELP.features}</p>
             </fieldset>
             <label>
-              Saved split
+              <TermLabel ko="저장된 데이터 분할" en="Saved split" help={UI_HELP.savedSplit} />
               <select
                 value={splitId ?? ""}
                 onChange={(event) => {
@@ -801,8 +818,8 @@ export default function JobCreate() {
                 {selectableSavedSplits.map((split) => {
                   const label =
                     (split.split_strategy || "random") === "time"
-                      ? `Time ordered · ${split.time_column || "—"}`
-                      : "Random";
+                      ? `시간 순서 (Time ordered · ${split.time_column || "—"})`
+                      : "무작위 (Random)";
                   return (
                     <option key={split.id} value={split.id}>
                       {split.name} · {label} · {Math.round(split.train_ratio * 100)}/{Math.round(split.val_ratio * 100)}/{Math.round(split.test_ratio * 100)}
@@ -818,11 +835,11 @@ export default function JobCreate() {
             ) : null}
             {selectedSavedSplit ? (
               <p className="form-hint" data-testid="job-saved-split-summary">
-                Using saved split #{selectedSavedSplit.id}:{" "}
+                저장된 분할 사용 (Saved split #{selectedSavedSplit.id}):{" "}
                 {(selectedSavedSplit.split_strategy || "random") === "time"
-                  ? `Time ordered · ${selectedSavedSplit.time_column || "—"}`
-                  : "Random"}
-                {` · ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test`}
+                  ? `시간 순서 (Time ordered · ${selectedSavedSplit.time_column || "—"})`
+                  : "무작위 (Random)"}
+                {` · 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}%`}
                 {(selectedSavedSplit.split_strategy || "random") === "random"
                   ? ` · seed ${randomSeed}`
                   : ""}
@@ -830,7 +847,7 @@ export default function JobCreate() {
             ) : (
               <>
                 <label>
-                  Split strategy
+                  <TermLabel ko="데이터 분할 방식" en="Split strategy" help={UI_HELP.dataSplit} />
                   <select
                     value={isForecasting ? "time" : splitStrategy}
                     onChange={(event) => {
@@ -849,13 +866,13 @@ export default function JobCreate() {
                     disabled={isForecasting}
                     data-testid="job-split-strategy"
                   >
-                    <option value="random" disabled={isForecasting}>Random</option>
-                    <option value="time">Time ordered</option>
+                    <option value="random" disabled={isForecasting}>무작위 (Random)</option>
+                    <option value="time">시간 순서 (Time ordered)</option>
                   </select>
                 </label>
                 {(isForecasting || splitStrategy === "time") ? (
                   <label>
-                    Time column
+                    <TermLabel ko="시간 기준 컬럼" en="Time column" help={UI_HELP.timeOrderedSplit} />
                     <select
                       value={timeColumn}
                       onChange={(event) => {
@@ -872,7 +889,7 @@ export default function JobCreate() {
                       data-testid="job-time-column"
                       required
                     >
-                      <option value="">Select time column…</option>
+                      <option value="">시간 기준 컬럼 선택…</option>
                       {schemaColumns.map((column) => (
                         <option key={column} value={column}>
                           {column}
@@ -883,20 +900,21 @@ export default function JobCreate() {
                 ) : null}
                 <p className="form-hint" data-testid="job-runtime-split-summary">
                   {isForecasting || splitStrategy === "time"
-                    ? `Time-ordered runtime split${timeColumn ? ` on ${timeColumn}` : ""}: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test.`
-                    : `Random runtime split: ${(trainRatio * 100).toFixed(0)}% training, ${(valRatio * 100).toFixed(0)}% validation, ${(testRatio * 100).toFixed(0)}% test · seed ${randomSeed}`}
+                    ? `시간 순서 직접 분할 (Time-ordered runtime split)${timeColumn ? ` · ${timeColumn}` : ""}: 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}%.`
+                    : `무작위 직접 분할 (Random runtime split): 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}% · seed ${randomSeed}`}
                 </p>
                 {isForecasting || splitStrategy === "time" ? (
                   <p className="form-hint" data-testid="job-time-seed-hint">
-                    Random seed does not shuffle a time-ordered split; it may still affect model training.
+                    시간 순서 분할에서는 행을 섞지 않습니다. Random seed는 모델 학습 자체에는 영향을 줄 수 있습니다.
                   </p>
                 ) : null}
               </>
             )}
           </div>
           <div className="form-section">
-            <span className="eyebrow">Estimator</span>
-            <label>Algorithm
+            <span className="eyebrow">모델 설정</span>
+            <label>
+              <TermLabel ko="학습 알고리즘" en="Algorithm" help={UI_HELP.algorithm} />
               <select
                 value={algorithm}
                 onChange={(event) => onAlgorithmChange(event.target.value)}
@@ -908,7 +926,8 @@ export default function JobCreate() {
                 ))}
               </select>
             </label>
-            <label>Hyperparameters
+            <label>
+              <TermLabel ko="세부 학습 설정" en="Hyperparameters" help={UI_HELP.hyperparameters} />
               <textarea
                 className="code-input"
                 value={hyperparameters}
@@ -934,9 +953,9 @@ export default function JobCreate() {
                 disabled={busy || !datasetId || datasetVersionId == null || Boolean(versionError) || targets.length === 0 || featureColumns.length === 0 || waitingForDetection || !versionsResolved}
                 data-testid="job-submit"
               >
-                {busy ? "Queuing…" : "Start training"}
+                {busy ? "학습 요청 중…" : "학습 시작"}
               </button>
-              <button className="btn secondary" type="button" onClick={() => nav(`/projects/${projectId}/jobs`)}>Cancel</button>
+              <button className="btn secondary" type="button" onClick={() => nav(`/projects/${projectId}/jobs`)}>취소</button>
             </div>
           </div>
         </form>

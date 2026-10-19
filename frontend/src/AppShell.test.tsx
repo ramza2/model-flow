@@ -95,17 +95,17 @@ describe("AppShell Phase 1.5-A navigation", () => {
       "href",
       "/projects/9/preparations",
     );
-    expect(within(nav).getByRole("link", { name: /^Pipelines$/ })).toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: /Monitoring/ })).toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: /Quality Policies/ })).toHaveAttribute(
+    expect(within(nav).getByRole("link", { name: /^파이프라인$/ })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /모니터링/ })).toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /품질 정책/ })).toHaveAttribute(
       "href",
       "/projects/9/model-quality/policies",
     );
-    expect(within(nav).getByRole("link", { name: /Training Jobs/ })).toHaveClass("active");
-    expect(within(nav).getByRole("link", { name: /^Audit Logs$/ })).toHaveAttribute("href", "/projects/9/audit");
-    expect(within(nav).getByRole("link", { name: /Global Audit Logs/ })).toHaveAttribute("href", "/audit");
-    expect(within(nav).getByRole("link", { name: /Administration/ })).toHaveAttribute("href", "/admin");
-    expect(within(nav).getByRole("link", { name: /^Projects$/ })).not.toHaveClass("active");
+    expect(within(nav).getByRole("link", { name: /모델 학습/ })).toHaveClass("active");
+    expect(within(nav).getByRole("link", { name: /^감사 로그$/ })).toHaveAttribute("href", "/projects/9/audit");
+    expect(within(nav).getByRole("link", { name: /전체 감사 로그/ })).toHaveAttribute("href", "/audit");
+    expect(within(nav).getByRole("link", { name: /시스템 관리/ })).toHaveAttribute("href", "/admin");
+    expect(within(nav).getByRole("link", { name: /^프로젝트$/ })).not.toHaveClass("active");
   });
 
   it("hides system navigation for project admins while keeping project audit logs", async () => {
@@ -113,10 +113,10 @@ describe("AppShell Phase 1.5-A navigation", () => {
     renderShell("/projects/9");
 
     const nav = await screen.findByRole("navigation", { name: "Main navigation" });
-    expect(within(nav).getByRole("link", { name: /^Audit Logs$/ })).toBeInTheDocument();
-    expect(within(nav).queryByRole("link", { name: /Global Audit Logs/ })).not.toBeInTheDocument();
-    expect(within(nav).queryByRole("link", { name: /Administration/ })).not.toBeInTheDocument();
-    expect(within(nav).queryByText("System")).not.toBeInTheDocument();
+    expect(within(nav).getByRole("link", { name: /^감사 로그$/ })).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /전체 감사 로그/ })).not.toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /시스템 관리/ })).not.toBeInTheDocument();
+    expect(within(nav).queryByText("시스템")).not.toBeInTheDocument();
   });
 
   it("switches project to Overview instead of preserving entity routes", async () => {
@@ -176,7 +176,7 @@ describe("AppShell drawer accessibility", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(document.getElementById("app-sidebar")?.hasAttribute("inert")).toBe(false);
     await waitFor(() => {
-      expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+      expect(within(nav).getByRole("link", { name: /^홈$/ })).toHaveFocus();
     });
 
     fireEvent.keyDown(window, { key: "Escape" });
@@ -206,9 +206,9 @@ describe("AppShell drawer accessibility", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /Open navigation/i }));
     const nav = await screen.findByRole("navigation", { name: "Main navigation" });
-    const trainingJobs = within(nav).getByRole("link", { name: /Training Jobs/ });
+    const trainingJobs = within(nav).getByRole("link", { name: /모델 학습/ });
     await waitFor(() => {
-      expect(within(nav).getByRole("link", { name: /^Home$/ })).toHaveFocus();
+      expect(within(nav).getByRole("link", { name: /^홈$/ })).toHaveFocus();
     });
 
     fireEvent.click(trainingJobs);
