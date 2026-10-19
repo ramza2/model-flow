@@ -1,5 +1,37 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
+export function HelpTip({ text }: { text: string }) {
+  return (
+    <span
+      className="help-tip"
+      tabIndex={0}
+      role="note"
+      aria-label={`도움말: ${text}`}
+      title={text}
+    >
+      ?
+    </span>
+  );
+}
+
+export function TermLabel({
+  ko,
+  en,
+  help,
+}: {
+  ko: string;
+  en?: string;
+  help?: string;
+}) {
+  return (
+    <span className="term-label">
+      <span>{ko}</span>
+      {en ? <span className="term-label-en">({en})</span> : null}
+      {help ? <HelpTip text={help} /> : null}
+    </span>
+  );
+}
+
 export function PageHeader({
   title,
   description,
