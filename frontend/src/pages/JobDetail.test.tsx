@@ -97,8 +97,8 @@ describe("JobDetail retrain", () => {
     renderPage("42");
     expect(await screen.findByTestId("job-retrain")).toBeInTheDocument();
     expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Dataset #3/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Version #30/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/데이터셋 #3/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/버전 ID #30/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/· v30/)).not.toBeInTheDocument();
   });
 
@@ -185,7 +185,7 @@ describe("JobDetail retrain", () => {
     });
     renderPage("42");
     const lineage = await screen.findByTestId("job-retrain-lineage");
-    expect(lineage).toHaveTextContent("Job #10");
+    expect(lineage).toHaveTextContent("학습 작업 #10");
     expect(lineage.querySelector("a")).toHaveAttribute("href", "/projects/7/jobs/10");
   });
 
@@ -442,10 +442,11 @@ describe("JobDetail retrain", () => {
     });
     renderPage("42");
     const lineage = await screen.findByTestId("job-continue-lineage");
-    expect(lineage).toHaveTextContent("Job #10");
+    expect(lineage).toHaveTextContent("학습 작업 #10");
     expect(lineage.querySelector("a")).toHaveAttribute("href", "/projects/7/jobs/10");
     expect(screen.getByTestId("job-training-mode")).toHaveTextContent("이어서 학습");
-    expect(screen.getByText("Continued training source")).toBeInTheDocument();
+    expect(screen.getByTestId("job-continue-lineage")).toHaveTextContent("이어서 학습 원본");
+    expect(screen.getByTestId("entity-lineage")).toHaveTextContent("이어서 학습 원본");
   });
 
   it("shows time-ordered split metadata on job detail", async () => {
@@ -465,7 +466,7 @@ describe("JobDetail retrain", () => {
     renderPage("42");
     expect(await screen.findByTestId("job-split-strategy-label")).toHaveTextContent("Time ordered");
     expect(screen.getByTestId("job-time-column-label")).toHaveTextContent("event_time");
-    expect(screen.getByTestId("job-data-split")).toHaveTextContent("Saved split #12");
+    expect(screen.getByTestId("job-data-split")).toHaveTextContent("저장된 분할 #12");
   });
 
   it("shows forecasting contract fields on job detail", async () => {
@@ -492,7 +493,9 @@ describe("JobDetail retrain", () => {
     });
     renderPage("42");
     expect(await screen.findByTestId("job-training-task")).toHaveTextContent("Forecasting");
-    expect(screen.getByTestId("job-forecast-strategy")).toHaveTextContent("Direct multi-output");
+    expect(screen.getByTestId("job-forecast-strategy")).toHaveTextContent(
+      "직접 다중 출력 (Direct multi-output)",
+    );
     expect(screen.getByTestId("job-forecast-horizons")).toHaveTextContent("1, 2, 3");
     expect(screen.getByTestId("job-forecast-outputs")).toHaveTextContent("sales__t_plus_1");
     expect(screen.getByTestId("job-target-columns")).toHaveTextContent("sales");
@@ -566,6 +569,7 @@ describe("JobDetail retrain", () => {
 
     expect(rmseHelp.getAttribute("aria-label")).not.toEqual(maeHelp.getAttribute("aria-label"));
     expect(rmseHelp.getAttribute("aria-label")).not.toEqual(testRmseHelp.getAttribute("aria-label"));
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("대표 지표:");
     expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("val rmse: 18.128");
   });
 

@@ -2170,7 +2170,7 @@ describe("JobDetail clone navigation", () => {
     const clone = await screen.findByTestId("job-clone");
     expect(clone).toHaveAttribute("href", "/projects/7/jobs/new?cloneFrom=5");
     expect(screen.getByTestId("retry-hint")).toBeInTheDocument();
-    expect(await screen.findByTestId("job-data-split")).toHaveTextContent("Saved split #9");
+    expect(await screen.findByTestId("job-data-split")).toHaveTextContent("저장된 분할 #9");
   });
 });
 
