@@ -273,10 +273,22 @@ describe("DatasetDetail quality management", () => {
     renderPage();
     await screen.findByTestId("quality-create");
     fireEvent.click(screen.getByTestId("quality-create"));
+    const condition = screen.getByTestId("quality-condition-0");
+    expect(condition.querySelector(".quality-condition-main")).not.toBeNull();
+    expect(condition.querySelector(".quality-condition-main .help-tip")).not.toBeNull();
+    expect(condition.querySelector(".quality-condition-extra")).toBeNull();
+
     fireEvent.change(screen.getByTestId("quality-rule-name"), { target: { value: "Range a" } });
     fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "range" } });
+    const rangeGroup = condition.querySelector(".quality-range-fields");
+    expect(rangeGroup).not.toBeNull();
+    expect(condition.querySelector(".quality-condition-extra")).toContainElement(rangeGroup as HTMLElement);
+    expect(within(rangeGroup as HTMLElement).getByText("최소값")).toBeInTheDocument();
+    expect(within(rangeGroup as HTMLElement).getByText("최대값")).toBeInTheDocument();
     const minInput = screen.getByLabelText("조건 1 최소값");
     const maxInput = screen.getByLabelText("조건 1 최대값");
+    expect(rangeGroup).toContainElement(minInput);
+    expect(rangeGroup).toContainElement(maxInput);
     expect(minInput).toHaveAttribute("placeholder", "최소값");
     expect(maxInput).toHaveAttribute("placeholder", "최대값");
     fireEvent.change(screen.getByLabelText("조건 1 컬럼"), { target: { value: "a" } });
@@ -293,6 +305,29 @@ describe("DatasetDetail quality management", () => {
         { type: "range", column: "a", severity: "fail", min: 1, max: 9 },
       ]);
     });
+  });
+
+  it("switches type-specific extra fields without leaving stale inputs", async () => {
+    renderPage();
+    await screen.findByTestId("quality-create");
+    fireEvent.click(screen.getByTestId("quality-create"));
+    const condition = screen.getByTestId("quality-condition-0");
+
+    fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "allowed_values" } });
+    expect(screen.getByTestId("quality-condition-values-0")).toBeInTheDocument();
+    expect(condition.querySelector(".quality-range-fields")).toBeNull();
+    expect(screen.queryByTestId("quality-condition-pattern-0")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "regex" } });
+    expect(screen.getByTestId("quality-condition-pattern-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("quality-condition-values-0")).not.toBeInTheDocument();
+    expect(condition.querySelector(".quality-range-fields")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "not_null" } });
+    expect(condition.querySelector(".quality-condition-extra")).toBeNull();
+    expect(screen.queryByTestId("quality-condition-values-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quality-condition-pattern-0")).not.toBeInTheDocument();
+    expect(condition.querySelector(".quality-condition-footer")).not.toBeNull();
   });
 
   it("pre-fills edit form and runs individual / all checks", async () => {

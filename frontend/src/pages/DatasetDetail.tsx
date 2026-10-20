@@ -774,78 +774,134 @@ export default function DatasetDetail() {
                   </div>
                   {conditions.map((condition, index) => (
                     <div className="quality-condition-editor" key={`condition-${index}`} data-testid={`quality-condition-${index}`}>
-                      <select aria-label={`조건 ${index + 1} 컬럼`} value={condition.column} onChange={(event) => {
-                        const next = [...conditions];
-                        next[index] = { ...condition, column: event.target.value };
-                        setConditions(next);
-                      }}>
-                        {columns.map((column) => <option key={column} value={column}>{column}</option>)}
-                      </select>
-                      <select aria-label={`조건 ${index + 1} 검사 유형`} data-testid={`quality-condition-type-${index}`} value={condition.type} onChange={(event) => {
-                        const next = [...conditions];
-                        next[index] = { ...condition, type: event.target.value };
-                        setConditions(next);
-                      }}>
-                        {RULE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-                      </select>
-                      <select aria-label={`조건 ${index + 1} 심각도`} value={condition.severity} onChange={(event) => {
-                        const next = [...conditions];
-                        next[index] = { ...condition, severity: event.target.value };
-                        setConditions(next);
-                      }}>
-                        <option value="fail">실패 (Fail)</option>
-                        <option value="warning">경고 (Warning)</option>
-                      </select>
-                      {index === 0 ? <HelpTip text={UI_HELP.qualitySeverity} /> : null}
-                      {condition.type === "range" && (
-                        <>
-                          <input aria-label={`조건 ${index + 1} 최소값`} placeholder="최소값" value={condition.min} onChange={(event) => {
-                            const next = [...conditions];
-                            next[index] = { ...condition, min: event.target.value };
-                            setConditions(next);
-                          }} />
-                          <input aria-label={`조건 ${index + 1} 최대값`} placeholder="최대값" value={condition.max} onChange={(event) => {
-                            const next = [...conditions];
-                            next[index] = { ...condition, max: event.target.value };
-                            setConditions(next);
-                          }} />
-                        </>
+                      <div className="quality-condition-main">
+                        <label className="quality-condition-field">
+                          <span className="quality-condition-field-label">검사 컬럼</span>
+                          <select
+                            aria-label={`조건 ${index + 1} 컬럼`}
+                            value={condition.column}
+                            onChange={(event) => {
+                              const next = [...conditions];
+                              next[index] = { ...condition, column: event.target.value };
+                              setConditions(next);
+                            }}
+                          >
+                            {columns.map((column) => <option key={column} value={column}>{column}</option>)}
+                          </select>
+                        </label>
+                        <label className="quality-condition-field">
+                          <span className="quality-condition-field-label">검사 유형</span>
+                          <select
+                            aria-label={`조건 ${index + 1} 검사 유형`}
+                            data-testid={`quality-condition-type-${index}`}
+                            value={condition.type}
+                            onChange={(event) => {
+                              const next = [...conditions];
+                              next[index] = { ...condition, type: event.target.value };
+                              setConditions(next);
+                            }}
+                          >
+                            {RULE_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                          </select>
+                        </label>
+                        <label className="quality-condition-field">
+                          <span className="quality-condition-field-label">
+                            심각도
+                            {index === 0 ? <HelpTip text={UI_HELP.qualitySeverity} /> : null}
+                          </span>
+                          <select
+                            aria-label={`조건 ${index + 1} 심각도`}
+                            value={condition.severity}
+                            onChange={(event) => {
+                              const next = [...conditions];
+                              next[index] = { ...condition, severity: event.target.value };
+                              setConditions(next);
+                            }}
+                          >
+                            <option value="fail">실패 (Fail)</option>
+                            <option value="warning">경고 (Warning)</option>
+                          </select>
+                        </label>
+                      </div>
+                      {(condition.type === "range"
+                        || condition.type === "allowed_values"
+                        || condition.type === "regex") && (
+                        <div className="quality-condition-extra">
+                          {condition.type === "range" ? (
+                            <div className="quality-range-fields">
+                              <label className="quality-condition-field">
+                                <span className="quality-condition-field-label">최소값</span>
+                                <input
+                                  aria-label={`조건 ${index + 1} 최소값`}
+                                  placeholder="최소값"
+                                  value={condition.min}
+                                  onChange={(event) => {
+                                    const next = [...conditions];
+                                    next[index] = { ...condition, min: event.target.value };
+                                    setConditions(next);
+                                  }}
+                                />
+                              </label>
+                              <label className="quality-condition-field">
+                                <span className="quality-condition-field-label">최대값</span>
+                                <input
+                                  aria-label={`조건 ${index + 1} 최대값`}
+                                  placeholder="최대값"
+                                  value={condition.max}
+                                  onChange={(event) => {
+                                    const next = [...conditions];
+                                    next[index] = { ...condition, max: event.target.value };
+                                    setConditions(next);
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          ) : null}
+                          {condition.type === "allowed_values" ? (
+                            <label className="quality-condition-field">
+                              <span className="quality-condition-field-label">허용 값</span>
+                              <input
+                                aria-label={`조건 ${index + 1} 허용 값`}
+                                data-testid={`quality-condition-values-${index}`}
+                                placeholder="허용 값을 쉼표로 구분"
+                                value={condition.values}
+                                onChange={(event) => {
+                                  const next = [...conditions];
+                                  next[index] = { ...condition, values: event.target.value };
+                                  setConditions(next);
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                          {condition.type === "regex" ? (
+                            <label className="quality-condition-field">
+                              <span className="quality-condition-field-label">정규식 패턴</span>
+                              <input
+                                aria-label={`조건 ${index + 1} 정규식 패턴`}
+                                data-testid={`quality-condition-pattern-${index}`}
+                                placeholder="정규식 패턴"
+                                value={condition.pattern}
+                                onChange={(event) => {
+                                  const next = [...conditions];
+                                  next[index] = { ...condition, pattern: event.target.value };
+                                  setConditions(next);
+                                }}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
                       )}
-                      {condition.type === "allowed_values" && (
-                        <input
-                          aria-label={`조건 ${index + 1} 허용 값`}
-                          data-testid={`quality-condition-values-${index}`}
-                          placeholder="허용 값을 쉼표로 구분"
-                          value={condition.values}
-                          onChange={(event) => {
-                            const next = [...conditions];
-                            next[index] = { ...condition, values: event.target.value };
-                            setConditions(next);
-                          }}
-                        />
-                      )}
-                      {condition.type === "regex" && (
-                        <input
-                          aria-label={`조건 ${index + 1} 정규식 패턴`}
-                          data-testid={`quality-condition-pattern-${index}`}
-                          placeholder="정규식 패턴"
-                          value={condition.pattern}
-                          onChange={(event) => {
-                            const next = [...conditions];
-                            next[index] = { ...condition, pattern: event.target.value };
-                            setConditions(next);
-                          }}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        className="btn secondary"
-                        data-testid={`quality-remove-condition-${index}`}
-                        disabled={conditions.length === 1}
-                        onClick={() => setConditions(conditions.filter((_, itemIndex) => itemIndex !== index))}
-                      >
-                        조건 삭제
-                      </button>
+                      <div className="quality-condition-footer">
+                        <button
+                          type="button"
+                          className="btn secondary"
+                          data-testid={`quality-remove-condition-${index}`}
+                          disabled={conditions.length === 1}
+                          onClick={() => setConditions(conditions.filter((_, itemIndex) => itemIndex !== index))}
+                        >
+                          조건 삭제
+                        </button>
+                      </div>
                     </div>
                   ))}
                   <div className="row-actions">
