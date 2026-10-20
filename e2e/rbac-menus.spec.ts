@@ -111,7 +111,7 @@ test("data scientist sees training but no approval controls", async ({ page }) =
 
   await page.goto(`/projects/${projectAId}/jobs`);
   await expect(page.getByRole("heading", { name: "모델 학습", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: /새 모델 학습/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "＋ 새 모델 학습", exact: true })).toBeVisible();
 
   await page.goto(`/projects/${projectAId}/models`);
   await expect(page.getByRole("heading", { name: "Model Registry", exact: true })).toBeVisible();
