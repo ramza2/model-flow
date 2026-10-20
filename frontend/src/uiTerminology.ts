@@ -69,6 +69,24 @@ export function jobStatusLabel(value?: string | null): string {
   }
 }
 
+/** Display-only MLflow experiment run status labels. Raw status values stay English for API/tone. */
+export function runStatusLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "finished":
+      return "완료";
+    case "running":
+      return "실행 중";
+    case "failed":
+      return "실패";
+    case "killed":
+      return "중지됨";
+    case "scheduled":
+      return "대기 중";
+    default:
+      return value ? String(value).replaceAll("_", " ") : "—";
+  }
+}
+
 export function trainingTaskLabel(value?: string | null): string {
   return String(value || "").toLowerCase() === "forecasting"
     ? "시계열 예측 (Forecasting)"

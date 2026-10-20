@@ -5,6 +5,7 @@ import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate }
 import { parseTargetsFromParams, runDisplayName } from "../lifecycleHelpers";
 import { formatMetricLabel, formatPrimaryMetric } from "../metricHelpers";
 import { TargetChips } from "../lifecycleComponents";
+import { runStatusLabel } from "../uiTerminology";
 
 function targetColumnsFromRun(run: Run): string[] {
   return parseTargetsFromParams(run.params);
@@ -27,7 +28,7 @@ export default function Runs() {
         const requested = params.get("run");
         if (requested && rows.some((run) => run.run_id === requested)) setSelected([requested]);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Experiment runs could not be loaded."))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "실험 실행 목록을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [params, projectId, search]);
 
@@ -41,8 +42,8 @@ export default function Runs() {
   return (
     <div>
       <PageHeader
-        title="Experiments"
-        description="Select completed runs to compare parameters and metrics side by side."
+        title="실험 비교"
+        description="학습 실행 결과를 확인하고, 2개 이상 선택해 성능 지표와 설정을 비교할 수 있습니다."
         actions={
           <Link
             className={`btn compare-cta${canCompare ? "" : " is-disabled"}`}
@@ -51,7 +52,7 @@ export default function Runs() {
             onClick={(event) => !canCompare && event.preventDefault()}
             data-testid="compare-selected"
           >
-            Compare selected ({selected.length})
+            선택한 실행 비교 ({selected.length}개)
           </Link>
         }
       />
@@ -59,40 +60,40 @@ export default function Runs() {
       <div className="workflow-catalog">
         <div className="filter-bar catalog-filter">
           <label>
-            Search runs
+            실험 실행 검색
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Run name or ID"
+              placeholder="실행 이름 또는 ID"
             />
           </label>
           <div className="catalog-summary" aria-live="polite">
             <span className="catalog-summary-count">{selected.length}</span>
             <span className="catalog-summary-label">
-              selected · select two or more to compare
+              개 선택됨 · 2개 이상 선택하면 비교할 수 있습니다.
             </span>
           </div>
         </div>
         {loading ? (
-          <Loading label="Loading experiments" />
+          <Loading label="실험 실행 목록 불러오는 중" />
         ) : filtered.length === 0 ? (
           <EmptyState
-            title="No experiment runs"
-            description="Completed training jobs record runs here automatically."
-            action={<Link className="btn" to={`/projects/${projectId}/jobs/new`}>Start training</Link>}
+            title="실험 실행 기록이 없습니다"
+            description="모델 학습을 시작하면 실행 결과가 이곳에 자동으로 기록됩니다."
+            action={<Link className="btn" to={`/projects/${projectId}/jobs/new`}>새 모델 학습</Link>}
           />
         ) : (
           <div className="panel table-wrap catalog-table">
-            <table>
+            <table data-testid="runs-table">
               <thead>
                 <tr>
                   <th className="catalog-select-col" aria-label="Select" />
-                  <th>Run</th>
-                  <th>Status</th>
-                  <th>Algorithm</th>
-                  <th>Targets</th>
-                  <th>Primary metric</th>
-                  <th>Started</th>
+                  <th>실행 이름</th>
+                  <th>상태</th>
+                  <th>학습 알고리즘</th>
+                  <th>예측 대상</th>
+                  <th>주요 평가 지표</th>
+                  <th>시작 시각</th>
                 </tr>
               </thead>
               <tbody>
@@ -104,11 +105,12 @@ export default function Runs() {
                     <tr
                       key={run.run_id}
                       className={isSelected ? "selected-row" : undefined}
+                      data-testid={`run-row-${run.run_id}`}
                     >
                       <td className="catalog-select-col">
                         <label className="catalog-select">
                           <input
-                            aria-label={`Select run ${runDisplayName(run)}`}
+                            aria-label={`실행 선택: ${runDisplayName(run)}`}
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => toggle(run.run_id)}
@@ -124,7 +126,9 @@ export default function Runs() {
                         </Link>
                         <small className="table-subtitle mono">{run.run_id}</small>
                       </td>
-                      <td><StatusBadge status={run.status} /></td>
+                      <td>
+                        <StatusBadge status={run.status} label={runStatusLabel(run.status)} />
+                      </td>
                       <td className="catalog-secondary-text">
                         {(run.params.algorithm || "—").replaceAll("_", " ")}
                       </td>
