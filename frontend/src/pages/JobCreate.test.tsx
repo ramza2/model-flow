@@ -325,6 +325,7 @@ describe("JobCreate UX", () => {
     );
     await screen.findByTestId("job-algorithm");
     fireEvent.change(screen.getByTestId("job-algorithm"), { target: { value: "logistic_regression" } });
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
     await waitFor(() => {
       expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 1');
     });
@@ -375,7 +376,9 @@ describe("JobCreate UX", () => {
     );
     expect(await screen.findByTestId("job-name")).toHaveValue("source-job (clone)");
     expect(screen.getByTestId("job-algorithm")).toHaveValue("logistic_regression");
+    expect(await screen.findByTestId("job-hyperparameters-toggle")).toHaveAttribute("aria-expanded", "true");
     expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 0.5');
+    expect(screen.getByTestId("job-hyperparameters-hint")).toHaveTextContent(/복제한 세부 학습 설정/);
     await waitFor(() => {
       expect(screen.getByTestId("job-data-split")).toHaveValue("55");
     });
@@ -2120,6 +2123,334 @@ describe("JobCreate time-aware split", () => {
     expect(screen.getByTestId("job-split-strategy")).toHaveValue("time");
     expect(screen.getByTestId("job-time-column")).toHaveValue("event_time");
     expect(screen.getByTestId("job-problem-type")).toHaveValue("regression");
+  });
+
+  it("keeps advanced hyperparameters collapsed by default and preserves edits across toggle", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    const toggle = await screen.findByTestId("job-hyperparameters-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", "job-hyperparameters-editor");
+    expect(toggle).toHaveTextContent("고급 설정 열기");
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+    expect(screen.getByTestId("job-hyperparameters-hint")).toHaveTextContent(/알고리즘 기본 설정/);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveTextContent("고급 설정 닫기");
+    const editor = await screen.findByTestId("job-hyperparameters");
+    expect((editor as HTMLTextAreaElement).value).toContain('"n_estimators": 100');
+    fireEvent.change(editor, {
+      target: { value: '{\n  "n_estimators": 42,\n  "max_depth": 3\n}' },
+    });
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain(
+      '"n_estimators": 42',
+    );
+  });
+
+  it("submits catalog default hyperparameters while the editor stays collapsed", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: 501, status: "pending" }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    expect(screen.getByTestId("job-hyperparameters-toggle")).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({
+      algorithm: "random_forest",
+      hyperparameters: { n_estimators: 100, max_depth: 5 },
+    });
+  });
+
+  it("applies the next algorithm defaults even while advanced settings stay collapsed", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByTestId("job-algorithm");
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("job-algorithm"), { target: { value: "logistic_regression" } });
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
+    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 1');
+    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).not.toContain(
+      "n_estimators",
+    );
+  });
+
+  it("submits cloned hyperparameters unchanged and keeps the editor expanded", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/jobs/99") && (!init || !init.method || init.method === "GET")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 99,
+            project_id: 7,
+            dataset_id: 1,
+            dataset_version_id: 11,
+            split_id: null,
+            name: "source-job",
+            description: "",
+            target_column: "target",
+            target_columns: ["target"],
+            problem_type: "classification",
+            algorithm: "logistic_regression",
+            hyperparameters: { C: 0.5, max_iter: 200 },
+            feature_columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)"],
+            ratios: { train: 0.7, validation: 0.15, test: 0.15 },
+            random_seed: 42,
+            status: "succeeded",
+            logs: "",
+            metrics: {},
+            mlflow_run_id: null,
+            model_uri: null,
+            error_message: null,
+            retry_count: 0,
+            max_retries: 1,
+            parent_job_id: null,
+            created_at: "2026-01-01",
+            started_at: null,
+            finished_at: null,
+          }),
+        };
+      }
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: 700, status: "pending" }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new?cloneFrom=99"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+          <Route path="/projects/:projectId/jobs/:jobId" element={<div data-testid="job-detail-page">Job detail</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId("job-hyperparameters-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 0.5');
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
+    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"max_iter": 200');
+
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    await screen.findByTestId("job-detail-page");
+    const postCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST",
+    );
+    expect(JSON.parse(String(postCall![1]?.body))).toMatchObject({
+      algorithm: "logistic_regression",
+      hyperparameters: { C: 0.5, max_iter: 200 },
+    });
+  });
+
+  it("blocks invalid JSON submit and auto-expands advanced hyperparameters", async () => {
+    const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/datasets")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 1,
+              name: "iris",
+              latest_version: 1,
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/training/algorithms")) {
+        return { ok: true, status: 200, json: async () => ({ algorithms: catalog }) };
+      }
+      if (url.includes("/splits")) {
+        return { ok: true, status: 200, json: async () => [] };
+      }
+      if (url.includes("/versions") && !url.includes("resolve")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              id: 11,
+              dataset_id: 1,
+              version: 1,
+              original_filename: "iris.csv",
+              columns: ["sepal length (cm)", "sepal width (cm)", "petal length (cm)", "petal width (cm)", "target"],
+            },
+          ],
+        };
+      }
+      if (url.includes("/resolve-problem-type")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            requested_problem_type: "auto",
+            resolved_problem_type: "classification",
+            target_column: "target",
+            dataset_id: 1,
+            dataset_version_id: 11,
+          }),
+        };
+      }
+      if (url.endsWith("/jobs") && init?.method === "POST") {
+        return { ok: true, status: 201, json: async () => ({ id: 801, status: "pending" }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/jobs/new"]}>
+        <Routes>
+          <Route path="/projects/:projectId/jobs/new" element={<JobCreate />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("detected-problem-type");
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
+    fireEvent.change(screen.getByTestId("job-hyperparameters"), {
+      target: { value: "{not-json" },
+    });
+    fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
+    expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId("job-submit"));
+    expect(await screen.findByTestId("training-submit-error")).toHaveTextContent(
+      "Hyperparameters must be valid JSON.",
+    );
+    expect(screen.getByTestId("job-hyperparameters-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("job-hyperparameters")).toHaveValue("{not-json");
+    expect(
+      fetchMock.mock.calls.some((call) => String(call[0]).endsWith("/jobs") && call[1]?.method === "POST"),
+    ).toBe(false);
   });
 });
 

@@ -71,6 +71,7 @@ export default function JobCreate() {
   const [problemTypeDetectionError, setProblemTypeDetectionError] = useState<string | null>(null);
   const [algorithm, setAlgorithm] = useState("random_forest");
   const [hyperparameters, setHyperparameters] = useState("{}");
+  const [hyperparametersExpanded, setHyperparametersExpanded] = useState(false);
   const [featureColumns, setFeatureColumns] = useState<string[]>([]);
   const [trainRatio, setTrainRatio] = useState(0.7);
   const [valRatio, setValRatio] = useState(0.15);
@@ -183,6 +184,7 @@ export default function JobCreate() {
         setProblemType(job.problem_type || "auto");
         setAlgorithm(job.algorithm);
         setHyperparameters(formatHyperparameters(job.hyperparameters || {}));
+        setHyperparametersExpanded(true);
         setFeatureColumns(job.feature_columns || []);
         if (job.ratios) {
           setTrainRatio(job.ratios.train);
@@ -514,7 +516,10 @@ export default function JobCreate() {
         throw new Error(`${selectedAlgorithm.display_name}은(는) 시계열 예측을 지원하지 않습니다.`);
       }
       const parsed = validateHyperparametersText(hyperparameters, selectedAlgorithm);
-      if (!parsed.ok) throw new Error(parsed.message);
+      if (!parsed.ok) {
+        setHyperparametersExpanded(true);
+        throw new Error(parsed.message);
+      }
       const submitProblemType = isForecasting || isMultiTarget ? "regression" : problemType;
       const job = await api<Job>(`/projects/${projectId}/jobs`, {
         method: "POST",
@@ -929,19 +934,40 @@ export default function JobCreate() {
                 ))}
               </select>
             </label>
-            <label>
-              <TermLabel ko="세부 학습 설정" en="Hyperparameters" help={UI_HELP.hyperparameters} />
-              <textarea
-                className="code-input"
-                value={hyperparameters}
-                onChange={(event) => {
-                  setSubmitError("");
-                  setHyperparameters(event.target.value);
-                }}
-                spellCheck={false}
-                data-testid="job-hyperparameters"
-              />
-            </label>
+            <div className="job-hyperparameters-panel" data-testid="job-hyperparameters-panel">
+              <div className="job-hyperparameters-heading">
+                <TermLabel ko="세부 학습 설정" en="Hyperparameters" help={UI_HELP.hyperparameters} />
+              </div>
+              <p className="form-hint" data-testid="job-hyperparameters-hint">
+                {cloneFrom
+                  ? "복제한 세부 학습 설정이 적용되어 있습니다. 필요한 경우 수정하세요."
+                  : "알고리즘 기본 설정으로 바로 학습할 수 있습니다. 필요한 경우에만 고급 설정을 열어 수정하세요."}
+              </p>
+              <button
+                type="button"
+                className="btn secondary"
+                data-testid="job-hyperparameters-toggle"
+                aria-expanded={hyperparametersExpanded}
+                aria-controls="job-hyperparameters-editor"
+                onClick={() => setHyperparametersExpanded((current) => !current)}
+              >
+                {hyperparametersExpanded ? "고급 설정 닫기" : "고급 설정 열기"}
+              </button>
+              {hyperparametersExpanded ? (
+                <div id="job-hyperparameters-editor" className="job-hyperparameters-editor">
+                  <textarea
+                    className="code-input"
+                    value={hyperparameters}
+                    onChange={(event) => {
+                      setSubmitError("");
+                      setHyperparameters(event.target.value);
+                    }}
+                    spellCheck={false}
+                    data-testid="job-hyperparameters"
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="training-submit-footer" data-testid="training-submit-actions">
             {submitError ? (

@@ -2377,6 +2377,24 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .advanced-json { margin-top: .35rem; }
 .advanced-json summary { cursor: pointer; color: var(--muted); font-size: .78rem; }
 .advanced-json .code-input { margin-top: .45rem; min-height: 120px; }
+.job-hyperparameters-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.15rem;
+}
+.job-hyperparameters-heading {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.job-hyperparameters-panel > .btn {
+  align-self: flex-start;
+}
+.job-hyperparameters-editor .code-input {
+  width: 100%;
+  min-height: 140px;
+  margin-top: 0.15rem;
+}
 .node-config-form { display: flex; flex-direction: column; gap: .55rem; }
 .node-config-form .checkbox-row { display: flex; align-items: center; gap: .45rem; }
 .feature-checklist { border: 1px solid var(--border); border-radius: 6px; padding: .55rem .7rem; margin: 0; }
