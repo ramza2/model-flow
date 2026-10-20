@@ -2701,7 +2701,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 }
 .quality-condition-main {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   gap: 0.5rem;
   min-width: 0;
 }
