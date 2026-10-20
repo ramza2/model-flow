@@ -1104,10 +1104,10 @@ export default function PreparationBuilder() {
                 유형: {labelForPreparationType(selectedNode.data.node_type)}
               </p>
               <small className="muted" data-testid="preparation-node-id">
-                노드 id: {selectedNode.id}
+                노드 ID: {selectedNode.id}
               </small>
               <hr />
-              <span className="eyebrow">Configuration</span>
+              <span className="eyebrow">노드 설정</span>
               {selectedNode.data.node_type === "source" && (
                 <SourceInspector
                   config={selectedNode.data.config}
@@ -1249,14 +1249,13 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "output" && (
                 <p className="muted" data-testid="preparation-output-readonly">
-                  Output marks the prepared result. Connect exactly one upstream node. No
-                  additional configuration is required.
+                  이 노드는 데이터 가공의 최종 결과를 나타냅니다. 바로 앞 단계의 노드 하나를 연결하면 되며 추가 설정은 필요하지 않습니다.
                 </p>
               )}
               {canWrite && (
                 <>
                   <hr />
-                  <span className="eyebrow">Danger</span>
+                  <span className="eyebrow">노드 관리</span>
                   <button
                     className="btn link danger-text"
                     type="button"
@@ -1845,6 +1844,20 @@ function SourceInspector({
   );
 }
 
+function joinHowHint(how: string): string {
+  switch (how) {
+    case "left":
+      return "왼쪽 데이터의 모든 행을 유지하고, 오른쪽에서 일치하는 데이터를 연결합니다.";
+    case "right":
+      return "오른쪽 데이터의 모든 행을 유지하고, 왼쪽에서 일치하는 데이터를 연결합니다.";
+    case "full":
+      return "양쪽 데이터의 모든 행을 유지하고, 연결되지 않는 부분은 빈 값으로 채웁니다.";
+    case "inner":
+    default:
+      return "양쪽 데이터에서 연결 키 값이 일치하는 행만 남깁니다.";
+  }
+}
+
 function JoinInspector({
   config,
   canWrite,
@@ -1854,10 +1867,11 @@ function JoinInspector({
   canWrite: boolean;
   onChange: (next: Record<string, unknown>) => void;
 }) {
+  const how = String(config.how || "inner");
   return (
     <div className="preparation-inspector-form" data-testid="preparation-join-inspector">
       <p className="muted preparation-inspector-hint" data-testid="preparation-join-hint">
-        LEFT 포트와 RIGHT 포트에 각각 하나의 입력을 연결하세요.
+        왼쪽(LEFT)과 오른쪽(RIGHT) 연결 지점에 각각 데이터를 연결하세요. 두 데이터에서 같은 값을 가진 컬럼을 연결 키로 지정합니다.
         <HelpTip text={UI_HELP.preparationJoin} />
       </p>
       <label>
@@ -1865,15 +1879,18 @@ function JoinInspector({
         <select
           data-testid="preparation-join-how"
           disabled={!canWrite}
-          value={String(config.how || "inner")}
+          value={how}
           onChange={(event) => onChange({ ...config, how: event.target.value })}
         >
-          <option value="inner">inner</option>
-          <option value="left">left</option>
-          <option value="right">right</option>
-          <option value="full">full</option>
+          <option value="inner">일치하는 행만 연결 (INNER)</option>
+          <option value="left">왼쪽 모든 행 유지 (LEFT)</option>
+          <option value="right">오른쪽 모든 행 유지 (RIGHT)</option>
+          <option value="full">양쪽 모든 행 유지 (FULL)</option>
         </select>
       </label>
+      <p className="form-hint" data-testid="preparation-join-mode-hint">
+        {joinHowHint(how)}
+      </p>
       <label>
         <TermLabel ko="왼쪽 키" en="Left keys" />
         <input
@@ -1885,7 +1902,7 @@ function JoinInspector({
             onChange({ ...config, left_on: parseKeyList(event.target.value) })
           }
         />
-        <small>왼쪽 입력의 컬럼명을 쉼표로 구분하세요.</small>
+        <small>왼쪽 데이터에서 비교할 컬럼 이름을 입력하세요. 여러 개라면 쉼표로 구분합니다.</small>
       </label>
       <label>
         <TermLabel ko="오른쪽 키" en="Right keys" />
@@ -1898,7 +1915,7 @@ function JoinInspector({
             onChange({ ...config, right_on: parseKeyList(event.target.value) })
           }
         />
-        <small>오른쪽 입력의 컬럼명을 쉼표로 구분하세요.</small>
+        <small>오른쪽 데이터에서 비교할 컬럼 이름을 입력하세요. 왼쪽 키와 순서대로 대응합니다.</small>
       </label>
     </div>
   );
@@ -1924,14 +1941,14 @@ function UnionInspector({
           value={mode}
           onChange={(event) => onChange({ ...config, mode: event.target.value })}
         >
-          <option value="strict">strict</option>
-          <option value="align_by_name">align_by_name</option>
+          <option value="strict">동일한 컬럼 구성만 합치기 (strict)</option>
+          <option value="align_by_name">컬럼 이름으로 맞추기 (align_by_name)</option>
         </select>
       </label>
       <p className="muted preparation-inspector-hint" data-testid="preparation-union-hint">
         {mode === "align_by_name"
-          ? "컬럼 이름으로 맞추고 없는 값은 null로 채웁니다."
-          : "컬럼 이름과 순서가 동일해야 합니다."}
+          ? "컬럼 이름을 기준으로 데이터를 맞춰 합칩니다. 없는 컬럼의 값은 null(빈 값)로 채웁니다."
+          : "입력 데이터들의 컬럼 이름과 순서가 같아야 합칠 수 있습니다."}
       </p>
     </div>
   );
