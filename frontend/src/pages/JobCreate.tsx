@@ -953,8 +953,13 @@ export default function JobCreate() {
               >
                 {hyperparametersExpanded ? "고급 설정 닫기" : "고급 설정 열기"}
               </button>
-              {hyperparametersExpanded ? (
-                <div id="job-hyperparameters-editor" className="job-hyperparameters-editor">
+              <div
+                id="job-hyperparameters-editor"
+                className="job-hyperparameters-editor"
+                hidden={!hyperparametersExpanded}
+                data-testid="job-hyperparameters-editor"
+              >
+                {hyperparametersExpanded ? (
                   <textarea
                     className="code-input"
                     value={hyperparameters}
@@ -963,10 +968,11 @@ export default function JobCreate() {
                       setHyperparameters(event.target.value);
                     }}
                     spellCheck={false}
+                    aria-label="세부 학습 설정 (Hyperparameters)"
                     data-testid="job-hyperparameters"
                   />
-                </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
           </div>
           <div className="training-submit-footer" data-testid="training-submit-actions">

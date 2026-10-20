@@ -2138,13 +2138,19 @@ describe("JobCreate time-aware split", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     expect(toggle).toHaveAttribute("aria-controls", "job-hyperparameters-editor");
     expect(toggle).toHaveTextContent("고급 설정 열기");
+    expect(screen.getByTestId("job-hyperparameters-editor")).toBeInTheDocument();
+    expect(screen.getByTestId("job-hyperparameters-editor")).toHaveAttribute("hidden");
     expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
     expect(screen.getByTestId("job-hyperparameters-hint")).toHaveTextContent(/알고리즘 기본 설정/);
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(toggle).toHaveTextContent("고급 설정 닫기");
-    const editor = await screen.findByTestId("job-hyperparameters");
+    expect(screen.getByTestId("job-hyperparameters-editor")).not.toHaveAttribute("hidden");
+    const editor = await screen.findByRole("textbox", {
+      name: "세부 학습 설정 (Hyperparameters)",
+    });
+    expect(editor).toHaveAttribute("data-testid", "job-hyperparameters");
     expect((editor as HTMLTextAreaElement).value).toContain('"n_estimators": 100');
     fireEvent.change(editor, {
       target: { value: '{\n  "n_estimators": 42,\n  "max_depth": 3\n}' },
@@ -2152,11 +2158,14 @@ describe("JobCreate time-aware split", () => {
 
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByTestId("job-hyperparameters-editor")).toHaveAttribute("hidden");
     expect(screen.queryByTestId("job-hyperparameters")).not.toBeInTheDocument();
     fireEvent.click(toggle);
-    expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain(
-      '"n_estimators": 42',
-    );
+    const restored = screen.getByRole("textbox", {
+      name: "세부 학습 설정 (Hyperparameters)",
+    });
+    expect(restored).toHaveAttribute("data-testid", "job-hyperparameters");
+    expect((restored as HTMLTextAreaElement).value).toContain('"n_estimators": 42');
   });
 
   it("submits catalog default hyperparameters while the editor stays collapsed", async () => {
