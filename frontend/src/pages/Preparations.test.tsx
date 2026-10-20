@@ -107,6 +107,11 @@ describe("Preparations list", () => {
     expect(within(table).getByText("설명 없음")).toBeInTheDocument();
     expect(within(table).getAllByRole("link", { name: "열기" }).length).toBeGreaterThan(0);
     expect(within(table).getByTestId("preparation-delete-3")).toHaveTextContent("삭제");
+    const openLink = within(table).getAllByRole("link", { name: "열기" })[0];
+    const actionsInner = openLink.closest(".catalog-row-actions-inner");
+    expect(actionsInner).not.toBeNull();
+    expect(actionsInner!.closest("td")).toHaveClass("catalog-row-actions");
+    expect(within(actionsInner as HTMLElement).getByTestId("preparation-delete-3")).toBeInTheDocument();
   });
 
   it("creates a preparation with an empty graph and opens the builder", async () => {

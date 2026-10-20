@@ -218,22 +218,24 @@ export default function Preparations() {
                     </td>
                     <td className="catalog-meta-date">{formatDate(preparation.created_at)}</td>
                     <td className="catalog-row-actions">
-                      <Link
-                        className="btn link"
-                        to={`/projects/${projectId}/preparations/${preparation.id}`}
-                      >
-                        열기
-                      </Link>
-                      {canWrite ? (
-                        <button
-                          type="button"
-                          className="btn link danger-text"
-                          data-testid={`preparation-delete-${preparation.id}`}
-                          onClick={() => void onDelete(preparation)}
+                      <div className="catalog-row-actions-inner">
+                        <Link
+                          className="btn link"
+                          to={`/projects/${projectId}/preparations/${preparation.id}`}
                         >
-                          삭제
-                        </button>
-                      ) : null}
+                          열기
+                        </Link>
+                        {canWrite ? (
+                          <button
+                            type="button"
+                            className="btn link danger-text"
+                            data-testid={`preparation-delete-${preparation.id}`}
+                            onClick={() => void onDelete(preparation)}
+                          >
+                            삭제
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
