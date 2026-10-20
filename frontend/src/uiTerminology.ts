@@ -45,7 +45,31 @@ export const UI_HELP = {
     "이 옵션을 켠 규칙이 실패하면 해당 데이터로 학습을 시작하지 못하도록 차단합니다. 중요한 데이터 오류를 발견했을 때 잘못된 모델 학습을 방지하는 용도입니다.",
   qualitySeverity:
     "실패(Fail)는 품질 문제로 판정하고, 경고(Warning)는 문제를 기록하되 경고 수준으로 처리합니다.",
+  primaryMetric:
+    "모델이 얼마나 잘 예측했는지 나타내는 대표 수치입니다. val은 검증 데이터를 뜻합니다. RMSE·MAE는 예측 오차이므로 낮을수록 좋고, Accuracy(정확도)·F1은 일반적으로 높을수록 좋습니다.",
 } as const;
+
+/** Display-only training job status labels. Raw status values stay English for API/tone. */
+export function jobStatusLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "pending":
+      return "대기 중";
+    case "queued":
+      return "대기열";
+    case "running":
+      return "학습 중";
+    case "succeeded":
+      return "완료";
+    case "failed":
+      return "실패";
+    case "cancelled":
+      return "취소됨";
+    case "cancel_requested":
+      return "취소 요청 중";
+    default:
+      return value ? String(value).replaceAll("_", " ") : "—";
+  }
+}
 
 export function trainingTaskLabel(value?: string | null): string {
   return String(value || "").toLowerCase() === "forecasting"
