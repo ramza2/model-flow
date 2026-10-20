@@ -709,7 +709,7 @@ export default function DatasetDetail() {
                   {selected?.columns.map((column) => {
                     const stat = selected.stats[column] || {};
                     const summary = stat.mean !== undefined
-                      ? `최솟값 ${String(stat.min)} · 최댓값 ${String(stat.max)} · 평균 ${Number(stat.mean).toFixed(3)}`
+                      ? `최소값 ${String(stat.min)} · 최대값 ${String(stat.max)} · 평균 ${Number(stat.mean).toFixed(3)}`
                       : stat.top_values ? JSON.stringify(stat.top_values) : "—";
                     return <tr key={column}><td className="mono">{column}</td><td>{selected.dtypes[column]}</td><td>{String(stat.null_count ?? 0)}</td><td>{String(stat.unique_count ?? 0)}</td><td className="mono muted">{summary}</td></tr>;
                   })}
@@ -799,12 +799,12 @@ export default function DatasetDetail() {
                       {index === 0 ? <HelpTip text={UI_HELP.qualitySeverity} /> : null}
                       {condition.type === "range" && (
                         <>
-                          <input aria-label={`조건 ${index + 1} 최솟값`} placeholder="최솟값" value={condition.min} onChange={(event) => {
+                          <input aria-label={`조건 ${index + 1} 최소값`} placeholder="최소값" value={condition.min} onChange={(event) => {
                             const next = [...conditions];
                             next[index] = { ...condition, min: event.target.value };
                             setConditions(next);
                           }} />
-                          <input aria-label={`조건 ${index + 1} 최댓값`} placeholder="최댓값" value={condition.max} onChange={(event) => {
+                          <input aria-label={`조건 ${index + 1} 최대값`} placeholder="최대값" value={condition.max} onChange={(event) => {
                             const next = [...conditions];
                             next[index] = { ...condition, max: event.target.value };
                             setConditions(next);
