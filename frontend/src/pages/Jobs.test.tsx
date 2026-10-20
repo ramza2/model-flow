@@ -164,11 +164,11 @@ describe("Jobs list", () => {
     expect(within(table).getByRole("columnheader", { name: "예측 유형" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "학습 알고리즘" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "예측 대상" })).toBeInTheDocument();
-    expect(within(table).getByRole("columnheader", { name: /주요 평가 지표/ })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "주요 평가 지표" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "생성일시" })).toBeInTheDocument();
     expect(
-      within(table).getByLabelText(/도움말: 모델이 얼마나 잘 예측했는지/),
-    ).toBeInTheDocument();
+      within(table).queryByLabelText(/도움말: 모델이 얼마나 잘 예측했는지/),
+    ).not.toBeInTheDocument();
 
     const succeeded = within(table).getByTestId("job-row-10");
     expect(within(succeeded).getByText("완료")).toBeInTheDocument();

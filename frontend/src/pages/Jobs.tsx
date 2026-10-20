@@ -5,7 +5,6 @@ import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
-  HelpTip,
   Loading,
   PageHeader,
   StatusBadge,
@@ -15,7 +14,7 @@ import { effectiveTargetColumns } from "../jobHelpers";
 import { TargetChips } from "../lifecycleComponents";
 import { formatPrimaryMetric, resolveDisplayProblemType } from "../metricHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
-import { UI_HELP, jobStatusLabel, problemTypeLabel } from "../uiTerminology";
+import { jobStatusLabel, problemTypeLabel } from "../uiTerminology";
 
 export default function Jobs() {
   const { projectId } = useParams();
@@ -99,10 +98,7 @@ export default function Jobs() {
                   <th>예측 유형</th>
                   <th>학습 알고리즘</th>
                   <th>예측 대상</th>
-                  <th>
-                    주요 평가 지표
-                    <HelpTip text={UI_HELP.primaryMetric} />
-                  </th>
+                  <th>주요 평가 지표</th>
                   <th>생성일시</th>
                 </tr>
               </thead>

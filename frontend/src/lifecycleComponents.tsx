@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { StatusBadge } from "./components";
+import { HelpTip, StatusBadge } from "./components";
 import {
   formatMetricLabel,
   formatPrimaryMetric,
+  metricHelpText,
   selectPrimaryMetric,
 } from "./metricHelpers";
 import {
@@ -109,11 +110,14 @@ export function MetricSummary({
   problemType,
   targetColumns = [],
   limit = 6,
+  showMetricHelp = false,
 }: {
   metrics: Record<string, number>;
   problemType?: string;
   targetColumns?: string[];
   limit?: number;
+  /** When true, each metric card shows a per-metric HelpTip. Default keeps other screens unchanged. */
+  showMetricHelp?: boolean;
 }) {
   const entries = Object.entries(metrics);
   if (entries.length === 0) {
@@ -140,8 +144,15 @@ export function MetricSummary({
   return (
     <div className="grid stats-grid" data-testid="metric-summary">
       {ordered.slice(0, limit).map(([name, value]) => (
-        <div className="stat" key={name}>
-          <div className="label">{formatMetricLabel(name, targetColumns)}</div>
+        <div className="stat" key={name} data-testid={`metric-card-${name}`}>
+          {showMetricHelp ? (
+            <div className="stat-label-row">
+              <div className="label">{formatMetricLabel(name, targetColumns)}</div>
+              <HelpTip text={metricHelpText(name)} />
+            </div>
+          ) : (
+            <div className="label">{formatMetricLabel(name, targetColumns)}</div>
+          )}
           <div className="value metric-value">{Number(value).toFixed(3)}</div>
         </div>
       ))}

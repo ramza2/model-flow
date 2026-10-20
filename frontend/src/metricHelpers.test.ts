@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatMetricLabel,
   formatPrimaryMetric,
+  metricHelpText,
   resolveDisplayProblemType,
   selectPrimaryMetric,
 } from "./metricHelpers";
@@ -62,5 +63,35 @@ describe("metricHelpers", () => {
     expect(resolveDisplayProblemType("auto", {})).toBe("auto");
     expect(resolveDisplayProblemType("auto", { loss: 0.1 })).toBe("auto");
     expect(resolveDisplayProblemType("auto", null)).toBe("auto");
+  });
+
+  it("explains regression metrics with split prefixes", () => {
+    expect(metricHelpText("val_rmse")).toMatch(/검증 데이터/);
+    expect(metricHelpText("val_rmse")).toMatch(/낮을수록/);
+    expect(metricHelpText("test_mae")).toMatch(/테스트 데이터/);
+    expect(metricHelpText("test_mae")).toMatch(/절댓값/);
+    expect(metricHelpText("r2")).toMatch(/1에 가까울수록/);
+    expect(metricHelpText("r2")).not.toMatch(/검증 데이터|테스트 데이터/);
+  });
+
+  it("explains classification metrics and weighted variants", () => {
+    expect(metricHelpText("accuracy")).toMatch(/정답인 비율/);
+    expect(metricHelpText("accuracy")).toMatch(/높을수록/);
+    expect(metricHelpText("precision")).toMatch(/양성이라고 예측/);
+    expect(metricHelpText("recall")).toMatch(/실제 양성/);
+    expect(metricHelpText("f1")).toMatch(/조화평균/);
+    const weighted = metricHelpText("val_f1_weighted");
+    expect(weighted).toMatch(/검증 데이터/);
+    expect(weighted).toMatch(/조화평균/);
+    expect(weighted).toMatch(/가중 평균/);
+  });
+
+  it("handles per-target metric keys without inventing unknown guidance", () => {
+    const perTarget = metricHelpText("val_target_0_rmse");
+    expect(perTarget).toMatch(/검증 데이터/);
+    expect(perTarget).toMatch(/제곱 오차/);
+    expect(metricHelpText("custom_mystery_score")).toMatch(/기록된 평가 지표/);
+    expect(metricHelpText("custom_mystery_score")).not.toMatch(/높을수록|낮을수록/);
+    expect(metricHelpText("")).toMatch(/기록된 평가 지표/);
   });
 });
