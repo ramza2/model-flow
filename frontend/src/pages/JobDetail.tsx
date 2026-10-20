@@ -17,6 +17,7 @@ import { DetailSection, EntityLineage, MetricSummary, TargetChips } from "../lif
 import { resolveDisplayProblemType } from "../metricHelpers";
 import {
   UI_HELP,
+  jobStatusLabel,
   problemTypeLabel,
   splitStrategyLabel,
   trainingModeLabel,
@@ -50,7 +51,9 @@ export default function JobDetail() {
     const load = () =>
       api<Job>(`/projects/${projectId}/jobs/${jobId}`)
         .then((j) => alive && setJob(j))
-        .catch((reason) => alive && setError(reason instanceof Error ? reason.message : "Training job could not be loaded."));
+        .catch((reason) =>
+          alive && setError(reason instanceof Error ? reason.message : "학습 작업을 불러오지 못했습니다."),
+        );
     load();
     const t = setInterval(load, 2000);
     return () => {
@@ -91,10 +94,10 @@ export default function JobDetail() {
           name: modelName,
         }),
       });
-      setSuccess(`Registered ${model.name} v${model.version}.`);
+      setSuccess(`모델 ${model.name} v${model.version}을 등록했습니다.`);
       setShowRegister(false);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Model could not be registered.");
+      setError(reason instanceof Error ? reason.message : "모델을 등록하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -102,7 +105,7 @@ export default function JobDetail() {
 
   async function action(name: "cancel" | "retry") {
     if (!job) return;
-    if (name === "cancel" && !confirmAction(`Cancel training job “${job.name}”?`)) return;
+    if (name === "cancel" && !confirmAction(`학습 작업 ‘${job.name}’의 중지를 요청하시겠습니까?`)) return;
     setBusy(name);
     setError("");
     try {
@@ -111,12 +114,18 @@ export default function JobDetail() {
       });
       if (name === "cancel") {
         setJob(next);
-        setSuccess("Cancellation requested.");
+        setSuccess("학습 중지를 요청했습니다.");
       } else {
         navigate(`/projects/${projectId}/jobs/${next.id}`);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : `Job could not be ${name}d.`);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : name === "cancel"
+            ? "학습 중지를 요청하지 못했습니다."
+            : "학습을 다시 실행하지 못했습니다.",
+      );
     } finally {
       setBusy("");
     }
@@ -137,13 +146,13 @@ export default function JobDetail() {
           <>
             {job ? (
               <span className="header-status" data-testid="job-header-status">
-                <StatusBadge status={job.status} />
+                <StatusBadge status={job.status} label={jobStatusLabel(job.status)} />
               </span>
             ) : null}
             <span className="header-lifecycle-actions">
               {canTrain && job && ["failed", "cancelled"].includes(job.status) && (
                 <button className="btn" disabled={busy === "retry"} onClick={() => void action("retry")} data-testid="job-retry">
-                  Retry
+                  다시 실행
                 </button>
               )}
               {canRegister && job?.status === "succeeded" && job.model_uri && (
@@ -159,12 +168,12 @@ export default function JobDetail() {
               )}
               {showRetrainAction && !(canRegister && job?.model_uri) && (
                 <button type="button" className="btn" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
-                  Retrain
+                  전체 재학습
                 </button>
               )}
               {showContinueAction && !(canRegister && job?.model_uri) && (
                 <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
-                  Continue training
+                  이어서 학습
                 </button>
               )}
             </span>
@@ -174,18 +183,18 @@ export default function JobDetail() {
       <ErrorNotice message={error || job?.error_message || ""} />
       <SuccessNotice message={success} />
       {!job ? (
-        <Loading label="Loading training job" />
+        <Loading label="학습 작업 불러오는 중" />
       ) : (
         <>
           <div className="row-actions toolbar-actions lifecycle-toolbar">
             {canTrain && active && (
               <button className="btn danger" disabled={busy === "cancel"} onClick={() => void action("cancel")}>
-                Stop job
+                학습 중지
               </button>
             )}
             {canTrain && ["failed", "cancelled"].includes(job.status) && (
               <p className="form-hint" data-testid="retry-hint">
-                Retry reruns this job with the same configuration. Use 설정 복제 to modify settings.
+                다시 실행은 기존 설정을 그대로 사용해 학습을 다시 시작합니다. 설정을 변경하려면 ‘설정 복제’를 사용하세요.
               </p>
             )}
             {canTrain && (
@@ -194,7 +203,7 @@ export default function JobDetail() {
                 to={`/projects/${projectId}/jobs/new?cloneFrom=${job.id}`}
                 data-testid="job-clone"
               >
-                Clone configuration
+                설정 복제
               </Link>
             )}
             {job.mlflow_run_id && (
@@ -204,12 +213,12 @@ export default function JobDetail() {
             )}
             {showRetrainAction && canRegister && job.model_uri && (
               <button type="button" className="btn secondary" data-testid="job-retrain" onClick={() => setShowRetrain(true)}>
-                Retrain
+                전체 재학습
               </button>
             )}
             {showContinueAction && canRegister && job.model_uri && (
               <button type="button" className="btn secondary" data-testid="job-continue" onClick={() => setShowContinue(true)}>
-                Continue training
+                이어서 학습
               </button>
             )}
           </div>
@@ -228,7 +237,7 @@ export default function JobDetail() {
             </p>
           )}
 
-          <section className="metric-summary-panel" aria-label="Training metrics">
+          <section className="metric-summary-panel" aria-label="학습 평가 지표">
             <div className="panel-title">
               <div>
                 <span className="eyebrow">성능</span>
@@ -240,6 +249,11 @@ export default function JobDetail() {
               problemType={job.problem_type}
               targetColumns={targets}
               showMetricHelp
+              labels={{
+                emptyTitle: "평가 지표",
+                emptyHint: "학습 완료 후 확인할 수 있습니다.",
+                primaryPrefix: "대표 지표:",
+              }}
             />
           </section>
 
@@ -247,17 +261,17 @@ export default function JobDetail() {
             <DetailSection eyebrow="설정" title="학습 설정 (Training setup)">
               {job.is_retrain && job.retrain_source_job_id && (
                 <p data-testid="job-retrain-lineage">
-                  Retrained from{" "}
+                  재학습 원본{" "}
                   <Link to={`/projects/${projectId}/jobs/${job.retrain_source_job_id}`}>
-                    Job #{job.retrain_source_job_id}
+                    학습 작업 #{job.retrain_source_job_id}
                   </Link>
                 </p>
               )}
               {job.is_continued_training && job.continued_from_job_id && (
                 <p data-testid="job-continue-lineage">
-                  Continued from{" "}
+                  이어서 학습 원본{" "}
                   <Link to={`/projects/${projectId}/jobs/${job.continued_from_job_id}`}>
-                    Job #{job.continued_from_job_id}
+                    학습 작업 #{job.continued_from_job_id}
                   </Link>
                 </p>
               )}
@@ -290,15 +304,15 @@ export default function JobDetail() {
                 {job.training_task === "forecasting" ? (
                   <>
                     <div data-testid="job-forecast-strategy">
-                      <dt>Strategy</dt>
+                      <dt>예측 방식 (Forecast strategy)</dt>
                       <dd>
                         {job.forecast_strategy === "direct_multioutput"
-                          ? "Direct multi-output"
+                          ? "직접 다중 출력 (Direct multi-output)"
                           : job.forecast_strategy || "—"}
                       </dd>
                     </div>
                     <div data-testid="job-forecast-horizons">
-                      <dt>Horizons</dt>
+                      <dt>미래 예측 시점 (Forecast horizons)</dt>
                       <dd>
                         {Array.isArray(job.forecast_horizons) && job.forecast_horizons.length
                           ? job.forecast_horizons.join(", ")
@@ -306,7 +320,7 @@ export default function JobDetail() {
                       </dd>
                     </div>
                     <div data-testid="job-forecast-outputs">
-                      <dt>Outputs</dt>
+                      <dt>예측 출력 항목 (Outputs)</dt>
                       <dd>
                         {Array.isArray(job.forecast_output_names) && job.forecast_output_names.length ? (
                           <TargetChips targets={job.forecast_output_names} />
@@ -325,10 +339,10 @@ export default function JobDetail() {
                   <dt>데이터셋 (Dataset)</dt>
                   <dd>
                     <Link to={`/projects/${projectId}/datasets/${job.dataset_id}`}>
-                      Dataset #{job.dataset_id}
+                      데이터셋 #{job.dataset_id}
                     </Link>
                     {job.dataset_version_id ? (
-                      <span className="mono"> · Version #{job.dataset_version_id}</span>
+                      <span className="mono"> · 버전 ID #{job.dataset_version_id}</span>
                     ) : null}
                   </dd>
                 </div>
@@ -337,7 +351,7 @@ export default function JobDetail() {
                   <dd>
                     {job.split_id ? (
                       <>
-                        <div>저장된 분할 (Saved split #{job.split_id})</div>
+                        <div>저장된 분할 #{job.split_id}</div>
                         <div data-testid="job-split-strategy-label">
                           방식: {splitStrategyLabel(job.split_strategy)}
                         </div>
@@ -352,13 +366,13 @@ export default function JobDetail() {
                             : "—"}
                           {(job.split_strategy || "random") === "random" &&
                           typeof job.random_seed === "number"
-                            ? ` · seed ${job.random_seed}`
+                            ? ` · 시드 ${job.random_seed}`
                             : ""}
                         </small>
                       </>
                     ) : (
                       <>
-                        <div>실행 시 분할 (Runtime split)</div>
+                        <div>실행 시 분할</div>
                         <div data-testid="job-split-strategy-label">
                           방식: {splitStrategyLabel(job.split_strategy)}
                         </div>
@@ -373,8 +387,8 @@ export default function JobDetail() {
                             : "70/15/15"}
                           {(job.split_strategy || "random") === "random"
                             ? typeof job.random_seed === "number"
-                              ? ` · seed ${job.random_seed}`
-                              : " · seed 42"
+                              ? ` · 시드 ${job.random_seed}`
+                              : " · 시드 42"
                             : ""}
                         </small>
                       </>
@@ -387,14 +401,16 @@ export default function JobDetail() {
             </DetailSection>
 
             <EntityLineage
+              eyebrow="이력"
+              title="학습 연결 경로"
               items={[
                 {
-                  label: "Dataset",
-                  value: `Dataset #${job.dataset_id}`,
+                  label: "데이터셋",
+                  value: `데이터셋 #${job.dataset_id}`,
                   to: `/projects/${projectId}/datasets/${job.dataset_id}`,
                 },
                 {
-                  label: "Experiment run",
+                  label: "실험 실행",
                   value: job.mlflow_run_id || "—",
                   to: job.mlflow_run_id
                     ? `/projects/${projectId}/experiments/runs/${job.mlflow_run_id}`
@@ -404,8 +420,8 @@ export default function JobDetail() {
                 ...(job.is_retrain && job.retrain_source_job_id
                   ? [
                       {
-                        label: "Retrain source",
-                        value: `Job #${job.retrain_source_job_id}`,
+                        label: "재학습 원본",
+                        value: `학습 작업 #${job.retrain_source_job_id}`,
                         to: `/projects/${projectId}/jobs/${job.retrain_source_job_id}`,
                       },
                     ]
@@ -413,8 +429,8 @@ export default function JobDetail() {
                 ...(job.is_continued_training && job.continued_from_job_id
                   ? [
                       {
-                        label: "Continued training source",
-                        value: `Job #${job.continued_from_job_id}`,
+                        label: "이어서 학습 원본",
+                        value: `학습 작업 #${job.continued_from_job_id}`,
                         to: `/projects/${projectId}/jobs/${job.continued_from_job_id}`,
                       },
                     ]
@@ -432,10 +448,10 @@ export default function JobDetail() {
           <DetailSection
             eyebrow="실행"
             title="실행 로그 (Logs)"
-            actions={active ? <span className="live-indicator"><span /> Live</span> : undefined}
+            actions={active ? <span className="live-indicator"><span /> 실시간</span> : undefined}
           >
             <div className="engineering-surface">
-              <div className="logs" data-testid="job-logs">{job.logs || "Waiting for training to start…"}</div>
+              <div className="logs" data-testid="job-logs">{job.logs || "학습 시작을 기다리는 중…"}</div>
             </div>
           </DetailSection>
 

@@ -84,9 +84,19 @@ export function DetailSection({
   );
 }
 
-export function EntityLineage({ items }: { items: LineageItem[] }) {
+export function EntityLineage({
+  items,
+  eyebrow = "Lineage",
+  title = "ML lifecycle path",
+}: {
+  items: LineageItem[];
+  /** Optional display-only section eyebrow. Defaults preserve existing English callers. */
+  eyebrow?: string;
+  /** Optional display-only section title. Defaults preserve existing English callers. */
+  title?: string;
+}) {
   return (
-    <DetailSection eyebrow="Lineage" title="ML lifecycle path" testId="entity-lineage">
+    <DetailSection eyebrow={eyebrow} title={title} testId="entity-lineage">
       <ol className="entity-lineage">
         {items.map((item) => (
           <li key={`${item.label}-${item.value}`}>
@@ -111,6 +121,7 @@ export function MetricSummary({
   targetColumns = [],
   limit = 6,
   showMetricHelp = false,
+  labels,
 }: {
   metrics: Record<string, number>;
   problemType?: string;
@@ -118,14 +129,23 @@ export function MetricSummary({
   limit?: number;
   /** When true, each metric card shows a per-metric HelpTip. Default keeps other screens unchanged. */
   showMetricHelp?: boolean;
+  /** Optional display-only copy overrides. Defaults preserve existing English callers. */
+  labels?: {
+    emptyTitle?: string;
+    emptyHint?: string;
+    primaryPrefix?: string;
+  };
 }) {
+  const emptyTitle = labels?.emptyTitle ?? "Metrics";
+  const emptyHint = labels?.emptyHint ?? "Available after training";
+  const primaryPrefix = labels?.primaryPrefix ?? "Primary:";
   const entries = Object.entries(metrics);
   if (entries.length === 0) {
     return (
       <div className="stat">
-        <div className="label">Metrics</div>
+        <div className="label">{emptyTitle}</div>
         <div className="value metric-value">—</div>
-        <small>Available after training</small>
+        <small>{emptyHint}</small>
       </div>
     );
   }
@@ -158,7 +178,7 @@ export function MetricSummary({
       ))}
       {primary && (
         <p className="form-hint metric-primary-hint" data-testid="metric-primary-hint">
-          Primary: {formatPrimaryMetric(metrics, { problemType, targetColumns })}
+          {primaryPrefix} {formatPrimaryMetric(metrics, { problemType, targetColumns })}
         </p>
       )}
     </div>

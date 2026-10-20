@@ -113,6 +113,8 @@ test("continued training UX wires Continue action and lineage", async ({ page, r
   await page.getByTestId("continue-submit").click();
 
   await expect(page.getByTestId("job-continue-lineage")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByTestId("job-continue-lineage")).toContainText(`Job #${sourceJob.id}`);
+  await expect(page.getByTestId("job-continue-lineage")).toContainText(
+    `학습 작업 #${sourceJob.id}`,
+  );
   await expect(page.getByTestId("job-training-mode")).toContainText(/Continued|이어서 학습/);
 });

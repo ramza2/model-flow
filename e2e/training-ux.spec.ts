@@ -111,7 +111,7 @@ test("clone configuration opens editable create form", async ({ page }) => {
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-logs")).toBeVisible();
 
-  const stop = page.getByRole("button", { name: "Stop job" });
+  const stop = page.getByRole("button", { name: "학습 중지" });
   await expect(stop).toBeVisible({ timeout: 30_000 });
   page.once("dialog", (dialog) => dialog.accept());
   await stop.click();
