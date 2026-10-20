@@ -39,6 +39,35 @@ describe("shared status and notice presentation", () => {
     expect(document.querySelector(".badge.ok")).toBeTruthy();
   });
 
+  it("maps MLflow run statuses to semantic tones", () => {
+    const { rerender } = render(<StatusBadge status="FINISHED" label="완료" />);
+    expect(screen.getByText("완료")).toBeInTheDocument();
+    expect(document.querySelector(".badge.ok")).toBeTruthy();
+
+    rerender(<StatusBadge status="RUNNING" label="실행 중" />);
+    expect(screen.getByText("실행 중")).toBeInTheDocument();
+    expect(document.querySelector(".badge.run")).toBeTruthy();
+
+    rerender(<StatusBadge status="FAILED" label="실패" />);
+    expect(screen.getByText("실패")).toBeInTheDocument();
+    expect(document.querySelector(".badge.err")).toBeTruthy();
+
+    rerender(<StatusBadge status="KILLED" label="중지됨" />);
+    expect(screen.getByText("중지됨")).toBeInTheDocument();
+    expect(document.querySelector(".badge.neutral")).toBeTruthy();
+
+    rerender(<StatusBadge status="SCHEDULED" label="대기 중" />);
+    expect(screen.getByText("대기 중")).toBeInTheDocument();
+    expect(document.querySelector(".badge.run")).toBeTruthy();
+
+    rerender(<StatusBadge status="finished" />);
+    expect(document.querySelector(".badge.ok")).toBeTruthy();
+    rerender(<StatusBadge status="killed" />);
+    expect(document.querySelector(".badge.neutral")).toBeTruthy();
+    rerender(<StatusBadge status="scheduled" />);
+    expect(document.querySelector(".badge.run")).toBeTruthy();
+  });
+
   it("renders notice variants with optional next-step action", () => {
     render(
       <Notice

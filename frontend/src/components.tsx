@@ -138,6 +138,7 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
       "published",
       "enabled",
       "resolved",
+      "finished",
     ]),
   },
   negative: {
@@ -168,6 +169,7 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
       "pending_approval",
       "cancel_requested",
       "waiting",
+      "scheduled",
     ]),
   },
   warning: {
@@ -193,6 +195,7 @@ const statusCatalog: Record<StatusTone, { values: Set<string>; icon: string; cla
       "unknown",
       "inactive",
       "disabled",
+      "killed",
     ]),
   },
 };
