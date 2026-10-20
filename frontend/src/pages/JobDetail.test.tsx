@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import JobDetail from "./JobDetail";
@@ -517,6 +517,56 @@ describe("JobDetail retrain", () => {
     expect(await screen.findByTestId("job-training-task")).toHaveTextContent("Tabular");
     expect(screen.queryByTestId("job-forecast-strategy")).not.toBeInTheDocument();
     expect(screen.queryByTestId("job-forecast-horizons")).not.toBeInTheDocument();
+  });
+
+  it("shows distinct per-metric help tips on evaluation cards", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          problem_type: "regression",
+          algorithm: "ridge",
+          metrics: {
+            val_rmse: 18.128,
+            val_mae: 12.4,
+            val_r2: 0.81,
+            test_rmse: 19.05,
+          },
+          is_retrain: false,
+          retrain_source_job_id: null,
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+
+    const summary = await screen.findByTestId("metric-summary");
+    const cards = Array.from(summary.querySelectorAll("[data-testid^='metric-card-']"));
+    expect(cards.map((card) => card.getAttribute("data-testid"))).toEqual([
+      "metric-card-val_rmse",
+      "metric-card-val_mae",
+      "metric-card-val_r2",
+      "metric-card-test_rmse",
+    ]);
+    expect(within(cards[0] as HTMLElement).getByText("18.128")).toBeInTheDocument();
+    expect(within(cards[1] as HTMLElement).getByText("12.400")).toBeInTheDocument();
+    expect(within(cards[2] as HTMLElement).getByText("0.810")).toBeInTheDocument();
+    expect(within(cards[3] as HTMLElement).getByText("19.050")).toBeInTheDocument();
+
+    const rmseHelp = within(screen.getByTestId("metric-card-val_rmse")).getByLabelText(/도움말:/);
+    const maeHelp = within(screen.getByTestId("metric-card-val_mae")).getByLabelText(/도움말:/);
+    const r2Help = within(screen.getByTestId("metric-card-val_r2")).getByLabelText(/도움말:/);
+    const testRmseHelp = within(screen.getByTestId("metric-card-test_rmse")).getByLabelText(/도움말:/);
+
+    expect(rmseHelp.getAttribute("aria-label")).toMatch(/검증 데이터/);
+    expect(rmseHelp.getAttribute("aria-label")).toMatch(/제곱 오차/);
+    expect(maeHelp.getAttribute("aria-label")).toMatch(/절댓값/);
+    expect(r2Help.getAttribute("aria-label")).toMatch(/1에 가까울수록/);
+    expect(testRmseHelp.getAttribute("aria-label")).toMatch(/테스트 데이터/);
+
+    expect(rmseHelp.getAttribute("aria-label")).not.toEqual(maeHelp.getAttribute("aria-label"));
+    expect(rmseHelp.getAttribute("aria-label")).not.toEqual(testRmseHelp.getAttribute("aria-label"));
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("val rmse: 18.128");
   });
 
 });

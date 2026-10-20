@@ -239,6 +239,7 @@ export default function JobDetail() {
               metrics={job.metrics}
               problemType={job.problem_type}
               targetColumns={targets}
+              showMetricHelp
             />
           </section>
 
