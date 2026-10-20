@@ -54,7 +54,7 @@ export default function JobCreate() {
   const malformedExplicitVersion =
     shouldHonorExplicitVersion && parsedDatasetVersionId == null;
   const malformedVersionError = malformedExplicitVersion
-    ? `Dataset version "${rawDatasetVersionIdParam}" is invalid. Select a valid version to continue.`
+    ? `데이터셋 버전 "${rawDatasetVersionIdParam}" 값이 올바르지 않습니다. 올바른 버전을 선택하세요.`
     : null;
 
   const [datasets, setDatasets] = useState<Dataset[]>([]);
@@ -164,7 +164,7 @@ export default function JobCreate() {
         const defaults = catalogRows.algorithms.find((item) => item.id === "random_forest");
         if (defaults) setHyperparameters(formatHyperparameters(defaults.default_hyperparameters));
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Datasets could not be loaded."))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "데이터셋을 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [projectId, requestedDatasetId, shouldHonorExplicitVersion]);
 
@@ -204,7 +204,7 @@ export default function JobCreate() {
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : "Clone source job could not be loaded.");
+          setError(reason instanceof Error ? reason.message : "기존 학습 설정을 불러오지 못했습니다.");
           setCloneLoaded(true);
         }
       });
@@ -240,14 +240,14 @@ export default function JobCreate() {
           if (handoffVersionId == null) {
             setVersionError(
               malformedVersionError
-                ?? "Dataset version query value is invalid. Select a valid version to continue.",
+                ?? "데이터셋 버전 값이 올바르지 않습니다. 올바른 버전을 선택하세요.",
             );
           } else {
             const exact = rows.find((row) => row.id === handoffVersionId);
             if (exact) setVersionError(null);
             else {
               setVersionError(
-                `Dataset version #${handoffVersionId} was not found for this dataset. Select a valid version to continue.`,
+                `데이터셋 버전 #${handoffVersionId}을 찾을 수 없습니다. 계속하려면 올바른 버전을 선택하세요.`,
               );
             }
           }
@@ -265,8 +265,8 @@ export default function JobCreate() {
             setVersionError(
               handoffVersionId == null
                 ? (malformedVersionError
-                  ?? "Dataset version query value is invalid. Select a valid version to continue.")
-                : `Dataset version #${handoffVersionId} could not be loaded. Select a valid version to continue.`,
+                  ?? "데이터셋 버전 값이 올바르지 않습니다. 올바른 버전을 선택하세요.")
+                : `데이터셋 버전 #${handoffVersionId}을 불러오지 못했습니다. 올바른 버전을 선택하세요.`,
             );
           }
         }
@@ -399,7 +399,7 @@ export default function JobCreate() {
         setDetectedType(null);
         setResolvingProblemType(false);
         setProblemTypeDetectionError(
-          reason instanceof Error ? reason.message : "Problem type detection failed.",
+          reason instanceof Error ? reason.message : "예측 문제 유형을 자동 판별하지 못했습니다.",
         );
       });
     return () => {
@@ -472,20 +472,20 @@ export default function JobCreate() {
     setSubmitError("");
     try {
       if (versionError || datasetVersionId == null) {
-        throw new Error(versionError || "Select a dataset version.");
+        throw new Error(versionError || "데이터셋 버전을 선택하세요.");
       }
       if (targets.length === 0) {
-        throw new Error("Select at least one target column.");
+        throw new Error("예측 대상을 하나 이상 선택하세요.");
       }
       if (featureColumns.length === 0) {
-        throw new Error("Select at least one feature column.");
+        throw new Error("입력 항목을 하나 이상 선택하세요.");
       }
       if (isForecasting && targets.length !== 1) {
-        throw new Error("Forecasting requires exactly one target column.");
+        throw new Error("시계열 예측은 예측 대상을 하나만 선택할 수 있습니다.");
       }
       const submitSplitStrategy = isForecasting ? "time" : splitStrategy;
       if (splitId == null && submitSplitStrategy === "time" && !timeColumn.trim()) {
-        throw new Error("Select a time column for a time-ordered split.");
+        throw new Error("시간 순서 분할에 사용할 시간 기준 컬럼을 선택하세요.");
       }
       if (
         isForecasting &&
@@ -493,7 +493,7 @@ export default function JobCreate() {
         selectedSavedSplit &&
         (selectedSavedSplit.split_strategy || "random") !== "time"
       ) {
-        throw new Error("Forecasting requires a time-ordered saved split.");
+        throw new Error("시계열 예측은 시간 순서 저장된 분할이 필요합니다.");
       }
       let forecastHorizons: number[] = [];
       if (isForecasting) {
@@ -502,14 +502,16 @@ export default function JobCreate() {
         forecastHorizons = parsedHorizons.value;
       }
       if (!isForecasting && !isMultiTarget && problemType === "auto" && (resolvingProblemType || !detectedType)) {
-        throw new Error("Wait for problem type detection to finish before starting training.");
+        throw new Error("예측 문제 유형 자동 판별이 끝날 때까지 기다려 주세요.");
       }
       const filterType = effectiveProblemType;
       if (filterType && selectedAlgorithm && !selectedAlgorithm.problem_types.includes(filterType)) {
-        throw new Error(`${selectedAlgorithm.display_name} is not supported for ${filterType}.`);
+        throw new Error(
+          `${selectedAlgorithm.display_name}은(는) ${titleCaseProblemType(filterType)}에 사용할 수 없습니다.`,
+        );
       }
       if (isForecasting && selectedAlgorithm && !selectedAlgorithm.supports_forecasting) {
-        throw new Error(`${selectedAlgorithm.display_name} does not support forecasting.`);
+        throw new Error(`${selectedAlgorithm.display_name}은(는) 시계열 예측을 지원하지 않습니다.`);
       }
       const parsed = validateHyperparametersText(hyperparameters, selectedAlgorithm);
       if (!parsed.ok) throw new Error(parsed.message);
@@ -546,7 +548,7 @@ export default function JobCreate() {
       });
       nav(`/projects/${projectId}/jobs/${job.id}`);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Training job could not be created.");
+      setSubmitError(err instanceof Error ? err.message : "모델 학습을 생성하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -568,8 +570,8 @@ export default function JobCreate() {
         message="예측 대상은 모델이 맞혀야 하는 값이고, 입력 항목은 예측에 사용할 정보입니다. 데이터 분할은 학습/검증/테스트 구간을 나눠 모델 성능을 공정하게 확인하기 위한 설정입니다."
       />
       <ErrorNotice message={error} />
-      {!formReady ? <Loading label="Loading datasets" /> : datasets.length === 0 ? (
-        <EmptyState title="A dataset is required" description="Upload and profile data before creating a training job." />
+      {!formReady ? <Loading label="데이터셋 불러오는 중" /> : datasets.length === 0 ? (
+        <EmptyState title="학습할 데이터셋이 필요합니다" description="모델 학습을 시작하려면 먼저 데이터셋을 등록하세요." />
       ) : (
         <form className="panel form form-wide" onSubmit={onSubmit}>
           <div className="form-section">
@@ -711,11 +713,11 @@ export default function JobCreate() {
             {isForecasting ? (
               <div className="form-grid" data-testid="job-forecast-config">
                 <label>
-                  Forecast strategy
-                  <input value="Direct multi-output" disabled data-testid="job-forecast-strategy" />
+                  <TermLabel ko="예측 방식" en="Forecast strategy" />
+                  <input value="직접 다중 출력 (Direct multi-output)" disabled data-testid="job-forecast-strategy" />
                 </label>
                 <label>
-                  Forecast horizons
+                  <TermLabel ko="미래 예측 시점" en="Forecast horizons" help={UI_HELP.forecastHorizons} />
                   <input
                     value={forecastHorizonsText}
                     onChange={(event) => {
@@ -728,7 +730,7 @@ export default function JobCreate() {
                   />
                 </label>
                 <p className="form-hint" data-testid="job-forecast-horizons-help">
-                  Horizons are future observation steps after chronological ordering, not clock-time durations.
+                  {UI_HELP.forecastHorizons}
                 </p>
               </div>
             ) : null}
@@ -738,7 +740,8 @@ export default function JobCreate() {
               </p>
             ) : null}
             {versions.length > 0 && (
-              <label>데이터셋 버전 (Dataset version)
+              <label>
+                <TermLabel ko="데이터셋 버전" en="Dataset version" />
                 <select
                   value={datasetVersionId ?? ""}
                   onChange={(event) => {
@@ -750,7 +753,7 @@ export default function JobCreate() {
                   }}
                   data-testid="job-dataset-version"
                 >
-                  {versionError ? <option value="">Select a dataset version</option> : null}
+                  {versionError ? <option value="">데이터셋 버전 선택</option> : null}
                   {versions.map((version) => (
                     <option key={version.id} value={version.id}>v{version.version} · {version.original_filename}</option>
                   ))}
@@ -813,7 +816,7 @@ export default function JobCreate() {
                 data-testid="job-data-split"
               >
                 <option value="">
-                  직접 분할 (Manual runtime split) · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
+                  직접 분할 · {Math.round(trainRatio * 100)}/{Math.round(valRatio * 100)}/{Math.round(testRatio * 100)}
                 </option>
                 {selectableSavedSplits.map((split) => {
                   const label =
@@ -835,13 +838,13 @@ export default function JobCreate() {
             ) : null}
             {selectedSavedSplit ? (
               <p className="form-hint" data-testid="job-saved-split-summary">
-                저장된 분할 사용 (Saved split #{selectedSavedSplit.id}):{" "}
+                저장된 분할 #{selectedSavedSplit.id} 사용:{" "}
                 {(selectedSavedSplit.split_strategy || "random") === "time"
                   ? `시간 순서 (Time ordered · ${selectedSavedSplit.time_column || "—"})`
                   : "무작위 (Random)"}
                 {` · 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}%`}
                 {(selectedSavedSplit.split_strategy || "random") === "random"
-                  ? ` · seed ${randomSeed}`
+                  ? ` · 시드 ${randomSeed}`
                   : ""}
               </p>
             ) : (
@@ -900,12 +903,12 @@ export default function JobCreate() {
                 ) : null}
                 <p className="form-hint" data-testid="job-runtime-split-summary">
                   {isForecasting || splitStrategy === "time"
-                    ? `시간 순서 직접 분할 (Time-ordered runtime split)${timeColumn ? ` · ${timeColumn}` : ""}: 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}%.`
-                    : `무작위 직접 분할 (Random runtime split): 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}% · seed ${randomSeed}`}
+                    ? `시간 순서 직접 분할${timeColumn ? ` · ${timeColumn}` : ""}: 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}%.`
+                    : `무작위 직접 분할: 학습 ${(trainRatio * 100).toFixed(0)}%, 검증 ${(valRatio * 100).toFixed(0)}%, 테스트 ${(testRatio * 100).toFixed(0)}% · 시드 ${randomSeed}`}
                 </p>
                 {isForecasting || splitStrategy === "time" ? (
                   <p className="form-hint" data-testid="job-time-seed-hint">
-                    시간 순서 분할에서는 행을 섞지 않습니다. Random seed는 모델 학습 자체에는 영향을 줄 수 있습니다.
+                    시간 순서 분할에서는 데이터 행의 순서를 섞지 않습니다. 난수 시드는 데이터 순서에는 영향을 주지 않지만 모델 학습 과정에는 영향을 줄 수 있습니다.
                   </p>
                 ) : null}
               </>

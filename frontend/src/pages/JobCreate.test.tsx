@@ -572,7 +572,7 @@ describe("JobCreate UX", () => {
     );
 
     expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(
-      /Dataset version #777 was not found/,
+      /데이터셋 버전 #777을 찾을 수 없습니다/,
     );
     expect(screen.getByTestId("job-submit")).toBeDisabled();
     expect(screen.getByTestId("job-dataset-version")).toHaveValue("");
@@ -663,7 +663,9 @@ describe("JobCreate UX", () => {
         </MemoryRouter>,
       );
 
-      expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(/invalid/i);
+      expect(await screen.findByTestId("job-dataset-version-error")).toHaveTextContent(
+        /올바르지 않습니다/,
+      );
       expect(screen.getByTestId("job-submit")).toBeDisabled();
       expect(screen.getByTestId("job-dataset-version")).toHaveValue("");
       expect(screen.queryByTestId("target-extra_latest")).not.toBeInTheDocument();
@@ -1788,7 +1790,9 @@ describe("JobCreate time-aware split", () => {
     fireEvent.change(screen.getByTestId("job-time-column"), { target: { value: "event_time" } });
     expect(screen.queryByTestId("target-event_time")).not.toBeInTheDocument();
     expect(screen.queryByTestId("feature-event_time")).not.toBeInTheDocument();
-    expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(/행을 섞지 않습니다/);
+    expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(
+      /데이터 행의 순서를 섞지 않습니다.*난수 시드는 데이터 순서에는 영향을 주지 않지만 모델 학습 과정에는 영향을 줄 수 있습니다/,
+    );
 
     await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("job-submit"));
@@ -1983,7 +1987,9 @@ describe("JobCreate time-aware split", () => {
     expect(screen.getByTestId("job-split-strategy")).toBeDisabled();
     expect(screen.getByTestId("job-split-strategy")).toHaveValue("time");
     expect(screen.getByTestId("job-forecast-horizons")).toBeInTheDocument();
-    expect(screen.getByTestId("job-forecast-horizons-help")).toHaveTextContent(/observation steps/i);
+    expect(screen.getByTestId("job-forecast-horizons-help")).toHaveTextContent(
+      /미래의 몇 번째 데이터까지 예측할지.*데이터 간격을 나타냅니다/,
+    );
 
     await waitFor(() => {
       const algorithmSelect = screen.getByTestId("job-algorithm") as HTMLSelectElement;
