@@ -44,7 +44,9 @@ const version = {
   column_count: 3,
   columns: ["site_id", "a", "target"],
   dtypes: { site_id: "object", a: "int64", target: "int64" },
-  stats: {},
+  stats: {
+    a: { min: 0, max: 10, mean: 5.123, null_count: 0, unique_count: 3 },
+  },
   created_at: "2026-08-06T10:00:00Z",
 };
 
@@ -178,6 +180,7 @@ describe("DatasetDetail quality management", () => {
     expect(screen.getByTestId("dataset-lifecycle-entry")).toHaveTextContent("이 데이터셋으로 학습 시작");
     expect(screen.getByRole("heading", { name: "컬럼 통계" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "자료형" })).toBeInTheDocument();
+    expect(screen.getByText("최소값 0 · 최대값 10 · 평균 5.123")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "데이터 미리보기" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "버전" })).toBeInTheDocument();
     expect(screen.getByText("버전 1")).toBeInTheDocument();
@@ -263,6 +266,32 @@ describe("DatasetDetail quality management", () => {
       expect(body.rules[1].pattern).toBe("^S\\d+$");
       expect(body.block_training_on_fail).toBe(true);
       expect(body.is_active).toBe(true);
+    });
+  });
+
+  it("shows Korean min/max labels for range rules and keeps payload field names", async () => {
+    renderPage();
+    await screen.findByTestId("quality-create");
+    fireEvent.click(screen.getByTestId("quality-create"));
+    fireEvent.change(screen.getByTestId("quality-rule-name"), { target: { value: "Range a" } });
+    fireEvent.change(screen.getByTestId("quality-condition-type-0"), { target: { value: "range" } });
+    const minInput = screen.getByLabelText("조건 1 최소값");
+    const maxInput = screen.getByLabelText("조건 1 최대값");
+    expect(minInput).toHaveAttribute("placeholder", "최소값");
+    expect(maxInput).toHaveAttribute("placeholder", "최대값");
+    fireEvent.change(screen.getByLabelText("조건 1 컬럼"), { target: { value: "a" } });
+    fireEvent.change(minInput, { target: { value: "1" } });
+    fireEvent.change(maxInput, { target: { value: "9" } });
+    fireEvent.click(screen.getByTestId("quality-save-rule"));
+    await waitFor(() => {
+      const createCall = apiMock.mock.calls.find(
+        ([path, init]) => path === "/projects/7/quality-rules" && init?.method === "POST",
+      );
+      expect(createCall).toBeTruthy();
+      const body = JSON.parse(String(createCall![1].body));
+      expect(body.rules).toEqual([
+        { type: "range", column: "a", severity: "fail", min: 1, max: 9 },
+      ]);
     });
   });
 
