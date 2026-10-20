@@ -798,22 +798,22 @@ describe("PreparationBuilder", () => {
         version: {
           ...preparation.version,
           graph: {
-            schema_version: 1 as const,
+            ...preparation.version.graph,
             nodes: [
+              ...preparation.version.graph.nodes,
               {
                 id: "join-1",
                 type: "join" as const,
                 config: { how: "left", left_on: ["id"], right_on: ["id"] },
-                position: { x: 0, y: 0 },
+                position: { x: 240, y: 60 },
               },
               {
                 id: "union-1",
                 type: "union" as const,
                 config: { mode: "strict" },
-                position: { x: 100, y: 0 },
+                position: { x: 360, y: 60 },
               },
             ],
-            edges: [],
           },
         },
       } as typeof preparation,
