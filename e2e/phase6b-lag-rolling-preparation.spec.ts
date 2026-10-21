@@ -150,8 +150,9 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
   await expect(page.getByTestId("preparation-lag-inspector")).toBeVisible();
   await expect(page.getByTestId("preparation-lag-time-column")).toHaveValue("event_time");
   await expect(page.getByTestId("preparation-lag-source-column")).toHaveValue("sales");
+  await expect(page.getByTestId("preparation-lag-help")).toContainText("24행 앞");
   await expect(page.getByTestId("preparation-lag-help")).toContainText(
-    "이전 행만 사용합니다",
+    "24시간 전이 항상 보장되지는 않으며",
   );
 
   await page
