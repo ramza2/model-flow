@@ -517,11 +517,220 @@ describe("PreparationBuilder", () => {
     renderBuilder();
     fireEvent.click(await screen.findByTestId("preparation-validate"));
     expect(await screen.findByText("graph must have exactly one output node")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("문제 1건");
 
     stubPreparationApi({ validate: { valid: true, errors: [], warnings: ["soft note"] } });
     fireEvent.click(screen.getByTestId("preparation-validate"));
     expect(await screen.findByText("그래프가 유효합니다")).toBeInTheDocument();
     expect(screen.getByText("soft note")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent(
+      "검증 통과 · 경고 1건",
+    );
+  });
+
+  it("shows a compact validation status near the validate action", async () => {
+    stubPreparationApi({ validate: { valid: true, errors: [], warnings: [] } });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-validate"));
+    expect(await screen.findByTestId("preparation-validate-status")).toHaveTextContent("검증 통과");
+    expect(screen.getByTestId("preparation-validate-status")).toHaveAttribute("role", "status");
+
+    fireEvent.click(screen.getByTestId("preparation-library-source"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-validation")).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not keep a prior validation pass while a new request is in flight or after failure", async () => {
+    let resolveValidate!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    let rejectValidate!: (reason?: unknown) => void;
+    const validateDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve, reject) => {
+      resolveValidate = resolve;
+      rejectValidate = reject;
+    });
+    stubPreparationApi({ validate: { valid: true, errors: [], warnings: [] } });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-validate"));
+    expect(await screen.findByTestId("preparation-validate-status")).toHaveTextContent("검증 통과");
+
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await validateDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+    expect(screen.queryByText("검증 통과")).not.toBeInTheDocument();
+
+    rejectValidate(new Error("validate boom"));
+    expect(await screen.findByTestId("preparation-validate-status")).toHaveTextContent(
+      "검증 요청 실패",
+    );
+    expect(screen.queryByText("검증 통과")).not.toBeInTheDocument();
+    expect(screen.getByText("validate boom")).toBeInTheDocument();
+    resolveValidate({ valid: true, errors: [], warnings: [] });
+  });
+
+  it("ignores stale validate success and failure after the graph is edited", async () => {
+    let resolveValidate!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    let rejectValidate!: (reason?: unknown) => void;
+    const validateDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve, reject) => {
+      resolveValidate = resolve;
+      rejectValidate = reject;
+    });
+    stubPreparationApi();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      const versionMatch = /^\/projects\/7\/datasets\/(\d+)\/versions$/.exec(path);
+      if (versionMatch && method === "GET") {
+        return versionsByDataset[Number(versionMatch[1])] || [];
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await validateDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate")).toBeDisabled();
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-source"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate")).not.toBeDisabled();
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+    });
+
+    resolveValidate({ valid: true, errors: [], warnings: [] });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+      expect(screen.queryByText("검증 통과")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-validation")).not.toBeInTheDocument();
+    });
+
+    let resolveSecond!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    let rejectSecond!: (reason?: unknown) => void;
+    const secondDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve, reject) => {
+      resolveSecond = resolve;
+      rejectSecond = reject;
+    });
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      const versionMatch = /^\/projects\/7\/datasets\/(\d+)\/versions$/.exec(path);
+      if (versionMatch && method === "GET") {
+        return versionsByDataset[Number(versionMatch[1])] || [];
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await secondDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+    });
+    rejectSecond(new Error("stale validate boom"));
+    await waitFor(() => {
+      expect(screen.queryByText("stale validate boom")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+      expect(screen.getByTestId("preparation-validate")).not.toBeDisabled();
+    });
+    rejectValidate(new Error("first stale boom"));
+
+    stubPreparationApi({ validate: { valid: true, errors: [], warnings: ["fresh note"] } });
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    expect(await screen.findByTestId("preparation-validate-status")).toHaveTextContent(
+      "검증 통과 · 경고 1건",
+    );
+    expect(screen.getByText("fresh note")).toBeInTheDocument();
+    resolveSecond({ valid: false, errors: ["ignored"], warnings: [] });
+  });
+
+  it("keeps lifecycle handoff actions in a horizontal row via scoped CSS", () => {
+    // Read stylesheet source under Vitest/Node without adding @types/node to the app tsconfig.
+    type NodeFs = { readFileSync: (path: string, encoding: string) => string };
+    type NodePath = { join: (...parts: string[]) => string };
+    type NodeProcess = {
+      cwd: () => string;
+      getBuiltinModule?: (id: "fs" | "path") => NodeFs | NodePath;
+    };
+    const nodeProcess = (globalThis as { process?: NodeProcess }).process;
+    expect(typeof nodeProcess?.getBuiltinModule).toBe("function");
+    const fs = nodeProcess!.getBuiltinModule!("fs") as NodeFs;
+    const path = nodeProcess!.getBuiltinModule!("path") as NodePath;
+    const css = fs.readFileSync(path.join(nodeProcess!.cwd(), "src/styles.css"), "utf8");
+    const scoped =
+      /\[data-testid="preparation-lifecycle-handoff"\] \.preparation-lifecycle-result-actions\s*\{[^}]*flex-direction:\s*row/s;
+    expect(css).toMatch(scoped);
+    expect(css).toMatch(
+      /\.activity-list div > div,\s*\.activity-button > div \{\s*display: flex;\s*flex-direction: column;/,
+    );
+    // Global activity-list stacking rule must remain unchanged.
+    expect(css).not.toMatch(
+      /\.activity-list div > div,\s*\.activity-button > div \{[^}]*flex-direction:\s*row/s,
+    );
   });
 
   it("shows preview table and sampled warning, then clears preview on graph edit", async () => {
@@ -537,6 +746,96 @@ describe("PreparationBuilder", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
     });
+  });
+
+  it("scrolls to the preview panel only after a successful rendered response", async () => {
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) =>
+      ({
+        matches: query.includes("prefers-reduced-motion"),
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })) as typeof window.matchMedia;
+
+    try {
+      let resolvePreview!: (value: Record<string, unknown>) => void;
+      const previewDeferred = new Promise<Record<string, unknown>>((resolve) => {
+        resolvePreview = resolve;
+      });
+      stubPreparationApi({ previewDeferred });
+      renderBuilder();
+      fireEvent.click(await screen.findByTestId("preparation-preview"));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      resolvePreview({ ...defaultPreview, row_count: 0, rows: [] });
+      const panel = await screen.findByTestId("preparation-preview-panel");
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      });
+      expect(scrollIntoView.mock.instances[0]).toBe(panel);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "auto", block: "start" });
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
+  it("does not auto-scroll when preview fails or is aborted as stale", async () => {
+    const scrollIntoView = vi.fn();
+    const originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollIntoView;
+
+    try {
+      stubPreparationApi();
+      apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+        const method = init?.method || "GET";
+        if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+          return preparationState;
+        }
+        if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+        if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+          return [preparationState.version];
+        }
+        if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") {
+          return runsState;
+        }
+        if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+          throw new Error("preview boom");
+        }
+        throw new Error(`Unhandled ${method} ${path}`);
+      });
+      renderBuilder();
+      fireEvent.click(await screen.findByTestId("preparation-preview"));
+      expect(await screen.findByText("preview boom")).toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
+      expect(scrollIntoView).not.toHaveBeenCalled();
+
+      let resolvePreview!: (value: Record<string, unknown>) => void;
+      const previewDeferred = new Promise<Record<string, unknown>>((resolve) => {
+        resolvePreview = resolve;
+      });
+      stubPreparationApi({ previewDeferred });
+      fireEvent.click(screen.getByTestId("preparation-preview"));
+      fireEvent.click(screen.getByTestId("preparation-library-source"));
+      await waitFor(() => {
+        expect(screen.getByTestId("preparation-preview")).not.toBeDisabled();
+      });
+      resolvePreview({ ...defaultPreview, columns: ["stale_column"] });
+      await waitFor(() => {
+        expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
+      });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = originalScrollIntoView;
+    }
   });
 
   it("explains zero-row sampled join previews without implying the full run is empty", async () => {

@@ -217,10 +217,15 @@ export default function PreparationBuilder() {
   const [validation, setValidation] = useState<DatasetPreparationValidationResult | null>(
     null,
   );
+  const [validateRequestFailed, setValidateRequestFailed] = useState(false);
   const [preview, setPreview] = useState<DatasetPreparationPreviewResult | null>(null);
   const [inspectorErrors, setInspectorErrors] = useState<string[]>([]);
   const previewSeqRef = useRef(0);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const validateSeqRef = useRef(0);
+  const pendingPreviewScrollRef = useRef(false);
+  const previewPanelRef = useRef<HTMLDivElement | null>(null);
+  const validationPanelRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const canWrite = userCanProject(
     user,
@@ -234,17 +239,27 @@ export default function PreparationBuilder() {
     previewAbortRef.current?.abort();
     previewAbortRef.current = null;
     previewSeqRef.current += 1;
+    pendingPreviewScrollRef.current = false;
     setPreview(null);
     // Graph edits abort in-flight preview; unlock actions even though the
     // aborted request's finally must not clear a newer preview's busy state.
     setBusy((prev) => (prev === "preview" ? "" : prev));
   }, []);
 
+  const invalidateValidate = useCallback(() => {
+    validateSeqRef.current += 1;
+    setValidation(null);
+    setValidateRequestFailed(false);
+    // Unlock Validate busy when graph edits supersede an in-flight request;
+    // the stale request's finally must not clear a newer busy state.
+    setBusy((prev) => (prev === "validate" ? "" : prev));
+  }, []);
+
   const markGraphEdited = useCallback(() => {
     setDirty(true);
-    setValidation(null);
+    invalidateValidate();
     clearPreview();
-  }, [clearPreview]);
+  }, [clearPreview, invalidateValidate]);
 
   const loadRuns = useCallback(async () => {
     if (!projectId || !preparationId) return [];
@@ -278,7 +293,10 @@ export default function PreparationBuilder() {
       setPrepVersions(versionRows);
       setRuns(runRows);
       setDirty(false);
+      validateSeqRef.current += 1;
       setValidation(null);
+      setValidateRequestFailed(false);
+      pendingPreviewScrollRef.current = false;
       setPreview(null);
       setError("");
     } catch (reason) {
@@ -291,6 +309,17 @@ export default function PreparationBuilder() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!preview || !pendingPreviewScrollRef.current) return;
+    pendingPreviewScrollRef.current = false;
+    const panel = previewPanelRef.current;
+    if (!panel || typeof panel.scrollIntoView !== "function") return;
+    const reduceMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    panel.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+  }, [preview]);
 
   const successRunIdRef = useRef<number | null>(null);
   useEffect(() => {
@@ -599,18 +628,30 @@ export default function PreparationBuilder() {
 
   async function runValidate() {
     if (!guardInspectorErrors()) return;
+    const seq = ++validateSeqRef.current;
     setBusy("validate");
     setError("");
+    // Clear prior outcome so a previous pass is never shown as the new result.
+    setValidation(null);
+    setValidateRequestFailed(false);
     try {
       const result = await api<DatasetPreparationValidationResult>(
         `/projects/${projectId}/dataset-preparations/${preparationId}/validate`,
         { method: "POST", body: JSON.stringify({ graph: currentGraph() }) },
       );
+      if (seq !== validateSeqRef.current) return;
+      setValidateRequestFailed(false);
       setValidation(result);
     } catch (reason) {
+      if (seq !== validateSeqRef.current) return;
+      setValidation(null);
+      setValidateRequestFailed(true);
       setError(reason instanceof Error ? reason.message : "검증에 실패했습니다.");
     } finally {
-      setBusy("");
+      // Only the active validate request may clear validate busy.
+      if (seq === validateSeqRef.current) {
+        setBusy((prev) => (prev === "validate" ? "" : prev));
+      }
     }
   }
 
@@ -618,6 +659,7 @@ export default function PreparationBuilder() {
     if (!guardInspectorErrors()) return;
     setBusy("preview");
     setError("");
+    pendingPreviewScrollRef.current = false;
     previewAbortRef.current?.abort();
     const controller = new AbortController();
     previewAbortRef.current = controller;
@@ -638,9 +680,11 @@ export default function PreparationBuilder() {
       if (seq !== previewSeqRef.current || previewAbortRef.current !== controller) {
         return;
       }
+      pendingPreviewScrollRef.current = true;
       setPreview(result);
     } catch (reason) {
       if (controller.signal.aborted || previewAbortRef.current !== controller) return;
+      pendingPreviewScrollRef.current = false;
       setError(reason instanceof Error ? reason.message : "미리보기에 실패했습니다.");
       setPreview(null);
     } finally {
@@ -809,6 +853,28 @@ export default function PreparationBuilder() {
         : "";
   const runDisabled = Boolean(runDisabledReason) || !canWrite;
 
+  const validating = busy === "validate";
+  let validateStatusText = "";
+  let validateStatusTone: "busy" | "ok" | "warn" | "error" | "failed" | "" = "";
+  if (validating) {
+    validateStatusText = "검증 중…";
+    validateStatusTone = "busy";
+  } else if (validateRequestFailed) {
+    validateStatusText = "검증 요청 실패";
+    validateStatusTone = "failed";
+  } else if (validation) {
+    if (!validation.valid) {
+      validateStatusText = `문제 ${validation.errors.length}건`;
+      validateStatusTone = "error";
+    } else if (validation.warnings.length > 0) {
+      validateStatusText = `검증 통과 · 경고 ${validation.warnings.length}건`;
+      validateStatusTone = "warn";
+    } else {
+      validateStatusText = "검증 통과";
+      validateStatusTone = "ok";
+    }
+  }
+
   if (loading) return <Loading label="준비 그래프 불러오는 중" />;
   if (!preparation) {
     return (
@@ -842,15 +908,45 @@ export default function PreparationBuilder() {
           </div>
         </div>
         <div className="preparation-builder-header-actions">
-          <button
-            type="button"
-            className="btn secondary"
-            data-testid="preparation-validate"
-            disabled={busy !== ""}
-            onClick={() => void runValidate()}
-          >
-            {busy === "validate" ? "검증 중…" : "검증 (Validate)"}
-          </button>
+          <div className="preparation-validate-cluster">
+            <button
+              type="button"
+              className="btn secondary"
+              data-testid="preparation-validate"
+              disabled={busy !== ""}
+              onClick={() => void runValidate()}
+            >
+              {busy === "validate" ? "검증 중…" : "검증 (Validate)"}
+            </button>
+            {validateStatusText && (
+              <div
+                className={`preparation-validate-status is-${validateStatusTone}`}
+                data-testid="preparation-validate-status"
+                role="status"
+                aria-live="polite"
+              >
+                <span>{validateStatusText}</span>
+                {validation && !validating && (
+                  <button
+                    type="button"
+                    className="btn link preparation-validate-status-link"
+                    data-testid="preparation-validate-status-link"
+                    onClick={() => {
+                      const reduceMotion =
+                        typeof window.matchMedia === "function" &&
+                        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+                      validationPanelRef.current?.scrollIntoView({
+                        behavior: reduceMotion ? "auto" : "smooth",
+                        block: "start",
+                      });
+                    }}
+                  >
+                    결과 보기
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             className="btn secondary"
@@ -1428,7 +1524,11 @@ export default function PreparationBuilder() {
       {(validation || preview) && (
         <section className="preparation-results panel" data-testid="preparation-results">
           {validation && (
-            <div className="preparation-validation" data-testid="preparation-validation">
+            <div
+              className="preparation-validation"
+              data-testid="preparation-validation"
+              ref={validationPanelRef}
+            >
               <div className="panel-title">
                 <div>
                   <span className="eyebrow">검증 (Validation)</span>
@@ -1459,7 +1559,11 @@ export default function PreparationBuilder() {
           )}
 
           {preview && (
-            <div className="preparation-preview" data-testid="preparation-preview-panel">
+            <div
+              className="preparation-preview"
+              data-testid="preparation-preview-panel"
+              ref={previewPanelRef}
+            >
               <div className="panel-title">
                 <div>
                   <span className="eyebrow">미리보기 (Preview)</span>
