@@ -1680,6 +1680,14 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   border-color: rgba(230, 199, 95, 0.45);
   background: rgba(230, 199, 95, 0.08);
 }
+.pipeline-builder-guide {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+.pipeline-builder-guide .form-hint {
+  margin: 0;
+}
 .builder-state-badge,
 .pipeline-dirty-badge {
   display: inline-flex;

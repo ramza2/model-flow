@@ -44,10 +44,12 @@ import { useAuth } from "../AuthContext";
 import {
   EmptyState,
   ErrorNotice,
+  HelpTip,
   Loading,
   PageHeader,
   StatusBadge,
   SuccessNotice,
+  TermLabel,
   confirmAction,
   formatDate,
 } from "../components";
@@ -67,6 +69,7 @@ import {
   type PipelineNodeType,
 } from "../pipelineHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+import { UI_HELP } from "../uiTerminology";
 
 type StepData = {
   label: string;
@@ -982,10 +985,10 @@ export function PipelineBuilder() {
     setSuccess("");
     try {
       const ok = await validateCurrentGraph();
-      setSuccess(ok ? "Pipeline graph is valid." : "");
-      if (!ok) setError("Fix validation errors before continuing.");
+      setSuccess(ok ? "그래프 검증을 통과했습니다." : "");
+      if (!ok) setError("검증 오류를 수정한 뒤 다시 시도하세요.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Pipeline validation failed.");
+      setError(reason instanceof Error ? reason.message : "파이프라인 검증에 실패했습니다.");
     } finally {
       setBusy("");
     }
@@ -1002,24 +1005,24 @@ export function PipelineBuilder() {
           body: JSON.stringify({ graph: graph() }),
         });
         setDirty(false);
-        setSuccess("Pipeline version saved.");
+        setSuccess("파이프라인 버전을 저장했습니다.");
         setValidationErrors([]);
         setValidationVisible(false);
         await load();
         return;
       }
       if (dirty) {
-        setError("Save your changes before publishing or running.");
+        setError("게시하거나 실행하기 전에 변경사항을 버전으로 저장하세요.");
         return;
       }
       const ok = await validateCurrentGraph();
       if (!ok) {
-        setError("Fix validation errors before continuing.");
+        setError("검증 오류를 수정한 뒤 다시 시도하세요.");
         return;
       }
       if (kind === "publish") {
         await api(`/projects/${projectId}/pipelines/${pipelineId}/publish`, { method: "POST" });
-        setSuccess("Pipeline published.");
+        setSuccess("파이프라인을 게시했습니다.");
         await load();
       } else {
         const run = await api<PipelineRun>(`/projects/${projectId}/pipelines/${pipelineId}/run`, {
@@ -1029,7 +1032,15 @@ export function PipelineBuilder() {
         navigate(`/projects/${projectId}/pipeline-runs/${run.id}`);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : `Pipeline ${kind} failed.`);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : kind === "save"
+            ? "파이프라인 버전을 저장하지 못했습니다."
+            : kind === "publish"
+              ? "파이프라인을 게시하지 못했습니다."
+              : "파이프라인을 실행하지 못했습니다.",
+      );
     } finally {
       setBusy("");
     }
@@ -1038,7 +1049,7 @@ export function PipelineBuilder() {
   function confirmLeave(event: MouseEvent<HTMLAnchorElement>) {
     if (!dirty) return;
     const ok = window.confirm(
-      "Unsaved pipeline changes\n\nYour latest changes have not been saved as a pipeline version. Leave anyway?",
+      "저장되지 않은 파이프라인 변경사항\n\n최신 변경사항이 파이프라인 버전으로 저장되지 않았습니다. 그래도 나가시겠습니까?",
     );
     if (!ok) event.preventDefault();
   }
@@ -1047,7 +1058,7 @@ export function PipelineBuilder() {
     return (
       <>
         <ErrorNotice message={error} />
-        <Loading label="Loading pipeline builder" />
+        <Loading label="파이프라인 편집기를 불러오는 중…" />
       </>
     );
   }
@@ -1056,10 +1067,10 @@ export function PipelineBuilder() {
   const publishRunDisabled = actionsDisabled || dirty;
   const canSchedule = !dirty && pipeline.status === "published";
   const scheduleReason = dirty
-    ? "Save your changes before scheduling. Schedules target the saved pipeline identity, not unsaved graph edits."
+    ? "일정 등록 전에 변경사항을 저장하세요. 일정은 저장되지 않은 그래프가 아니라 저장된 파이프라인을 대상으로 합니다."
     : pipeline.status !== "published"
-      ? "Publish this pipeline before scheduling."
-      : "Create a schedule for this pipeline";
+      ? "일정을 등록하려면 먼저 파이프라인을 게시하세요."
+      : "이 파이프라인의 일정을 만듭니다";
 
   return (
     <div className="pipeline-page">
@@ -1070,10 +1081,10 @@ export function PipelineBuilder() {
             to={`/projects/${projectId}/pipelines`}
             onClick={confirmLeave}
           >
-            ← Pipelines
+            ← 파이프라인 목록
           </Link>
           <div>
-            <span className="eyebrow">Pipeline builder</span>
+            <span className="eyebrow">파이프라인 편집기</span>
             <h1>{pipeline.name}</h1>
             <p className="muted builder-header-subcopy">
               <StatusBadge status={pipeline.status} />
@@ -1089,26 +1100,30 @@ export function PipelineBuilder() {
                 className="btn secondary"
                 disabled={actionsDisabled}
                 data-testid="pipeline-validate"
+                title={UI_HELP.pipelineValidate}
                 onClick={() => void runValidate()}
               >
-                {busy === "validate" ? "Validating…" : "Validate"}
+                {busy === "validate" ? "검증 중…" : "검증"}
               </button>
               <button
                 className="btn secondary"
                 disabled={actionsDisabled}
                 data-testid="pipeline-save"
+                title={UI_HELP.pipelineSaveVersion}
                 onClick={() => void action("save")}
               >
-                {busy === "save" ? "Saving…" : "Save version"}
+                {busy === "save" ? "저장 중…" : "버전 저장"}
               </button>
               <button
                 className="btn secondary"
                 disabled={publishRunDisabled}
-                title={dirty ? "Save your changes before publishing" : undefined}
+                title={
+                  dirty ? "게시하기 전에 변경사항을 저장하세요" : UI_HELP.pipelinePublish
+                }
                 data-testid="pipeline-publish"
                 onClick={() => void action("publish")}
               >
-                Publish
+                게시 (Publish)
               </button>
               {canSchedule ? (
                 <Link
@@ -1117,7 +1132,7 @@ export function PipelineBuilder() {
                   to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
                   title={scheduleReason}
                 >
-                  Schedule
+                  일정 등록
                 </Link>
               ) : (
                 <button
@@ -1126,19 +1141,19 @@ export function PipelineBuilder() {
                   data-testid="pipeline-schedule-entry"
                   disabled
                   title={scheduleReason}
-                  aria-label={`Schedule unavailable. ${scheduleReason}`}
+                  aria-label={`일정을 등록할 수 없습니다. ${scheduleReason}`}
                 >
-                  Schedule
+                  일정 등록
                 </button>
               )}
               <button
                 className="btn"
                 disabled={publishRunDisabled}
-                title={dirty ? "Save your changes before running" : undefined}
+                title={dirty ? "실행하기 전에 변경사항을 저장하세요" : UI_HELP.pipelineRun}
                 data-testid="pipeline-run"
                 onClick={() => void action("run")}
               >
-                ▶ Run pipeline
+                ▶ 파이프라인 실행
               </button>
             </>
           )}
@@ -1146,20 +1161,40 @@ export function PipelineBuilder() {
       </header>
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
+      <div
+        className="builder-state-band pipeline-builder-guide"
+        role="note"
+        data-testid="pipeline-builder-guide"
+      >
+        <span className="builder-state-copy">
+          <strong>사용 순서:</strong> ① 데이터셋 선택 → ② 필요한 작업 노드 추가·연결 → ③ 그래프
+          검증 및 버전 저장 → ④ 파이프라인 실행
+          <HelpTip
+            text={`${UI_HELP.pipeline} ${UI_HELP.pipelineValidate} ${UI_HELP.pipelineSaveVersion} ${UI_HELP.pipelinePublish} ${UI_HELP.pipelineRun}`}
+          />
+        </span>
+        <span className="form-hint" data-testid="pipeline-builder-guide-details">
+          파이프라인 만들기는 실행과 다릅니다. 노드 추가·설정 변경은 자동 저장되지 않으며, 검증은
+          설정 오류 확인일 뿐 학습 실행이 아닙니다. 게시·실행 전에는 버전을 저장하세요. 게시는 별도
+          상태 변경이고, 일정 등록은 게시된 파이프라인에서 가능합니다.
+        </span>
+      </div>
       {dirty ? (
         <div className="builder-state-band is-dirty" role="status">
           <span className="builder-state-badge pipeline-dirty-badge" data-testid="pipeline-dirty-badge">
-            Unsaved changes
+            저장되지 않은 변경사항
           </span>
           <span className="builder-state-copy" data-testid="pipeline-dirty-hint">
-            Save a version before publish or run. Changes are not auto-saved.
+            게시하거나 실행하기 전에 버전을 저장하세요. 변경사항은 자동 저장되지 않습니다.
           </span>
         </div>
       ) : (
         <div className="builder-state-band" role="status">
           <span className="builder-state-copy">
-            Draft edits stay local until you save a version.
-            {pipeline.status === "published" ? " Published baseline remains available to run." : ""}
+            임시 편집 내용은 버전을 저장할 때까지 로컬에만 유지됩니다.
+            {pipeline.status === "published"
+              ? " 게시된 기준 버전은 계속 실행할 수 있습니다."
+              : ""}
           </span>
         </div>
       )}
@@ -1238,27 +1273,28 @@ export function PipelineBuilder() {
           </aside>
         )}
 
-        <div className="pipeline-canvas" aria-label="Pipeline graph" data-testid="pipeline-canvas">
+        <div className="pipeline-canvas" aria-label="파이프라인 그래프" data-testid="pipeline-canvas">
           {nodes.length === 0 ? (
             <div className="pipeline-empty-canvas">
               {canWrite ? (
                 <>
-                  <h2>Start with a dataset</h2>
+                  <h2>데이터셋으로 시작하세요</h2>
                   <p className="muted">
-                    Add a Dataset Load step, then connect quality checks, training, and deployment.
+                    데이터셋 불러오기(Dataset Load) 단계를 추가한 뒤, 품질 검사·학습·배포 노드를
+                    연결하세요.
                   </p>
                   <button
                     className="btn"
                     type="button"
                     onClick={() => addNodeOfType("dataset_load")}
                   >
-                    Add Dataset Load
+                    데이터셋 불러오기 추가
                   </button>
                 </>
               ) : (
                 <>
-                  <h2>This pipeline version contains no steps.</h2>
-                  <p className="muted">There is nothing to inspect on this empty graph.</p>
+                  <h2>이 파이프라인 버전에는 단계가 없습니다.</h2>
+                  <p className="muted">빈 그래프에서 확인할 내용이 없습니다.</p>
                 </>
               )}
             </div>
@@ -1291,36 +1327,38 @@ export function PipelineBuilder() {
         <aside className="pipeline-inspector panel">
           {!selectedNode ? (
             <>
-              <span className="eyebrow">Pipeline</span>
+              <span className="eyebrow">
+                <TermLabel ko="파이프라인" en="Pipeline" help={UI_HELP.pipeline} />
+              </span>
               <h2>{pipeline.name}</h2>
-              <p className="muted">{pipeline.description || "No description yet."}</p>
+              <p className="muted">{pipeline.description || "설명이 아직 없습니다."}</p>
               <dl className="pipeline-inspector-meta">
                 <div>
-                  <dt>Status</dt>
+                  <dt>상태</dt>
                   <dd>
                     <StatusBadge status={pipeline.status} />
                   </dd>
                 </div>
                 <div>
-                  <dt>Version</dt>
+                  <dt>버전</dt>
                   <dd>v{pipeline.latest_version}</dd>
                 </div>
                 <div>
-                  <dt>Nodes</dt>
+                  <dt>노드 수</dt>
                   <dd>{nodes.length}</dd>
                 </div>
               </dl>
               <p className="form-hint" data-testid="pipeline-inspector-hint">
                 {canWrite
-                  ? "Select a step on the canvas to configure it, or add one from the node library."
-                  : "Select a step on the canvas to inspect its configuration."}
+                  ? "캔버스에서 단계를 선택해 설정하거나, 노드 라이브러리에서 단계를 추가하세요."
+                  : "캔버스에서 단계를 선택해 설정을 확인하세요."}
               </p>
             </>
           ) : (
             <>
-              <span className="eyebrow">General</span>
+              <span className="eyebrow">기본 정보</span>
               <label>
-                Step name
+                단계 이름
                 <input
                   data-testid="pipeline-step-name"
                   value={selectedNode.data.label}
@@ -1329,14 +1367,14 @@ export function PipelineBuilder() {
                 />
               </label>
               <p className="form-hint" data-testid="pipeline-step-type">
-                Type: {labelForType(selectedNode.data.node_type)}
+                유형: {labelForType(selectedNode.data.node_type)}
               </p>
               <small className="muted pipeline-node-id" data-testid="pipeline-node-id">
-                Node id: {selectedNode.id}
+                노드 ID: {selectedNode.id}
               </small>
 
               <hr />
-              <span className="eyebrow">Configuration</span>
+              <span className="eyebrow">설정</span>
               {canWrite ? (
                 <NodeConfigForm
                   projectId={String(projectId)}
@@ -1347,13 +1385,13 @@ export function PipelineBuilder() {
                   datasetColumns={upstreamColumns}
                 />
               ) : (
-                <p className="muted">Read-only configuration.</p>
+                <p className="muted">읽기 전용 설정입니다.</p>
               )}
 
               <details className="advanced-json">
-                <summary>Advanced JSON</summary>
+                <summary>고급 JSON</summary>
                 <label>
-                  Configuration
+                  설정
                   <textarea
                     className="code-input"
                     data-testid="pipeline-advanced-json"
@@ -1373,9 +1411,9 @@ export function PipelineBuilder() {
               {canWrite && (
                 <>
                   <hr />
-                  <span className="eyebrow">Danger</span>
+                  <span className="eyebrow">위험</span>
                   <button className="btn link danger-text" onClick={removeSelected}>
-                    Remove step
+                    단계 제거
                   </button>
                 </>
               )}
@@ -1391,16 +1429,16 @@ export function PipelineBuilder() {
         >
           <div className="panel-title">
             <div>
-              <span className="eyebrow">Validation</span>
+              <span className="eyebrow">검증</span>
               <h2>
                 {validationErrors.length === 0
-                  ? "No issues"
-                  : `${validationErrors.length} issue${validationErrors.length === 1 ? "" : "s"}`}
+                  ? "문제 없음"
+                  : `문제 ${validationErrors.length}건`}
               </h2>
             </div>
           </div>
           {validationErrors.length === 0 ? (
-            <p className="muted">Graph validation passed.</p>
+            <p className="muted">그래프 검증을 통과했습니다.</p>
           ) : (
             <ul className="pipeline-validation-list">
               {validationIssues.map((issue) => (
@@ -1422,7 +1460,7 @@ export function PipelineBuilder() {
                       {issue.nodeId
                         ? nodes.find((row) => row.id === issue.nodeId)?.data.label ||
                           issue.nodeId
-                        : "Graph"}
+                        : "그래프"}
                     </strong>
                     <span>{issue.message}</span>
                   </button>

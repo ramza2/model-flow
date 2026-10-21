@@ -116,6 +116,31 @@ describe("PipelineDatasetHandoff", () => {
     });
   });
 
+  it("shows Korean-first create copy while pinning the exact DatasetVersion", async () => {
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "데이터셋으로 파이프라인 만들기" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "파이프라인 목록으로" })).toBeInTheDocument();
+    const context = screen.getByTestId("pipeline-handoff-context");
+    expect(context).toHaveTextContent("사용할 데이터");
+    expect(context).toHaveTextContent("DatasetVersion #42");
+    expect(context).not.toHaveTextContent("DatasetVersion #99");
+    expect(context).toHaveTextContent("v3");
+    expect(screen.getByTestId("pipeline-handoff-pin-hint")).toHaveTextContent(
+      "자동으로 바뀌지 않습니다",
+    );
+    expect(screen.getByTestId("pipeline-handoff-create-hint")).toHaveTextContent(
+      "자동으로 실행되는 것은 아닙니다",
+    );
+    expect(screen.getByRole("link", { name: "데이터셋 열기" })).toHaveAttribute(
+      "href",
+      "/projects/7/datasets/17",
+    );
+    expect(screen.getByTestId("pipeline-handoff-create")).toHaveTextContent(
+      "파이프라인 만들고 편집하기",
+    );
+    expect(screen.getByLabelText("파이프라인 이름")).toBeInTheDocument();
+  });
+
   it("creates a pipeline pinned to the requested historical DatasetVersion, not latest", async () => {
     renderPage();
     expect(await screen.findByTestId("pipeline-handoff-context")).toHaveTextContent(
@@ -135,6 +160,8 @@ describe("PipelineDatasetHandoff", () => {
       );
       expect(post).toBeDefined();
       const body = JSON.parse(String((post?.[1] as RequestInit).body));
+      expect(body.name).toBe("prepared-sales pipeline");
+      expect(body.description).toBe("Starts from prepared-sales v3.");
       expect(body.graph.nodes).toHaveLength(1);
       expect(body.graph.nodes[0].data.config).toEqual({
         dataset_id: 17,
@@ -146,7 +173,10 @@ describe("PipelineDatasetHandoff", () => {
 
   it("rejects a DatasetVersion that is not in the selected dataset without latest fallback", async () => {
     renderPage("datasetId=17&datasetVersionId=777&from=preparation");
-    expect(await screen.findByText(/does not belong to this dataset/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/이 데이터셋에 속하지 않습니다/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/최신 버전으로 자동 대체하지 않았습니다/);
     expect(screen.queryByTestId("pipeline-handoff-form")).not.toBeInTheDocument();
     expect(apiMock).not.toHaveBeenCalledWith(
       "/projects/7/pipelines",
@@ -158,7 +188,9 @@ describe("PipelineDatasetHandoff", () => {
     canWriteRef.value = false;
     renderPage();
     expect(await screen.findByTestId("pipeline-handoff-context")).toBeInTheDocument();
-    expect(screen.getByTestId("pipeline-handoff-readonly")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-handoff-readonly")).toHaveTextContent(
+      "파이프라인을 만들 권한이 없습니다",
+    );
     expect(screen.queryByTestId("pipeline-handoff-form")).not.toBeInTheDocument();
   });
 });
