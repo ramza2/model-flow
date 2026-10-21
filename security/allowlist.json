@@ -29,6 +29,24 @@
       "cve": "GHSA-h7x2-h6g9-p789",
       "reason": "Same AI Gateway SSRF as CVE-2026-71211; ModelFlow does not use MLflow AI Gateway secrets or raw_proxy.",
       "expires": "2026-11-05"
+    },
+    {
+      "package": "vite",
+      "cve": "GHSA-698v-4r3x-3vcv",
+      "reason": "Windows-only launch-editor % escaping via Vite 8.2.0-8.2.3; ModelFlow frontend build/test runs in Linux containers. Track vite>=8.2.4 bump when npm lock refresh is available.",
+      "expires": "2026-11-05"
+    },
+    {
+      "package": "vite",
+      "cve": "GHSA-r825-w8mm-5pxw",
+      "reason": "Windows-only launch-editor CLI flag injection via Vite 8.2.0-8.2.3; same Linux-container build path as GHSA-698v-4r3x-3vcv.",
+      "expires": "2026-11-05"
+    },
+    {
+      "package": "vite",
+      "cve": "GHSA-587h-7wmj-h5pm",
+      "reason": "Windows-only launch-editor fs.existsSync bypass via Vite 8.2.0-8.2.3; same Linux-container build path as GHSA-698v-4r3x-3vcv.",
+      "expires": "2026-11-05"
     }
   ]
 }
