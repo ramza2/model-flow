@@ -681,20 +681,181 @@ describe("PreparationBuilder", () => {
     fireEvent.click(screen.getByTestId("preparation-library-join"));
     fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
     expect(screen.getByTestId("preparation-join-hint")).toHaveTextContent(
-      "LEFT 포트와 RIGHT 포트에 각각 하나의 입력을 연결하세요.",
+      "왼쪽(LEFT)과 오른쪽(RIGHT) 연결 지점에 각각 데이터를 연결하세요",
     );
 
     fireEvent.click(screen.getByTestId("preparation-library-union"));
     fireEvent.click(await screen.findByTestId("canvas-node-union-1"));
     expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
-      "컬럼 이름과 순서가 동일해야 합니다.",
+      "입력 데이터들의 컬럼 이름과 순서가 같아야 합칠 수 있습니다.",
     );
     fireEvent.change(screen.getByTestId("preparation-union-mode"), {
       target: { value: "align_by_name" },
     });
     expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
-      "컬럼 이름으로 맞추고 없는 값은 null로 채웁니다.",
+      "컬럼 이름을 기준으로 데이터를 맞춰 합칩니다. 없는 컬럼의 값은 null(빈 값)로 채웁니다.",
     );
+  });
+
+  it("exposes accurate Join HelpTip copy about possible row expansion", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
+
+    const joinInspector = screen.getByTestId("preparation-join-inspector");
+    const joinHelps = within(joinInspector).getAllByLabelText(/도움말:/);
+    expect(joinHelps.length).toBeGreaterThanOrEqual(1);
+    for (const tip of joinHelps) {
+      expect(tip.getAttribute("aria-label")).toMatch(
+        /연결 키 값이 일치하는 행을 찾아 컬럼을 나란히 붙입니다/,
+      );
+      expect(tip.getAttribute("aria-label")).toMatch(
+        /연결 키에 중복값이 있으면 결과 행 수가 늘어날 수 있습니다/,
+      );
+      expect(tip.getAttribute("aria-label")).not.toMatch(/행은 늘리지 않고/);
+    }
+    const hintHelp = within(screen.getByTestId("preparation-join-hint")).getByLabelText(/도움말:/);
+    expect(hintHelp.getAttribute("aria-label")).toMatch(
+      /왼쪽\(LEFT\)·오른쪽\(RIGHT\) 연결 지점에 각각 한 개의 입력을 연결하세요/,
+    );
+  });
+
+  it("Koreanizes join/union options and preserves raw config values on save", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } };
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
+
+    expect(screen.getByText("노드 설정")).toBeInTheDocument();
+    expect(screen.getByText("노드 관리")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-node-id")).toHaveTextContent("노드 ID:");
+
+    const howSelect = screen.getByTestId("preparation-join-how") as HTMLSelectElement;
+    expect(within(howSelect).getByRole("option", { name: "일치하는 행만 연결 (INNER)" })).toHaveValue(
+      "inner",
+    );
+    expect(within(howSelect).getByRole("option", { name: "왼쪽 모든 행 유지 (LEFT)" })).toHaveValue(
+      "left",
+    );
+    expect(within(howSelect).getByRole("option", { name: "오른쪽 모든 행 유지 (RIGHT)" })).toHaveValue(
+      "right",
+    );
+    expect(within(howSelect).getByRole("option", { name: "양쪽 모든 행 유지 (FULL)" })).toHaveValue(
+      "full",
+    );
+    expect(howSelect).toHaveValue("inner");
+    expect(screen.getByTestId("preparation-join-mode-hint")).toHaveTextContent(
+      "양쪽 데이터에서 연결 키 값이 일치하는 행만 남깁니다.",
+    );
+
+    fireEvent.change(howSelect, { target: { value: "left" } });
+    expect(screen.getByTestId("preparation-join-mode-hint")).toHaveTextContent(
+      "왼쪽 데이터의 모든 행을 유지하고, 오른쪽에서 일치하는 데이터를 연결합니다.",
+    );
+    fireEvent.change(howSelect, { target: { value: "right" } });
+    expect(screen.getByTestId("preparation-join-mode-hint")).toHaveTextContent(
+      "오른쪽 데이터의 모든 행을 유지하고, 왼쪽에서 일치하는 데이터를 연결합니다.",
+    );
+    fireEvent.change(howSelect, { target: { value: "full" } });
+    expect(screen.getByTestId("preparation-join-mode-hint")).toHaveTextContent(
+      "양쪽 데이터의 모든 행을 유지하고, 연결되지 않는 부분은 빈 값으로 채웁니다.",
+    );
+    expect(howSelect).toHaveValue("full");
+
+    expect(screen.getByText(/왼쪽 데이터에서 비교할 컬럼 이름을 입력하세요/)).toBeInTheDocument();
+    expect(screen.getByText(/오른쪽 데이터에서 비교할 컬럼 이름을 입력하세요/)).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("preparation-join-left-on"), {
+      target: { value: "id, customer_id" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-join-right-on"), {
+      target: { value: "uid, customer_id" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-union"));
+    fireEvent.click(await screen.findByTestId("canvas-node-union-1"));
+    const modeSelect = screen.getByTestId("preparation-union-mode") as HTMLSelectElement;
+    expect(
+      within(modeSelect).getByRole("option", { name: "동일한 컬럼 구성만 합치기 (strict)" }),
+    ).toHaveValue("strict");
+    expect(
+      within(modeSelect).getByRole("option", { name: "컬럼 이름으로 맞추기 (align_by_name)" }),
+    ).toHaveValue("align_by_name");
+    expect(modeSelect).toHaveValue("strict");
+    fireEvent.change(modeSelect, { target: { value: "align_by_name" } });
+    expect(modeSelect).toHaveValue("align_by_name");
+    expect(screen.getByTestId("preparation-union-hint")).toHaveTextContent(
+      "컬럼 이름을 기준으로 데이터를 맞춰 합칩니다. 없는 컬럼의 값은 null(빈 값)로 채웁니다.",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-library-output"));
+    fireEvent.click(await screen.findByTestId("canvas-node-output-1"));
+    expect(screen.getByTestId("preparation-output-readonly")).toHaveTextContent(
+      "이 노드는 데이터 가공의 최종 결과를 나타냅니다",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const joinNode = saved!.graph!.nodes!.find((node) => node.id === "join-1");
+    const unionNode = saved!.graph!.nodes!.find((node) => node.id === "union-1");
+    expect(joinNode?.config).toMatchObject({
+      how: "full",
+      left_on: ["id", "customer_id"],
+      right_on: ["uid", "customer_id"],
+    });
+    expect(unionNode?.config).toMatchObject({ mode: "align_by_name" });
+  });
+
+  it("keeps join/union inspectors read-only for viewers", async () => {
+    canWriteRef.value = false;
+    stubPreparationApi({
+      preparation: {
+        ...preparation,
+        version: {
+          ...preparation.version,
+          graph: {
+            ...preparation.version.graph,
+            nodes: [
+              ...preparation.version.graph.nodes,
+              {
+                id: "join-1",
+                type: "join" as const,
+                config: { how: "left", left_on: ["id"], right_on: ["id"] },
+                position: { x: 240, y: 60 },
+              },
+              {
+                id: "union-1",
+                type: "union" as const,
+                config: { mode: "strict" },
+                position: { x: 360, y: 60 },
+              },
+            ],
+          },
+        },
+      } as typeof preparation,
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
+    expect(screen.getByTestId("preparation-join-how")).toBeDisabled();
+    expect(screen.getByTestId("preparation-join-left-on")).toBeDisabled();
+    expect(screen.getByTestId("preparation-join-right-on")).toBeDisabled();
+    expect(screen.getByTestId("preparation-join-how")).toHaveValue("left");
+    expect(screen.getByTestId("preparation-join-mode-hint")).toHaveTextContent(
+      "왼쪽 데이터의 모든 행을 유지하고, 오른쪽에서 일치하는 데이터를 연결합니다.",
+    );
+    expect(screen.queryByTestId("preparation-remove-node")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("canvas-node-union-1"));
+    expect(screen.getByTestId("preparation-union-mode")).toBeDisabled();
+    expect(screen.getByTestId("preparation-union-mode")).toHaveValue("strict");
   });
 
   it("keeps the builder read-only for viewers", async () => {
