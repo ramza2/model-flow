@@ -101,7 +101,19 @@ describe("PreparationLifecyclePage", () => {
     renderPage();
     expect(screen.getByTestId("preparation-builder-stub")).toBeInTheDocument();
     const result = await screen.findByTestId("preparation-pipeline-result-501");
-    expect(result).toHaveTextContent("DatasetVersion #42");
+    expect(screen.getByTestId("preparation-lifecycle-handoff")).toHaveTextContent("다음 단계");
+    expect(screen.getByTestId("preparation-lifecycle-handoff")).toHaveTextContent(
+      "처리된 데이터셋을 파이프라인에서 사용",
+    );
+    expect(result).toHaveTextContent("prepared-sales");
+    expect(result).toHaveTextContent("실행 #501");
+    expect(result).toHaveTextContent("데이터셋 버전 #42");
+    expect(result).toHaveTextContent("완료");
+    expect(screen.getByRole("link", { name: "데이터셋 열기" })).toHaveAttribute(
+      "href",
+      "/projects/7/datasets/17",
+    );
+    expect(screen.getByRole("link", { name: "파이프라인에 사용" })).toBeInTheDocument();
     expect(screen.queryByTestId("preparation-pipeline-result-502")).not.toBeInTheDocument();
     expect(screen.getByTestId("preparation-use-in-pipeline-501")).toHaveAttribute(
       "href",
@@ -114,5 +126,52 @@ describe("PreparationLifecyclePage", () => {
     renderPage();
     expect(await screen.findByTestId("preparation-pipeline-result-501")).toBeInTheDocument();
     expect(screen.queryByTestId("preparation-use-in-pipeline-501")).not.toBeInTheDocument();
+  });
+
+  it("keeps every materialized success run in the handoff list", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/dataset-preparations/5/runs") {
+        return [
+          ...runs,
+          {
+            id: 503,
+            preparation_id: 5,
+            preparation_version_id: 5,
+            status: "succeeded",
+            inputs: [],
+            output_dataset_id: 17,
+            output_dataset_version_id: 43,
+            logs: "",
+            error_message: null,
+            created_at: "2026-09-17T00:01:00Z",
+            started_at: "2026-09-17T00:01:01Z",
+            finished_at: "2026-09-17T00:01:02Z",
+          },
+        ];
+      }
+      if (path === "/projects/7/datasets") return datasets;
+      throw new Error(`Unhandled GET ${path}`);
+    });
+    renderPage();
+    expect(await screen.findByTestId("preparation-pipeline-result-501")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-pipeline-result-503")).toHaveTextContent(
+      "데이터셋 버전 #43",
+    );
+    expect(screen.getByTestId("preparation-use-in-pipeline-503")).toHaveAttribute(
+      "href",
+      "/projects/7/pipelines/from-dataset?datasetId=17&datasetVersionId=43&from=preparation",
+    );
+  });
+
+  it("shows a Korean empty state when no materialized results exist", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/dataset-preparations/5/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      throw new Error(`Unhandled GET ${path}`);
+    });
+    renderPage();
+    expect(await screen.findByTestId("preparation-lifecycle-empty")).toHaveTextContent(
+      "이 준비를 성공적으로 실행하면",
+    );
   });
 });
