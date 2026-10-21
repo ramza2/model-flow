@@ -2834,6 +2834,11 @@ function FillInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-fill-inspector">
+      <p className="muted preparation-inspector-hint" data-testid="preparation-fill-hint">
+        선택한 컬럼에서 값이 비어 있는 부분(결측값)만 지정한 값으로 채웁니다. 이미 값이 있는 행은
+        변경하지 않습니다.
+        <HelpTip text={UI_HELP.preparationFill} />
+      </p>
       <div className="preparation-fill-rows">
         {rows.map((row, index) => (
           <div
@@ -2841,68 +2846,81 @@ function FillInspector({
             className="preparation-fill-row"
             data-testid={`preparation-fill-row-${index}`}
           >
-            <input
-              data-testid={`preparation-fill-column-${index}`}
-              disabled={!canWrite}
-              placeholder="column"
-              value={row.column}
-              onChange={(event) => {
-                const next = [...rows];
-                next[index] = { ...row, column: event.target.value };
-                commit(next);
-              }}
-            />
-            <select
-              data-testid={`preparation-fill-kind-${index}`}
-              disabled={!canWrite}
-              value={row.kind}
-              onChange={(event) => {
-                const next = [...rows];
-                next[index] = {
-                  ...row,
-                  kind: event.target.value as FillValueRow["kind"],
-                  value:
-                    event.target.value === "boolean"
-                      ? row.value === "true"
-                        ? "true"
-                        : "false"
-                      : row.value,
-                };
-                commit(next);
-              }}
-            >
-              <option value="string">string</option>
-              <option value="number">number</option>
-              <option value="boolean">boolean</option>
-            </select>
-            {row.kind === "boolean" ? (
-              <select
-                data-testid={`preparation-fill-value-${index}`}
-                disabled={!canWrite}
-                value={row.value === "true" ? "true" : "false"}
-                onChange={(event) => {
-                  const next = [...rows];
-                  next[index] = { ...row, value: event.target.value };
-                  commit(next);
-                }}
-              >
-                <option value="true">true</option>
-                <option value="false">false</option>
-              </select>
-            ) : (
+            <label>
+              <TermLabel ko="채울 컬럼" en="Column" help={UI_HELP.preparationFill} />
               <input
-                data-testid={`preparation-fill-value-${index}`}
+                data-testid={`preparation-fill-column-${index}`}
                 disabled={!canWrite}
-                type={row.kind === "number" ? "number" : "text"}
-                placeholder="value"
-                value={row.value}
+                placeholder="컬럼명 (예: rn)"
+                value={row.column}
                 onChange={(event) => {
                   const next = [...rows];
-                  next[index] = { ...row, value: event.target.value };
+                  next[index] = { ...row, column: event.target.value };
                   commit(next);
                 }}
               />
-            )}
+              <small>결측값을 대체할 원본 컬럼입니다. 입력 데이터에 있는 이름을 정확히 적으세요.</small>
+            </label>
+            <label>
+              <TermLabel ko="채울 값 자료형" en="Value type" />
+              <select
+                data-testid={`preparation-fill-kind-${index}`}
+                disabled={!canWrite}
+                value={row.kind}
+                onChange={(event) => {
+                  const next = [...rows];
+                  next[index] = {
+                    ...row,
+                    kind: event.target.value as FillValueRow["kind"],
+                    value:
+                      event.target.value === "boolean"
+                        ? row.value === "true"
+                          ? "true"
+                          : "false"
+                        : row.value,
+                  };
+                  commit(next);
+                }}
+              >
+                <option value="string">{filterValueTypeLabel("string")}</option>
+                <option value="number">{filterValueTypeLabel("number")}</option>
+                <option value="boolean">{filterValueTypeLabel("boolean")}</option>
+              </select>
+            </label>
+            <label>
+              <TermLabel ko="채울 값" en="Fill value" />
+              {row.kind === "boolean" ? (
+                <select
+                  data-testid={`preparation-fill-value-${index}`}
+                  disabled={!canWrite}
+                  value={row.value === "true" ? "true" : "false"}
+                  onChange={(event) => {
+                    const next = [...rows];
+                    next[index] = { ...row, value: event.target.value };
+                    commit(next);
+                  }}
+                >
+                  <option value="true">참 (True)</option>
+                  <option value="false">거짓 (False)</option>
+                </select>
+              ) : (
+                <input
+                  data-testid={`preparation-fill-value-${index}`}
+                  disabled={!canWrite}
+                  type={row.kind === "number" ? "number" : "text"}
+                  placeholder={
+                    row.kind === "number" ? "채울 값 (예: 0)" : "채울 값 (예: UNKNOWN)"
+                  }
+                  value={row.value}
+                  onChange={(event) => {
+                    const next = [...rows];
+                    next[index] = { ...row, value: event.target.value };
+                    commit(next);
+                  }}
+                />
+              )}
+              <small>결측값 대신 넣을 고정값입니다. 이미 값이 있는 행은 바꾸지 않습니다.</small>
+            </label>
             {canWrite && (
               <button
                 type="button"
@@ -3844,56 +3862,75 @@ function LagInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-lag-inspector">
+      <p className="muted preparation-inspector-hint" data-testid="preparation-lag-hint">
+        시간 순으로 정렬한 뒤, 이전 행의 값을 새 컬럼으로 만듭니다. 이전 행 수는 시간 단위가
+        아닙니다.
+        <HelpTip text={UI_HELP.preparationLag} />
+      </p>
       <label>
-        <TermLabel ko="시간 컬럼" en="Time column" help={UI_HELP.preparationLag} />
+        <TermLabel
+          ko="정렬 기준 시간 컬럼"
+          en="Time column"
+          help={UI_HELP.preparationLag}
+        />
         <input
           data-testid="preparation-lag-time-column"
           disabled={!canWrite}
-          placeholder="event_time"
+          placeholder="예: JOIN_TIME"
           value={timeColumn}
           onChange={(event) => commit(event.target.value, sourceColumn, lags)}
         />
+        <small>데이터를 정렬할 시간 컬럼입니다. 입력 데이터에 있는 이름을 정확히 적으세요.</small>
       </label>
       <label>
-        <TermLabel ko="소스 컬럼" en="Source column" />
+        <TermLabel ko="이전 값을 가져올 컬럼" en="Source column" help={UI_HELP.preparationLag} />
         <input
           data-testid="preparation-lag-source-column"
           disabled={!canWrite}
-          placeholder="sales"
+          placeholder="예: HTDND_AMNT"
           value={sourceColumn}
           onChange={(event) => commit(timeColumn, event.target.value, lags)}
         />
+        <small>이전 행에서 값을 가져올 원본 컬럼입니다. 시간 컬럼과 달라야 합니다.</small>
       </label>
       <div className="preparation-inspector-list" data-testid="preparation-lag-rows">
-        <span className="eyebrow">Lag 행</span>
+        <span className="eyebrow">이전값 생성 목록</span>
         {lags.map((row, index) => (
           <div
             key={`lag-row-${index}`}
-            className="preparation-inspector-row"
+            className="preparation-inspector-row preparation-lag-row"
             data-testid={`preparation-lag-row-${index}`}
           >
-            <input
-              data-testid={`preparation-lag-periods-${index}`}
-              disabled={!canWrite}
-              placeholder="periods"
-              value={row.periods}
-              onChange={(event) => {
-                const next = [...lags];
-                next[index] = { ...row, periods: event.target.value };
-                commit(timeColumn, sourceColumn, next);
-              }}
-            />
-            <input
-              data-testid={`preparation-lag-output-${index}`}
-              disabled={!canWrite}
-              placeholder="output column"
-              value={row.output}
-              onChange={(event) => {
-                const next = [...lags];
-                next[index] = { ...row, output: event.target.value };
-                commit(timeColumn, sourceColumn, next);
-              }}
-            />
+            <label>
+              <TermLabel ko="이전 행 수" en="Periods" />
+              <input
+                data-testid={`preparation-lag-periods-${index}`}
+                disabled={!canWrite}
+                placeholder="예: 24"
+                value={row.periods}
+                onChange={(event) => {
+                  const next = [...lags];
+                  next[index] = { ...row, periods: event.target.value };
+                  commit(timeColumn, sourceColumn, next);
+                }}
+              />
+              <small>정렬된 데이터의 몇 행 이전 값을 가져올지 지정합니다. 시간(시·분)이 아닙니다.</small>
+            </label>
+            <label>
+              <TermLabel ko="새 컬럼 이름" en="Output column" />
+              <input
+                data-testid={`preparation-lag-output-${index}`}
+                disabled={!canWrite}
+                placeholder="예: HTDND_LAG_24"
+                value={row.output}
+                onChange={(event) => {
+                  const next = [...lags];
+                  next[index] = { ...row, output: event.target.value };
+                  commit(timeColumn, sourceColumn, next);
+                }}
+              />
+              <small>결과를 저장할 새 컬럼 이름입니다.</small>
+            </label>
             {canWrite && (
               <button
                 type="button"
@@ -3929,12 +3966,13 @@ function LagInspector({
             commit(timeColumn, sourceColumn, [...lags, { periods: "", output: "" }])
           }
         >
-          Lag 추가
+          이전값 추가
         </button>
       )}
       <p className="muted" data-testid="preparation-lag-help">
-        선택한 시간 컬럼으로 정렬한 뒤 이전 행만 사용합니다. 이력이 부족한 앞쪽 행은 null로
-        남습니다.
+        HTDND_LAG_24는 시간순으로 정렬했을 때 24행 앞에 있던 HTDND_AMNT 값을 저장하는 새
+        컬럼입니다. 24를 입력해도 24시간 전이 항상 보장되지는 않으며, 이전 행이 부족한 앞쪽 행은
+        결측값으로 남습니다.
       </p>
     </div>
   );

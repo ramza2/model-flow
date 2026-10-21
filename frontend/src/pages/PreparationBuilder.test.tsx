@@ -1881,6 +1881,92 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("shows Korean-first Fill inspector guidance while preserving typed fill payloads", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-fill_constant"));
+    fireEvent.click(await screen.findByTestId("canvas-node-fill_constant-1"));
+
+    expect(screen.getByTestId("preparation-fill-hint")).toHaveTextContent("결측값");
+    expect(screen.getByTestId("preparation-fill-hint")).toHaveTextContent(
+      "이미 값이 있는 행은 변경하지 않습니다",
+    );
+    const fillHelp = within(screen.getByTestId("preparation-fill-hint")).getByLabelText(/도움말:/);
+    expect(fillHelp.getAttribute("aria-label")).toMatch(/숫자 0은 결측값이 아니며/);
+    expect(fillHelp.getAttribute("aria-label")).toMatch(/빈 문자열/);
+    expect(fillHelp.getAttribute("aria-label")).toMatch(/오류가 날 수 있습니다/);
+
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    expect(screen.getByTestId("preparation-fill-column-0")).toHaveAttribute(
+      "placeholder",
+      "컬럼명 (예: rn)",
+    );
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveAttribute(
+      "placeholder",
+      "채울 값 (예: UNKNOWN)",
+    );
+    const kindSelect = screen.getByTestId("preparation-fill-kind-0") as HTMLSelectElement;
+    expect(within(kindSelect).getByRole("option", { name: "문자열 (String)" })).toHaveValue(
+      "string",
+    );
+    expect(within(kindSelect).getByRole("option", { name: "숫자 (Number)" })).toHaveValue(
+      "number",
+    );
+    expect(within(kindSelect).getByRole("option", { name: "참·거짓 (Boolean)" })).toHaveValue(
+      "boolean",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-fill-column-0"), {
+      target: { value: "country" },
+    });
+    fireEvent.change(kindSelect, { target: { value: "string" } });
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "UNKNOWN" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    fireEvent.change(screen.getByTestId("preparation-fill-column-1"), {
+      target: { value: "amount" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-kind-1"), {
+      target: { value: "number" },
+    });
+    expect(screen.getByTestId("preparation-fill-value-1")).toHaveAttribute(
+      "placeholder",
+      "채울 값 (예: 0)",
+    );
+    fireEvent.change(screen.getByTestId("preparation-fill-value-1"), {
+      target: { value: "0" },
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    fireEvent.change(screen.getByTestId("preparation-fill-column-2"), {
+      target: { value: "flag" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-kind-2"), {
+      target: { value: "boolean" },
+    });
+    const boolSelect = screen.getByTestId("preparation-fill-value-2") as HTMLSelectElement;
+    expect(within(boolSelect).getByRole("option", { name: "참 (True)" })).toHaveValue("true");
+    expect(within(boolSelect).getByRole("option", { name: "거짓 (False)" })).toHaveValue(
+      "false",
+    );
+    fireEvent.change(boolSelect, { target: { value: "true" } });
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "fill_constant-1")?.config).toEqual({
+      values: { country: "UNKNOWN", amount: 0, flag: true },
+    });
+  });
+
   it("creates and selects an output dataset", async () => {
     renderBuilder();
     await screen.findByTestId("preparation-output-empty");
@@ -3053,8 +3139,9 @@ describe("PreparationBuilder", () => {
     expect(await screen.findByTestId("preparation-lag-errors")).toHaveTextContent(
       "Time column is required",
     );
+    expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent("24행 앞");
     expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent(
-      "이전 행만 사용합니다",
+      "24시간 전이 항상 보장되지는 않으며",
     );
 
     const previewBefore = previewCalls;
@@ -3124,6 +3211,171 @@ describe("PreparationBuilder", () => {
       source_column: "sales",
       windows: [{ window: 7, aggregation: "avg", output: "sales_roll_avg_7" }],
     });
+  });
+
+  it("shows Korean-first Lag guidance and keeps lag config validation contracts", async () => {
+    let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
+      null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-lag"));
+    expect(await screen.findByTestId("preparation-lag-inspector")).toBeInTheDocument();
+
+    expect(screen.getByTestId("preparation-lag-hint")).toHaveTextContent(
+      "이전 행 수는 시간 단위가 아닙니다",
+    );
+    const lagTip = within(screen.getByTestId("preparation-lag-hint")).getByLabelText(/도움말:/);
+    expect(lagTip.getAttribute("aria-label")).toMatch(/24행 이전/);
+    expect(lagTip.getAttribute("aria-label")).toMatch(/24시간 전이 아니라/);
+    expect(lagTip.getAttribute("aria-label")).toMatch(/시간당 정확히 1행/);
+    expect(lagTip.getAttribute("aria-label")).toMatch(/보정하지는 않습니다/);
+    expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent("24행 앞");
+    expect(screen.getByTestId("preparation-lag-help")).toHaveTextContent(
+      "24시간 전이 항상 보장되지는 않으며",
+    );
+    expect(screen.getByTestId("preparation-lag-inspector")).toHaveTextContent(
+      "정렬 기준 시간 컬럼",
+    );
+    expect(screen.getByTestId("preparation-lag-inspector")).toHaveTextContent(
+      "이전 값을 가져올 컬럼",
+    );
+    expect(screen.getByTestId("preparation-lag-rows")).toHaveTextContent("이전값 생성 목록");
+    expect(screen.getByTestId("preparation-lag-add")).toHaveTextContent("이전값 추가");
+    expect(screen.getByTestId("preparation-lag-time-column")).toHaveAttribute(
+      "placeholder",
+      "예: JOIN_TIME",
+    );
+    expect(screen.getByTestId("preparation-lag-source-column")).toHaveAttribute(
+      "placeholder",
+      "예: HTDND_AMNT",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-lag-time-column"), {
+      target: { value: "JOIN_TIME" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-source-column"), {
+      target: { value: "HTDND_AMNT" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-lag-add"));
+    expect(screen.getByTestId("preparation-lag-row-0")).toHaveTextContent("이전 행 수");
+    expect(screen.getByTestId("preparation-lag-row-0")).toHaveTextContent("새 컬럼 이름");
+    expect(screen.getByTestId("preparation-lag-periods-0")).toHaveAttribute(
+      "placeholder",
+      "예: 24",
+    );
+    expect(screen.getByTestId("preparation-lag-output-0")).toHaveAttribute(
+      "placeholder",
+      "예: HTDND_LAG_24",
+    );
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-0"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-0"), {
+      target: { value: "HTDND_LAG_0" },
+    });
+    expect(await screen.findByTestId("preparation-lag-errors")).toHaveTextContent(
+      "periods must be a positive integer",
+    );
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-error")).toBeInTheDocument();
+    });
+    expect(saved).toBeNull();
+
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-0"), {
+      target: { value: "24" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-0"), {
+      target: { value: "HTDND_LAG_24" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-lag-add"));
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-1"), {
+      target: { value: "24" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-1"), {
+      target: { value: "HTDND_LAG_24B" },
+    });
+    expect(await screen.findByTestId("preparation-lag-errors")).toHaveTextContent(
+      "Lag periods must be unique",
+    );
+
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-1"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-1"), {
+      target: { value: "HTDND_LAG_1" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-lag-errors")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(saved!.graph!.nodes!.find((node) => node.id === "lag-1")?.config).toEqual({
+      time_column: "JOIN_TIME",
+      source_column: "HTDND_AMNT",
+      lags: [
+        { periods: 24, output: "HTDND_LAG_24" },
+        { periods: 1, output: "HTDND_LAG_1" },
+      ],
+    });
+  });
+
+  it("undoes and redoes Fill and Lag inspector config edits", async () => {
+    stubPreparationApi();
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+
+    fireEvent.click(screen.getByTestId("preparation-library-fill_constant"));
+    fireEvent.click(await screen.findByTestId("canvas-node-fill_constant-1"));
+    fireEvent.click(screen.getByTestId("preparation-fill-add"));
+    fireEvent.change(screen.getByTestId("preparation-fill-column-0"), {
+      target: { value: "country" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-fill-value-0"), {
+      target: { value: "UNKNOWN" },
+    });
+    expect(screen.getByTestId("preparation-fill-column-0")).toHaveValue("country");
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue("UNKNOWN");
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-fill-value-0")).not.toHaveValue("UNKNOWN");
+    });
+    fireEvent.click(screen.getByTestId("preparation-redo"));
+    expect(await screen.findByTestId("preparation-fill-column-0")).toHaveValue("country");
+    expect(screen.getByTestId("preparation-fill-value-0")).toHaveValue("UNKNOWN");
+
+    fireEvent.click(screen.getByTestId("preparation-library-lag"));
+    fireEvent.click(await screen.findByTestId("canvas-node-lag-1"));
+    fireEvent.change(screen.getByTestId("preparation-lag-time-column"), {
+      target: { value: "JOIN_TIME" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-source-column"), {
+      target: { value: "HTDND_AMNT" },
+    });
+    fireEvent.click(screen.getByTestId("preparation-lag-add"));
+    fireEvent.change(screen.getByTestId("preparation-lag-periods-0"), {
+      target: { value: "24" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-lag-output-0"), {
+      target: { value: "HTDND_LAG_24" },
+    });
+    expect(screen.getByTestId("preparation-lag-time-column")).toHaveValue("JOIN_TIME");
+    expect(screen.getByTestId("preparation-lag-output-0")).toHaveValue("HTDND_LAG_24");
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-lag-time-column")).toHaveValue("");
+      expect(screen.queryByTestId("preparation-lag-periods-0")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-redo"));
+    expect(await screen.findByTestId("preparation-lag-time-column")).toHaveValue("JOIN_TIME");
+    expect(screen.getByTestId("preparation-lag-source-column")).toHaveValue("HTDND_AMNT");
+    expect(screen.getByTestId("preparation-lag-periods-0")).toHaveValue("24");
+    expect(screen.getByTestId("preparation-lag-output-0")).toHaveValue("HTDND_LAG_24");
   });
 
   it("keeps Lag and Rolling Window inspectors read-only for viewers", async () => {
