@@ -55,5 +55,5 @@ test("pipeline builder form UX saves dataset load step", async ({ page }) => {
 
   await page.getByTestId("pipeline-save").click();
   await expect(page.getByTestId("pipeline-dirty-badge")).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.getByText(/Pipeline version saved/i)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/파이프라인 버전을 저장했습니다/)).toBeVisible({ timeout: 30_000 });
 });

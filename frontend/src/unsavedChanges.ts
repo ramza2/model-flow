@@ -1,5 +1,5 @@
 export const UNSAVED_CHANGES_MESSAGE =
-  "Unsaved pipeline changes\n\nYour latest changes have not been saved as a pipeline version. Leave anyway?";
+  "저장되지 않은 파이프라인 변경사항\n\n최신 변경사항이 파이프라인 버전으로 저장되지 않았습니다. 그래도 나가시겠습니까?";
 
 let active = false;
 

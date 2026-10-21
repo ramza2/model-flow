@@ -102,7 +102,7 @@ test("unsaved pipeline edits guard sidebar navigation and project switching", as
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
 
   page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Unsaved pipeline changes");
+    expect(dialog.message()).toContain("저장되지 않은 파이프라인 변경사항");
     await dialog.dismiss();
   });
   await page.getByRole("link", { name: "데이터셋", exact: true }).click();
@@ -110,7 +110,7 @@ test("unsaved pipeline edits guard sidebar navigation and project switching", as
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
 
   page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("Unsaved pipeline changes");
+    expect(dialog.message()).toContain("저장되지 않은 파이프라인 변경사항");
     await dialog.dismiss();
   });
   await projectSelect.selectOption(String(projectBId));
