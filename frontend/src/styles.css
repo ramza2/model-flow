@@ -2294,7 +2294,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .preparation-fill-rows { display: grid; gap: .45rem; }
 .preparation-filter-row,
 .preparation-cast-row,
-.preparation-fill-row {
+.preparation-fill-row,
+.preparation-lag-row {
   display: grid;
   gap: .35rem;
   padding: .45rem;
