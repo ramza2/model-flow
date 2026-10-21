@@ -114,6 +114,17 @@ import {
   type PreparationFlowNode,
   type RollingWindowDraftRow,
 } from "../preparationHelpers";
+import {
+  capturePrepGraphSnapshot,
+  createEmptyPrepGraphHistory,
+  isEditableKeyboardTarget,
+  prepGraphSnapshotsEqual,
+  pushPrepGraphHistory,
+  redoPrepGraphHistory,
+  undoPrepGraphHistory,
+  type PrepGraphHistoryState,
+  type PrepGraphSnapshot,
+} from "../preparationGraphHistory";
 import { userCanProject, useProject } from "../ProjectContext";
 
 type PrepNodeData = {
@@ -203,6 +214,28 @@ function toPrepEdges(edges: PreparationFlowEdge[]): Edge[] {
   }));
 }
 
+function nodesFromGraphSnapshot(snapshot: PrepGraphSnapshot): PrepNode[] {
+  return snapshot.nodes.map((node) => ({
+    id: node.id,
+    type: PREPARATION_FLOW_NODE_TYPE,
+    position: { x: node.position.x, y: node.position.y },
+    data: {
+      label: node.data.label,
+      node_type: node.data.node_type as DatasetPreparationNodeType,
+      config: structuredClone(node.data.config || {}),
+    },
+  }));
+}
+
+function edgesFromGraphSnapshot(snapshot: PrepGraphSnapshot): Edge[] {
+  return snapshot.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    ...(edge.targetHandle ? { targetHandle: edge.targetHandle, label: edge.label } : {}),
+  }));
+}
+
 export default function PreparationBuilder() {
   const { projectId, preparationId } = useParams();
   const { user } = useAuth();
@@ -216,7 +249,10 @@ export default function PreparationBuilder() {
   const [runs, setRuns] = useState<DatasetPreparationRun[]>([]);
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState("");
+  const [selectedEdgeId, setSelectedEdgeId] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [historyFlags, setHistoryFlags] = useState({ undo: false, redo: false });
+  const [inspectorEpoch, setInspectorEpoch] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -237,6 +273,12 @@ export default function PreparationBuilder() {
   const previewPanelRef = useRef<HTMLDivElement | null>(null);
   const validationPanelRef = useRef<HTMLDivElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const historyRef = useRef<PrepGraphHistoryState>(createEmptyPrepGraphHistory());
+  const savedSnapshotRef = useRef<PrepGraphSnapshot | null>(null);
+  const nodesRef = useRef<PrepNode[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+  const dragBaselineRef = useRef<PrepGraphSnapshot | null>(null);
+  const suppressEdgeHistoryRef = useRef(false);
   const canWrite = userCanProject(
     user,
     selectedProject,
@@ -244,6 +286,11 @@ export default function PreparationBuilder() {
     "ML_ENGINEER",
     "PROJECT_ADMIN",
   );
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [edges, nodes]);
 
   const clearPreview = useCallback(() => {
     previewAbortRef.current?.abort();
@@ -265,11 +312,103 @@ export default function PreparationBuilder() {
     setBusy((prev) => (prev === "validate" ? "" : prev));
   }, []);
 
-  const markGraphEdited = useCallback(() => {
-    setDirty(true);
+  const invalidateGraphDerived = useCallback(() => {
     invalidateValidate();
     clearPreview();
   }, [clearPreview, invalidateValidate]);
+
+  const syncDirtyFromSnapshot = useCallback((snapshot: PrepGraphSnapshot) => {
+    setDirty(!prepGraphSnapshotsEqual(snapshot, savedSnapshotRef.current));
+  }, []);
+
+  const publishHistory = useCallback((next: PrepGraphHistoryState) => {
+    historyRef.current = next;
+    setHistoryFlags({
+      undo: next.past.length > 0,
+      redo: next.future.length > 0,
+    });
+  }, []);
+
+  const resetGraphHistory = useCallback(() => {
+    dragBaselineRef.current = null;
+    publishHistory(createEmptyPrepGraphHistory());
+  }, [publishHistory]);
+
+  const commitGraphEdit = useCallback(
+    (nextNodes: PrepNode[], nextEdges: Edge[], options?: { baseline?: PrepGraphSnapshot | null }) => {
+      const currentSnapshot =
+        options?.baseline ?? capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+      const nextSnapshot = capturePrepGraphSnapshot(nextNodes, nextEdges);
+      if (prepGraphSnapshotsEqual(currentSnapshot, nextSnapshot)) {
+        setNodes(nextNodes);
+        setEdges(nextEdges);
+        nodesRef.current = nextNodes;
+        edgesRef.current = nextEdges;
+        return false;
+      }
+      publishHistory(pushPrepGraphHistory(historyRef.current, currentSnapshot));
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setSelectedEdgeId((edgeId) =>
+        edgeId && nextEdges.some((edge) => edge.id === edgeId) ? edgeId : "",
+      );
+      setSelectedId((nodeId) =>
+        nodeId && nextNodes.some((node) => node.id === nodeId) ? nodeId : "",
+      );
+      syncDirtyFromSnapshot(nextSnapshot);
+      invalidateGraphDerived();
+      return true;
+    },
+    [invalidateGraphDerived, publishHistory, syncDirtyFromSnapshot],
+  );
+
+  const applyGraphSnapshot = useCallback(
+    (snapshot: PrepGraphSnapshot, options?: { bumpInspector?: boolean }) => {
+      const nextNodes = nodesFromGraphSnapshot(snapshot);
+      const nextEdges = edgesFromGraphSnapshot(snapshot);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setSelectedEdgeId((edgeId) =>
+        edgeId && nextEdges.some((edge) => edge.id === edgeId) ? edgeId : "",
+      );
+      setSelectedId((nodeId) =>
+        nodeId && nextNodes.some((node) => node.id === nodeId) ? nodeId : "",
+      );
+      syncDirtyFromSnapshot(snapshot);
+      invalidateGraphDerived();
+      if (options?.bumpInspector) {
+        setInspectorEpoch((value) => value + 1);
+      }
+    },
+    [invalidateGraphDerived, syncDirtyFromSnapshot],
+  );
+
+  const undoGraphEdit = useCallback(() => {
+    if (!canWrite) return;
+    const current = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+    const result = undoPrepGraphHistory(historyRef.current, current);
+    if (!result) return;
+    dragBaselineRef.current = null;
+    publishHistory(result.history);
+    applyGraphSnapshot(result.snapshot, { bumpInspector: true });
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
+
+  const redoGraphEdit = useCallback(() => {
+    if (!canWrite) return;
+    const current = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+    const result = redoPrepGraphHistory(historyRef.current, current);
+    if (!result) return;
+    dragBaselineRef.current = null;
+    publishHistory(result.history);
+    applyGraphSnapshot(result.snapshot, { bumpInspector: true });
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
+
+  const canUndo = canWrite && historyFlags.undo;
+  const canRedo = canWrite && historyFlags.redo;
 
   const loadRuns = useCallback(async () => {
     if (!projectId || !preparationId) return [];
@@ -296,12 +435,23 @@ export default function PreparationBuilder() {
       ]);
       const graph = row.version?.graph || { schema_version: 1 as const, nodes: [], edges: [] };
       const flow = apiGraphToFlow(graph);
+      const nextNodes = toPrepNodes(flow.nodes);
+      const nextEdges = toPrepEdges(flow.edges);
+      const baseline = capturePrepGraphSnapshot(nextNodes, nextEdges);
       setPreparation(row);
-      setNodes(toPrepNodes(flow.nodes));
-      setEdges(toPrepEdges(flow.edges));
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
       setDatasets(datasetRows);
       setPrepVersions(versionRows);
       setRuns(runRows);
+      setSelectedId("");
+      setSelectedEdgeId("");
+      savedSnapshotRef.current = baseline;
+      dragBaselineRef.current = null;
+      publishHistory(createEmptyPrepGraphHistory());
+      setInspectorEpoch((value) => value + 1);
       setDirty(false);
       validateSeqRef.current += 1;
       setValidation(null);
@@ -314,7 +464,7 @@ export default function PreparationBuilder() {
     } finally {
       setLoading(false);
     }
-  }, [preparationId, projectId]);
+  }, [preparationId, projectId, publishHistory]);
 
   useEffect(() => {
     void load();
@@ -396,6 +546,16 @@ export default function PreparationBuilder() {
     () => nodes.find((node) => node.id === selectedId) || null,
     [nodes, selectedId],
   );
+  const selectedEdge = useMemo(
+    () => edges.find((edge) => edge.id === selectedEdgeId) || null,
+    [edges, selectedEdgeId],
+  );
+  const selectedEdgeSourceLabel = selectedEdge
+    ? nodes.find((node) => node.id === selectedEdge.source)?.data.label || selectedEdge.source
+    : "";
+  const selectedEdgeTargetLabel = selectedEdge
+    ? nodes.find((node) => node.id === selectedEdge.target)?.data.label || selectedEdge.target
+    : "";
 
   useEffect(() => {
     setInspectorErrors([]);
@@ -482,47 +642,54 @@ export default function PreparationBuilder() {
 
   function selectNode(node: PrepNode) {
     setSelectedId(node.id);
+    setSelectedEdgeId("");
   }
 
   function updateSelectedConfig(next: Record<string, unknown>) {
     if (!canWrite || !selectedId) return;
-    markGraphEdited();
-    setNodes((rows) =>
-      rows.map((node) =>
-        node.id === selectedId ? { ...node, data: { ...node.data, config: next } } : node,
-      ),
+    const nextNodes = nodesRef.current.map((node) =>
+      node.id === selectedId ? { ...node, data: { ...node.data, config: next } } : node,
     );
+    commitGraphEdit(nextNodes, edgesRef.current);
   }
 
   function addNodeOfType(nodeType: DatasetPreparationNodeType) {
     if (!canWrite) return;
+    const currentNodes = nodesRef.current;
     const id = nextPreparationNodeId(
       nodeType,
-      nodes.map((node) => node.id),
+      currentNodes.map((node) => node.id),
     );
     const node: PrepNode = {
       id,
       type: PREPARATION_FLOW_NODE_TYPE,
-      position: staggerPreparationPosition(nodes.length),
+      position: staggerPreparationPosition(currentNodes.length),
       data: {
         label: labelForPreparationType(nodeType),
         node_type: nodeType,
         config: defaultConfigForPreparation(nodeType),
       },
     };
-    setNodes((rows) => [...rows, node]);
+    commitGraphEdit([...currentNodes, node], edgesRef.current);
     setSelectedId(id);
-    markGraphEdited();
+    setSelectedEdgeId("");
   }
 
   function removeSelected() {
     if (!canWrite || !selectedId) return;
-    setNodes((rows) => rows.filter((node) => node.id !== selectedId));
-    setEdges((rows) =>
-      rows.filter((edge) => edge.source !== selectedId && edge.target !== selectedId),
+    const nextNodes = nodesRef.current.filter((node) => node.id !== selectedId);
+    const nextEdges = edgesRef.current.filter(
+      (edge) => edge.source !== selectedId && edge.target !== selectedId,
     );
+    commitGraphEdit(nextNodes, nextEdges);
     setSelectedId("");
-    markGraphEdited();
+  }
+
+  function removeSelectedEdge() {
+    if (!canWrite || !selectedEdgeId) return;
+    const nextEdges = edgesRef.current.filter((edge) => edge.id !== selectedEdgeId);
+    commitGraphEdit(nodesRef.current, nextEdges);
+    setSelectedEdgeId("");
   }
 
   const onNodesChange = useCallback(
@@ -531,45 +698,104 @@ export default function PreparationBuilder() {
         const safe = changes.filter(
           (change) => change.type === "select" || change.type === "dimensions",
         );
-        if (safe.length) setNodes((rows) => applyNodeChanges(safe, rows));
+        if (safe.length) {
+          const next = applyNodeChanges(safe, nodesRef.current);
+          setNodes(next);
+          nodesRef.current = next;
+        }
         return;
       }
-      const marksDirty = changes.some(
-        (change) =>
-          change.type === "remove" ||
-          change.type === "add" ||
-          (change.type === "position" && change.dragging === false),
+
+      for (const change of changes) {
+        if (change.type === "position" && change.dragging === true && !dragBaselineRef.current) {
+          dragBaselineRef.current = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+        }
+      }
+
+      const removedIds = changes
+        .filter((change) => change.type === "remove" && "id" in change && Boolean(change.id))
+        .map((change) => String((change as { id: string }).id));
+      const hasStructuralAdd = changes.some((change) => change.type === "add");
+      const hasDragEnd = changes.some(
+        (change) => change.type === "position" && change.dragging === false,
       );
-      if (marksDirty) markGraphEdited();
-      setNodes((rows) => applyNodeChanges(changes, rows));
+
+      if (removedIds.length > 0 || hasStructuralAdd) {
+        const baseline = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+        const nextNodes = applyNodeChanges(changes, nodesRef.current);
+        const removed = new Set(removedIds);
+        const nextEdges = edgesRef.current.filter(
+          (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+        );
+        suppressEdgeHistoryRef.current = true;
+        commitGraphEdit(nextNodes, nextEdges, { baseline });
+        queueMicrotask(() => {
+          suppressEdgeHistoryRef.current = false;
+        });
+        dragBaselineRef.current = null;
+        return;
+      }
+
+      if (hasDragEnd) {
+        const baseline = dragBaselineRef.current;
+        dragBaselineRef.current = null;
+        const nextNodes = applyNodeChanges(changes, nodesRef.current);
+        commitGraphEdit(nextNodes, edgesRef.current, { baseline: baseline ?? undefined });
+        return;
+      }
+
+      // Selection, dimensions, and in-progress drag updates stay out of history.
+      const nextNodes = applyNodeChanges(changes, nodesRef.current);
+      setNodes(nextNodes);
+      nodesRef.current = nextNodes;
     },
-    [canWrite, markGraphEdited],
+    [canWrite, commitGraphEdit],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       if (!canWrite) {
         const safe = changes.filter((change) => change.type === "select");
-        if (safe.length) setEdges((rows) => applyEdgeChanges(safe, rows));
+        if (safe.length) {
+          const next = applyEdgeChanges(safe, edgesRef.current);
+          setEdges(next);
+          edgesRef.current = next;
+        }
         return;
       }
-      if (changes.some((change) => change.type === "remove" || change.type === "add")) {
-        markGraphEdited();
+
+      const structural = changes.some(
+        (change) => change.type === "remove" || change.type === "add",
+      );
+      if (!structural || suppressEdgeHistoryRef.current) {
+        const next = applyEdgeChanges(changes, edgesRef.current);
+        setEdges(next);
+        edgesRef.current = next;
+        if (structural) {
+          setSelectedEdgeId((edgeId) =>
+            edgeId && next.some((edge) => edge.id === edgeId) ? edgeId : "",
+          );
+        }
+        return;
       }
-      setEdges((rows) => applyEdgeChanges(changes, rows));
+
+      const nextEdges = applyEdgeChanges(changes, edgesRef.current);
+      commitGraphEdit(nodesRef.current, nextEdges);
     },
-    [canWrite, markGraphEdited],
+    [canWrite, commitGraphEdit],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!canWrite) return;
-      const targetNode = nodes.find((node) => node.id === connection.target);
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+      const targetNode = currentNodes.find((node) => node.id === connection.target);
       let targetHandle = connection.targetHandle;
       if (targetNode?.data.node_type === "join") {
         if (targetHandle !== "left" && targetHandle !== "right") {
           const used = new Set(
-            edges
+            currentEdges
               .filter((edge) => edge.target === connection.target)
               .map((edge) => edge.targetHandle),
           );
@@ -578,23 +804,44 @@ export default function PreparationBuilder() {
       } else {
         targetHandle = null;
       }
-      markGraphEdited();
-      setEdges((rows) =>
-        addEdge(
-          {
-            ...connection,
-            targetHandle,
-            ...(targetHandle
-              ? { label: String(targetHandle).toUpperCase() }
-              : { label: undefined }),
-            id: `edge-${connection.source}-${connection.target}-${targetHandle || "in"}-${rows.length + 1}`,
-          },
-          rows,
-        ),
+      const nextEdges = addEdge(
+        {
+          ...connection,
+          targetHandle,
+          ...(targetHandle
+            ? { label: String(targetHandle).toUpperCase() }
+            : { label: undefined }),
+          id: `edge-${connection.source}-${connection.target}-${targetHandle || "in"}-${currentEdges.length + 1}`,
+        },
+        currentEdges,
       );
+      commitGraphEdit(currentNodes, nextEdges);
     },
-    [canWrite, edges, markGraphEdited, nodes],
+    [canWrite, commitGraphEdit],
   );
+
+  useEffect(() => {
+    if (!canWrite) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      // Match toolbar Undo/Redo: ignore shortcuts while any action is busy.
+      if (busy !== "") return;
+      if (isEditableKeyboardTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const modifier = event.ctrlKey || event.metaKey;
+      if (!modifier) return;
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoGraphEdit();
+        return;
+      }
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redoGraphEdit();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, canWrite, redoGraphEdit, undoGraphEdit]);
 
   function guardInspectorErrors(): boolean {
     if (inspectorErrors.length === 0) return true;
@@ -608,13 +855,24 @@ export default function PreparationBuilder() {
     setBusy("save");
     setError("");
     setSuccess("");
+    // Freeze the exact graph sent to the API; later canvas edits must not rewrite it.
+    const graph = currentGraph();
+    const savedSnapshot = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
     try {
-      const graph = currentGraph();
       const version = await api<DatasetPreparationVersion>(
         `/projects/${projectId}/dataset-preparations/${preparationId}/versions`,
         { method: "POST", body: JSON.stringify({ graph }) },
       );
-      setDirty(false);
+      savedSnapshotRef.current = savedSnapshot;
+      const liveSnapshot = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+      // Allow editing during save. Only clear history when the canvas still matches
+      // the saved snapshot; otherwise keep post-save-start edits undoable.
+      if (prepGraphSnapshotsEqual(liveSnapshot, savedSnapshot)) {
+        resetGraphHistory();
+      } else {
+        dragBaselineRef.current = null;
+      }
+      syncDirtyFromSnapshot(liveSnapshot);
       setSuccess("버전을 저장했습니다.");
       setPrepVersions((rows) => {
         const without = rows.filter((row) => row.id !== version.id);
@@ -630,6 +888,7 @@ export default function PreparationBuilder() {
           : prev,
       );
     } catch (reason) {
+      // Keep edit history on save failure so the user can continue undoing.
       setError(reason instanceof Error ? reason.message : "버전을 저장하지 못했습니다.");
     } finally {
       setBusy("");
@@ -918,6 +1177,26 @@ export default function PreparationBuilder() {
           </div>
         </div>
         <div className="preparation-builder-header-actions">
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="preparation-undo"
+            disabled={!canUndo || busy !== ""}
+            onClick={() => undoGraphEdit()}
+            title="실행 취소 (Ctrl+Z)"
+          >
+            실행 취소
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="preparation-redo"
+            disabled={!canRedo || busy !== ""}
+            onClick={() => redoGraphEdit()}
+            title="다시 실행 (Ctrl+Y / Ctrl+Shift+Z)"
+          >
+            다시 실행
+          </button>
           <div className="preparation-validate-cluster">
             <button
               type="button"
@@ -1147,7 +1426,10 @@ export default function PreparationBuilder() {
                 ...node,
                 selected: node.id === selectedId,
               }))}
-              edges={edges}
+              edges={edges.map((edge) => ({
+                ...edge,
+                selected: edge.id === selectedEdgeId,
+              }))}
               nodeTypes={nodeTypes}
               nodesDraggable={canWrite}
               nodesConnectable={canWrite}
@@ -1158,6 +1440,11 @@ export default function PreparationBuilder() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={(_, node) => selectNode(node as PrepNode)}
+              onEdgeClick={(_, edge) => {
+                setSelectedEdgeId(edge.id);
+                setSelectedId("");
+              }}
+              onPaneClick={() => setSelectedEdgeId("")}
               fitView
             >
               <Background />
@@ -1168,7 +1455,36 @@ export default function PreparationBuilder() {
         </div>
 
         <aside className="preparation-inspector panel" data-testid="preparation-inspector">
-          {!selectedNode ? (
+          {selectedEdge ? (
+            <>
+              <span className="eyebrow">선택한 연결</span>
+              <h2 data-testid="preparation-selected-edge-title">연결선</h2>
+              <p className="form-hint" data-testid="preparation-selected-edge-path">
+                {selectedEdgeSourceLabel} → {selectedEdgeTargetLabel}
+              </p>
+              <small className="muted" data-testid="preparation-selected-edge-id">
+                연결 ID: {selectedEdge.id}
+                {selectedEdge.targetHandle
+                  ? ` · ${String(selectedEdge.targetHandle).toUpperCase()}`
+                  : ""}
+              </small>
+              <p className="form-hint" data-testid="preparation-edge-help">
+                연결선을 클릭한 뒤 Delete 키 또는 연결 해제 버튼으로 삭제할 수 있습니다.
+              </p>
+              {canWrite && (
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    data-testid="preparation-remove-edge"
+                    onClick={removeSelectedEdge}
+                  >
+                    연결 해제
+                  </button>
+                </div>
+              )}
+            </>
+          ) : !selectedNode ? (
             <>
               <span className="eyebrow">데이터 준비</span>
               <h2>{preparation.name}</h2>
@@ -1198,7 +1514,7 @@ export default function PreparationBuilder() {
               />
               <p className="form-hint">
                 {canWrite
-                  ? "캔버스에서 노드를 선택해 설정하거나, 노드 라이브러리에서 추가하세요."
+                  ? "캔버스에서 노드를 선택해 설정하거나, 노드 라이브러리에서 추가하세요. 연결선을 클릭한 뒤 Delete 키 또는 연결 해제 버튼으로 삭제할 수 있습니다."
                   : "캔버스에서 노드를 선택하면 설정을 확인할 수 있습니다."}
               </p>
             </>
@@ -1268,7 +1584,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "filter" && (
                 <FilterInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1277,7 +1593,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "cast" && (
                 <CastInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1292,7 +1608,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "fill_constant" && (
                 <FillInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1301,7 +1617,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "derived_column" && (
                 <DerivedInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1310,7 +1626,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "group_by" && (
                 <GroupByInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1319,7 +1635,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "unpivot" && (
                 <UnpivotInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1328,7 +1644,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "pivot" && (
                 <PivotInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1337,7 +1653,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "lag" && (
                 <LagInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
@@ -1346,7 +1662,7 @@ export default function PreparationBuilder() {
               )}
               {selectedNode.data.node_type === "rolling_window" && (
                 <RollingWindowInspector
-                  key={selectedNode.id}
+                  key={`${selectedNode.id}-${inspectorEpoch}`}
                   config={selectedNode.data.config}
                   canWrite={canWrite}
                   onChange={updateSelectedConfig}
