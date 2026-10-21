@@ -70,6 +70,7 @@ import {
 } from "../pipelineHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 import { UI_HELP } from "../uiTerminology";
+import { UNSAVED_CHANGES_MESSAGE } from "../unsavedChanges";
 
 type StepData = {
   label: string;
@@ -1048,9 +1049,7 @@ export function PipelineBuilder() {
 
   function confirmLeave(event: MouseEvent<HTMLAnchorElement>) {
     if (!dirty) return;
-    const ok = window.confirm(
-      "저장되지 않은 파이프라인 변경사항\n\n최신 변경사항이 파이프라인 버전으로 저장되지 않았습니다. 그래도 나가시겠습니까?",
-    );
+    const ok = window.confirm(UNSAVED_CHANGES_MESSAGE);
     if (!ok) event.preventDefault();
   }
 
