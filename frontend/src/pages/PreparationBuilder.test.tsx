@@ -708,10 +708,19 @@ describe("PreparationBuilder", () => {
     resolveSecond({ valid: false, errors: ["ignored"], warnings: [] });
   });
 
-  it("keeps lifecycle handoff actions in a horizontal row via scoped CSS", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { resolve } = await import("node:path");
-    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+  it("keeps lifecycle handoff actions in a horizontal row via scoped CSS", () => {
+    // Read stylesheet source under Vitest/Node without adding @types/node to the app tsconfig.
+    type NodeFs = { readFileSync: (path: string, encoding: string) => string };
+    type NodePath = { join: (...parts: string[]) => string };
+    type NodeProcess = {
+      cwd: () => string;
+      getBuiltinModule?: (id: "fs" | "path") => NodeFs | NodePath;
+    };
+    const nodeProcess = (globalThis as { process?: NodeProcess }).process;
+    expect(typeof nodeProcess?.getBuiltinModule).toBe("function");
+    const fs = nodeProcess!.getBuiltinModule!("fs") as NodeFs;
+    const path = nodeProcess!.getBuiltinModule!("path") as NodePath;
+    const css = fs.readFileSync(path.join(nodeProcess!.cwd(), "src/styles.css"), "utf8");
     const scoped =
       /\[data-testid="preparation-lifecycle-handoff"\] \.preparation-lifecycle-result-actions\s*\{[^}]*flex-direction:\s*row/s;
     expect(css).toMatch(scoped);
