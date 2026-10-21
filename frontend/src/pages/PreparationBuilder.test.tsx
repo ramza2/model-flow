@@ -3492,4 +3492,96 @@ describe("PreparationBuilder", () => {
     expect(screen.getByTestId("preparation-redo")).toBeDisabled();
     expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
   });
+
+  it("keeps edits made during an in-flight save undoable after success", async () => {
+    let resolveSave!: (value: Record<string, unknown>) => void;
+    let rejectSave!: (reason?: unknown) => void;
+    let savedNodeIds: string[] = [];
+    const saveDeferred = new Promise<Record<string, unknown>>((resolve, reject) => {
+      resolveSave = resolve;
+      rejectSave = reject;
+    });
+    stubPreparationApi();
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "POST") {
+        const body = JSON.parse(String(init?.body || "{}")) as {
+          graph?: { nodes?: Array<{ id: string }> };
+        };
+        savedNodeIds = (body.graph?.nodes ?? []).map((node) => node.id);
+        return await saveDeferred;
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-save-version")).toHaveTextContent("저장 중…");
+      expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    });
+    // Keyboard shortcuts match toolbar busy gating while save is in flight.
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    expect(screen.getByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-library-cast"));
+    expect(await screen.findByTestId("canvas-node-cast-1")).toBeInTheDocument();
+
+    resolveSave({
+      id: 99,
+      preparation_id: 9,
+      version: 2,
+      graph: {
+        nodes: savedNodeIds.map((id) => ({ id })),
+        edges: [],
+      },
+      created_at: "2026-09-17T00:00:00Z",
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-save-version")).toHaveTextContent("버전 저장");
+    });
+    expect(savedNodeIds).toEqual(["source-1", "filter-1"]);
+    expect(screen.getByTestId("canvas-node-cast-1")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-dirty-hint")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-undo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-cast-1")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    // Save failure still keeps history for continued undo.
+    const failDeferred = new Promise<Record<string, unknown>>((_, reject) => {
+      rejectSave = reject;
+    });
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "POST") {
+        return await failDeferred;
+      }
+      return base(path, init);
+    });
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    expect(await screen.findByTestId("canvas-node-join-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    });
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    expect(screen.getByTestId("canvas-node-join-1")).toBeInTheDocument();
+    rejectSave(new Error("save boom midflight"));
+    expect(await screen.findByText("save boom midflight")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-undo")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-join-1")).not.toBeInTheDocument();
+    });
+  });
 });

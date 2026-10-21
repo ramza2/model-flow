@@ -823,6 +823,8 @@ export default function PreparationBuilder() {
   useEffect(() => {
     if (!canWrite) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // Match toolbar Undo/Redo: ignore shortcuts while any action is busy.
+      if (busy !== "") return;
       if (isEditableKeyboardTarget(event.target)) return;
       const key = event.key.toLowerCase();
       const modifier = event.ctrlKey || event.metaKey;
@@ -839,7 +841,7 @@ export default function PreparationBuilder() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [canWrite, redoGraphEdit, undoGraphEdit]);
+  }, [busy, canWrite, redoGraphEdit, undoGraphEdit]);
 
   function guardInspectorErrors(): boolean {
     if (inspectorErrors.length === 0) return true;
@@ -853,6 +855,7 @@ export default function PreparationBuilder() {
     setBusy("save");
     setError("");
     setSuccess("");
+    // Freeze the exact graph sent to the API; later canvas edits must not rewrite it.
     const graph = currentGraph();
     const savedSnapshot = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
     try {
@@ -861,8 +864,14 @@ export default function PreparationBuilder() {
         { method: "POST", body: JSON.stringify({ graph }) },
       );
       savedSnapshotRef.current = savedSnapshot;
-      resetGraphHistory();
       const liveSnapshot = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
+      // Allow editing during save. Only clear history when the canvas still matches
+      // the saved snapshot; otherwise keep post-save-start edits undoable.
+      if (prepGraphSnapshotsEqual(liveSnapshot, savedSnapshot)) {
+        resetGraphHistory();
+      } else {
+        dragBaselineRef.current = null;
+      }
       syncDirtyFromSnapshot(liveSnapshot);
       setSuccess("버전을 저장했습니다.");
       setPrepVersions((rows) => {
