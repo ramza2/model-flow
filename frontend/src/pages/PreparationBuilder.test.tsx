@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -27,22 +27,50 @@ vi.mock("../ProjectContext", () => ({
 vi.mock("@xyflow/react", () => ({
   ReactFlow: ({
     nodes,
+    edges = [],
     onNodeClick,
+    onEdgeClick,
     onNodesChange,
+    onEdgesChange,
     onConnect,
+    onPaneClick,
     nodesDraggable,
     nodesConnectable,
     deleteKeyCode,
     children,
   }: {
-    nodes: Array<{ id: string; data: { label: string; node_type: string } }>;
+    nodes: Array<{
+      id: string;
+      position?: { x: number; y: number };
+      data: { label: string; node_type: string };
+    }>;
+    edges?: Array<{
+      id: string;
+      source: string;
+      target: string;
+      targetHandle?: string | null;
+      selected?: boolean;
+    }>;
     onNodeClick?: (_: unknown, node: { id: string; data: { label: string; node_type: string } }) => void;
-    onNodesChange?: (changes: Array<{ type: string; id?: string }>) => void;
+    onEdgeClick?: (
+      _: unknown,
+      edge: { id: string; source: string; target: string; targetHandle?: string | null },
+    ) => void;
+    onNodesChange?: (
+      changes: Array<{
+        type: string;
+        id?: string;
+        position?: { x: number; y: number };
+        dragging?: boolean;
+      }>,
+    ) => void;
+    onEdgesChange?: (changes: Array<{ type: string; id?: string }>) => void;
     onConnect?: (connection: {
       source: string;
       target: string;
       targetHandle?: string | null;
     }) => void;
+    onPaneClick?: () => void;
     nodesDraggable?: boolean;
     nodesConnectable?: boolean;
     deleteKeyCode?: string[] | null;
@@ -64,6 +92,18 @@ vi.mock("@xyflow/react", () => ({
             onClick={() => onNodeClick?.({}, node)}
           >
             {node.data.label}
+          </button>
+        ))}
+        {edges.map((edge) => (
+          <button
+            key={edge.id}
+            type="button"
+            data-testid={`canvas-edge-${edge.id}`}
+            data-selected={String(Boolean(edge.selected))}
+            data-target-handle={edge.targetHandle || ""}
+            onClick={() => onEdgeClick?.({}, edge)}
+          >
+            {edge.source}→{edge.target}
           </button>
         ))}
         {nodes[0] && (
@@ -88,8 +128,38 @@ vi.mock("@xyflow/react", () => ({
             >
               force-connect
             </button>
+            <button
+              type="button"
+              data-testid="react-flow-force-drag"
+              onClick={() => {
+                const id = nodes[0].id;
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 11, y: 12 }, dragging: true },
+                ]);
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 40, y: 50 }, dragging: true },
+                ]);
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 120, y: 140 }, dragging: false },
+                ]);
+              }}
+            >
+              force-drag
+            </button>
           </>
         )}
+        {edges[0] && (
+          <button
+            type="button"
+            data-testid="react-flow-force-remove-edge"
+            onClick={() => onEdgesChange?.([{ type: "remove", id: edges[0].id }])}
+          >
+            force-remove-edge
+          </button>
+        )}
+        <button type="button" data-testid="react-flow-pane" onClick={() => onPaneClick?.()}>
+          pane
+        </button>
         {children}
       </div>
     );
@@ -113,13 +183,23 @@ vi.mock("@xyflow/react", () => ({
     return next;
   },
   applyNodeChanges: (
-    changes: Array<{ type: string; id?: string }>,
-    nodes: Array<{ id: string }>,
+    changes: Array<{
+      type: string;
+      id?: string;
+      position?: { x: number; y: number };
+      dragging?: boolean;
+    }>,
+    nodes: Array<{ id: string; position?: { x: number; y: number } }>,
   ) => {
-    let next = [...nodes];
+    let next = nodes.map((node) => ({ ...node }));
     for (const change of changes) {
       if (change.type === "remove" && change.id) {
         next = next.filter((node) => node.id !== change.id);
+      }
+      if (change.type === "position" && change.id && change.position) {
+        next = next.map((node) =>
+          node.id === change.id ? { ...node, position: { ...change.position! } } : node,
+        );
       }
     }
     return next;
@@ -420,6 +500,7 @@ function stubPreparationApi(overrides?: {
 
 describe("PreparationBuilder", () => {
   beforeEach(() => {
+    cleanup();
     canWriteRef.value = true;
     apiMock.mockReset();
     stubPreparationApi();
@@ -3157,5 +3238,258 @@ describe("PreparationBuilder", () => {
     expect(
       within(operation).getByRole("option", { name: "정규식 추출 (regex_extract)" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps undo/redo disabled until a graph edit exists", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    expect(screen.getByTestId("preparation-redo")).toBeDisabled();
+  });
+
+  it("undoes and redoes node add, delete-with-edges, edge disconnect, config, and drag", async () => {
+    let saved: {
+      graph?: {
+        nodes?: Array<{ id: string; config?: Record<string, unknown>; position?: { x: number; y: number } }>;
+        edges?: Array<{ id?: string; source: string; target: string; target_port?: string | null }>;
+      };
+    } | null = null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-dirty-hint")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-undo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-filter-1")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preparation-redo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("preparation-redo"));
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    expect(await screen.findByTestId("canvas-node-join-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("react-flow-force-connect"));
+    const joinEdge = await screen.findByTestId(/^canvas-edge-/);
+    expect(joinEdge).toHaveAttribute("data-target-handle", "left");
+
+    fireEvent.click(screen.getByTestId("canvas-node-join-1"));
+    fireEvent.click(screen.getByTestId("preparation-remove-node"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-join-1")).not.toBeInTheDocument();
+      expect(screen.queryByTestId(/^canvas-edge-/)).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    expect(await screen.findByTestId("canvas-node-join-1")).toBeInTheDocument();
+    const restoredEdge = await screen.findByTestId(/^canvas-edge-/);
+    expect(restoredEdge).toHaveAttribute("data-target-handle", "left");
+
+    fireEvent.click(restoredEdge);
+    expect(screen.getByTestId("preparation-selected-edge-title")).toHaveTextContent("연결선");
+    expect(screen.getByTestId("preparation-edge-help")).toHaveTextContent(
+      "연결선을 클릭한 뒤 Delete 키 또는 연결 해제 버튼으로 삭제할 수 있습니다.",
+    );
+    expect(screen.queryByTestId("preparation-dirty-hint")).toBeInTheDocument();
+    const dirtyBeforeSelect = screen.getByTestId("preparation-dirty-hint").textContent;
+    fireEvent.click(screen.getByTestId("react-flow-pane"));
+    fireEvent.click(restoredEdge);
+    expect(screen.getByTestId("preparation-dirty-hint").textContent).toBe(dirtyBeforeSelect);
+
+    fireEvent.click(screen.getByTestId("preparation-remove-edge"));
+    await waitFor(() => {
+      expect(screen.queryByTestId(/^canvas-edge-/)).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    expect(await screen.findByTestId(/^canvas-edge-/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-redo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId(/^canvas-edge-/)).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("canvas-node-filter-1"));
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-0"), {
+      target: { value: "region" },
+    });
+    expect(screen.getByTestId("preparation-filter-column-0")).toHaveValue("region");
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    expect(await screen.findByTestId("preparation-filter-column-0")).toHaveValue("");
+    fireEvent.click(screen.getByTestId("preparation-redo"));
+    expect(screen.getByTestId("preparation-filter-column-0")).toHaveValue("region");
+
+    fireEvent.click(screen.getByTestId("react-flow-force-drag"));
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const sourceAfterUndo = saved!.graph!.nodes!.find((node) => node.id === "source-1");
+    expect(sourceAfterUndo?.position).not.toEqual({ x: 120, y: 140 });
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("react-flow-force-drag"));
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => {
+      const source = saved!.graph!.nodes!.find((node) => node.id === "source-1");
+      expect(source?.position).toEqual({ x: 120, y: 140 });
+    });
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+
+    const filterNode = saved!.graph!.nodes!.find((node) => node.id === "filter-1");
+    expect(filterNode?.config).toMatchObject({
+      conditions: [{ column: "region", operator: "eq" }],
+    });
+  });
+
+  it("handles keyboard shortcuts, input focus, redo discard, readonly, and stale validate/preview", async () => {
+    let resolveValidate!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    const validateDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve) => {
+      resolveValidate = resolve;
+    });
+    let resolvePreview!: (value: Record<string, unknown>) => void;
+    const previewDeferred = new Promise<Record<string, unknown>>((resolve) => {
+      resolvePreview = resolve;
+    });
+
+    stubPreparationApi();
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-filter-1")).not.toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-filter-1")).not.toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("canvas-node-filter-1"));
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    const columnInput = screen.getByTestId("preparation-filter-column-0");
+    fireEvent.focus(columnInput);
+    fireEvent.keyDown(columnInput, { key: "z", ctrlKey: true });
+    expect(screen.getByTestId("canvas-node-filter-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-filter-column-0")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("preparation-redo")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("preparation-library-cast"));
+    expect(await screen.findByTestId("canvas-node-cast-1")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-redo")).toBeDisabled();
+
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await validateDeferred;
+      }
+      if (path === "/projects/7/dataset-preparations/9/preview" && method === "POST") {
+        return await previewDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+    fireEvent.click(screen.getByTestId("preparation-undo"));
+    resolveValidate({ valid: true, errors: [], warnings: [] });
+    await waitFor(() => {
+      expect(screen.queryByText("검증 통과")).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-preview"));
+    fireEvent.click(screen.getByTestId("preparation-library-source"));
+    resolvePreview({
+      node_id: "cast-1",
+      columns: ["stale"],
+      rows: [{ stale: 1 }],
+      row_count: 1,
+      sampled: false,
+      warnings: [],
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-preview-panel")).not.toBeInTheDocument();
+    });
+
+    cleanup();
+    canWriteRef.value = false;
+    stubPreparationApi();
+    renderBuilder();
+    expect(await screen.findByTestId("preparation-undo")).toBeDisabled();
+    expect(screen.getByTestId("preparation-redo")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-library-filter")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-remove-edge")).not.toBeInTheDocument();
+  });
+
+  it("preserves history on save failure and clears it on save success", async () => {
+    let shouldFail = true;
+    let saved: unknown = null;
+    stubPreparationApi();
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "POST") {
+        if (shouldFail) throw new Error("save boom");
+        saved = JSON.parse(String(init?.body || "{}"));
+        return {
+          id: 99,
+          preparation_id: 9,
+          version: 2,
+          graph: JSON.parse(String(init?.body || "{}")).graph,
+          created_at: "2026-09-17T00:00:00Z",
+        };
+      }
+      return base(path, init);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    expect(await screen.findByTestId("canvas-node-filter-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    expect(await screen.findByText("save boom")).toBeInTheDocument();
+    expect(screen.getByTestId("preparation-undo")).not.toBeDisabled();
+
+    shouldFail = false;
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    expect(screen.getByTestId("preparation-redo")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
   });
 });
