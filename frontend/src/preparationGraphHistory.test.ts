@@ -42,7 +42,7 @@ describe("preparationGraphHistory", () => {
     expect(redone?.snapshot).toEqual(edited);
     history = pushPrepGraphHistory(redone!.history, edited);
     expect(history.future).toEqual([]);
-    expect(history.past.at(-1)).toEqual(edited);
+    expect(history.past[history.past.length - 1]).toEqual(edited);
   });
 
   it("caps history length and compares snapshots without order sensitivity", () => {

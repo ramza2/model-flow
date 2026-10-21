@@ -251,7 +251,7 @@ export default function PreparationBuilder() {
   const [selectedId, setSelectedId] = useState("");
   const [selectedEdgeId, setSelectedEdgeId] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [historyVersion, setHistoryVersion] = useState(0);
+  const [historyFlags, setHistoryFlags] = useState({ undo: false, redo: false });
   const [inspectorEpoch, setInspectorEpoch] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -287,8 +287,10 @@ export default function PreparationBuilder() {
     "PROJECT_ADMIN",
   );
 
-  nodesRef.current = nodes;
-  edgesRef.current = edges;
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [edges, nodes]);
 
   const clearPreview = useCallback(() => {
     previewAbortRef.current?.abort();
@@ -319,11 +321,18 @@ export default function PreparationBuilder() {
     setDirty(!prepGraphSnapshotsEqual(snapshot, savedSnapshotRef.current));
   }, []);
 
-  const resetGraphHistory = useCallback(() => {
-    historyRef.current = createEmptyPrepGraphHistory();
-    dragBaselineRef.current = null;
-    setHistoryVersion((value) => value + 1);
+  const publishHistory = useCallback((next: PrepGraphHistoryState) => {
+    historyRef.current = next;
+    setHistoryFlags({
+      undo: next.past.length > 0,
+      redo: next.future.length > 0,
+    });
   }, []);
+
+  const resetGraphHistory = useCallback(() => {
+    dragBaselineRef.current = null;
+    publishHistory(createEmptyPrepGraphHistory());
+  }, [publishHistory]);
 
   const commitGraphEdit = useCallback(
     (nextNodes: PrepNode[], nextEdges: Edge[], options?: { baseline?: PrepGraphSnapshot | null }) => {
@@ -337,8 +346,7 @@ export default function PreparationBuilder() {
         edgesRef.current = nextEdges;
         return false;
       }
-      historyRef.current = pushPrepGraphHistory(historyRef.current, currentSnapshot);
-      setHistoryVersion((value) => value + 1);
+      publishHistory(pushPrepGraphHistory(historyRef.current, currentSnapshot));
       setNodes(nextNodes);
       setEdges(nextEdges);
       nodesRef.current = nextNodes;
@@ -353,7 +361,7 @@ export default function PreparationBuilder() {
       invalidateGraphDerived();
       return true;
     },
-    [invalidateGraphDerived, syncDirtyFromSnapshot],
+    [invalidateGraphDerived, publishHistory, syncDirtyFromSnapshot],
   );
 
   const applyGraphSnapshot = useCallback(
@@ -384,26 +392,23 @@ export default function PreparationBuilder() {
     const current = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
     const result = undoPrepGraphHistory(historyRef.current, current);
     if (!result) return;
-    historyRef.current = result.history;
     dragBaselineRef.current = null;
-    setHistoryVersion((value) => value + 1);
+    publishHistory(result.history);
     applyGraphSnapshot(result.snapshot, { bumpInspector: true });
-  }, [applyGraphSnapshot, canWrite]);
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
 
   const redoGraphEdit = useCallback(() => {
     if (!canWrite) return;
     const current = capturePrepGraphSnapshot(nodesRef.current, edgesRef.current);
     const result = redoPrepGraphHistory(historyRef.current, current);
     if (!result) return;
-    historyRef.current = result.history;
     dragBaselineRef.current = null;
-    setHistoryVersion((value) => value + 1);
+    publishHistory(result.history);
     applyGraphSnapshot(result.snapshot, { bumpInspector: true });
-  }, [applyGraphSnapshot, canWrite]);
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
 
-  const canUndo = canWrite && historyRef.current.past.length > 0;
-  const canRedo = canWrite && historyRef.current.future.length > 0;
-  void historyVersion;
+  const canUndo = canWrite && historyFlags.undo;
+  const canRedo = canWrite && historyFlags.redo;
 
   const loadRuns = useCallback(async () => {
     if (!projectId || !preparationId) return [];
@@ -444,9 +449,8 @@ export default function PreparationBuilder() {
       setSelectedId("");
       setSelectedEdgeId("");
       savedSnapshotRef.current = baseline;
-      historyRef.current = createEmptyPrepGraphHistory();
       dragBaselineRef.current = null;
-      setHistoryVersion((value) => value + 1);
+      publishHistory(createEmptyPrepGraphHistory());
       setInspectorEpoch((value) => value + 1);
       setDirty(false);
       validateSeqRef.current += 1;
@@ -460,7 +464,7 @@ export default function PreparationBuilder() {
     } finally {
       setLoading(false);
     }
-  }, [preparationId, projectId]);
+  }, [preparationId, projectId, publishHistory]);
 
   useEffect(() => {
     void load();
