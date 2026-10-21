@@ -3299,7 +3299,9 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   line-height: 1.35;
 }
 [data-testid="preparation-lifecycle-handoff"] .preparation-lifecycle-result-actions {
+  /* Override `.activity-list div > div { flex-direction: column }` for badge + actions. */
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
   gap: .4rem;
@@ -3313,6 +3315,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
     align-items: stretch;
   }
   [data-testid="preparation-lifecycle-handoff"] .preparation-lifecycle-result-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
     width: 100%;
   }
   [data-testid="preparation-lifecycle-handoff"] .preparation-lifecycle-result-actions .btn {

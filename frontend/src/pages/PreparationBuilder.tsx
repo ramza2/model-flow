@@ -222,6 +222,7 @@ export default function PreparationBuilder() {
   const [inspectorErrors, setInspectorErrors] = useState<string[]>([]);
   const previewSeqRef = useRef(0);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const validateSeqRef = useRef(0);
   const pendingPreviewScrollRef = useRef(false);
   const previewPanelRef = useRef<HTMLDivElement | null>(null);
   const validationPanelRef = useRef<HTMLDivElement | null>(null);
@@ -245,12 +246,20 @@ export default function PreparationBuilder() {
     setBusy((prev) => (prev === "preview" ? "" : prev));
   }, []);
 
-  const markGraphEdited = useCallback(() => {
-    setDirty(true);
+  const invalidateValidate = useCallback(() => {
+    validateSeqRef.current += 1;
     setValidation(null);
     setValidateRequestFailed(false);
+    // Unlock Validate busy when graph edits supersede an in-flight request;
+    // the stale request's finally must not clear a newer busy state.
+    setBusy((prev) => (prev === "validate" ? "" : prev));
+  }, []);
+
+  const markGraphEdited = useCallback(() => {
+    setDirty(true);
+    invalidateValidate();
     clearPreview();
-  }, [clearPreview]);
+  }, [clearPreview, invalidateValidate]);
 
   const loadRuns = useCallback(async () => {
     if (!projectId || !preparationId) return [];
@@ -284,6 +293,7 @@ export default function PreparationBuilder() {
       setPrepVersions(versionRows);
       setRuns(runRows);
       setDirty(false);
+      validateSeqRef.current += 1;
       setValidation(null);
       setValidateRequestFailed(false);
       pendingPreviewScrollRef.current = false;
@@ -618,6 +628,7 @@ export default function PreparationBuilder() {
 
   async function runValidate() {
     if (!guardInspectorErrors()) return;
+    const seq = ++validateSeqRef.current;
     setBusy("validate");
     setError("");
     // Clear prior outcome so a previous pass is never shown as the new result.
@@ -628,14 +639,19 @@ export default function PreparationBuilder() {
         `/projects/${projectId}/dataset-preparations/${preparationId}/validate`,
         { method: "POST", body: JSON.stringify({ graph: currentGraph() }) },
       );
+      if (seq !== validateSeqRef.current) return;
       setValidateRequestFailed(false);
       setValidation(result);
     } catch (reason) {
+      if (seq !== validateSeqRef.current) return;
       setValidation(null);
       setValidateRequestFailed(true);
       setError(reason instanceof Error ? reason.message : "검증에 실패했습니다.");
     } finally {
-      setBusy("");
+      // Only the active validate request may clear validate busy.
+      if (seq === validateSeqRef.current) {
+        setBusy((prev) => (prev === "validate" ? "" : prev));
+      }
     }
   }
 

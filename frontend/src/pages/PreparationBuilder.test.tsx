@@ -593,6 +593,137 @@ describe("PreparationBuilder", () => {
     resolveValidate({ valid: true, errors: [], warnings: [] });
   });
 
+  it("ignores stale validate success and failure after the graph is edited", async () => {
+    let resolveValidate!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    let rejectValidate!: (reason?: unknown) => void;
+    const validateDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve, reject) => {
+      resolveValidate = resolve;
+      rejectValidate = reject;
+    });
+    stubPreparationApi();
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      const versionMatch = /^\/projects\/7\/datasets\/(\d+)\/versions$/.exec(path);
+      if (versionMatch && method === "GET") {
+        return versionsByDataset[Number(versionMatch[1])] || [];
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await validateDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate")).toBeDisabled();
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-library-source"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate")).not.toBeDisabled();
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+    });
+
+    resolveValidate({ valid: true, errors: [], warnings: [] });
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+      expect(screen.queryByText("검증 통과")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-validation")).not.toBeInTheDocument();
+    });
+
+    let resolveSecond!: (value: {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }) => void;
+    let rejectSecond!: (reason?: unknown) => void;
+    const secondDeferred = new Promise<{
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+    }>((resolve, reject) => {
+      resolveSecond = resolve;
+      rejectSecond = reject;
+    });
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = init?.method || "GET";
+      if (path === "/projects/7/dataset-preparations/9" && method === "GET") {
+        return preparationState;
+      }
+      if (path === "/projects/7/datasets" && method === "GET") return datasetsState;
+      if (path === "/projects/7/dataset-preparations/9/versions" && method === "GET") {
+        return [preparationState.version];
+      }
+      if (path === "/projects/7/dataset-preparations/9/runs" && method === "GET") return runsState;
+      const versionMatch = /^\/projects\/7\/datasets\/(\d+)\/versions$/.exec(path);
+      if (versionMatch && method === "GET") {
+        return versionsByDataset[Number(versionMatch[1])] || [];
+      }
+      if (path === "/projects/7/dataset-preparations/9/validate" && method === "POST") {
+        return await secondDeferred;
+      }
+      throw new Error(`Unhandled ${method} ${path}`);
+    });
+
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    await waitFor(() => {
+      expect(screen.getByTestId("preparation-validate-status")).toHaveTextContent("검증 중…");
+    });
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+    });
+    rejectSecond(new Error("stale validate boom"));
+    await waitFor(() => {
+      expect(screen.queryByText("stale validate boom")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("preparation-validate-status")).not.toBeInTheDocument();
+      expect(screen.getByTestId("preparation-validate")).not.toBeDisabled();
+    });
+    rejectValidate(new Error("first stale boom"));
+
+    stubPreparationApi({ validate: { valid: true, errors: [], warnings: ["fresh note"] } });
+    fireEvent.click(screen.getByTestId("preparation-validate"));
+    expect(await screen.findByTestId("preparation-validate-status")).toHaveTextContent(
+      "검증 통과 · 경고 1건",
+    );
+    expect(screen.getByText("fresh note")).toBeInTheDocument();
+    resolveSecond({ valid: false, errors: ["ignored"], warnings: [] });
+  });
+
+  it("keeps lifecycle handoff actions in a horizontal row via scoped CSS", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const css = readFileSync(resolve(__dirname, "../styles.css"), "utf8");
+    const scoped =
+      /\[data-testid="preparation-lifecycle-handoff"\] \.preparation-lifecycle-result-actions\s*\{[^}]*flex-direction:\s*row/s;
+    expect(css).toMatch(scoped);
+    expect(css).toMatch(
+      /\.activity-list div > div,\s*\.activity-button > div \{\s*display: flex;\s*flex-direction: column;/,
+    );
+    // Global activity-list stacking rule must remain unchanged.
+    expect(css).not.toMatch(
+      /\.activity-list div > div,\s*\.activity-button > div \{[^}]*flex-direction:\s*row/s,
+    );
+  });
+
   it("shows preview table and sampled warning, then clears preview on graph edit", async () => {
     renderBuilder();
     fireEvent.click(await screen.findByTestId("preparation-preview"));
