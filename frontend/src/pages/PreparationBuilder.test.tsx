@@ -697,6 +697,30 @@ describe("PreparationBuilder", () => {
     );
   });
 
+  it("exposes accurate Join HelpTip copy about possible row expansion", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    fireEvent.click(screen.getByTestId("preparation-library-join"));
+    fireEvent.click(await screen.findByTestId("canvas-node-join-1"));
+
+    const joinInspector = screen.getByTestId("preparation-join-inspector");
+    const joinHelps = within(joinInspector).getAllByLabelText(/도움말:/);
+    expect(joinHelps.length).toBeGreaterThanOrEqual(1);
+    for (const tip of joinHelps) {
+      expect(tip.getAttribute("aria-label")).toMatch(
+        /연결 키 값이 일치하는 행을 찾아 컬럼을 나란히 붙입니다/,
+      );
+      expect(tip.getAttribute("aria-label")).toMatch(
+        /연결 키에 중복값이 있으면 결과 행 수가 늘어날 수 있습니다/,
+      );
+      expect(tip.getAttribute("aria-label")).not.toMatch(/행은 늘리지 않고/);
+    }
+    const hintHelp = within(screen.getByTestId("preparation-join-hint")).getByLabelText(/도움말:/);
+    expect(hintHelp.getAttribute("aria-label")).toMatch(
+      /왼쪽\(LEFT\)·오른쪽\(RIGHT\) 연결 지점에 각각 한 개의 입력을 연결하세요/,
+    );
+  });
+
   it("Koreanizes join/union options and preserves raw config values on save", async () => {
     let saved: { graph?: { nodes?: Array<{ id: string; config?: Record<string, unknown> }> } } | null =
       null;
