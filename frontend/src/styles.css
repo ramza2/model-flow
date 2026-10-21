@@ -2302,6 +2302,18 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   border-radius: 6px;
   background: var(--bg);
 }
+.preparation-filter-operator-field,
+.preparation-cast-dtype-field {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  min-width: 0;
+}
+.preparation-filter-operator-field > select,
+.preparation-cast-dtype-field > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .preparation-operand-fields {
   margin: 0;
   padding: .55rem .65rem;

@@ -1480,6 +1480,176 @@ describe("PreparationBuilder", () => {
     });
   });
 
+  it("Koreanizes filter/cast options and preserves raw config values on save", async () => {
+    let saved: {
+      graph?: { nodes?: Array<{ id: string; type?: string; config?: Record<string, unknown> }> };
+    } | null = null;
+    stubPreparationApi({
+      onSave: (body) => {
+        saved = body as typeof saved;
+      },
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-source-1");
+
+    fireEvent.click(screen.getByTestId("preparation-library-filter"));
+    fireEvent.click(await screen.findByTestId("canvas-node-filter-1"));
+    expect(screen.getByTestId("preparation-filter-hint")).toHaveTextContent(
+      "조건에 맞는 행만 남깁니다",
+    );
+
+    const combineSelect = screen.getByTestId("preparation-filter-combine") as HTMLSelectElement;
+    expect(
+      within(combineSelect).getByRole("option", { name: "모든 조건 만족 (AND)" }),
+    ).toHaveValue("and");
+    expect(
+      within(combineSelect).getByRole("option", { name: "하나 이상 만족 (OR)" }),
+    ).toHaveValue("or");
+    expect(combineSelect).toHaveValue("and");
+    expect(screen.getByTestId("preparation-filter-combine-hint")).toHaveTextContent(
+      "설정한 조건을 모두 만족하는 행만 남깁니다.",
+    );
+    fireEvent.change(combineSelect, { target: { value: "or" } });
+    expect(screen.getByTestId("preparation-filter-combine-hint")).toHaveTextContent(
+      "설정한 조건 중 하나라도 만족하는 행을 남깁니다.",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    const operatorSelect = screen.getByTestId("preparation-filter-operator-0") as HTMLSelectElement;
+    const expectedOperators: Array<[string, string]> = [
+      ["eq", "같음 (=)"],
+      ["neq", "같지 않음 (≠)"],
+      ["gt", "초과 (>)"],
+      ["gte", "이상 (>=)"],
+      ["lt", "미만 (<)"],
+      ["lte", "이하 (<=)"],
+      ["contains", "문자열 포함"],
+      ["starts_with", "지정한 문자열로 시작"],
+      ["ends_with", "지정한 문자열로 끝남"],
+      ["is_null", "값이 없는 행 (IS NULL)"],
+      ["not_null", "값이 있는 행 (NOT NULL)"],
+      ["in", "지정한 목록에 포함 (IN)"],
+    ];
+    expect(within(operatorSelect).getAllByRole("option")).toHaveLength(expectedOperators.length);
+    for (const [value, label] of expectedOperators) {
+      expect(within(operatorSelect).getByRole("option", { name: label })).toHaveValue(value);
+    }
+
+    fireEvent.change(screen.getByTestId("preparation-filter-column-0"), {
+      target: { value: "note" },
+    });
+    fireEvent.change(operatorSelect, { target: { value: "not_null" } });
+    expect(screen.queryByTestId("preparation-filter-value-0")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("preparation-filter-value-type-0")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("preparation-filter-operator-help-0"))
+        .getByLabelText(/도움말:/)
+        .getAttribute("aria-label"),
+    ).toMatch(/결측값이 아닌 행만 남깁니다.*숫자 0이나 빈 문자열/);
+
+    fireEvent.change(operatorSelect, { target: { value: "is_null" } });
+    expect(screen.queryByTestId("preparation-filter-value-0")).not.toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("preparation-filter-operator-help-0"))
+        .getByLabelText(/도움말:/)
+        .getAttribute("aria-label"),
+    ).toContain("결측값인 행만 남깁니다. 비교값 입력은 필요하지 않습니다.");
+
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-1"), {
+      target: { value: "code" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-operator-1"), {
+      target: { value: "in" },
+    });
+    const valueTypeSelect = screen.getByTestId(
+      "preparation-filter-value-type-1",
+    ) as HTMLSelectElement;
+    expect(
+      within(valueTypeSelect).getByRole("option", { name: "문자열 (String)" }),
+    ).toHaveValue("string");
+    expect(
+      within(valueTypeSelect).getByRole("option", { name: "숫자 (Number)" }),
+    ).toHaveValue("number");
+    expect(
+      within(valueTypeSelect).getByRole("option", { name: "참·거짓 (Boolean)" }),
+    ).toHaveValue("boolean");
+    fireEvent.change(valueTypeSelect, { target: { value: "string" } });
+    expect(screen.getByTestId("preparation-filter-value-1")).toHaveAttribute(
+      "placeholder",
+      "예: a, b, c",
+    );
+    fireEvent.change(screen.getByTestId("preparation-filter-value-1"), {
+      target: { value: "a, b" },
+    });
+    expect(
+      within(screen.getByTestId("preparation-filter-operator-help-1"))
+        .getByLabelText(/도움말:/)
+        .getAttribute("aria-label"),
+    ).toContain("쉼표로 구분한 목록");
+
+    fireEvent.click(screen.getByTestId("preparation-filter-add"));
+    fireEvent.change(screen.getByTestId("preparation-filter-column-2"), {
+      target: { value: "active" },
+    });
+    fireEvent.change(screen.getByTestId("preparation-filter-value-type-2"), {
+      target: { value: "boolean" },
+    });
+    const boolSelect = screen.getByTestId("preparation-filter-value-2") as HTMLSelectElement;
+    expect(within(boolSelect).getByRole("option", { name: "참 (True)" })).toHaveValue("true");
+    expect(within(boolSelect).getByRole("option", { name: "거짓 (False)" })).toHaveValue("false");
+    fireEvent.change(boolSelect, { target: { value: "true" } });
+
+    fireEvent.click(screen.getByTestId("preparation-library-cast"));
+    fireEvent.click(await screen.findByTestId("canvas-node-cast-1"));
+    expect(screen.getByTestId("preparation-cast-help")).toHaveTextContent("자료형 변환");
+    const castHelp = within(screen.getByTestId("preparation-cast-help")).getByLabelText(/도움말:/);
+    expect(castHelp.getAttribute("aria-label")).toMatch(/true\/false, 1\/0, yes\/no/);
+    expect(castHelp.getAttribute("aria-label")).toMatch(/오류가 날 수 있습니다/);
+
+    fireEvent.click(screen.getByTestId("preparation-cast-add"));
+    const dtypeSelect = screen.getByTestId("preparation-cast-dtype-0") as HTMLSelectElement;
+    const expectedDtypes: Array<[string, string]> = [
+      ["integer", "정수 (Integer)"],
+      ["float", "실수 (Float)"],
+      ["string", "문자열 (String)"],
+      ["boolean", "참·거짓 (Boolean)"],
+      ["datetime", "날짜·시간 (Datetime)"],
+    ];
+    expect(within(dtypeSelect).getAllByRole("option")).toHaveLength(expectedDtypes.length);
+    for (const [value, label] of expectedDtypes) {
+      expect(within(dtypeSelect).getByRole("option", { name: label })).toHaveValue(value);
+    }
+    fireEvent.change(screen.getByTestId("preparation-cast-column-0"), {
+      target: { value: "flag" },
+    });
+    fireEvent.change(dtypeSelect, { target: { value: "boolean" } });
+    expect(
+      within(screen.getByTestId("preparation-cast-dtype-help-0"))
+        .getByLabelText(/도움말:/)
+        .getAttribute("aria-label"),
+    ).toMatch(/true\/false, 1\/0, yes\/no/);
+    expect(screen.getByTestId("preparation-cast-column-0")).toHaveAttribute(
+      "placeholder",
+      "컬럼명 (예: amount)",
+    );
+
+    fireEvent.click(screen.getByTestId("preparation-save-version"));
+    await waitFor(() => expect(saved).not.toBeNull());
+    const filterNode = saved!.graph!.nodes!.find((node) => node.id === "filter-1");
+    expect(filterNode?.config).toMatchObject({
+      combine: "or",
+      conditions: [
+        { column: "note", operator: "is_null" },
+        { column: "code", operator: "in", value_type: "string", value: ["a", "b"] },
+        { column: "active", operator: "eq", value_type: "boolean", value: true },
+      ],
+    });
+    expect(saved!.graph!.nodes!.find((node) => node.id === "cast-1")?.config).toEqual({
+      casts: { flag: "boolean" },
+    });
+  });
+
   it("blocks save when filter number input is invalid", async () => {
     let saved: unknown = null;
     stubPreparationApi({

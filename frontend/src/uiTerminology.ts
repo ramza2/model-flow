@@ -25,8 +25,10 @@ export const UI_HELP = {
     "두 데이터에서 연결 키 값이 일치하는 행을 찾아 컬럼을 나란히 붙입니다. 연결 키에 중복값이 있으면 결과 행 수가 늘어날 수 있습니다. 왼쪽(LEFT)·오른쪽(RIGHT) 연결 지점에 각각 한 개의 입력을 연결하세요.",
   preparationUnion:
     "여러 데이터의 행을 세로로 이어 붙입니다(컬럼을 맞춘 뒤 아래로 합칩니다). strict는 컬럼 이름·순서가 같아야 하고, align_by_name은 이름 기준으로 맞춥니다.",
+  preparationFilter:
+    "조건에 맞는 행만 남깁니다. 컬럼명은 데이터에 있는 이름을 그대로 입력하세요. 결측값(IS NULL/NOT NULL) 조건은 비교값이 필요 없습니다.",
   preparationCast:
-    "선택한 컬럼의 자료형(정수·실수·문자열·불리언·날짜시간)을 변환합니다. 변환할 수 없는 값은 Preview/Run에서 실패할 수 있습니다.",
+    "선택한 컬럼의 자료형을 변환합니다. 정수·실수·문자열·참·거짓·날짜·시간을 지원합니다. 참·거짓(Boolean)은 true/false, 1/0, yes/no 값을 인식합니다. 변환할 수 없는 값은 Preview/Run에서 오류가 날 수 있습니다.",
   preparationDerived:
     "새 컬럼을 만들어 결과에 추가합니다. ‘새 컬럼 이름’은 결과로 붙일 이름이고, operand의 Column은 기존 입력 데이터에 있는 컬럼명을 정확히 적어야 합니다. 없거나 오타인 컬럼명은 Preview/Run 실패 원인이 됩니다. Literal은 컬럼이 아니라 직접 지정한 고정값입니다.",
   preparationGroupBy:
@@ -138,5 +140,128 @@ export function derivedOperationLabel(value?: string | null): string {
       return "날짜시간 포맷 (datetime_format)";
     default:
       return value || "—";
+  }
+}
+
+/** Display-only Filter combine labels. Persisted values stay `and` / `or`. */
+export function filterCombineLabel(value?: string | null): string {
+  return String(value || "").toLowerCase() === "or"
+    ? "하나 이상 만족 (OR)"
+    : "모든 조건 만족 (AND)";
+}
+
+export function filterCombineHint(value?: string | null): string {
+  return String(value || "").toLowerCase() === "or"
+    ? "설정한 조건 중 하나라도 만족하는 행을 남깁니다."
+    : "설정한 조건을 모두 만족하는 행만 남깁니다.";
+}
+
+/** Display-only Filter operator labels. Persisted operator values stay English. */
+export function filterOperatorLabel(value?: string | null): string {
+  switch (String(value || "")) {
+    case "eq":
+      return "같음 (=)";
+    case "neq":
+      return "같지 않음 (≠)";
+    case "gt":
+      return "초과 (>)";
+    case "gte":
+      return "이상 (>=)";
+    case "lt":
+      return "미만 (<)";
+    case "lte":
+      return "이하 (<=)";
+    case "contains":
+      return "문자열 포함";
+    case "starts_with":
+      return "지정한 문자열로 시작";
+    case "ends_with":
+      return "지정한 문자열로 끝남";
+    case "is_null":
+      return "값이 없는 행 (IS NULL)";
+    case "not_null":
+      return "값이 있는 행 (NOT NULL)";
+    case "in":
+      return "지정한 목록에 포함 (IN)";
+    default:
+      return value || "—";
+  }
+}
+
+export function filterOperatorHelp(value?: string | null): string {
+  switch (String(value || "")) {
+    case "eq":
+      return "컬럼 값이 비교값과 같은 행만 남깁니다.";
+    case "neq":
+      return "컬럼 값이 비교값과 다른 행만 남깁니다.";
+    case "gt":
+      return "컬럼 값이 비교값보다 큰 행만 남깁니다.";
+    case "gte":
+      return "컬럼 값이 비교값보다 크거나 같은 행만 남깁니다.";
+    case "lt":
+      return "컬럼 값이 비교값보다 작은 행만 남깁니다.";
+    case "lte":
+      return "컬럼 값이 비교값보다 작거나 같은 행만 남깁니다.";
+    case "contains":
+      return "컬럼 문자열에 비교값이 포함된 행만 남깁니다.";
+    case "starts_with":
+      return "컬럼 문자열이 비교값으로 시작하는 행만 남깁니다.";
+    case "ends_with":
+      return "컬럼 문자열이 비교값으로 끝나는 행만 남깁니다.";
+    case "is_null":
+      return "결측값인 행만 남깁니다. 비교값 입력은 필요하지 않습니다.";
+    case "not_null":
+      return "결측값이 아닌 행만 남깁니다. 숫자 0이나 빈 문자열은 일반적으로 결측값이 아닙니다.";
+    case "in":
+      return "쉼표로 구분한 목록에 포함되는 값의 행만 남깁니다.";
+    default:
+      return "선택한 연산자로 행을 걸러냅니다.";
+  }
+}
+
+/** Display-only Filter value_type labels. Persisted types stay English. */
+export function filterValueTypeLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "number":
+      return "숫자 (Number)";
+    case "boolean":
+      return "참·거짓 (Boolean)";
+    case "string":
+    default:
+      return "문자열 (String)";
+  }
+}
+
+/** Display-only Cast dtype labels. Persisted dtype values stay English. */
+export function castDtypeLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "integer":
+      return "정수 (Integer)";
+    case "float":
+      return "실수 (Float)";
+    case "boolean":
+      return "참·거짓 (Boolean)";
+    case "datetime":
+      return "날짜·시간 (Datetime)";
+    case "string":
+      return "문자열 (String)";
+    default:
+      return value || "—";
+  }
+}
+
+export function castDtypeHelp(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "integer":
+      return "소수점 없는 숫자로 변환합니다. 변환할 수 없는 값은 Preview/Run에서 오류가 날 수 있습니다.";
+    case "float":
+      return "소수점을 포함할 수 있는 숫자로 변환합니다. 변환할 수 없는 값은 Preview/Run에서 오류가 날 수 있습니다.";
+    case "boolean":
+      return "참·거짓 유형으로 변환합니다. true/false, 1/0, yes/no 값을 인식합니다. 그 외 값은 Preview/Run에서 오류가 날 수 있습니다.";
+    case "datetime":
+      return "날짜·시간 데이터로 변환합니다. 변환할 수 없는 값은 Preview/Run에서 오류가 날 수 있습니다.";
+    case "string":
+    default:
+      return "문자나 코드 형태의 문자열로 변환합니다.";
   }
 }

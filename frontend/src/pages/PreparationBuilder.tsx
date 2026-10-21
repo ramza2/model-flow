@@ -49,7 +49,17 @@ import {
   TermLabel,
   formatDate,
 } from "../components";
-import { UI_HELP, derivedOperationLabel } from "../uiTerminology";
+import {
+  UI_HELP,
+  castDtypeHelp,
+  castDtypeLabel,
+  derivedOperationLabel,
+  filterCombineHint,
+  filterCombineLabel,
+  filterOperatorHelp,
+  filterOperatorLabel,
+  filterValueTypeLabel,
+} from "../uiTerminology";
 import {
   CAST_TYPES,
   DERIVED_OPERATIONS,
@@ -2159,8 +2169,12 @@ function FilterInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-filter-inspector">
+      <p className="muted preparation-inspector-hint" data-testid="preparation-filter-hint">
+        조건에 맞는 행만 남깁니다. 컬럼명은 데이터에 있는 이름을 그대로 입력하세요.
+        <HelpTip text={UI_HELP.preparationFilter} />
+      </p>
       <label>
-        <TermLabel ko="조건 결합" en="Combine" />
+        <TermLabel ko="조건 결합" en="Combine" help={UI_HELP.preparationFilter} />
         <select
           data-testid="preparation-filter-combine"
           disabled={!canWrite}
@@ -2169,15 +2183,19 @@ function FilterInspector({
             publish(drafts, event.target.value === "or" ? "or" : "and")
           }
         >
-          <option value="and">and</option>
-          <option value="or">or</option>
+          <option value="and">{filterCombineLabel("and")}</option>
+          <option value="or">{filterCombineLabel("or")}</option>
         </select>
       </label>
+      <p className="form-hint" data-testid="preparation-filter-combine-hint">
+        {filterCombineHint(combine)}
+      </p>
       <div className="preparation-filter-rows">
         {drafts.map((condition, index) => {
           const nullary = FILTER_NULLARY_OPS.has(condition.operator);
           const valueType: FilterValueType =
             condition.value_type ?? inferFilterValueType(condition.value);
+          const operatorHelp = filterOperatorHelp(condition.operator);
           return (
             <div
               key={index}
@@ -2187,7 +2205,7 @@ function FilterInspector({
               <input
                 data-testid={`preparation-filter-column-${index}`}
                 disabled={!canWrite}
-                placeholder="column"
+                placeholder="컬럼명 (예: age)"
                 value={condition.column}
                 onChange={(event) => {
                   const next = [...drafts];
@@ -2195,30 +2213,35 @@ function FilterInspector({
                   publish(next);
                 }}
               />
-              <select
-                data-testid={`preparation-filter-operator-${index}`}
-                disabled={!canWrite}
-                value={condition.operator}
-                onChange={(event) => {
-                  const operator = event.target.value;
-                  const next = [...drafts];
-                  next[index] = FILTER_NULLARY_OPS.has(operator)
-                    ? { column: condition.column, operator }
-                    : {
-                        column: condition.column,
-                        operator,
-                        value_type: condition.value_type ?? "string",
-                        value: formatFilterValueInput(condition),
-                      };
-                  publish(next);
-                }}
-              >
-                {FILTER_OPERATORS.map((operator) => (
-                  <option key={operator} value={operator}>
-                    {operator}
-                  </option>
-                ))}
-              </select>
+              <div className="preparation-filter-operator-field">
+                <select
+                  data-testid={`preparation-filter-operator-${index}`}
+                  disabled={!canWrite}
+                  value={condition.operator}
+                  onChange={(event) => {
+                    const operator = event.target.value;
+                    const next = [...drafts];
+                    next[index] = FILTER_NULLARY_OPS.has(operator)
+                      ? { column: condition.column, operator }
+                      : {
+                          column: condition.column,
+                          operator,
+                          value_type: condition.value_type ?? "string",
+                          value: formatFilterValueInput(condition),
+                        };
+                    publish(next);
+                  }}
+                >
+                  {FILTER_OPERATORS.map((operator) => (
+                    <option key={operator} value={operator}>
+                      {filterOperatorLabel(operator)}
+                    </option>
+                  ))}
+                </select>
+                <span data-testid={`preparation-filter-operator-help-${index}`}>
+                  <HelpTip text={operatorHelp} />
+                </span>
+              </div>
               {!nullary && (
                 <>
                   <select
@@ -2239,9 +2262,9 @@ function FilterInspector({
                       publish(next);
                     }}
                   >
-                    <option value="string">string</option>
-                    <option value="number">number</option>
-                    <option value="boolean">boolean</option>
+                    <option value="string">{filterValueTypeLabel("string")}</option>
+                    <option value="number">{filterValueTypeLabel("number")}</option>
+                    <option value="boolean">{filterValueTypeLabel("boolean")}</option>
                   </select>
                   {valueType === "boolean" && condition.operator !== "in" ? (
                     <select
@@ -2262,8 +2285,8 @@ function FilterInspector({
                         publish(next);
                       }}
                     >
-                      <option value="true">true</option>
-                      <option value="false">false</option>
+                      <option value="true">참 (True)</option>
+                      <option value="false">거짓 (False)</option>
                     </select>
                   ) : (
                     <input
@@ -2273,9 +2296,9 @@ function FilterInspector({
                       placeholder={
                         condition.operator === "in"
                           ? valueType === "number"
-                            ? "1, 2, 3"
-                            : "a, b, c"
-                          : "value"
+                            ? "예: 1, 2, 3"
+                            : "예: a, b, c"
+                          : "비교값"
                       }
                       value={formatFilterValueInput(condition)}
                       onChange={(event) => {
@@ -2352,8 +2375,10 @@ function CastInspector({
 
   return (
     <div className="preparation-inspector-form" data-testid="preparation-cast-inspector">
-      <p className="form-hint" data-testid="preparation-cast-help">
+      <p className="muted preparation-inspector-hint" data-testid="preparation-cast-help">
         <TermLabel ko="자료형 변환" en="Cast" help={UI_HELP.preparationCast} />
+        {" "}
+        컬럼명은 데이터에 있는 이름을 그대로 입력하세요.
       </p>
       <div className="preparation-cast-rows">
         {rows.map((row, index) => (
@@ -2365,7 +2390,7 @@ function CastInspector({
             <input
               data-testid={`preparation-cast-column-${index}`}
               disabled={!canWrite}
-              placeholder="column"
+              placeholder="컬럼명 (예: amount)"
               value={row.column}
               onChange={(event) => {
                 const next = [...rows];
@@ -2373,22 +2398,27 @@ function CastInspector({
                 commit(next);
               }}
             />
-            <select
-              data-testid={`preparation-cast-dtype-${index}`}
-              disabled={!canWrite}
-              value={row.dtype}
-              onChange={(event) => {
-                const next = [...rows];
-                next[index] = { ...row, dtype: event.target.value };
-                commit(next);
-              }}
-            >
-              {CAST_TYPES.map((dtype) => (
-                <option key={dtype} value={dtype}>
-                  {dtype}
-                </option>
-              ))}
-            </select>
+            <div className="preparation-cast-dtype-field">
+              <select
+                data-testid={`preparation-cast-dtype-${index}`}
+                disabled={!canWrite}
+                value={row.dtype}
+                onChange={(event) => {
+                  const next = [...rows];
+                  next[index] = { ...row, dtype: event.target.value };
+                  commit(next);
+                }}
+              >
+                {CAST_TYPES.map((dtype) => (
+                  <option key={dtype} value={dtype}>
+                    {castDtypeLabel(dtype)}
+                  </option>
+                ))}
+              </select>
+              <span data-testid={`preparation-cast-dtype-help-${index}`}>
+                <HelpTip text={castDtypeHelp(row.dtype)} />
+              </span>
+            </div>
             {canWrite && (
               <button
                 type="button"
