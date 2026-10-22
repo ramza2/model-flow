@@ -51,11 +51,12 @@ test("pipeline builder undo/redo and MiniMap pannable navigation affordances", a
   await expect(page.getByTestId("pipeline-dirty-badge")).toBeVisible();
   await expect(page.getByTestId("pipeline-undo")).toBeEnabled();
 
-  const minimap = page.locator(".react-flow__minimap");
+  const minimap = page.getByTestId("rf__minimap");
   await expect(minimap).toBeVisible();
-  await expect(minimap).toHaveAttribute("aria-label", /미니맵/);
+  // React Flow places the accessible name on the MiniMap SVG/img, not the panel wrapper.
+  await expect(page.getByRole("img", { name: /미니맵/ })).toBeVisible();
 
-  // Click a point inside the MiniMap SVG; viewport should move without dirty/history churn.
+  // Click a point inside the MiniMap; viewport should move without dirty/history churn.
   const box = await minimap.boundingBox();
   expect(box).toBeTruthy();
   if (box) {
