@@ -167,6 +167,92 @@ export function labelForType(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+/** Display-only Korean node type label. Does not change saved data.label defaults. */
+export function pipelineNodeTypeLabel(value: string): string {
+  switch (value) {
+    case "dataset_load":
+      return "데이터셋 불러오기 (Dataset Load)";
+    case "preprocessing":
+      return "데이터 전처리 (Preprocessing)";
+    case "split":
+      return "데이터 분할 (Split)";
+    case "quality_check":
+      return "품질 검사 (Quality Check)";
+    case "training":
+      return "모델 학습 (Training)";
+    case "evaluation":
+      return "모델 평가 (Evaluation)";
+    case "condition":
+      return "조건 분기 (Condition)";
+    case "model_registration":
+      return "모델 등록 (Model Registration)";
+    case "approval_request":
+      return "승인 요청 (Approval Request)";
+    case "endpoint_deployment":
+      return "엔드포인트 배포 (Endpoint Deployment)";
+    case "batch_prediction":
+      return "일괄 예측 (Batch Prediction)";
+    case "notification":
+      return "알림 (Notification)";
+    default:
+      return labelForType(value);
+  }
+}
+
+/** Display-only Korean library category. Raw PIPELINE_NODE_LIBRARY.category stays English. */
+export function pipelineNodeLibraryCategoryLabel(category: string): string {
+  switch (category) {
+    case "1. Source & Transform":
+      return "1. 데이터 입력·변환";
+    case "2. Quality":
+      return "2. 데이터 품질";
+    case "3. Train":
+      return "3. 모델 학습·평가";
+    case "4. Registry & Governance":
+      return "4. 모델 등록·승인";
+    case "5. Deploy":
+      return "5. 모델 배포";
+    case "6. Predict":
+      return "6. 예측 실행";
+    case "7. Monitor":
+      return "7. 모니터링";
+    default:
+      return category;
+  }
+}
+
+/** Display-only Korean node description for library tooltips. */
+export function pipelineNodeTypeDescription(value: string): string {
+  switch (value) {
+    case "dataset_load":
+      return "정확한 데이터 버전(DatasetVersion)을 불러옵니다. 데이터 가공 결과 버전도 선택할 수 있습니다.";
+    case "preprocessing":
+      return "학습 전에 데이터를 변환하거나 전처리합니다.";
+    case "split":
+      return "학습·검증·테스트 데이터 비율을 정해 분할합니다.";
+    case "quality_check":
+      return "데이터셋 품질 규칙을 실행해 문제를 확인합니다.";
+    case "training":
+      return "선택한 알고리즘으로 모델을 학습합니다.";
+    case "evaluation":
+      return "학습 결과 지표를 확인하고 통과 기준과 비교합니다.";
+    case "condition":
+      return "TRUE / FALSE / ALWAYS 조건에 따라 다음 단계를 분기합니다.";
+    case "model_registration":
+      return "학습된 모델을 레지스트리에 등록합니다.";
+    case "approval_request":
+      return "등록된 모델에 대한 승인을 요청합니다.";
+    case "endpoint_deployment":
+      return "승인된 모델을 온라인 엔드포인트로 배포합니다.";
+    case "batch_prediction":
+      return "모델과 데이터 버전으로 일괄 예측을 실행합니다.";
+    case "notification":
+      return "파이프라인 결과나 운영 상태를 알림으로 남깁니다.";
+    default:
+      return "";
+  }
+}
+
 /** Allocate a readable node id that never collides with existing graph ids (reload-safe). */
 export function nextPipelineNodeId(nodeType: string, existingIds: Iterable<string>): string {
   const used = new Set(existingIds);
@@ -202,9 +288,12 @@ export function filterNodeLibrary(
       items: group.items.filter((item) => {
         const haystack = [
           group.category,
+          pipelineNodeLibraryCategoryLabel(group.category),
           item.type,
           item.description,
+          pipelineNodeTypeDescription(item.type),
           labelForType(item.type),
+          pipelineNodeTypeLabel(item.type),
         ]
           .join(" ")
           .toLowerCase();

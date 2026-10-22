@@ -560,9 +560,12 @@ describe("NodeConfigForm", () => {
     expect(screen.getByTestId("node-config-split-strategy")).toBeDisabled();
     expect(screen.getByTestId("node-config-forecast-horizons")).toBeInTheDocument();
     expect(screen.getByTestId("node-config-forecast-horizons-help")).toHaveTextContent(
-      /observation steps/i,
+      /관측값/,
     );
-    expect(screen.getByTestId("node-config-forecast-help")).toHaveTextContent(/Lag \/ Rolling/i);
+    expect(screen.getByTestId("node-config-forecast-horizons-help")).toHaveTextContent(
+      /시간 단위가 아닙니다/,
+    );
+    expect(screen.getByTestId("node-config-forecast-help")).toHaveTextContent(/Lag|이전값|Rolling|이동창/);
 
     await waitFor(() => {
       const algorithm = screen.getByTestId("node-config-algorithm") as HTMLSelectElement;
@@ -637,15 +640,70 @@ describe("NodeConfigForm", () => {
     });
     expect(screen.getByTestId("split-config")).toHaveTextContent('"split_strategy":"time"');
     expect(screen.getByTestId("node-config-time-column")).toBeInTheDocument();
-    expect(screen.getByTestId("node-config-split-time-help")).toHaveTextContent(/chronologically/i);
+    expect(screen.getByTestId("node-config-split-time-help")).toHaveTextContent(
+      /시간 컬럼 기준으로 정렬/,
+    );
     expect(screen.getByTestId("node-config-split-seed-hint")).toHaveTextContent(
-      /does not shuffle/i,
+      /데이터를 섞지 않습니다/,
     );
     fireEvent.change(screen.getByTestId("node-config-time-column"), {
       target: { value: "event_time" },
     });
     expect(screen.getByTestId("split-config")).toHaveTextContent('"time_column":"event_time"');
     expect(screen.getByTestId("node-config-seed")).toBeInTheDocument();
+    expect(screen.getByTestId("node-config-split-hint")).toHaveTextContent("0.7");
+    expect(screen.getByTestId("node-config-split-strategy")).toHaveTextContent(
+      "시간 순서 (Time ordered)",
+    );
+    fireEvent.change(screen.getByTestId("node-config-train-ratio"), {
+      target: { value: "0.7" },
+    });
+    fireEvent.change(screen.getByTestId("node-config-val-ratio"), {
+      target: { value: "0.15" },
+    });
+    fireEvent.change(screen.getByTestId("node-config-test-ratio"), {
+      target: { value: "0.15" },
+    });
+    expect(screen.getByTestId("split-config")).toHaveTextContent('"train_ratio":0.7');
+    expect(screen.getByTestId("split-config")).toHaveTextContent('"val_ratio":0.15');
+    expect(screen.getByTestId("split-config")).toHaveTextContent('"test_ratio":0.15');
+  });
+
+  it("keeps Evaluation metric/minimum/fail_on_gate values while showing Korean gate guidance", () => {
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        metric: "accuracy",
+        minimum: 0.8,
+        fail_on_gate: true,
+      });
+      return (
+        <div>
+          <pre data-testid="evaluation-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="evaluation"
+            config={config}
+            onChange={setConfig}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByTestId("node-config-evaluation-hint")).toHaveTextContent(">=");
+    expect(screen.getByTestId("node-config-evaluation-rmse-hint")).toHaveTextContent(/RMSE|MAE/);
+    expect(screen.getByTestId("node-config-metric")).toHaveValue("accuracy");
+    expect(screen.getByTestId("node-config-minimum")).toHaveValue(0.8);
+    expect(screen.getByTestId("node-config-fail-on-gate")).toBeChecked();
+    fireEvent.change(screen.getByTestId("node-config-metric"), {
+      target: { value: "f1" },
+    });
+    fireEvent.change(screen.getByTestId("node-config-minimum"), {
+      target: { value: "0.55" },
+    });
+    fireEvent.click(screen.getByTestId("node-config-fail-on-gate"));
+    expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"metric":"f1"');
+    expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"minimum":0.55');
+    expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"fail_on_gate":false');
   });
 });
 
@@ -666,7 +724,10 @@ describe("PipelineBuilder", () => {
     fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
     expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
     expect(await screen.findByTestId("pipeline-step-name")).toBeInTheDocument();
-    expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(/Dataset Load/i);
+    expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(
+      "데이터셋 불러오기 (Dataset Load)",
+    );
+    expect(screen.getByTestId("pipeline-step-name")).toHaveValue("Dataset Load");
   });
 
   it("shows Korean-first builder actions, dirty guidance, and beginner usage order", async () => {
@@ -872,7 +933,17 @@ describe("PipelineBuilder", () => {
     fireEvent.change(screen.getByTestId("pipeline-library-search"), {
       target: { value: "zzzz-missing" },
     });
-    expect(screen.getByTestId("pipeline-library-empty")).toHaveTextContent(/No matching nodes/i);
+    expect(screen.getByTestId("pipeline-library-empty")).toHaveTextContent(
+      "일치하는 노드가 없습니다",
+    );
+    fireEvent.change(screen.getByTestId("pipeline-library-search"), {
+      target: { value: "분할" },
+    });
+    expect(screen.getByTestId("pipeline-library-split")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-library-split")).toHaveTextContent(
+      "데이터 분할 (Split)",
+    );
+    expect(screen.queryByTestId("pipeline-library-notification")).not.toBeInTheDocument();
   });
 
   it("blocks graph mutation for read-only users", async () => {

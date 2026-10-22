@@ -250,8 +250,13 @@ function SplitForm({
 
   return (
     <div className="node-config-form" data-testid="node-config-split">
+      <p className="form-hint" data-testid="node-config-split-hint">
+        학습 0.7 / 검증 0.15 / 테스트 0.15처럼 합계가 1.0이 되도록 입력하세요. 0.7은 전체 데이터의
+        70%를 의미합니다.
+        <HelpTip text={UI_HELP.pipelineSplit} />
+      </p>
       <label>
-        Split strategy
+        <TermLabel ko="분할 방식" en="Split strategy" help={UI_HELP.pipelineSplit} />
         <select
           data-testid="node-config-split-strategy"
           value={splitStrategy}
@@ -263,20 +268,22 @@ function SplitForm({
             });
           }}
         >
-          <option value="random">Random</option>
-          <option value="time">Time ordered</option>
+          <option value="random">무작위 (Random)</option>
+          <option value="time">시간 순서 (Time ordered)</option>
         </select>
       </label>
       {splitStrategy === "time" ? (
         <>
           <label>
-            Time column
+            <TermLabel ko="정렬 기준 시간 컬럼" en="Time column" />
             <select
               data-testid="node-config-time-column"
               value={timeColumn}
-              onChange={(event) => patch({ split_strategy: "time", time_column: event.target.value || null })}
+              onChange={(event) =>
+                patch({ split_strategy: "time", time_column: event.target.value || null })
+              }
             >
-              <option value="">Select time column…</option>
+              <option value="">시간 컬럼 선택…</option>
               {datasetColumns.map((column) => (
                 <option key={column} value={column}>
                   {column}
@@ -285,12 +292,13 @@ function SplitForm({
             </select>
           </label>
           <p className="form-hint" data-testid="node-config-split-time-help">
-            Rows are ordered chronologically before contiguous train / validation / test partitions are created.
+            시간 컬럼 기준으로 정렬한 뒤 과거 데이터를 학습에, 이후 데이터를 검증·테스트에
+            사용합니다.
           </p>
         </>
       ) : null}
       <label>
-        Train ratio
+        <TermLabel ko="학습 데이터 비율" en="Train ratio" />
         <input
           type="number"
           step="0.01"
@@ -302,7 +310,7 @@ function SplitForm({
         />
       </label>
       <label>
-        Validation ratio
+        <TermLabel ko="검증 데이터 비율" en="Validation ratio" />
         <input
           type="number"
           step="0.01"
@@ -314,7 +322,7 @@ function SplitForm({
         />
       </label>
       <label>
-        Test ratio
+        <TermLabel ko="테스트 데이터 비율" en="Test ratio" />
         <input
           type="number"
           step="0.01"
@@ -326,7 +334,7 @@ function SplitForm({
         />
       </label>
       <label>
-        Random seed
+        <TermLabel ko="난수 시드" en="Random seed" />
         <input
           type="number"
           step="1"
@@ -337,7 +345,7 @@ function SplitForm({
       </label>
       {splitStrategy === "time" ? (
         <p className="form-hint" data-testid="node-config-split-seed-hint">
-          Random seed does not shuffle a time-ordered split.
+          난수 시드는 시간순 분할에서 데이터를 섞지 않습니다.
         </p>
       ) : null}
       {localError && (
@@ -536,8 +544,12 @@ function TrainingForm({
 
   return (
     <div className="node-config-form" data-testid="node-config-training">
+      <p className="form-hint" data-testid="node-config-training-hint">
+        예측 목표 컬럼은 모델이 맞혀야 하는 정답이고, 입력 특성은 예측에 쓸 입력입니다.
+        <HelpTip text={UI_HELP.pipelineTraining} />
+      </p>
       <label>
-        Training task
+        <TermLabel ko="학습 유형" en="Training task" help={UI_HELP.trainingTask} />
         <select
           data-testid="node-config-training-task"
           value={trainingTask}
@@ -545,17 +557,21 @@ function TrainingForm({
             setTrainingTask(event.target.value === "forecasting" ? "forecasting" : "tabular")
           }
         >
-          <option value="tabular">Tabular</option>
-          <option value="forecasting">Forecasting</option>
+          <option value="tabular">표 형식 데이터 (Tabular)</option>
+          <option value="forecasting">시계열 예측 (Forecasting)</option>
         </select>
       </label>
       {isForecasting ? (
         <p className="form-hint" data-testid="node-config-forecast-help">
-          Use Lag / Rolling features from Dataset Preparation when historical target context is required.
+          과거 목표값 맥락이 필요하면 데이터 가공의 이전값(Lag)·이동창(Rolling) 특성을 사용하세요.
         </p>
       ) : null}
       <label>
-        {isForecasting ? "Forecast target" : "Target column"}
+        <TermLabel
+          ko="예측 목표 컬럼"
+          en={isForecasting ? "Forecast target" : "Target column"}
+          help={UI_HELP.target}
+        />
         {datasetColumns.length > 0 ? (
           <select
             data-testid="node-config-target"
@@ -570,7 +586,7 @@ function TrainingForm({
             }}
           >
             {!targetChoices.includes(target) ? (
-              <option value="">Select target column…</option>
+              <option value="">예측 목표 컬럼 선택…</option>
             ) : null}
             {targetChoices.map((column) => (
               <option key={column} value={column}>
@@ -585,28 +601,37 @@ function TrainingForm({
             onChange={(event) => onChange({ ...config, target_column: event.target.value })}
           />
         )}
+        <small>예: 열수요량 HTDND_AMNT</small>
       </label>
       <label>
-        Problem type
+        <TermLabel ko="예측 문제 유형" en="Problem type" help={UI_HELP.problemType} />
         <select
           data-testid="node-config-problem-type"
           value={problemType}
           disabled={isForecasting}
           onChange={(event) => setProblem(event.target.value)}
         >
-          <option value="auto" disabled={isForecasting}>Auto</option>
-          <option value="classification" disabled={isForecasting}>Classification</option>
-          <option value="regression">Regression</option>
+          <option value="auto" disabled={isForecasting}>
+            자동 판별 (Auto)
+          </option>
+          <option value="classification" disabled={isForecasting}>
+            분류 (Classification)
+          </option>
+          <option value="regression">수치 예측·회귀 (Regression)</option>
         </select>
       </label>
       {isForecasting ? (
         <div data-testid="node-config-forecast-fields">
           <label>
-            Forecast strategy
+            <TermLabel ko="예측 방식" en="Forecast strategy" />
             <input value="Direct multi-output" disabled data-testid="node-config-forecast-strategy" />
           </label>
           <label>
-            Forecast horizons
+            <TermLabel
+              ko="미래 예측 지점"
+              en="Forecast horizons"
+              help={UI_HELP.forecastHorizons}
+            />
             <input
               data-testid="node-config-forecast-horizons"
               value={horizonsText}
@@ -615,7 +640,8 @@ function TrainingForm({
             />
           </label>
           <p className="form-hint" data-testid="node-config-forecast-horizons-help">
-            Horizons are future observation steps after chronological ordering, not clock-time durations.
+            1, 2, 3은 미래 1·2·3번째 관측값을 의미합니다. 시·분 같은 시간 단위가 아닙니다. 시간당
+            1행이고 누락이 없을 때만 관측 간격이 시간과 같아질 수 있습니다.
           </p>
           {horizonError ? (
             <p className="error" data-testid="node-config-forecast-horizon-error">
@@ -625,7 +651,7 @@ function TrainingForm({
         </div>
       ) : null}
       <label>
-        Algorithm
+        <TermLabel ko="학습 알고리즘" en="Algorithm" help={UI_HELP.algorithm} />
         <select
           data-testid="node-config-algorithm"
           value={algorithm}
@@ -640,7 +666,12 @@ function TrainingForm({
       </label>
       {featureChoices.length > 0 && (
         <fieldset className="feature-checklist" data-testid="node-config-features">
-          <legend>Features</legend>
+          <legend>
+            <TermLabel ko="입력 특성 컬럼" en="Features" help={UI_HELP.features} />
+          </legend>
+          <p className="form-hint">
+            실제 예측 시점에 알 수 없는 미래 정보는 입력에 포함하지 마세요.
+          </p>
           {featureChoices.map((column) => (
             <label key={column} className="checkbox-row">
               <input
@@ -654,7 +685,7 @@ function TrainingForm({
         </fieldset>
       )}
       <label>
-        Split strategy
+        <TermLabel ko="데이터 분할 방식" en="Split strategy" help={UI_HELP.dataSplit} />
         <select
           data-testid="node-config-split-strategy"
           value={splitStrategy}
@@ -675,13 +706,19 @@ function TrainingForm({
             });
           }}
         >
-          <option value="random" disabled={isForecasting}>Random</option>
-          <option value="time">Time ordered</option>
+          <option value="random" disabled={isForecasting}>
+            무작위 (Random)
+          </option>
+          <option value="time">시간 순서 (Time ordered)</option>
         </select>
+        <small>
+          Split 노드와 함께 쓰는 경우 Training의 분할 설정이 상위 Split과 일치하는지 확인하세요.
+          자동으로 동기화되지 않습니다.
+        </small>
       </label>
       {splitStrategy === "time" ? (
         <label>
-          Time column
+          <TermLabel ko="시간 컬럼" en="Time column" help={UI_HELP.timeOrderedSplit} />
           <select
             data-testid="node-config-time-column"
             value={timeColumn}
@@ -699,7 +736,7 @@ function TrainingForm({
               });
             }}
           >
-            <option value="">Select time column…</option>
+            <option value="">시간 컬럼 선택…</option>
             {datasetColumns
               .filter((column) => column !== target)
               .map((column) => (
@@ -711,7 +748,7 @@ function TrainingForm({
         </label>
       ) : null}
       <label>
-        Hyperparameters
+        <TermLabel ko="학습 세부 설정" en="Hyperparameters" help={UI_HELP.hyperparameters} />
         <textarea
           className="code-input"
           data-testid="node-config-hyperparameters"
@@ -735,16 +772,27 @@ function EvaluationForm({
 }: Pick<NodeConfigFormProps, "config" | "onChange">) {
   return (
     <div className="node-config-form" data-testid="node-config-evaluation">
+      <p className="form-hint" data-testid="node-config-evaluation-hint">
+        현재 평가 기준은 측정값이 최소값 이상(&gt;=)일 때 통과합니다. Accuracy나 R²처럼 값이
+        높을수록 좋은 지표에 적합합니다.
+        <HelpTip text={UI_HELP.pipelineEvaluation} />
+      </p>
+      <p className="form-hint" data-testid="node-config-evaluation-rmse-hint">
+        RMSE나 MAE는 낮을수록 좋으므로 현재 최소 기준 비교를 그대로 적용하면 의도한 평가가 되지
+        않을 수 있습니다.
+      </p>
       <label>
-        Metric
+        <TermLabel ko="평가 지표" en="Metric" help={UI_HELP.pipelineEvaluation} />
         <input
           data-testid="node-config-metric"
           value={asString(config.metric, "accuracy")}
           onChange={(event) => onChange({ ...config, metric: event.target.value })}
+          placeholder="예: accuracy"
         />
+        <small>없는 지표명을 입력하면 평가가 실패할 수 있습니다.</small>
       </label>
       <label>
-        Minimum
+        <TermLabel ko="최소 통과 기준값" en="Minimum" />
         <input
           type="number"
           step="any"
@@ -760,7 +808,11 @@ function EvaluationForm({
           checked={config.fail_on_gate !== false}
           onChange={(event) => onChange({ ...config, fail_on_gate: event.target.checked })}
         />
-        Fail on gate
+        <TermLabel
+          ko="기준 미달 시 실행 실패 처리"
+          en="Fail on gate"
+          help={UI_HELP.pipelineEvaluationGate}
+        />
       </label>
     </div>
   );
