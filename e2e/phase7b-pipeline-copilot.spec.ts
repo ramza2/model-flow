@@ -163,7 +163,7 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
 
   await page.getByTestId("pipeline-save").click();
   await expect(page.getByTestId("pipeline-dirty-badge")).toHaveCount(0, { timeout: 30_000 });
-  await expect(page.getByText(/Pipeline version saved/i)).toBeVisible({
+  await expect(page.getByText(/파이프라인 버전을 저장했습니다/)).toBeVisible({
     timeout: 30_000,
   });
   expect(versionPosts).toBe(1);

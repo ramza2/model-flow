@@ -178,7 +178,9 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
   );
 
   await page.getByTestId("pipeline-validate").click();
-  await expect(page.getByText(/valid|Validation passed|Graph is valid/i).first()).toBeVisible({
+  await expect(
+    page.getByText(/그래프 검증을 통과했습니다|valid|Validation passed|Graph is valid/i).first(),
+  ).toBeVisible({
     timeout: 30_000,
   });
 

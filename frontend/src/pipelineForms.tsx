@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, type Dataset, type DatasetVersion, type QualityRule } from "./api";
+import { HelpTip, TermLabel } from "./components";
 import { validateSplitRatios } from "./pipelineHelpers";
 import {
   algorithmsForTrainingTask,
@@ -9,6 +10,7 @@ import {
   validateHyperparametersText,
   type AlgorithmSpec,
 } from "./trainingConfig";
+import { UI_HELP } from "./uiTerminology";
 
 export type NodeConfigFormProps = {
   projectId: string;
@@ -86,8 +88,12 @@ function DatasetLoadForm({
   return (
     <div className="node-config-form" data-testid="node-config-dataset-load">
       {loadError && <p className="error">{loadError}</p>}
+      <p className="form-hint" data-testid="node-config-dataset-load-hint">
+        학습이나 후속 처리에 사용할 데이터셋을 선택합니다.
+        <HelpTip text={UI_HELP.pipelineDatasetLoad} />
+      </p>
       <label>
-        Dataset
+        <TermLabel ko="데이터셋" en="Dataset" help={UI_HELP.pipelineDatasetLoad} />
         <select
           data-testid="node-config-dataset"
           value={datasetId ?? ""}
@@ -100,7 +106,7 @@ function DatasetLoadForm({
             });
           }}
         >
-          <option value="">Select dataset…</option>
+          <option value="">데이터셋 선택…</option>
           {datasets.map((row) => (
             <option key={row.id} value={row.id}>
               {row.name}
@@ -109,7 +115,7 @@ function DatasetLoadForm({
         </select>
       </label>
       <label>
-        Version
+        <TermLabel ko="데이터 버전" en="Dataset version" help={UI_HELP.datasetVersionPin} />
         <select
           data-testid="node-config-version"
           value={versionId ?? ""}
@@ -123,13 +129,17 @@ function DatasetLoadForm({
             });
           }}
         >
-          <option value="">Select version…</option>
+          <option value="">버전 선택…</option>
           {versions.map((row) => (
             <option key={row.id} value={row.id}>
               v{row.version} · {row.original_filename}
             </option>
           ))}
         </select>
+        <small>
+          특정 데이터 버전을 선택하면 그 버전의 내용을 사용합니다. 이후 새 버전이 생기더라도
+          자동으로 최신 버전으로 변경하지 않습니다.
+        </small>
       </label>
     </div>
   );

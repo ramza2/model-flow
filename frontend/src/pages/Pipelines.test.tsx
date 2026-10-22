@@ -252,25 +252,64 @@ describe("NodeConfigForm", () => {
 
   it("sets dataset_load config via dropdowns", async () => {
     stubBuilderApi();
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets") {
+        return [
+          ...datasets,
+          {
+            ...datasets[0],
+            id: 4,
+            name: "sales",
+          },
+        ];
+      }
+      if (path === "/projects/7/datasets/4/versions") {
+        return [{ ...versions[0], id: 22, dataset_id: 4, version: 1 }];
+      }
+      return base(path, init);
+    });
     function Harness() {
       const [config, setConfig] = useState<Record<string, unknown>>({});
       return (
-        <NodeConfigForm
-          projectId="7"
-          nodeType="dataset_load"
-          config={config}
-          onChange={setConfig}
-        />
+        <>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="dataset_load"
+            config={config}
+            onChange={setConfig}
+          />
+          <pre data-testid="dataset-load-config">{JSON.stringify(config)}</pre>
+        </>
       );
     }
     render(<Harness />);
-    await screen.findByTestId("node-config-dataset");
+    expect(await screen.findByTestId("node-config-dataset-load-hint")).toHaveTextContent(
+      "사용할 데이터셋을 선택합니다",
+    );
+    expect(screen.getByTestId("node-config-dataset-load")).toHaveTextContent("데이터셋");
+    expect(screen.getByTestId("node-config-dataset-load")).toHaveTextContent("데이터 버전");
+    expect(screen.getByTestId("node-config-dataset")).toHaveDisplayValue("데이터셋 선택…");
     fireEvent.change(screen.getByTestId("node-config-dataset"), { target: { value: "3" } });
     await waitFor(() => expect(screen.getByTestId("node-config-version")).not.toBeDisabled());
+    expect(screen.getByTestId("dataset-load-config")).toHaveTextContent(
+      '"dataset_version_id":null',
+    );
     fireEvent.change(screen.getByTestId("node-config-version"), { target: { value: "11" } });
     await waitFor(() => {
       expect(screen.getByTestId("node-config-dataset")).toHaveValue("3");
       expect(screen.getByTestId("node-config-version")).toHaveValue("11");
+    });
+    expect(screen.getByTestId("dataset-load-config")).toHaveTextContent('"dataset_id":3');
+    expect(screen.getByTestId("dataset-load-config")).toHaveTextContent(
+      '"dataset_version_id":11',
+    );
+    fireEvent.change(screen.getByTestId("node-config-dataset"), { target: { value: "4" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("dataset-load-config")).toHaveTextContent('"dataset_id":4');
+      expect(screen.getByTestId("dataset-load-config")).toHaveTextContent(
+        '"dataset_version_id":null',
+      );
     });
   });
 
@@ -630,6 +669,30 @@ describe("PipelineBuilder", () => {
     expect(screen.getByTestId("pipeline-step-type")).toHaveTextContent(/Dataset Load/i);
   });
 
+  it("shows Korean-first builder actions, dirty guidance, and beginner usage order", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-dataset_load");
+    expect(screen.getByTestId("pipeline-validate")).toHaveTextContent("검증");
+    expect(screen.getByTestId("pipeline-save")).toHaveTextContent("버전 저장");
+    expect(screen.getByTestId("pipeline-publish")).toHaveTextContent("게시 (Publish)");
+    expect(screen.getByTestId("pipeline-schedule-entry")).toHaveTextContent("일정 등록");
+    expect(screen.getByTestId("pipeline-run")).toHaveTextContent("파이프라인 실행");
+    expect(screen.getByTestId("pipeline-builder-guide")).toHaveTextContent("① 데이터셋 선택");
+    expect(screen.getByTestId("pipeline-builder-guide-details")).toHaveTextContent(
+      "자동 저장되지 않으며",
+    );
+    expect(screen.getByTestId("pipeline-builder-guide-details")).toHaveTextContent(
+      "일정 등록은 게시된 파이프라인에서 가능합니다",
+    );
+    expect(screen.getByText("데이터셋으로 시작하세요")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    expect(screen.getByTestId("pipeline-dirty-hint")).toHaveTextContent(
+      "게시하거나 실행하기 전에 버전을 저장하세요",
+    );
+    expect(screen.getByTestId("pipeline-publish")).toBeDisabled();
+    expect(screen.getByTestId("pipeline-run")).toBeDisabled();
+  });
+
   it("preserves forecasting training config across save and reload", async () => {
     const forecastGraph = {
       nodes: [
@@ -846,9 +909,9 @@ describe("PipelineBuilder", () => {
     expect(layout).toHaveClass("is-readonly");
     expect(layout).toHaveAttribute("data-readonly", "true");
     expect(screen.getByTestId("pipeline-inspector-hint")).toHaveTextContent(
-      /inspect its configuration/i,
+      /설정을 확인하세요/,
     );
-    expect(screen.getByTestId("pipeline-inspector-hint")).not.toHaveTextContent(/node library/i);
+    expect(screen.getByTestId("pipeline-inspector-hint")).not.toHaveTextContent(/노드 라이브러리/);
     const flow = await screen.findByTestId("react-flow");
     expect(flow).toHaveAttribute("data-draggable", "false");
     expect(flow).toHaveAttribute("data-connectable", "false");
@@ -857,7 +920,7 @@ describe("PipelineBuilder", () => {
     expect(screen.queryByTestId("pipeline-add-node")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("canvas-node-dataset_load-1"));
     expect(await screen.findByTestId("pipeline-step-name")).toBeDisabled();
-    expect(screen.getByText(/Read-only configuration/i)).toBeInTheDocument();
+    expect(screen.getByText(/읽기 전용 설정입니다/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("react-flow-force-remove"));
     fireEvent.click(screen.getByTestId("react-flow-force-connect"));
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
@@ -868,11 +931,11 @@ describe("PipelineBuilder", () => {
     canWriteRef.value = false;
     stubBuilderApi();
     renderBuilder();
-    expect(await screen.findByText(/This pipeline version contains no steps/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Add Dataset Load/i })).not.toBeInTheDocument();
+    expect(await screen.findByText(/이 파이프라인 버전에는 단계가 없습니다/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /데이터셋 불러오기 추가/ })).not.toBeInTheDocument();
     expect(screen.getByTestId("pipeline-builder-layout")).toHaveClass("is-readonly");
     expect(screen.getByTestId("pipeline-inspector-hint")).toHaveTextContent(
-      /inspect its configuration/i,
+      /설정을 확인하세요/,
     );
   });
 
@@ -891,7 +954,7 @@ describe("PipelineBuilder", () => {
     await screen.findByTestId("pipeline-library-dataset_load");
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
-    expect(screen.getByTestId("pipeline-dirty-badge")).toHaveTextContent("Unsaved changes");
+    expect(screen.getByTestId("pipeline-dirty-badge")).toHaveTextContent("저장되지 않은 변경사항");
     fireEvent.click(screen.getByTestId("pipeline-save"));
     await waitFor(() => {
       expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
@@ -1228,7 +1291,10 @@ describe("Pipeline contextual scheduling gates", () => {
     const draftSchedule = await screen.findByTestId("pipeline-schedule-entry");
     expect(draftSchedule.tagName).toBe("BUTTON");
     expect(draftSchedule).toBeDisabled();
-    expect(draftSchedule).toHaveAttribute("title", "Publish this pipeline before scheduling.");
+    expect(draftSchedule).toHaveAttribute(
+      "title",
+      "일정을 등록하려면 먼저 파이프라인을 게시하세요.",
+    );
   });
 
   it("allows builder Schedule for clean published pipelines and blocks when dirty", async () => {
@@ -1263,7 +1329,7 @@ describe("Pipeline contextual scheduling gates", () => {
     expect(dirtySchedule).toBeDisabled();
     expect(dirtySchedule).toHaveAttribute(
       "title",
-      expect.stringContaining("Save your changes before scheduling"),
+      expect.stringContaining("일정 등록 전에 변경사항을 저장하세요"),
     );
   });
 });

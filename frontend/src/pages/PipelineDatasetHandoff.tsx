@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type Dataset, type DatasetVersion, type Pipeline } from "../api";
 import { useAuth } from "../AuthContext";
-import { ErrorNotice, Loading, PageHeader } from "../components";
+import { ErrorNotice, HelpTip, Loading, PageHeader } from "../components";
 import {
   buildPipelineGraphForDatasetHandoff,
   parsePipelineCreateHandoff,
 } from "../pipelineHandoff";
 import { userCanProject, useProject } from "../ProjectContext";
+import { UI_HELP } from "../uiTerminology";
 
 export default function PipelineDatasetHandoff() {
   const { projectId } = useParams();
@@ -22,7 +23,11 @@ export default function PipelineDatasetHandoff() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(Boolean(handoffState.handoff));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(handoffState.error || "");
+  const [error, setError] = useState(
+    handoffState.error
+      ? "데이터셋 전달 정보가 올바르지 않습니다. 데이터 가공 결과 또는 데이터셋 상세에서 정확한 버전을 다시 열어 주세요."
+      : "",
+  );
 
   useEffect(() => {
     const handoff = handoffState.handoff;
@@ -30,7 +35,11 @@ export default function PipelineDatasetHandoff() {
       setLoading(false);
       setDataset(null);
       setVersion(null);
-      setError(handoffState.error || "Dataset handoff is required.");
+      setError(
+        handoffState.error
+          ? "데이터셋 전달 정보가 올바르지 않습니다. 데이터 가공 결과 또는 데이터셋 상세에서 정확한 버전을 다시 열어 주세요."
+          : "데이터셋 전달 정보가 필요합니다.",
+      );
       return;
     }
 
@@ -48,7 +57,7 @@ export default function PipelineDatasetHandoff() {
           setDataset(null);
           setVersion(null);
           setError(
-            "The requested DatasetVersion does not belong to this dataset. No latest-version fallback was applied.",
+            "요청한 데이터 버전(DatasetVersion)이 이 데이터셋에 속하지 않습니다. 최신 버전으로 자동 대체하지 않았습니다.",
           );
           return;
         }
@@ -60,7 +69,11 @@ export default function PipelineDatasetHandoff() {
         if (!cancelled) {
           setDataset(null);
           setVersion(null);
-          setError(reason instanceof Error ? reason.message : "Dataset handoff could not be loaded.");
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "데이터셋 전달 정보를 불러오지 못했습니다.",
+          );
         }
       })
       .finally(() => {
@@ -88,7 +101,7 @@ export default function PipelineDatasetHandoff() {
       });
       navigate(`/projects/${projectId}/pipelines/${pipeline.id}`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Pipeline could not be created.");
+      setError(reason instanceof Error ? reason.message : "파이프라인을 만들지 못했습니다.");
       setBusy(false);
     }
   }
@@ -96,39 +109,45 @@ export default function PipelineDatasetHandoff() {
   return (
     <div>
       <PageHeader
-        title="Create pipeline from dataset"
-        description="Start the pipeline with one exact immutable DatasetVersion."
+        title="데이터셋으로 파이프라인 만들기"
+        description="선택한 정확한 데이터 버전을 입력으로 사용하는 파이프라인을 시작합니다."
         actions={
           <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>
-            Back to pipelines
+            파이프라인 목록으로
           </Link>
         }
       />
       <ErrorNotice message={error} />
       {loading ? (
-        <Loading label="Loading exact dataset version" />
+        <Loading label="선택한 데이터 버전을 불러오는 중…" />
       ) : dataset && version ? (
         <>
           <section className="panel" data-testid="pipeline-handoff-context">
-            <span className="eyebrow">Exact input</span>
+            <span className="eyebrow">사용할 데이터</span>
             <h2>{dataset.name}</h2>
             <p>
               Dataset #{dataset.id} · v{version.version} · DatasetVersion #{version.id}
             </p>
-            <p className="form-hint">
-              The new Dataset Load node pins DatasetVersion #{version.id}. A newer dataset version
-              will not silently replace it.
+            <p className="form-hint" data-testid="pipeline-handoff-pin-hint">
+              선택한 데이터셋 버전을 입력으로 사용하는 파이프라인을 만듭니다. 이후 더 최신 데이터셋
+              버전이 생기더라도 자동으로 바뀌지 않습니다.
+              <HelpTip text={UI_HELP.datasetVersionPin} />
+            </p>
+            <p className="form-hint" data-testid="pipeline-handoff-create-hint">
+              파이프라인을 만들면 데이터셋 불러오기(Dataset Load) 노드가 먼저 배치됩니다. 학습이나
+              데이터 처리가 자동으로 실행되는 것은 아닙니다.
+              <HelpTip text={UI_HELP.pipeline} />
             </p>
             <div className="row-actions">
               <Link className="btn link" to={`/projects/${projectId}/datasets/${dataset.id}`}>
-                Open dataset
+                데이터셋 열기
               </Link>
             </div>
           </section>
           {canWrite ? (
             <form className="panel form" onSubmit={createPipeline} data-testid="pipeline-handoff-form">
               <label>
-                Pipeline name
+                파이프라인 이름
                 <input
                   value={name}
                   required
@@ -142,12 +161,12 @@ export default function PipelineDatasetHandoff() {
                 disabled={busy || !name.trim()}
                 data-testid="pipeline-handoff-create"
               >
-                {busy ? "Creating…" : "Create and open builder"}
+                {busy ? "만드는 중…" : "파이프라인 만들고 편집하기"}
               </button>
             </form>
           ) : (
             <p className="form-hint" data-testid="pipeline-handoff-readonly">
-              You do not have permission to create pipelines in this project.
+              이 프로젝트에서 파이프라인을 만들 권한이 없습니다.
             </p>
           )}
         </>
