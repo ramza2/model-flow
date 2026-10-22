@@ -6,6 +6,8 @@ import PreparationBuilder from "./PreparationBuilder";
 
 const apiMock = vi.fn();
 const canWriteRef = { value: true };
+const prepFlowSetCenterMock = vi.fn();
+const prepFlowGetZoomMock = vi.fn(() => 1.25);
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
@@ -34,6 +36,7 @@ vi.mock("@xyflow/react", () => ({
     onEdgesChange,
     onConnect,
     onPaneClick,
+    onInit,
     nodesDraggable,
     nodesConnectable,
     deleteKeyCode,
@@ -71,12 +74,18 @@ vi.mock("@xyflow/react", () => ({
       targetHandle?: string | null;
     }) => void;
     onPaneClick?: () => void;
+    onInit?: (instance: {
+      setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+      getZoom: () => number;
+    }) => void;
     nodesDraggable?: boolean;
     nodesConnectable?: boolean;
     deleteKeyCode?: string[] | null;
     children?: ReactNode;
   }) => {
-    useEffect(() => undefined, []);
+    useEffect(() => {
+      onInit?.({ setCenter: prepFlowSetCenterMock, getZoom: prepFlowGetZoomMock });
+    }, [onInit]);
     return (
       <div
         data-testid="react-flow"
@@ -166,7 +175,43 @@ vi.mock("@xyflow/react", () => ({
   },
   Background: () => null,
   Controls: () => null,
-  MiniMap: () => null,
+  MiniMap: ({
+    pannable,
+    ariaLabel,
+    onClick,
+    onNodeClick,
+  }: {
+    pannable?: boolean;
+    ariaLabel?: string | null;
+    onClick?: (_event: unknown, position: { x: number; y: number }) => void;
+    onNodeClick?: (
+      _event: unknown,
+      node: { position: { x: number; y: number }; width?: number; height?: number },
+    ) => void;
+  }) => (
+    <div
+      data-testid="preparation-minimap"
+      data-pannable={String(Boolean(pannable))}
+      aria-label={ariaLabel || undefined}
+    >
+      <button
+        type="button"
+        data-testid="preparation-minimap-click"
+        onClick={() => onClick?.({}, { x: 240, y: 160 })}
+      >
+        minimap-click
+      </button>
+      <button
+        type="button"
+        data-testid="preparation-minimap-node-click"
+        onClick={() =>
+          onNodeClick?.({}, { position: { x: 50, y: 20 }, width: 180, height: 70 })
+        }
+      >
+        minimap-node-click
+      </button>
+    </div>
+  ),
   Handle: () => null,
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   addEdge: (edge: Record<string, unknown>, edges: unknown[]) => [
@@ -503,6 +548,9 @@ describe("PreparationBuilder", () => {
     cleanup();
     canWriteRef.value = true;
     apiMock.mockReset();
+    prepFlowSetCenterMock.mockReset();
+    prepFlowGetZoomMock.mockReset();
+    prepFlowGetZoomMock.mockReturnValue(1.25);
     stubPreparationApi();
   });
 
@@ -3497,6 +3545,28 @@ describe("PreparationBuilder", () => {
     await screen.findByTestId("preparation-builder");
     expect(screen.getByTestId("preparation-undo")).toBeDisabled();
     expect(screen.getByTestId("preparation-redo")).toBeDisabled();
+  });
+
+  it("centers the viewport from MiniMap click without dirty or history changes", async () => {
+    renderBuilder();
+    await screen.findByTestId("preparation-builder");
+    const minimap = await screen.findByTestId("preparation-minimap");
+    expect(minimap).toHaveAttribute("data-pannable", "true");
+    expect(minimap).toHaveAttribute("aria-label", expect.stringContaining("미니맵"));
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("preparation-minimap-click"));
+    expect(prepFlowSetCenterMock).toHaveBeenCalledWith(240, 160, {
+      zoom: 1.25,
+      duration: 200,
+    });
+    fireEvent.click(screen.getByTestId("preparation-minimap-node-click"));
+    expect(prepFlowSetCenterMock).toHaveBeenCalledWith(140, 55, {
+      zoom: 1.25,
+      duration: 200,
+    });
+    expect(screen.getByTestId("preparation-undo")).toBeDisabled();
+    expect(screen.queryByTestId("preparation-dirty-hint")).not.toBeInTheDocument();
   });
 
   it("undoes and redoes node add, delete-with-edges, edge disconnect, config, and drag", async () => {

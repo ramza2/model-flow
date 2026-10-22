@@ -54,7 +54,18 @@ import {
   formatDate,
 } from "../components";
 import { Drawer } from "../Drawer";
+import { centerFlowOnMiniMapNode, centerFlowOnMiniMapPoint } from "../flowMiniMapNav";
 import { NodeConfigForm } from "../pipelineForms";
+import {
+  capturePipelineGraphSnapshot,
+  createEmptyPipelineGraphHistory,
+  pipelineGraphSnapshotsEqual,
+  pushPipelineGraphHistory,
+  redoPipelineGraphHistory,
+  undoPipelineGraphHistory,
+  type PipelineGraphHistoryState,
+  type PipelineGraphSnapshot,
+} from "../pipelineGraphHistory";
 import {
   PIPELINE_NODE_LIBRARY,
   configSummary,
@@ -71,6 +82,7 @@ import {
   type ConditionBranch,
   type PipelineNodeType,
 } from "../pipelineHelpers";
+import { isEditableKeyboardTarget } from "../preparationGraphHistory";
 import { userCanProject, useProject } from "../ProjectContext";
 import { UI_HELP } from "../uiTerminology";
 import { UNSAVED_CHANGES_MESSAGE } from "../unsavedChanges";
@@ -460,6 +472,8 @@ export function PipelineBuilder() {
   const [jsonText, setJsonText] = useState("{}");
   const [jsonError, setJsonError] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [historyFlags, setHistoryFlags] = useState({ undo: false, redo: false });
+  const [inspectorEpoch, setInspectorEpoch] = useState(0);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -478,11 +492,150 @@ export function PipelineBuilder() {
   const [copilotError, setCopilotError] = useState("");
   const [copilotConfirming, setCopilotConfirming] = useState(false);
   const copilotRequestIdRef = useRef(0);
+  const validateSeqRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const historyRef = useRef<PipelineGraphHistoryState>(createEmptyPipelineGraphHistory());
+  const savedSnapshotRef = useRef<PipelineGraphSnapshot | null>(null);
+  const nodesRef = useRef<StepNode[]>([]);
+  const edgesRef = useRef<Edge[]>([]);
+  const dragBaselineRef = useRef<PipelineGraphSnapshot | null>(null);
+  const suppressEdgeHistoryRef = useRef(false);
   const flowInstanceRef = useRef<{
     setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
     getZoom: () => number;
   } | null>(null);
   const canWrite = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
+
+  useEffect(() => {
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+  }, [edges, nodes]);
+
+  const invalidateValidate = useCallback(() => {
+    validateSeqRef.current += 1;
+    setValidationErrors([]);
+    setValidationVisible(false);
+    setHighlightedNodeIds([]);
+    setBusy((prev) => (prev === "validate" ? "" : prev));
+  }, []);
+
+  const syncDirtyFromSnapshot = useCallback((snapshot: PipelineGraphSnapshot) => {
+    setDirty(!pipelineGraphSnapshotsEqual(snapshot, savedSnapshotRef.current));
+  }, []);
+
+  const publishHistory = useCallback((next: PipelineGraphHistoryState) => {
+    historyRef.current = next;
+    setHistoryFlags({
+      undo: next.past.length > 0,
+      redo: next.future.length > 0,
+    });
+  }, []);
+
+  const resetGraphHistory = useCallback(() => {
+    dragBaselineRef.current = null;
+    publishHistory(createEmptyPipelineGraphHistory());
+  }, [publishHistory]);
+
+  const nodesFromSnapshot = useCallback((snapshot: PipelineGraphSnapshot): StepNode[] => {
+    return snapshot.nodes.map((node) => ({
+      id: node.id,
+      type: STEP_NODE_TYPE,
+      position: { x: node.position.x, y: node.position.y },
+      data: {
+        label: node.data.label,
+        node_type: node.data.node_type,
+        config: asConfig(node.data.config),
+      },
+    }));
+  }, []);
+
+  const edgesFromSnapshot = useCallback(
+    (snapshot: PipelineGraphSnapshot, nextNodes: StepNode[]): Edge[] =>
+      toDisplayEdges(snapshot.edges as PipelineGraph["edges"], nextNodes),
+    [],
+  );
+
+  const commitGraphEdit = useCallback(
+    (
+      nextNodes: StepNode[],
+      nextEdges: Edge[],
+      options?: { baseline?: PipelineGraphSnapshot | null },
+    ) => {
+      const currentSnapshot =
+        options?.baseline ?? capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+      const nextSnapshot = capturePipelineGraphSnapshot(nextNodes, nextEdges);
+      if (pipelineGraphSnapshotsEqual(currentSnapshot, nextSnapshot)) {
+        setNodes(nextNodes);
+        setEdges(nextEdges);
+        nodesRef.current = nextNodes;
+        edgesRef.current = nextEdges;
+        return false;
+      }
+      publishHistory(pushPipelineGraphHistory(historyRef.current, currentSnapshot));
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setSelectedId((nodeId) =>
+        nodeId && nextNodes.some((node) => node.id === nodeId) ? nodeId : "",
+      );
+      syncDirtyFromSnapshot(nextSnapshot);
+      invalidateValidate();
+      return true;
+    },
+    [invalidateValidate, publishHistory, syncDirtyFromSnapshot],
+  );
+
+  const applyGraphSnapshot = useCallback(
+    (snapshot: PipelineGraphSnapshot, options?: { bumpInspector?: boolean }) => {
+      const nextNodes = nodesFromSnapshot(snapshot);
+      const nextEdges = edgesFromSnapshot(snapshot, nextNodes);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      setSelectedId((nodeId) => {
+        const still = nodeId && nextNodes.some((node) => node.id === nodeId) ? nodeId : "";
+        if (still) {
+          const match = nextNodes.find((node) => node.id === still);
+          if (match) {
+            setJsonText(JSON.stringify(match.data.config || {}, null, 2));
+            setJsonError("");
+          }
+        }
+        return still;
+      });
+      syncDirtyFromSnapshot(snapshot);
+      invalidateValidate();
+      if (options?.bumpInspector) {
+        setInspectorEpoch((value) => value + 1);
+      }
+    },
+    [edgesFromSnapshot, invalidateValidate, nodesFromSnapshot, syncDirtyFromSnapshot],
+  );
+
+  const undoGraphEdit = useCallback(() => {
+    if (!canWrite) return;
+    const current = capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+    const result = undoPipelineGraphHistory(historyRef.current, current);
+    if (!result) return;
+    dragBaselineRef.current = null;
+    publishHistory(result.history);
+    applyGraphSnapshot(result.snapshot, { bumpInspector: true });
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
+
+  const redoGraphEdit = useCallback(() => {
+    if (!canWrite) return;
+    const current = capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+    const result = redoPipelineGraphHistory(historyRef.current, current);
+    if (!result) return;
+    dragBaselineRef.current = null;
+    publishHistory(result.history);
+    applyGraphSnapshot(result.snapshot, { bumpInspector: true });
+  }, [applyGraphSnapshot, canWrite, publishHistory]);
+
+  const canUndo = canWrite && historyFlags.undo;
+  const canRedo = canWrite && historyFlags.redo;
 
   const copilotPatchOps =
     copilotMode === "patch" && copilotDraft && "patch" in copilotDraft
@@ -604,16 +757,8 @@ export function PipelineBuilder() {
     }
     const nextNodes = toStepNodes(copilotDraft.graph.nodes);
     const nextEdges = toDisplayEdges(copilotDraft.graph.edges, nextNodes);
-    const stillExists = selectedId
-      ? nextNodes.some((node) => node.id === selectedId)
-      : false;
-    setNodes(nextNodes);
-    setEdges(nextEdges);
-    if (!stillExists) setSelectedId("");
-    setDirty(true);
-    setValidationErrors([]);
-    setHighlightedNodeIds([]);
-    setValidationVisible(false);
+    commitGraphEdit(nextNodes, nextEdges);
+    setInspectorEpoch((value) => value + 1);
     setJsonError("");
     setError("");
     setSuccess(
@@ -622,29 +767,44 @@ export function PipelineBuilder() {
         : "Copilot draft applied to the Builder. Save a version when you are ready.",
     );
     closeCopilotDrawer();
-  }, [closeCopilotDrawer, copilotDraft, copilotMode, selectedId]);
+  }, [closeCopilotDrawer, commitGraphEdit, copilotDraft, copilotMode]);
 
   const load = useCallback(async () => {
+    const loadId = ++loadSeqRef.current;
     try {
       const [row, runRows, datasetRows] = await Promise.all([
         api<Pipeline>(`/projects/${projectId}/pipelines/${pipelineId}`),
         api<PipelineRun[]>(`/projects/${projectId}/pipelines/${pipelineId}/runs`),
         api<Dataset[]>(`/projects/${projectId}/datasets`).catch(() => [] as Dataset[]),
       ]);
+      if (loadId !== loadSeqRef.current) return;
       const nextNodes = toStepNodes(row.version?.graph.nodes);
+      const nextEdges = toDisplayEdges(row.version?.graph.edges, nextNodes);
+      const baseline = capturePipelineGraphSnapshot(nextNodes, nextEdges);
       setPipeline(row);
       setNodes(nextNodes);
-      setEdges(toDisplayEdges(row.version?.graph.edges, nextNodes));
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
       setRuns(runRows);
       setDatasets(datasetRows);
+      setSelectedId("");
+      savedSnapshotRef.current = baseline;
+      dragBaselineRef.current = null;
+      publishHistory(createEmptyPipelineGraphHistory());
+      setInspectorEpoch((value) => value + 1);
       setDirty(false);
+      validateSeqRef.current += 1;
       setValidationErrors([]);
       setValidationVisible(false);
       setHighlightedNodeIds([]);
+      setJsonText("{}");
+      setJsonError("");
     } catch (reason) {
+      if (loadId !== loadSeqRef.current) return;
       setError(reason instanceof Error ? reason.message : "Pipeline could not be loaded.");
     }
-  }, [pipelineId, projectId]);
+  }, [pipelineId, projectId, publishHistory]);
 
   useEffect(() => {
     void load();
@@ -794,15 +954,13 @@ export function PipelineBuilder() {
 
   function updateSelectedData(partial: Partial<StepData>, nextConfig?: Record<string, unknown>) {
     if (!canWrite || !selectedId) return;
-    setDirty(true);
-    setNodes((rows) =>
-      rows.map((node) => {
-        if (node.id !== selectedId) return node;
-        const config = nextConfig ?? node.data.config;
-        const data = { ...node.data, ...partial, config };
-        return { ...node, data };
-      }),
-    );
+    const nextNodes = nodesRef.current.map((node) => {
+      if (node.id !== selectedId) return node;
+      const config = nextConfig ?? node.data.config;
+      const data = { ...node.data, ...partial, config };
+      return { ...node, data };
+    });
+    commitGraphEdit(nextNodes, edgesRef.current);
     if (nextConfig) {
       setJsonText(JSON.stringify(nextConfig, null, 2));
       setJsonError("");
@@ -824,14 +982,12 @@ export function PipelineBuilder() {
         return;
       }
       setJsonError("");
-      setDirty(true);
-      setNodes((rows) =>
-        rows.map((node) =>
-          node.id === selectedId
-            ? { ...node, data: { ...node.data, config: parsed as Record<string, unknown> } }
-            : node,
-        ),
+      const nextNodes = nodesRef.current.map((node) =>
+        node.id === selectedId
+          ? { ...node, data: { ...node.data, config: parsed as Record<string, unknown> } }
+          : node,
       );
+      commitGraphEdit(nextNodes, edgesRef.current);
     } catch {
       setJsonError("Invalid JSON — changes are not applied until the text parses.");
     }
@@ -839,16 +995,17 @@ export function PipelineBuilder() {
 
   function addNodeOfType(nodeType: PipelineNodeType) {
     if (!canWrite) return;
+    const currentNodes = nodesRef.current;
     const id = nextPipelineNodeId(
       nodeType,
-      nodes.map((node) => node.id),
+      currentNodes.map((node) => node.id),
     );
     const node: StepNode = {
       id,
       type: STEP_NODE_TYPE,
       position: {
-        x: 80 + (nodes.length % 3) * 240,
-        y: 80 + Math.floor(nodes.length / 3) * 160,
+        x: 80 + (currentNodes.length % 3) * 240,
+        y: 80 + Math.floor(currentNodes.length / 3) * 160,
       },
       data: {
         label: labelForType(nodeType),
@@ -856,23 +1013,21 @@ export function PipelineBuilder() {
         config: defaultConfigFor(nodeType),
       },
     };
-    setNodes((rows) => [...rows, node]);
+    commitGraphEdit([...currentNodes, node], edgesRef.current);
     setSelectedId(id);
     setJsonText(JSON.stringify(node.data.config, null, 2));
     setJsonError("");
-    setDirty(true);
-    setValidationErrors([]);
-    setValidationVisible(false);
+    setInspectorEpoch((value) => value + 1);
   }
 
   function removeSelected() {
     if (!canWrite || !selectedId) return;
-    setNodes((rows) => rows.filter((node) => node.id !== selectedId));
-    setEdges((rows) =>
-      rows.filter((edge) => edge.source !== selectedId && edge.target !== selectedId),
+    const nextNodes = nodesRef.current.filter((node) => node.id !== selectedId);
+    const nextEdges = edgesRef.current.filter(
+      (edge) => edge.source !== selectedId && edge.target !== selectedId,
     );
+    commitGraphEdit(nextNodes, nextEdges);
     setSelectedId("");
-    setDirty(true);
   }
 
   const onNodesChange = useCallback(
@@ -881,40 +1036,94 @@ export function PipelineBuilder() {
         const safe = changes.filter(
           (change) => change.type === "select" || change.type === "dimensions",
         );
-        if (safe.length) setNodes((rows) => applyNodeChanges(safe, rows));
+        if (safe.length) {
+          const next = applyNodeChanges(safe, nodesRef.current);
+          setNodes(next);
+          nodesRef.current = next;
+        }
         return;
       }
-      const marksDirty = changes.some(
-        (change) =>
-          change.type === "remove" ||
-          change.type === "add" ||
-          (change.type === "position" && change.dragging === false),
+
+      for (const change of changes) {
+        if (change.type === "position" && change.dragging === true && !dragBaselineRef.current) {
+          dragBaselineRef.current = capturePipelineGraphSnapshot(
+            nodesRef.current,
+            edgesRef.current,
+          );
+        }
+      }
+
+      const removedIds = changes
+        .filter((change) => change.type === "remove" && "id" in change && Boolean(change.id))
+        .map((change) => String((change as { id: string }).id));
+      const hasStructuralAdd = changes.some((change) => change.type === "add");
+      const hasDragEnd = changes.some(
+        (change) => change.type === "position" && change.dragging === false,
       );
-      if (marksDirty) setDirty(true);
-      setNodes((rows) => applyNodeChanges(changes, rows));
+
+      if (removedIds.length > 0 || hasStructuralAdd) {
+        const baseline = capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+        const nextNodes = applyNodeChanges(changes, nodesRef.current);
+        const removed = new Set(removedIds);
+        const nextEdges = edgesRef.current.filter(
+          (edge) => !removed.has(edge.source) && !removed.has(edge.target),
+        );
+        suppressEdgeHistoryRef.current = true;
+        commitGraphEdit(nextNodes, nextEdges, { baseline });
+        queueMicrotask(() => {
+          suppressEdgeHistoryRef.current = false;
+        });
+        dragBaselineRef.current = null;
+        return;
+      }
+
+      if (hasDragEnd) {
+        const baseline = dragBaselineRef.current;
+        dragBaselineRef.current = null;
+        const nextNodes = applyNodeChanges(changes, nodesRef.current);
+        commitGraphEdit(nextNodes, edgesRef.current, { baseline: baseline ?? undefined });
+        return;
+      }
+
+      const nextNodes = applyNodeChanges(changes, nodesRef.current);
+      setNodes(nextNodes);
+      nodesRef.current = nextNodes;
     },
-    [canWrite],
+    [canWrite, commitGraphEdit],
   );
 
   const onEdgesChange = useCallback(
     (changes: EdgeChange[]) => {
       if (!canWrite) {
         const safe = changes.filter((change) => change.type === "select");
-        if (safe.length) setEdges((rows) => applyEdgeChanges(safe, rows));
+        if (safe.length) {
+          const next = applyEdgeChanges(safe, edgesRef.current);
+          setEdges(next);
+          edgesRef.current = next;
+        }
         return;
       }
-      if (changes.some((change) => change.type === "remove" || change.type === "add")) {
-        setDirty(true);
+
+      const structural = changes.some(
+        (change) => change.type === "remove" || change.type === "add",
+      );
+      if (!structural || suppressEdgeHistoryRef.current) {
+        const next = applyEdgeChanges(changes, edgesRef.current);
+        setEdges(next);
+        edgesRef.current = next;
+        return;
       }
-      setEdges((rows) => applyEdgeChanges(changes, rows));
+
+      const nextEdges = applyEdgeChanges(changes, edgesRef.current);
+      commitGraphEdit(nodesRef.current, nextEdges);
     },
-    [canWrite],
+    [canWrite, commitGraphEdit],
   );
 
   const onConnect = useCallback(
     (connection: Connection) => {
       if (!canWrite) return;
-      const source = nodes.find((node) => node.id === connection.source);
+      const source = nodesRef.current.find((node) => node.id === connection.source);
       const isCondition = source?.data.node_type === "condition";
       const handle = connection.sourceHandle;
       const branch: ConditionBranch =
@@ -928,11 +1137,33 @@ export function PipelineBuilder() {
             data: { branch },
           }
         : connection;
-      setDirty(true);
-      setEdges((rows) => addEdge(edge, rows));
+      const nextEdges = addEdge(edge, edgesRef.current);
+      commitGraphEdit(nodesRef.current, nextEdges);
     },
-    [canWrite, nodes],
+    [canWrite, commitGraphEdit],
   );
+
+  useEffect(() => {
+    if (!canWrite) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (busy !== "") return;
+      if (isEditableKeyboardTarget(event.target)) return;
+      const key = event.key.toLowerCase();
+      const modifier = event.ctrlKey || event.metaKey;
+      if (!modifier) return;
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoGraphEdit();
+        return;
+      }
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redoGraphEdit();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [busy, canWrite, redoGraphEdit, undoGraphEdit]);
 
   const graph = (): PipelineGraph => ({
     nodes: nodes.map((node) => ({
@@ -967,15 +1198,18 @@ export function PipelineBuilder() {
     }) as PipelineGraph["edges"],
   });
 
-  async function validateCurrentGraph(): Promise<boolean> {
+  async function validateCurrentGraph(requestId: number): Promise<boolean | null> {
     const result = await api<ValidationResult>(
       `/projects/${projectId}/pipelines/${pipelineId}/validate`,
       { method: "POST", body: JSON.stringify({ graph: graph() }) },
     );
+    if (requestId !== validateSeqRef.current) return null;
     setValidationVisible(true);
     if (!result.valid) {
       setValidationErrors(result.errors || ["Pipeline graph is invalid."]);
-      setHighlightedNodeIds(extractHighlightedNodeIds(result.errors || [], nodes.map((n) => n.id)));
+      setHighlightedNodeIds(
+        extractHighlightedNodeIds(result.errors || [], nodesRef.current.map((n) => n.id)),
+      );
       return false;
     }
     setValidationErrors([]);
@@ -984,17 +1218,22 @@ export function PipelineBuilder() {
   }
 
   async function runValidate() {
+    const requestId = ++validateSeqRef.current;
     setBusy("validate");
     setError("");
     setSuccess("");
     try {
-      const ok = await validateCurrentGraph();
+      const ok = await validateCurrentGraph(requestId);
+      if (ok === null || requestId !== validateSeqRef.current) return;
       setSuccess(ok ? "그래프 검증을 통과했습니다." : "");
       if (!ok) setError("검증 오류를 수정한 뒤 다시 시도하세요.");
     } catch (reason) {
+      if (requestId !== validateSeqRef.current) return;
       setError(reason instanceof Error ? reason.message : "파이프라인 검증에 실패했습니다.");
     } finally {
-      setBusy("");
+      if (requestId === validateSeqRef.current) {
+        setBusy((prev) => (prev === "validate" ? "" : prev));
+      }
     }
   }
 
@@ -1004,22 +1243,52 @@ export function PipelineBuilder() {
     setSuccess("");
     try {
       if (kind === "save") {
-        await api(`/projects/${projectId}/pipelines/${pipelineId}/versions`, {
-          method: "POST",
-          body: JSON.stringify({ graph: graph() }),
-        });
-        setDirty(false);
+        // Freeze the exact graph sent to the API; later canvas edits must not rewrite it.
+        const frozenGraph = graph();
+        const savedSnapshot = capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+        const version = await api<PipelineVersion>(
+          `/projects/${projectId}/pipelines/${pipelineId}/versions`,
+          {
+            method: "POST",
+            body: JSON.stringify({ graph: frozenGraph }),
+          },
+        );
+        savedSnapshotRef.current = savedSnapshot;
+        const liveSnapshot = capturePipelineGraphSnapshot(nodesRef.current, edgesRef.current);
+        // Allow editing during save. Only clear history when the canvas still matches
+        // the saved snapshot; otherwise keep post-save-start edits undoable.
+        if (pipelineGraphSnapshotsEqual(liveSnapshot, savedSnapshot)) {
+          resetGraphHistory();
+        } else {
+          dragBaselineRef.current = null;
+        }
+        syncDirtyFromSnapshot(liveSnapshot);
+        setPipeline((prev) =>
+          prev
+            ? {
+                ...prev,
+                latest_version: version.version ?? prev.latest_version + 1,
+                version: {
+                  id: version.id,
+                  version: version.version,
+                  graph: frozenGraph,
+                },
+              }
+            : prev,
+        );
         setSuccess("파이프라인 버전을 저장했습니다.");
         setValidationErrors([]);
         setValidationVisible(false);
-        await load();
+        // Do not call load() here — it would overwrite edits made during the in-flight save.
         return;
       }
       if (dirty) {
         setError("게시하거나 실행하기 전에 변경사항을 버전으로 저장하세요.");
         return;
       }
-      const ok = await validateCurrentGraph();
+      const requestId = ++validateSeqRef.current;
+      const ok = await validateCurrentGraph(requestId);
+      if (ok === null || requestId !== validateSeqRef.current) return;
       if (!ok) {
         setError("검증 오류를 수정한 뒤 다시 시도하세요.");
         return;
@@ -1036,6 +1305,7 @@ export function PipelineBuilder() {
         navigate(`/projects/${projectId}/pipeline-runs/${run.id}`);
       }
     } catch (reason) {
+      // Keep edit history on save failure so the user can continue undoing.
       setError(
         reason instanceof Error
           ? reason.message
@@ -1096,6 +1366,26 @@ export function PipelineBuilder() {
           </div>
         </div>
         <div className="pipeline-builder-header-actions">
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="pipeline-undo"
+            disabled={!canUndo || actionsDisabled}
+            onClick={() => undoGraphEdit()}
+            title="실행 취소 (Ctrl+Z)"
+          >
+            실행 취소
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            data-testid="pipeline-redo"
+            disabled={!canRedo || actionsDisabled}
+            onClick={() => redoGraphEdit()}
+            title="다시 실행 (Ctrl+Y / Ctrl+Shift+Z)"
+          >
+            다시 실행
+          </button>
           {canWrite && (
             <>
               <button
@@ -1320,7 +1610,16 @@ export function PipelineBuilder() {
               fitView
             >
               <Background />
-              <MiniMap />
+              <MiniMap
+                pannable
+                ariaLabel="파이프라인 미니맵 — 클릭하거나 드래그하여 이동"
+                onClick={(_event, position) => {
+                  centerFlowOnMiniMapPoint(flowInstanceRef.current, position);
+                }}
+                onNodeClick={(_event, node) => {
+                  centerFlowOnMiniMapNode(flowInstanceRef.current, node);
+                }}
+              />
               <Controls />
             </ReactFlow>
           )}
@@ -1362,6 +1661,7 @@ export function PipelineBuilder() {
               <label>
                 단계 이름
                 <input
+                  key={`pipeline-step-name-${selectedNode.id}-${inspectorEpoch}`}
                   data-testid="pipeline-step-name"
                   value={selectedNode.data.label}
                   disabled={!canWrite}
@@ -1379,6 +1679,7 @@ export function PipelineBuilder() {
               <span className="eyebrow">설정</span>
               {canWrite ? (
                 <NodeConfigForm
+                  key={`pipeline-config-${selectedNode.id}-${inspectorEpoch}`}
                   projectId={String(projectId)}
                   nodeType={selectedNode.data.node_type}
                   config={selectedNode.data.config || {}}
@@ -1395,6 +1696,7 @@ export function PipelineBuilder() {
                 <label>
                   설정
                   <textarea
+                    key={`pipeline-json-${selectedNode.id}-${inspectorEpoch}`}
                     className="code-input"
                     data-testid="pipeline-advanced-json"
                     value={jsonText}

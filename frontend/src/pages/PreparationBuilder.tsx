@@ -40,6 +40,7 @@ import {
   type DatasetVersion,
 } from "../api";
 import { useAuth } from "../AuthContext";
+import { centerFlowOnMiniMapNode, centerFlowOnMiniMapPoint } from "../flowMiniMapNav";
 import {
   ErrorNotice,
   HelpTip,
@@ -279,6 +280,10 @@ export default function PreparationBuilder() {
   const edgesRef = useRef<Edge[]>([]);
   const dragBaselineRef = useRef<PrepGraphSnapshot | null>(null);
   const suppressEdgeHistoryRef = useRef(false);
+  const flowInstanceRef = useRef<{
+    setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+    getZoom: () => number;
+  } | null>(null);
   const canWrite = userCanProject(
     user,
     selectedProject,
@@ -1445,10 +1450,22 @@ export default function PreparationBuilder() {
                 setSelectedId("");
               }}
               onPaneClick={() => setSelectedEdgeId("")}
+              onInit={(instance) => {
+                flowInstanceRef.current = instance;
+              }}
               fitView
             >
               <Background />
-              <MiniMap />
+              <MiniMap
+                pannable
+                ariaLabel="데이터 준비 미니맵 — 클릭하거나 드래그하여 이동"
+                onClick={(_event, position) => {
+                  centerFlowOnMiniMapPoint(flowInstanceRef.current, position);
+                }}
+                onNodeClick={(_event, node) => {
+                  centerFlowOnMiniMapNode(flowInstanceRef.current, node);
+                }}
+              />
               <Controls />
             </ReactFlow>
           )}
