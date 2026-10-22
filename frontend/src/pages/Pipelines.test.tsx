@@ -36,30 +36,55 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
+const flowSetCenterMock = vi.fn();
+const flowGetZoomMock = vi.fn(() => 1.5);
+
 vi.mock("@xyflow/react", () => ({
   ReactFlow: ({
     nodes,
+    edges = [],
     onNodeClick,
     onInit,
     onNodesChange,
+    onEdgesChange,
     onConnect,
     nodesDraggable,
     nodesConnectable,
     deleteKeyCode,
     children,
   }: {
-    nodes: Array<{ id: string; data: { label: string } }>;
+    nodes: Array<{
+      id: string;
+      position?: { x: number; y: number };
+      data: { label: string; node_type?: string };
+    }>;
+    edges?: Array<{ id: string; source: string; target: string; sourceHandle?: string | null }>;
     onNodeClick?: (_: unknown, node: { id: string; data: { label: string } }) => void;
-    onInit?: (instance: { setCenter: () => void; getZoom: () => number }) => void;
-    onNodesChange?: (changes: Array<{ type: string; id?: string }>) => void;
-    onConnect?: (connection: { source: string; target: string }) => void;
+    onInit?: (instance: {
+      setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+      getZoom: () => number;
+    }) => void;
+    onNodesChange?: (
+      changes: Array<{
+        type: string;
+        id?: string;
+        position?: { x: number; y: number };
+        dragging?: boolean;
+      }>,
+    ) => void;
+    onEdgesChange?: (changes: Array<{ type: string; id?: string }>) => void;
+    onConnect?: (connection: {
+      source: string;
+      target: string;
+      sourceHandle?: string | null;
+    }) => void;
     nodesDraggable?: boolean;
     nodesConnectable?: boolean;
     deleteKeyCode?: string[] | null;
     children?: ReactNode;
   }) => {
     useEffect(() => {
-      onInit?.({ setCenter: () => undefined, getZoom: () => 1 });
+      onInit?.({ setCenter: flowSetCenterMock, getZoom: flowGetZoomMock });
     }, [onInit]);
     return (
       <div
@@ -73,9 +98,21 @@ vi.mock("@xyflow/react", () => ({
             key={node.id}
             type="button"
             data-testid={`canvas-node-${node.id}`}
+            data-x={String(node.position?.x ?? 0)}
+            data-y={String(node.position?.y ?? 0)}
             onClick={() => onNodeClick?.({}, node)}
           >
             {node.data.label}
+          </button>
+        ))}
+        {edges.map((edge) => (
+          <button
+            key={edge.id}
+            type="button"
+            data-testid={`canvas-edge-${edge.id}`}
+            data-source-handle={edge.sourceHandle || ""}
+          >
+            {edge.source}→{edge.target}
           </button>
         ))}
         {nodes[0] && (
@@ -91,12 +128,59 @@ vi.mock("@xyflow/react", () => ({
               type="button"
               data-testid="react-flow-force-connect"
               onClick={() =>
-                onConnect?.({ source: nodes[0].id, target: nodes[0].id })
+                onConnect?.({
+                  source: nodes[0].id,
+                  target: nodes.find((row) => row.id !== nodes[0].id)?.id || nodes[0].id,
+                })
               }
             >
               force-connect
             </button>
+            <button
+              type="button"
+              data-testid="react-flow-force-condition-connect"
+              onClick={() => {
+                const condition = nodes.find((row) => row.data.node_type === "condition");
+                const target =
+                  nodes.find((row) => row.id !== condition?.id) || nodes[0];
+                if (!condition) return;
+                onConnect?.({
+                  source: condition.id,
+                  target: target.id,
+                  sourceHandle: "true",
+                });
+              }}
+            >
+              force-condition-connect
+            </button>
+            <button
+              type="button"
+              data-testid="react-flow-force-drag"
+              onClick={() => {
+                const id = nodes[0].id;
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 11, y: 12 }, dragging: true },
+                ]);
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 40, y: 50 }, dragging: true },
+                ]);
+                onNodesChange?.([
+                  { type: "position", id, position: { x: 120, y: 140 }, dragging: false },
+                ]);
+              }}
+            >
+              force-drag
+            </button>
           </>
+        )}
+        {edges[0] && (
+          <button
+            type="button"
+            data-testid="react-flow-force-remove-edge"
+            onClick={() => onEdgesChange?.([{ type: "remove", id: edges[0].id }])}
+          >
+            force-remove-edge
+          </button>
         )}
         {children}
       </div>
@@ -104,7 +188,43 @@ vi.mock("@xyflow/react", () => ({
   },
   Background: () => null,
   Controls: () => null,
-  MiniMap: () => null,
+  MiniMap: ({
+    pannable,
+    ariaLabel,
+    onClick,
+    onNodeClick,
+  }: {
+    pannable?: boolean;
+    ariaLabel?: string | null;
+    onClick?: (_event: unknown, position: { x: number; y: number }) => void;
+    onNodeClick?: (
+      _event: unknown,
+      node: { position: { x: number; y: number }; width?: number; height?: number },
+    ) => void;
+  }) => (
+    <div
+      data-testid="pipeline-minimap"
+      data-pannable={String(Boolean(pannable))}
+      aria-label={ariaLabel || undefined}
+    >
+      <button
+        type="button"
+        data-testid="pipeline-minimap-click"
+        onClick={() => onClick?.({}, { x: 320, y: 180 })}
+      >
+        minimap-click
+      </button>
+      <button
+        type="button"
+        data-testid="pipeline-minimap-node-click"
+        onClick={() =>
+          onNodeClick?.({}, { position: { x: 100, y: 40 }, width: 200, height: 80 })
+        }
+      >
+        minimap-node-click
+      </button>
+    </div>
+  ),
   Handle: () => null,
   Position: { Left: "left", Right: "right", Top: "top", Bottom: "bottom" },
   addEdge: (edge: Record<string, unknown>, edges: unknown[]) => [
@@ -121,13 +241,22 @@ vi.mock("@xyflow/react", () => ({
     return next;
   },
   applyNodeChanges: (
-    changes: Array<{ type: string; id?: string }>,
-    nodes: Array<{ id: string }>,
+    changes: Array<{
+      type: string;
+      id?: string;
+      position?: { x: number; y: number };
+    }>,
+    nodes: Array<{ id: string; position?: { x: number; y: number } }>,
   ) => {
     let next = [...nodes];
     for (const change of changes) {
       if (change.type === "remove" && change.id) {
         next = next.filter((node) => node.id !== change.id);
+      }
+      if (change.type === "position" && change.id && change.position) {
+        next = next.map((node) =>
+          node.id === change.id ? { ...node, position: change.position! } : node,
+        );
       }
     }
     return next;
@@ -711,6 +840,9 @@ describe("PipelineBuilder", () => {
   beforeEach(() => {
     apiMock.mockReset();
     navigateMock.mockReset();
+    flowSetCenterMock.mockReset();
+    flowGetZoomMock.mockReset();
+    flowGetZoomMock.mockReturnValue(1.5);
     canWriteRef.value = true;
     stubBuilderApi();
   });
@@ -1114,6 +1246,331 @@ describe("PipelineBuilder", () => {
     expect(await screen.findByTestId("pipeline-node-id")).toHaveTextContent("training-1");
     expect(screen.getByTestId("pipeline-step-name")).toHaveValue("Train model");
   });
+  it("keeps undo/redo disabled until a graph edit exists", async () => {
+    renderBuilder();
+    expect(await screen.findByTestId("pipeline-undo")).toBeDisabled();
+    expect(screen.getByTestId("pipeline-redo")).toBeDisabled();
+  });
+
+  it("undoes and redoes node add, delete-with-edges, condition connect, config, and drag", async () => {
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") {
+        return {
+          ...pipeline,
+          version: {
+            id: 1,
+            version: 1,
+            graph: {
+              nodes: [
+                {
+                  id: "dataset_load-1",
+                  position: { x: 0, y: 0 },
+                  data: {
+                    label: "Dataset Load",
+                    node_type: "dataset_load",
+                    config: defaultConfigFor("dataset_load"),
+                  },
+                },
+              ],
+              edges: [],
+            },
+          },
+        };
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") return versions;
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return { valid: true, errors: [] };
+      }
+      throw new Error(`Unhandled ${path} ${method}`);
+    });
+    renderBuilder();
+    await screen.findByTestId("canvas-node-dataset_load-1");
+    expect(screen.getByTestId("pipeline-undo")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("pipeline-library-condition"));
+    expect(await screen.findByTestId("canvas-node-condition-1")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-undo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-condition-1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("pipeline-redo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("pipeline-redo"));
+    expect(await screen.findByTestId("canvas-node-condition-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("react-flow-force-condition-connect"));
+    await waitFor(() => {
+      expect(screen.getByTestId("canvas-edge-e-0")).toHaveAttribute("data-source-handle", "true");
+    });
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-edge-e-0")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("pipeline-redo"));
+    expect(await screen.findByTestId("canvas-edge-e-0")).toHaveAttribute(
+      "data-source-handle",
+      "true",
+    );
+
+    fireEvent.click(screen.getByTestId("canvas-node-condition-1"));
+    const nameInput = await screen.findByTestId("pipeline-step-name");
+    fireEvent.change(nameInput, { target: { value: "Gate" } });
+    expect(nameInput).toHaveValue("Gate");
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-step-name")).toHaveValue("Condition");
+    });
+    fireEvent.click(screen.getByTestId("pipeline-redo"));
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-step-name")).toHaveValue("Gate");
+    });
+
+    fireEvent.click(screen.getByTestId("react-flow-force-drag"));
+    await waitFor(() => {
+      expect(screen.getByTestId("canvas-node-dataset_load-1")).toHaveAttribute("data-x", "120");
+    });
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.getByTestId("canvas-node-dataset_load-1")).toHaveAttribute("data-x", "0");
+    });
+    expect(screen.getByTestId("pipeline-undo")).not.toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("react-flow-force-remove"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-dataset_load-1")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    expect(screen.getByTestId("canvas-edge-e-0")).toBeInTheDocument();
+  });
+
+  it("handles keyboard shortcuts, input focus, redo discard, readonly, and stale validate", async () => {
+    const validateGate: {
+      resolve?: (value: { valid: boolean; errors: string[] }) => void;
+    } = {};
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return { ...pipeline };
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") return versions;
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return await new Promise<{ valid: boolean; errors: string[] }>((resolve) => {
+          validateGate.resolve = resolve;
+        });
+      }
+      throw new Error(`Unhandled ${path} ${method}`);
+    });
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-dataset_load-1")).not.toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: "y", ctrlKey: true });
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-dataset_load-1")).not.toBeInTheDocument();
+    });
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true, shiftKey: true });
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("canvas-node-dataset_load-1"));
+    const nameInput = await screen.findByTestId("pipeline-step-name");
+    fireEvent.keyDown(nameInput, { key: "z", ctrlKey: true });
+    expect(screen.getByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-dataset_load-1")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("pipeline-redo")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("pipeline-library-split"));
+    expect(await screen.findByTestId("canvas-node-split-1")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-redo")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("pipeline-validate"));
+    fireEvent.click(screen.getByTestId("pipeline-library-training"));
+    expect(await screen.findByTestId("canvas-node-training-1")).toBeInTheDocument();
+    validateGate.resolve?.({ valid: false, errors: ["Node 'split-1' is missing ratios"] });
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-validation-errors")).not.toBeInTheDocument();
+    });
+
+    canWriteRef.value = false;
+    cleanup();
+    stubBuilderApi();
+    renderBuilder();
+    expect(await screen.findByTestId("pipeline-undo")).toBeDisabled();
+    expect(screen.getByTestId("pipeline-redo")).toBeDisabled();
+  });
+
+  it("keeps edits made during an in-flight save undoable after success", async () => {
+    const saveGate: { resolve?: (value: unknown) => void } = {};
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") return { ...pipeline };
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") return versions;
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return await new Promise((resolve) => {
+          saveGate.resolve = resolve;
+        });
+      }
+      throw new Error(`Unhandled ${path} ${method}`);
+    });
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-save"));
+    fireEvent.click(screen.getByTestId("pipeline-library-split"));
+    expect(await screen.findByTestId("canvas-node-split-1")).toBeInTheDocument();
+    saveGate.resolve?.({
+      id: 2,
+      version: 2,
+      graph: {
+        nodes: [
+          {
+            id: "dataset_load-1",
+            position: { x: 80, y: 80 },
+            data: {
+              label: "Dataset Load",
+              node_type: "dataset_load",
+              config: defaultConfigFor("dataset_load"),
+            },
+          },
+        ],
+        edges: [],
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("canvas-node-split-1")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-undo")).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-split-1")).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+  });
+
+  it("restores Advanced JSON config on undo and keeps invalid JSON out of history", async () => {
+    renderBuilder();
+    await screen.findByTestId("pipeline-library-dataset_load");
+    fireEvent.click(screen.getByTestId("pipeline-library-dataset_load"));
+    fireEvent.click(await screen.findByTestId("canvas-node-dataset_load-1"));
+    const details = screen.getByText("고급 JSON").closest("details");
+    expect(details).toBeTruthy();
+    if (details) details.open = true;
+    const json = await screen.findByTestId("pipeline-advanced-json");
+    fireEvent.change(json, {
+      target: { value: '{"dataset_id":3,"dataset_version_id":11}' },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("pipeline-undo")).not.toBeDisabled();
+    });
+    fireEvent.change(json, { target: { value: "{not-json" } });
+    expect(screen.getByTestId("pipeline-json-error")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      const value = (screen.getByTestId("pipeline-advanced-json") as HTMLTextAreaElement).value;
+      // Undo restores the last committed config (default {}), not the invalid draft text.
+      expect(value.replace(/\s/g, "")).toBe("{}");
+      expect(value).not.toContain("not-json");
+    });
+    expect(screen.queryByTestId("pipeline-json-error")).not.toBeInTheDocument();
+  });
+
+  it("centers the viewport from MiniMap click without dirty or history changes", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipelines/9") {
+        return {
+          ...pipeline,
+          version: {
+            id: 1,
+            version: 1,
+            graph: {
+              nodes: [
+                {
+                  id: "dataset_load-1",
+                  position: { x: 0, y: 0 },
+                  data: {
+                    label: "Dataset Load",
+                    node_type: "dataset_load",
+                    config: defaultConfigFor("dataset_load"),
+                  },
+                },
+              ],
+              edges: [],
+            },
+          },
+        };
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      throw new Error(`Unhandled ${path}`);
+    });
+    renderBuilder();
+    const minimap = await screen.findByTestId("pipeline-minimap");
+    expect(minimap).toHaveAttribute("data-pannable", "true");
+    expect(minimap).toHaveAttribute("aria-label", expect.stringContaining("미니맵"));
+    expect(screen.getByTestId("pipeline-undo")).toBeDisabled();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-minimap-click"));
+    expect(flowSetCenterMock).toHaveBeenCalledWith(320, 180, {
+      zoom: 1.5,
+      duration: 200,
+    });
+    fireEvent.click(screen.getByTestId("pipeline-minimap-node-click"));
+    expect(flowSetCenterMock).toHaveBeenCalledWith(200, 80, {
+      zoom: 1.5,
+      duration: 200,
+    });
+    expect(screen.getByTestId("pipeline-undo")).toBeDisabled();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
+  });
+
+  it("undoes Copilot Apply as a single history entry", async () => {
+    stubBuilderApiWithCopilot();
+    renderBuilder();
+    await screen.findByTestId("pipeline-copilot-open");
+    fireEvent.click(screen.getByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "build forecast" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-apply")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-confirm-apply"));
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-dirty-badge")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("pipeline-undo"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("canvas-node-dataset_load-1")).not.toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("pipeline-redo"));
+    expect(await screen.findByTestId("canvas-node-dataset_load-1")).toBeInTheDocument();
+  });
+
+
 });
 
 describe("PipelineRunDetail", () => {
@@ -1403,6 +1860,7 @@ describe("Pipeline contextual scheduling gates", () => {
       expect.stringContaining("일정 등록 전에 변경사항을 저장하세요"),
     );
   });
+
 });
 
 const forecastCopilotDraft: PipelineCopilotDraftResponse = {
