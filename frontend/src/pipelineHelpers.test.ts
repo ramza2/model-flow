@@ -4,6 +4,7 @@ import {
   defaultConfigFor,
   edgeBranch,
   filterNodeLibrary,
+  labelForType,
   lifecycleCoverage,
   lifecycleStageForNodeType,
   nextPipelineNodeId,
@@ -12,6 +13,9 @@ import {
   PIPELINE_LIFECYCLE_STAGES,
   PIPELINE_NODE_LIBRARY,
   PIPELINE_NODE_TYPES,
+  pipelineNodeLibraryCategoryLabel,
+  pipelineNodeTypeDescription,
+  pipelineNodeTypeLabel,
 } from "./pipelineHelpers";
 
 describe("pipelineHelpers Phase 3-A", () => {
@@ -193,5 +197,65 @@ describe("pipelineHelpers Phase 3-A", () => {
     ]);
 
     expect(filterNodeLibrary(PIPELINE_NODE_LIBRARY, "zzzz-no-match")).toEqual([]);
+  });
+
+  it("exposes Korean display labels without changing saved English defaults", () => {
+    const expected: Array<[string, string]> = [
+      ["dataset_load", "데이터셋 불러오기 (Dataset Load)"],
+      ["preprocessing", "데이터 전처리 (Preprocessing)"],
+      ["split", "데이터 분할 (Split)"],
+      ["quality_check", "품질 검사 (Quality Check)"],
+      ["training", "모델 학습 (Training)"],
+      ["evaluation", "모델 평가 (Evaluation)"],
+      ["condition", "조건 분기 (Condition)"],
+      ["model_registration", "모델 등록 (Model Registration)"],
+      ["approval_request", "승인 요청 (Approval Request)"],
+      ["endpoint_deployment", "엔드포인트 배포 (Endpoint Deployment)"],
+      ["batch_prediction", "일괄 예측 (Batch Prediction)"],
+      ["notification", "알림 (Notification)"],
+    ];
+    expect(expected).toHaveLength(12);
+    for (const [type, label] of expected) {
+      expect(pipelineNodeTypeLabel(type)).toBe(label);
+      expect(labelForType(type)).toBe(
+        type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+      );
+      expect(pipelineNodeTypeDescription(type).length).toBeGreaterThan(0);
+    }
+    expect(pipelineNodeLibraryCategoryLabel("1. Source & Transform")).toBe("1. 데이터 입력·변환");
+    expect(pipelineNodeLibraryCategoryLabel("3. Train")).toBe("3. 모델 학습·평가");
+  });
+
+  it("matches Korean and English library search terms for Split/Training/Evaluation", () => {
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "split").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toContain("split");
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "분할").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toEqual(["split"]);
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "training").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toContain("training");
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "학습").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toContain("training");
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "evaluation").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toContain("evaluation");
+    expect(
+      filterNodeLibrary(PIPELINE_NODE_LIBRARY, "평가").flatMap((group) =>
+        group.items.map((item) => item.type),
+      ),
+    ).toContain("evaluation");
   });
 });

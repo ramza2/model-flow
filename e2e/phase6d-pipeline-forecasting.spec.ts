@@ -174,7 +174,7 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
   await expect(page.getByTestId("node-config-features")).toContainText("sales_roll_avg_3");
   await expect(page.getByTestId("node-config-features")).not.toContainText("event_time");
   await expect(page.getByTestId("node-config-forecast-horizons-help")).toContainText(
-    /observation steps/i,
+    /관측값|observation steps/i,
   );
 
   await page.getByTestId("pipeline-validate").click();

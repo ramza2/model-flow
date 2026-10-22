@@ -65,6 +65,9 @@ import {
   nextPipelineNodeId,
   nodeConfigWarnings,
   parseValidationIssue,
+  pipelineNodeLibraryCategoryLabel,
+  pipelineNodeTypeDescription,
+  pipelineNodeTypeLabel,
   type ConditionBranch,
   type PipelineNodeType,
 } from "../pipelineHelpers";
@@ -197,7 +200,7 @@ function PipelineStepNodeComponent({ data, selected }: NodeProps<StepNode>) {
     >
       <Handle type="target" position={Position.Left} />
       <strong className="pipeline-step-label">{data.label}</strong>
-      <span className="pipeline-step-type">{labelForType(data.node_type)}</span>
+      <span className="pipeline-step-type">{pipelineNodeTypeLabel(data.node_type)}</span>
       {data.runStatus && (
         <span className="pipeline-step-run-status">
           <StatusBadge status={data.runStatus} />
@@ -1230,13 +1233,13 @@ export function PipelineBuilder() {
                 </button>
               </div>
             </div>
-            <span className="eyebrow">Node library</span>
-            <p className="form-hint">Click a step type to add it to the canvas.</p>
+            <span className="eyebrow">노드 라이브러리</span>
+            <p className="form-hint">단계 유형을 클릭하면 캔버스에 추가됩니다.</p>
             <label className="pipeline-library-search">
-              <span className="sr-only">Search node library</span>
+              <span className="sr-only">노드 라이브러리 검색</span>
               <input
                 type="search"
-                placeholder="Search nodes…"
+                placeholder="노드 검색 (예: 분할, split)…"
                 value={libraryQuery}
                 data-testid="pipeline-library-search"
                 onChange={(event) => setLibraryQuery(event.target.value)}
@@ -1244,12 +1247,12 @@ export function PipelineBuilder() {
             </label>
             {libraryGroups.length === 0 ? (
               <p className="muted" data-testid="pipeline-library-empty">
-                No matching nodes.
+                일치하는 노드가 없습니다.
               </p>
             ) : (
               libraryGroups.map((group) => (
                 <div className="pipeline-library-category" key={group.category}>
-                  <strong>{group.category}</strong>
+                  <strong>{pipelineNodeLibraryCategoryLabel(group.category)}</strong>
                   <ul>
                     {group.items.map((item) => (
                       <li key={item.type}>
@@ -1258,10 +1261,10 @@ export function PipelineBuilder() {
                           className="pipeline-library-item"
                           data-testid={`pipeline-library-${item.type}`}
                           onClick={() => addNodeOfType(item.type)}
-                          title={item.description}
+                          title={pipelineNodeTypeDescription(item.type) || item.description}
                         >
                           <span aria-hidden="true">{item.icon}</span>
-                          <span>{labelForType(item.type)}</span>
+                          <span>{pipelineNodeTypeLabel(item.type)}</span>
                         </button>
                       </li>
                     ))}
@@ -1366,7 +1369,7 @@ export function PipelineBuilder() {
                 />
               </label>
               <p className="form-hint" data-testid="pipeline-step-type">
-                유형: {labelForType(selectedNode.data.node_type)}
+                유형: {pipelineNodeTypeLabel(selectedNode.data.node_type)}
               </p>
               <small className="muted pipeline-node-id" data-testid="pipeline-node-id">
                 노드 ID: {selectedNode.id}
