@@ -1884,8 +1884,7 @@ export function PipelineBuilder() {
             {copilotError && (
               <div data-testid="pipeline-copilot-error">
                 <p className="form-hint" data-testid="pipeline-copilot-error-title">
-                  제안을 가져오지 못했습니다. Copilot 설정·네트워크·서비스 상태를 확인한 뒤 다시
-                  시도하세요.
+                  {copilotErrorTitle(copilotError)}
                 </p>
                 <ErrorNotice message={copilotError} />
               </div>
@@ -2070,6 +2069,18 @@ export function PipelineBuilder() {
       )}
     </div>
   );
+}
+
+/** Display-only Copilot error framing; preserves server detail in ErrorNotice. */
+function copilotErrorTitle(errorText: string): string {
+  if (
+    /invalid PipelineGraph proposal|requires source and target|failed structural validation|failed canonicalization|not valid JSON|Graph exceeds|unsupported type|Duplicate (?:node|edge)|missing id|must include a (?:non-empty summary|graph object)/i.test(
+      errorText,
+    )
+  ) {
+    return "AI가 파이프라인 구조를 올바르게 생성하지 못했습니다. 요청을 다시 시도하거나 설명을 더 구체적으로 입력해 주세요.";
+  }
+  return "제안을 가져오지 못했습니다. Copilot 설정·네트워크·서비스 상태를 확인한 뒤 다시 시도하세요.";
 }
 
 function describeCopilotPatchOperation(operation: PipelineCopilotPatchOperation): string {

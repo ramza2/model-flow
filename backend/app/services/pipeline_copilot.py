@@ -35,6 +35,8 @@ MAX_PROVIDER_CONTENT_CHARS = 200_000
 MAX_GRAPH_JSON_CHARS = 200_000
 MAX_PATCH_OPERATIONS = 100
 COPILOT_TEMPERATURE = 0
+# Initial draft request + at most one contract/structure repair call.
+MAX_DRAFT_PROVIDER_ATTEMPTS = 2
 ALLOWED_PATCH_OPS = frozenset(
     {
         "add_node",
@@ -134,12 +136,60 @@ assert set(NODE_CONFIG_GUIDANCE) == NODE_TYPES, (
     "Copilot node guidance keys must match pipeline_engine.NODE_TYPES exactly"
 )
 
+# Structure-only example for provider guidance. Catalog IDs/config must come from
+# the project catalog and user request — never copy placeholder IDs from here.
+GRAPH_OUTPUT_EXAMPLE: dict[str, Any] = {
+    "summary": "short explanation",
+    "graph": {
+        "nodes": [
+            {
+                "id": "dataset_load-1",
+                "position": {"x": 80, "y": 80},
+                "data": {
+                    "label": "Dataset Load",
+                    "node_type": "dataset_load",
+                    "config": {},
+                },
+            },
+            {
+                "id": "training-1",
+                "position": {"x": 400, "y": 80},
+                "data": {
+                    "label": "Training",
+                    "node_type": "training",
+                    "config": {},
+                },
+            },
+        ],
+        "edges": [
+            {
+                "id": "edge-1",
+                "source": "dataset_load-1",
+                "target": "training-1",
+                "data": {"branch": "always"},
+            }
+        ],
+    },
+}
+
+EDGE_CONTRACT_RULES = [
+    "Every edge object MUST include string fields source and target.",
+    "source and target MUST reference existing node.id values in the same graph.",
+    "Do not use from/to, source_id/target_id, or any alternate edge endpoint fields.",
+    "Node ids and edge ids must be unique within the proposal.",
+    "Condition edge data.branch must be one of: true, false, always.",
+    "Do not invent project resource IDs; use only catalog values.",
+    "If required information is missing, return an incomplete but well-formed draft.",
+]
+
 SYSTEM_PROMPT = """You are ModelFlow Pipeline Copilot.
 Generate ONLY a ModelFlow PipelineGraph proposal as JSON.
 
 Hard rules:
 - Output JSON only (optionally wrapped in one ```json fence).
 - Shape: {"summary":"...","graph":{"nodes":[],"edges":[]}}.
+- Every edge MUST have source and target strings that match existing node ids.
+- Do not use from/to or source_id/target_id instead of source/target.
 - Use only the node types and config fields described in the guidance.
 - Use only project resources from the supplied catalog (exact IDs).
 - Prefer exact dataset_version_id values from the catalog; never invent IDs.
@@ -343,8 +393,13 @@ def build_project_catalog(db: Session, project_id: int) -> dict[str, Any]:
     }
 
 
-def build_messages(prompt: str, catalog: dict[str, Any]) -> list[dict[str, str]]:
-    user_payload = {
+def _draft_user_payload(
+    prompt: str,
+    catalog: dict[str, Any],
+    *,
+    repair_errors: list[str] | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "untrusted_user_prompt": prompt,
         "project_catalog": {
             "datasets": catalog.get("datasets", []),
@@ -356,13 +411,62 @@ def build_messages(prompt: str, catalog: dict[str, Any]) -> list[dict[str, str]]
         "output_contract": {
             "summary": "short explanation",
             "graph": {"nodes": [], "edges": []},
+            "example": GRAPH_OUTPUT_EXAMPLE,
+            "edge_rules": EDGE_CONTRACT_RULES,
+            "notes": [
+                "The example illustrates object shape only.",
+                "Populate dataset_id, dataset_version_id, columns, algorithm, "
+                "and other config from the project catalog and user request.",
+            ],
         },
     }
+    if repair_errors:
+        # Trusted schema + bounded errors only — never echo the failed provider body.
+        payload["repair"] = {
+            "instruction": (
+                "Your previous JSON proposal failed ModelFlow contract or "
+                "structural validation. Return one corrected full proposal "
+                "that satisfies output_contract.example and edge_rules."
+            ),
+            "errors": [str(error)[:500] for error in repair_errors[:8]],
+        }
+    return payload
+
+
+def build_messages(prompt: str, catalog: dict[str, Any]) -> list[dict[str, str]]:
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": json.dumps(user_payload, separators=(",", ":"), default=str),
+            "content": json.dumps(
+                _draft_user_payload(prompt, catalog),
+                separators=(",", ":"),
+                default=str,
+            ),
+        },
+    ]
+
+
+def build_draft_repair_messages(
+    prompt: str,
+    catalog: dict[str, Any],
+    *,
+    contract_error_detail: str,
+) -> list[dict[str, str]]:
+    """Second-attempt messages after JSON/canonicalize/structural failure."""
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": json.dumps(
+                _draft_user_payload(
+                    prompt,
+                    catalog,
+                    repair_errors=[contract_error_detail],
+                ),
+                separators=(",", ":"),
+                default=str,
+            ),
         },
     ]
 
@@ -1106,6 +1210,31 @@ def call_chat_completions(
     return content
 
 
+def _parse_structurally_valid_draft(content: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Parse provider content → canonical graph that passes structural validation.
+
+    Raises CopilotContractError for JSON/contract/canonicalization/structural failures.
+    Does not invent edges, nodes, or endpoint fields.
+    """
+    try:
+        parsed = parse_llm_content(content)
+        graph = canonicalize_graph(parsed["graph"])
+    except CopilotContractError:
+        raise
+    except (TypeError, ValueError, AttributeError, KeyError, OverflowError) as exc:
+        raise CopilotContractError(
+            "Provider graph failed canonicalization."
+        ) from exc
+
+    structural = validate_graph(graph, strict=False)
+    if not structural["valid"]:
+        raise CopilotContractError(
+            "Provider graph failed structural validation: "
+            + "; ".join(structural["errors"][:8])
+        )
+    return parsed, graph
+
+
 def draft_pipeline(
     db: Session,
     project_id: int,
@@ -1120,24 +1249,38 @@ def draft_pipeline(
 
     catalog = build_project_catalog(db, project_id)
     messages = build_messages(prompt, catalog)
-    content = call_chat_completions(messages=messages, config=cfg, transport=transport)
-    try:
-        parsed = parse_llm_content(content)
-        graph = canonicalize_graph(parsed["graph"])
-    except CopilotError:
-        raise
-    except (TypeError, ValueError, AttributeError, KeyError, OverflowError) as exc:
-        raise CopilotContractError(
-            "Provider graph failed canonicalization."
-        ) from exc
+    parsed: dict[str, Any] | None = None
+    graph: dict[str, Any] | None = None
+    last_contract_error: CopilotContractError | None = None
 
-    structural = validate_graph(graph, strict=False)
-    if not structural["valid"]:
-        raise CopilotContractError(
-            "Provider graph failed structural validation: "
-            + "; ".join(structural["errors"][:8])
+    for attempt in range(MAX_DRAFT_PROVIDER_ATTEMPTS):
+        if attempt == 0:
+            request_messages = messages
+        else:
+            assert last_contract_error is not None
+            request_messages = build_draft_repair_messages(
+                prompt,
+                catalog,
+                contract_error_detail=last_contract_error.detail,
+            )
+        # Provider/network/timeout/auth failures propagate without format repair.
+        content = call_chat_completions(
+            messages=request_messages, config=cfg, transport=transport
+        )
+        try:
+            parsed, graph = _parse_structurally_valid_draft(content)
+            break
+        except CopilotContractError as exc:
+            last_contract_error = exc
+            if attempt + 1 >= MAX_DRAFT_PROVIDER_ATTEMPTS:
+                raise
+
+    if parsed is None or graph is None:
+        raise last_contract_error or CopilotContractError(
+            "Provider graph failed structural validation."
         )
 
+    structural = validate_graph(graph, strict=False)
     strict = validate_graph(graph, strict=True)
     reference_errors = validate_project_references(db, project_id, graph)
     errors = list(strict.get("errors") or []) + reference_errors
