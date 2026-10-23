@@ -381,7 +381,7 @@ export function Pipelines() {
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowCreate(true)}>
-                새 파이프라인
+                첫 파이프라인 만들기
               </button>
             ) : undefined
           }

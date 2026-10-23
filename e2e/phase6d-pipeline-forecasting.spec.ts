@@ -188,13 +188,13 @@ test("pipeline forecasting training and registration succeeds", async ({ page, r
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/pipeline-runs/\\d+`), {
     timeout: 30_000,
   });
-  await expect(page.getByText(/succeeded/i).first()).toBeVisible({ timeout: 180_000 });
+  await expect(page.getByText(/succeeded|성공/i).first()).toBeVisible({ timeout: 180_000 });
   const runTrainingNode = page
     .getByTestId("pipeline-step-node")
     .filter({ hasText: "Forecast train" });
   await expect(runTrainingNode).toContainText(/Forecasting · t\+1, t\+2, t\+3/i);
   await runTrainingNode.click();
   await expect(page.getByTestId("pipeline-run-step-training-1")).toBeVisible();
-  await expect(page.getByTestId("pipeline-run-step-training-1")).toContainText(/succeeded/i);
+  await expect(page.getByTestId("pipeline-run-step-training-1")).toContainText(/succeeded|성공/i);
   await expect(page.locator(".logs")).toContainText(/model_registration-1 \(model_registration\) succeeded/i);
 });
