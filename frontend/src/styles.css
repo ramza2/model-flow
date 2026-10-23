@@ -2811,6 +2811,11 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   .page-header, .section-heading { flex-direction: column; align-items: stretch; }
   .page-header-actions, .page-header > .row-actions { justify-content: flex-start; }
   .two-column, .predict-layout, .builder-layout, .builder-layout-3zone, .pipeline-run-layout, .form-grid, .api-usage-grid { grid-template-columns: 1fr; }
+  /* Match specificity of the desktop pipeline-builder-layout override so mobile stacks to 1 column. */
+  .pipeline-builder-layout.builder-layout-3zone,
+  .pipeline-builder-layout.builder-layout-3zone.is-readonly {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .preparation-success-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .builder-sidebar, .pipeline-node-library, .pipeline-inspector, .pipeline-run-inspector,
   .preparation-node-library, .preparation-inspector { order: 2; }
