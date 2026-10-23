@@ -118,12 +118,17 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
     expect(await gridTrackCount(layout)).toBe(1);
     await expect(page.getByTestId("pipeline-canvas")).toBeVisible();
     await expect(page.getByTestId("pipeline-library-dataset_load")).toBeVisible();
+    const inspector = page.getByTestId("pipeline-inspector").or(page.locator(".pipeline-inspector"));
+    await expect(inspector).toBeVisible();
     const canvasBox = await page.getByTestId("pipeline-canvas").boundingBox();
     const libraryBox = await page.getByTestId("pipeline-library-dataset_load").boundingBox();
+    const inspectorBox = await inspector.boundingBox();
     expect(canvasBox).toBeTruthy();
     expect(libraryBox).toBeTruthy();
+    expect(inspectorBox).toBeTruthy();
     expect(canvasBox!.width).toBeLessThanOrEqual(width + 1);
     expect(libraryBox!.x + libraryBox!.width).toBeLessThanOrEqual(width + 8);
+    expect(inspectorBox!.x + inspectorBox!.width).toBeLessThanOrEqual(width + 8);
   }
 
   await page.setViewportSize({ width: 390, height: 900 });
@@ -140,6 +145,8 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
   await page.getByTestId("drawer-close").click();
   await expect(page.getByTestId("pipeline-copilot-drawer")).toHaveCount(0);
 
+  // Restore desktop shell nav (collapsed behind "Open navigation" at 390px) before leaving Builder.
+  await page.setViewportSize({ width: 1280, height: 900 });
   // Preparation Builder keeps the shared 190px desktop rail (not the pipeline 260px override).
   await page.getByRole("link", { name: "데이터 가공", exact: true }).click();
   await page.getByRole("button", { name: /새 데이터 가공|New preparation/i }).click();
@@ -148,7 +155,6 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
   const prepLayout = page.getByTestId("preparation-builder-layout");
   await expect(prepLayout).toBeVisible({ timeout: 30_000 });
 
-  await page.setViewportSize({ width: 1280, height: 900 });
   expect(await gridTrackCount(prepLayout)).toBe(3);
   expect(await firstGridTrackPx(prepLayout)).toBeGreaterThan(170);
   expect(await firstGridTrackPx(prepLayout)).toBeLessThan(210);
