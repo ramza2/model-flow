@@ -421,6 +421,11 @@ info "1c) Default host-port compose config fixture"
 )
 pass "default host ports reflected in compose config"
 
+info "1d) Frontend Nginx Copilot draft/patch proxy_read_timeout (mock upstream, no LLM)"
+chmod +x ./scripts/test-frontend-nginx-copilot-timeout.sh
+./scripts/test-frontend-nginx-copilot-timeout.sh
+pass "frontend nginx Copilot proxy_read_timeout"
+
 info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKEND_HOST_PORT} MLflow=${MLFLOW_HOST_PORT}"
 
 info "2) Build & start isolated verification stack (clean verification volumes only)"
