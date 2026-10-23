@@ -1,38 +1,57 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Pipeline, type PipelineRun, type PipelineVersion } from "../api";
-import { ErrorNotice, Loading, StatusBadge } from "../components";
+import { ErrorNotice, HelpTip, Loading, StatusBadge } from "../components";
 import { PIPELINE_LIFECYCLE_STAGES } from "../pipelineHelpers";
 import {
   collectPipelineLineage,
   summarizePipelineRunLifecycle,
   type LifecycleStageSummary,
 } from "../pipelineRunUx";
+import { UI_HELP, lifecycleStageDisplayLabel } from "../uiTerminology";
 import { setUnsavedChangesActive } from "../unsavedChanges";
 import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
 
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "canceled"]);
 
-function StageStrip({ stages, showStatus }: { stages: LifecycleStageSummary[]; showStatus: boolean }) {
+type StageStripVariant = "builder" | "run";
+
+function StageStrip({
+  stages,
+  showStatus,
+  variant = "run",
+}: {
+  stages: LifecycleStageSummary[];
+  showStatus: boolean;
+  variant?: StageStripVariant;
+}) {
+  const localize = variant === "builder";
   return (
     <div className="activity-list" data-testid="pipeline-lifecycle-stages">
-      {stages.map((stage) => (
-        <div key={stage.id} data-testid={`pipeline-lifecycle-stage-${stage.id}`}>
-          <div>
-            <strong>{stage.label}</strong>
-            <small>
-              {stage.total === 0
-                ? "No steps"
-                : `${stage.terminal}/${stage.total} terminal step${stage.total === 1 ? "" : "s"}`}
-            </small>
+      {stages.map((stage) => {
+        const label = localize ? lifecycleStageDisplayLabel(stage.id) : stage.label;
+        const emptyLabel = localize ? "구성된 노드 없음" : "No steps";
+        const configuredLabel = localize ? "노드 구성됨" : "Configured";
+        const countLabel =
+          stage.total === 0
+            ? emptyLabel
+            : localize
+              ? `종료 ${stage.terminal}/${stage.total}`
+              : `${stage.terminal}/${stage.total} terminal step${stage.total === 1 ? "" : "s"}`;
+        return (
+          <div key={stage.id} data-testid={`pipeline-lifecycle-stage-${stage.id}`}>
+            <div>
+              <strong>{label}</strong>
+              <small>{countLabel}</small>
+            </div>
+            {stage.total > 0 && showStatus ? (
+              <StatusBadge status={stage.status} />
+            ) : stage.total > 0 ? (
+              <span className="muted">{configuredLabel}</span>
+            ) : null}
           </div>
-          {stage.total > 0 && showStatus ? (
-            <StatusBadge status={stage.status} />
-          ) : stage.total > 0 ? (
-            <span className="muted">Configured</span>
-          ) : null}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -107,28 +126,33 @@ export function PipelineBuilderLifecyclePage() {
       <section className="panel" data-testid="pipeline-builder-lifecycle-summary">
         <div className="panel-title">
           <div>
-            <span className="eyebrow">Lifecycle coverage</span>
-            <h2>End-to-end workflow</h2>
+            <span className="eyebrow">단계별 구성 현황 (Lifecycle Coverage)</span>
+            <h2>파이프라인 전체 구성</h2>
           </div>
           {latestRun ? (
             <Link className="btn link" to={`/projects/${projectId}/pipeline-runs/${latestRun.id}`}>
-              Latest run #{latestRun.id}
+              최근 실행 #{latestRun.id}
             </Link>
           ) : null}
         </div>
         <ErrorNotice message={error} />
         {!pipeline ? (
-          <Loading label="Loading lifecycle summary" />
+          <Loading label="단계별 구성 현황을 불러오는 중…" />
         ) : (
           <>
-            <p className="form-hint">
-              {latestMatchesGraph
-                ? `Latest run uses this saved pipeline version · ${summary.progressPercent}% terminal.`
-                : latestRun
-                  ? "Latest run used another saved pipeline version. Stage cards below describe the current graph without borrowing historical run state."
-                  : "Stage cards describe the current saved graph. Run state appears after this version executes."}
+            <p className="form-hint" data-testid="pipeline-lifecycle-saved-hint">
+              이 영역은 마지막으로 저장된 파이프라인 버전을 기준으로 단계별 노드 구성을 보여줍니다.
+              저장하지 않은 편집 내용은 반영되지 않을 수 있습니다.
+              <HelpTip text={UI_HELP.pipelineLifecycleCoverage} />
             </p>
-            <StageStrip stages={summary.stages} showStatus={latestMatchesGraph} />
+            <p className="form-hint" data-testid="pipeline-lifecycle-run-hint">
+              {latestMatchesGraph
+                ? `최근 실행이 현재 저장 버전과 일치합니다 · 종료 진행률 ${summary.progressPercent}% (실패·취소·건너뜀 등 종료 상태 포함, 성공률이 아님).`
+                : latestRun
+                  ? "최근 실행은 다른 저장 버전을 사용했습니다. 아래 카드는 현재 저장 그래프의 구성만 보여 주며, 과거 실행 상태를 현재 버전 결과처럼 사용하지 않습니다."
+                  : "실행 이력이 없습니다. 아래 카드는 현재 저장 그래프의 구성만 보여 줍니다. 이 버전을 실행하면 실행 상태가 표시됩니다."}
+            </p>
+            <StageStrip stages={summary.stages} showStatus={latestMatchesGraph} variant="builder" />
           </>
         )}
       </section>

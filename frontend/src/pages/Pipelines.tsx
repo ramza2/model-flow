@@ -1499,10 +1499,20 @@ export function PipelineBuilder() {
         {canWrite && (
           <aside className="pipeline-node-library panel">
             <div className="pipeline-copilot-entry" data-testid="pipeline-copilot-entry">
-              <span className="eyebrow">Assistant</span>
+              <span className="eyebrow">AI 도우미</span>
               <strong>AI Pipeline Copilot</strong>
               <p className="form-hint">
-                Propose a draft or patch. Review before applying — nothing changes until you apply and save.
+                자연어로 파이프라인 초안을 만들거나 현재 구성을 수정하도록 요청할 수 있습니다. AI가
+                제안한 내용을 확인하고 적용하기 전까지 그래프는 변경되지 않습니다.
+                <HelpTip text={UI_HELP.pipelineCopilot} />
+              </p>
+              <p className="form-hint" data-testid="pipeline-copilot-draft-hint">
+                초안(Draft): 새로운 전체 그래프 구성을 제안합니다. 적용 시 현재 편집 중인 그래프를
+                대체할 수 있습니다.
+              </p>
+              <p className="form-hint" data-testid="pipeline-copilot-patch-hint">
+                수정(Patch): 현재 그래프를 기준으로 수정사항을 제안합니다. 적용 전 변경 내용을
+                검토할 수 있습니다.
               </p>
               <div className="pipeline-copilot-entry-actions">
                 <button
@@ -1511,7 +1521,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-open"
                   onClick={() => openCopilotDrawer("draft")}
                 >
-                  Draft new pipeline
+                  새 파이프라인 초안 만들기
                 </button>
                 <button
                   type="button"
@@ -1519,7 +1529,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-patch-open"
                   onClick={() => openCopilotDrawer("patch")}
                 >
-                  Modify current pipeline
+                  현재 파이프라인 수정 제안
                 </button>
               </div>
             </div>
@@ -1803,9 +1813,7 @@ export function PipelineBuilder() {
         <Drawer
           open={copilotOpen}
           title={
-            copilotMode === "patch"
-              ? "Pipeline Copilot — Modify"
-              : "Pipeline Copilot — Draft"
+            copilotMode === "patch" ? "AI 파이프라인 수정 제안" : "AI 파이프라인 초안 생성"
           }
           size="large"
           testId="pipeline-copilot-drawer"
@@ -1819,7 +1827,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-confirm-back"
                   onClick={() => setCopilotConfirming(false)}
                 >
-                  Back
+                  미리보기로 돌아가기
                 </button>
                 <button
                   type="button"
@@ -1827,7 +1835,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-confirm-apply"
                   onClick={confirmApplyCopilotProposal}
                 >
-                  Confirm apply
+                  적용 확인
                 </button>
               </div>
             ) : undefined
@@ -1836,8 +1844,8 @@ export function PipelineBuilder() {
           <div className="pipeline-copilot-form">
             <label htmlFor="pipeline-copilot-prompt">
               {copilotMode === "patch"
-                ? "Describe how to modify the current pipeline"
-                : "Describe the pipeline you want to draft"}
+                ? "현재 파이프라인에서 변경할 내용을 설명해 주세요"
+                : "만들고 싶은 파이프라인을 설명해 주세요"}
             </label>
             <textarea
               id="pipeline-copilot-prompt"
@@ -1848,8 +1856,8 @@ export function PipelineBuilder() {
               rows={5}
               placeholder={
                 copilotMode === "patch"
-                  ? "Example: Change the training algorithm to ridge and rename it Sales Forecast Training."
-                  : "Example: Create a forecasting pipeline for sales with ridge regression and time-ordered splitting."
+                  ? "예: 현재 모델 학습 노드의 알고리즘을 Ridge로 변경하고 단계 이름을 열수요 예측 학습으로 바꿔 줘."
+                  : "예: 열수요 데이터를 사용해 시간순으로 데이터를 분할하고 회귀 모델을 학습하는 파이프라인을 만들어 줘."
               }
               disabled={copilotLoading}
               onChange={(event) => setCopilotPrompt(event.target.value)}
@@ -1863,19 +1871,22 @@ export function PipelineBuilder() {
                 aria-busy={copilotLoading}
                 onClick={() => void generateCopilotProposal()}
               >
-                {copilotLoading ? "Generating…" : "Generate"}
+                {copilotLoading ? "제안 생성 중…" : "제안 생성"}
               </button>
               <span className="muted">{copilotPrompt.trim().length}/4000</span>
             </div>
             {copilotLoading && (
               <p className="form-hint" data-testid="pipeline-copilot-loading" role="status">
-                {copilotMode === "patch"
-                  ? "Generating a modification proposal. The Builder canvas is unchanged until you confirm Apply."
-                  : "Generating a draft proposal. The Builder canvas is unchanged until you confirm Apply."}
+                AI가 제안을 생성하고 있습니다. 적용을 확정하기 전에는 기존 그래프가 변경되지
+                않습니다.
               </p>
             )}
             {copilotError && (
               <div data-testid="pipeline-copilot-error">
+                <p className="form-hint" data-testid="pipeline-copilot-error-title">
+                  제안을 가져오지 못했습니다. Copilot 설정·네트워크·서비스 상태를 확인한 뒤 다시
+                  시도하세요.
+                </p>
                 <ErrorNotice message={copilotError} />
               </div>
             )}
@@ -1884,12 +1895,13 @@ export function PipelineBuilder() {
           {copilotDraft && !copilotConfirming && (
             <div className="pipeline-copilot-preview" data-testid="pipeline-copilot-preview">
               <div className="pipeline-copilot-meta">
-                <span className="eyebrow">Proposal preview</span>
+                <span className="eyebrow">제안 미리보기</span>
                 <p className="pipeline-copilot-summary-block" data-testid="pipeline-copilot-summary">
-                  <strong>Summary.</strong> {copilotDraft.summary}
+                  <strong>AI 제안 요약.</strong> {copilotDraft.summary}
                 </p>
                 <p className="form-hint pipeline-copilot-proposal-note">
-                  This is a proposal only. The Builder graph stays unchanged until you apply and save.
+                  이 화면은 제안만 보여 줍니다. 적용하고 버전을 저장하기 전까지 편집기 그래프는
+                  바뀌지 않습니다.
                 </p>
                 <p
                   className={
@@ -1902,23 +1914,23 @@ export function PipelineBuilder() {
                 >
                   {copilotMode === "patch"
                     ? copilotDraft.validation.valid
-                      ? "Valid proposal"
-                      : "Invalid proposal"
+                      ? "적용 가능한 수정 제안"
+                      : "적용할 수 없는 수정 제안"
                     : copilotDraft.validation.valid
-                      ? "Valid draft"
-                      : "Invalid draft"}
+                      ? "적용 가능한 초안"
+                      : "적용할 수 없는 초안"}
                   {" · "}
-                  {copilotMode === "patch" ? `${copilotPatchOps.length} ops · ` : ""}
-                  {copilotDraft.graph.nodes.length} nodes · {copilotDraft.graph.edges.length}{" "}
-                  edges
-                  {copilotDraft.model ? ` · Generated by ${copilotDraft.model}` : ""}
+                  노드 {copilotDraft.graph.nodes.length}개 · 연결선{" "}
+                  {copilotDraft.graph.edges.length}개
+                  {copilotMode === "patch" ? ` · 수정 작업 ${copilotPatchOps.length}건` : ""}
+                  {copilotDraft.model ? ` · ${copilotDraft.model}` : ""}
                 </p>
                 {copilotMode === "patch" && (
                   <div className="pipeline-copilot-ops-block" data-testid="pipeline-copilot-operations">
-                    <strong>Proposed changes</strong>
+                    <strong>제안된 변경사항</strong>
                     {copilotIsNoop ? (
                       <p className="form-hint" data-testid="pipeline-copilot-noop">
-                        No graph changes were proposed.
+                        변경할 내용이 없습니다
                       </p>
                     ) : (
                       <ul className="pipeline-copilot-op-list">
@@ -1942,8 +1954,8 @@ export function PipelineBuilder() {
                   <>
                     <p className="form-hint" data-testid="pipeline-copilot-apply-blocked">
                       {copilotMode === "patch"
-                        ? "The proposed changes do not produce a valid ModelFlow pipeline. Revise the request and generate another proposal."
-                        : "This draft cannot be applied yet. Revise the prompt and generate another draft."}
+                        ? "이 수정 제안은 적용할 수 없습니다. 아래 오류를 확인한 뒤 설명을 수정하고 다시 생성하세요."
+                        : "이 초안은 아직 적용할 수 없습니다. 아래 오류를 확인한 뒤 설명을 수정하고 다시 생성하세요."}
                     </p>
                     <ul data-testid="pipeline-copilot-validation-errors">
                       {(copilotDraft.validation.errors || []).map((issue) => (
@@ -1954,20 +1966,20 @@ export function PipelineBuilder() {
                 )}
                 {copilotDraft.validation.valid && copilotIsNoop && (
                   <p className="form-hint" data-testid="pipeline-copilot-apply-blocked">
-                    No graph changes were proposed. Apply is disabled.
+                    변경할 내용이 없습니다. 적용 버튼이 비활성화되어 있습니다.
                   </p>
                 )}
               </div>
               <div className="pipeline-copilot-preview-label">
-                <span className="eyebrow">Read-only preview</span>
+                <span className="eyebrow">읽기 전용 미리보기</span>
               </div>
               <div
                 className="pipeline-copilot-preview-canvas"
                 data-testid="pipeline-copilot-preview-canvas"
                 aria-label={
                   copilotMode === "patch"
-                    ? "Read-only Copilot patch preview"
-                    : "Read-only Copilot draft preview"
+                    ? "읽기 전용 Copilot 수정 제안 미리보기"
+                    : "읽기 전용 Copilot 초안 미리보기"
                 }
               >
                 <ReactFlow
@@ -1995,16 +2007,16 @@ export function PipelineBuilder() {
                   disabled={!copilotCanApply}
                   title={
                     copilotCanApply
-                      ? "Review confirmation before updating the Builder graph"
+                      ? "적용하기 전에 확인 단계에서 내용을 검토하세요"
                       : copilotIsNoop
-                        ? "No graph changes were proposed."
+                        ? "변경할 내용이 없습니다"
                         : copilotMode === "patch"
-                          ? "The proposed changes do not produce a valid ModelFlow pipeline."
-                          : "This draft cannot be applied yet. Revise the prompt and generate another draft."
+                          ? "이 수정 제안은 적용할 수 없습니다"
+                          : "이 초안은 아직 적용할 수 없습니다"
                   }
                   onClick={() => setCopilotConfirming(true)}
                 >
-                  Apply {copilotMode === "patch" ? "changes" : "to builder"}
+                  {copilotMode === "patch" ? "변경사항 적용" : "편집기에 적용"}
                 </button>
               </div>
             </div>
@@ -2014,31 +2026,37 @@ export function PipelineBuilder() {
             <div className="pipeline-copilot-confirm" data-testid="pipeline-copilot-confirm">
               {copilotMode === "patch" ? (
                 <>
-                  <h3>Apply these Copilot changes?</h3>
+                  <h3>이 수정 제안을 적용할까요?</h3>
                   <p>
-                    This replaces the current in-memory Builder graph with the validated
-                    proposed result. It does not save a PipelineVersion, publish, schedule, or
-                    run anything.
+                    현재 그래프를 기준으로 생성된 수정 제안을 편집기에 적용합니다. 적용은 편집기
+                    메모리의 그래프를 변경하는 동작이며, 버전 저장·게시·일정 등록·실행은 자동으로
+                    수행되지 않습니다.
+                  </p>
+                  <p className="form-hint">
+                    적용 후 실행 취소(Undo)로 적용 전 그래프로 되돌릴 수 있습니다.
                   </p>
                   {dirty && (
                     <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
-                      The proposal was generated from your current unsaved Builder graph.
-                      Confirming keeps the resulting graph unsaved until you explicitly Save
-                      version.
+                      기존의 저장되지 않은 그래프 변경사항을 기반으로 수정한 결과이며, 적용 후에도
+                      버전 저장이 필요합니다.
                     </p>
                   )}
                 </>
               ) : (
                 <>
-                  <h3>Apply this Copilot draft?</h3>
+                  <h3>이 초안을 적용할까요?</h3>
                   <p>
-                    This replaces the current in-memory Builder graph with the proposed complete
-                    graph. It does not save a PipelineVersion, publish, or run anything.
+                    이 초안을 적용하면 현재 편집 중인 그래프가 제안된 전체 그래프로 대체됩니다.
+                    적용은 편집기 메모리의 그래프를 변경하는 동작이며, 버전 저장·게시·일정 등록·실행은
+                    자동으로 수행되지 않습니다.
+                  </p>
+                  <p className="form-hint">
+                    적용 후 실행 취소(Undo)로 적용 전 그래프로 되돌릴 수 있습니다.
                   </p>
                   {dirty && (
                     <p className="form-hint" data-testid="pipeline-copilot-dirty-warning">
-                      You have unsaved Builder changes. Confirming will replace those unsaved
-                      changes. The last saved PipelineVersion is not affected.
+                      저장하지 않은 변경사항이 있다면 대체될 수 있습니다. 마지막으로 저장된
+                      파이프라인 버전은 변경되지 않습니다.
                     </p>
                   )}
                 </>
@@ -2054,9 +2072,9 @@ export function PipelineBuilder() {
 function describeCopilotPatchOperation(operation: PipelineCopilotPatchOperation): string {
   switch (operation.op) {
     case "add_node":
-      return `Add node ${operation.node.id}`;
+      return `노드 추가 ${operation.node.id}`;
     case "update_node": {
-      const parts: string[] = [`Update node ${operation.node_id}`];
+      const parts: string[] = [`노드 수정 ${operation.node_id}`];
       if (operation.label) parts.push(`label → ${operation.label}`);
       if (operation.config_patch) {
         for (const [key, value] of Object.entries(operation.config_patch)) {
@@ -2069,11 +2087,11 @@ function describeCopilotPatchOperation(operation: PipelineCopilotPatchOperation)
       return parts.join(" · ");
     }
     case "remove_node":
-      return `Remove node ${operation.node_id}`;
+      return `노드 삭제 ${operation.node_id}`;
     case "add_edge":
-      return `Add edge ${operation.edge.id || `${operation.edge.source}→${operation.edge.target}`}`;
+      return `연결 추가 ${operation.edge.id || `${operation.edge.source}→${operation.edge.target}`}`;
     case "update_edge": {
-      const parts: string[] = [`Update edge ${operation.edge_id}`];
+      const parts: string[] = [`연결 수정 ${operation.edge_id}`];
       if (operation.branch) parts.push(`branch → ${operation.branch}`);
       if ("sourceHandle" in operation) {
         parts.push(`sourceHandle → ${String(operation.sourceHandle)}`);
@@ -2084,9 +2102,9 @@ function describeCopilotPatchOperation(operation: PipelineCopilotPatchOperation)
       return parts.join(" · ");
     }
     case "remove_edge":
-      return `Remove edge ${operation.edge_id}`;
+      return `연결 삭제 ${operation.edge_id}`;
     default:
-      return "Proposed change";
+      return "제안된 변경";
   }
 }
 

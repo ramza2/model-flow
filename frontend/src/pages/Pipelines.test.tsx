@@ -2102,8 +2102,8 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent(
       /Forecasting pipeline for sales/i,
     );
-    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/Valid draft/i);
-    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/2 nodes/i);
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/적용 가능한 초안/);
+    expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/노드 2개/);
     expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/test-model/i);
     expect(
       within(screen.getByTestId("pipeline-copilot-preview-canvas")).getByTestId(
@@ -2179,7 +2179,7 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
     expect(await screen.findByTestId("pipeline-copilot-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-copilot-dirty-warning")).toHaveTextContent(
-      /unsaved Builder changes/i,
+      /저장하지 않은 변경사항/,
     );
     fireEvent.click(screen.getByTestId("pipeline-copilot-confirm-back"));
     expect(screen.queryByTestId("pipeline-copilot-confirm")).not.toBeInTheDocument();
@@ -2339,7 +2339,7 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(screen.queryByTestId("pipeline-copilot-error")).not.toBeInTheDocument();
     // Prompt is preserved for editing, but stale loading/error/preview must not return.
     expect(screen.getByTestId("pipeline-copilot-generate")).not.toBeDisabled();
-    expect(screen.getByTestId("pipeline-copilot-generate")).toHaveTextContent(/^Generate$/);
+    expect(screen.getByTestId("pipeline-copilot-generate")).toHaveTextContent(/^제안 생성$/);
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
     expect(
       screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']"),
@@ -2435,9 +2435,9 @@ describe("Pipeline Copilot patch (Phase 7-C)", () => {
   it("keeps Draft new flow and shows Modify for writers only", async () => {
     renderBuilder();
     await screen.findByTestId("pipeline-copilot-entry");
-    expect(screen.getByTestId("pipeline-copilot-open")).toHaveTextContent(/Draft new pipeline/i);
+    expect(screen.getByTestId("pipeline-copilot-open")).toHaveTextContent(/새 파이프라인 초안 만들기/);
     expect(screen.getByTestId("pipeline-copilot-patch-open")).toHaveTextContent(
-      /Modify current pipeline/i,
+      /현재 파이프라인 수정 제안/,
     );
     cleanup();
 
@@ -2498,10 +2498,10 @@ describe("Pipeline Copilot patch (Phase 7-C)", () => {
     });
     fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
     expect(await screen.findByTestId("pipeline-copilot-operations")).toHaveTextContent(
-      /Update node training-1/i,
+      /노드 수정 training-1/,
     );
     expect(screen.getByTestId("pipeline-copilot-apply-blocked")).toHaveTextContent(
-      /do not produce a valid ModelFlow pipeline/i,
+      /적용할 수 없습니다/,
     );
     expect(screen.getByTestId("pipeline-copilot-apply")).toBeDisabled();
 
@@ -2521,7 +2521,7 @@ describe("Pipeline Copilot patch (Phase 7-C)", () => {
     });
     fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
     expect(await screen.findByTestId("pipeline-copilot-noop")).toHaveTextContent(
-      /No graph changes were proposed/i,
+      /변경할 내용이 없습니다/,
     );
     expect(screen.getByTestId("pipeline-copilot-apply")).toBeDisabled();
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
@@ -2682,14 +2682,16 @@ describe("Pipeline Copilot patch (Phase 7-C)", () => {
     });
     fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
     await screen.findByTestId("pipeline-copilot-preview");
-    expect(screen.getByTestId("pipeline-copilot-operations")).toHaveTextContent(/Remove node notification-1/i);
+    expect(screen.getByTestId("pipeline-copilot-operations")).toHaveTextContent(
+      /노드 삭제 notification-1/,
+    );
     // Live canvas unchanged before Apply.
     expect(screen.getByTestId("canvas-node-notification-1")).toBeInTheDocument();
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("pipeline-copilot-apply"));
     expect(await screen.findByTestId("pipeline-copilot-confirm")).toHaveTextContent(
-      /Apply these Copilot changes/i,
+      /이 수정 제안을 적용할까요/,
     );
     fireEvent.click(screen.getByTestId("pipeline-copilot-confirm-back"));
     expect(screen.queryByTestId("pipeline-copilot-confirm")).not.toBeInTheDocument();

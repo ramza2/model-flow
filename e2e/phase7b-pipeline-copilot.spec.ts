@@ -129,7 +129,9 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
 
   await expect(page.getByTestId("pipeline-copilot-preview")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("pipeline-copilot-summary")).toContainText(/Forecasting pipeline/i);
-  await expect(page.getByTestId("pipeline-copilot-validation-status")).toContainText(/Valid draft/i);
+  await expect(page.getByTestId("pipeline-copilot-validation-status")).toContainText(
+    /적용 가능한 초안/,
+  );
   await expect(page.getByTestId("pipeline-copilot-preview-canvas")).toBeVisible();
 
   // Preview must not mutate the live Builder yet.

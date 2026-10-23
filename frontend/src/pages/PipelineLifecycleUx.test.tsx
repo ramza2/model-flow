@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PIPELINE_LIFECYCLE_STAGES } from "../pipelineHelpers";
+import { lifecycleStageDisplayLabel } from "../uiTerminology";
 import { PipelineBuilderLifecyclePage, PipelineRunLifecyclePage } from "./PipelineLifecycleUx";
 
 const apiMock = vi.fn();
@@ -81,7 +83,7 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     });
   });
 
-  it("shows current graph lifecycle coverage and matching latest-run status above the builder", async () => {
+  it("shows Korean builder lifecycle coverage with matching latest-run status", async () => {
     render(
       <MemoryRouter initialEntries={["/projects/5/pipelines/3"]}>
         <Routes>
@@ -90,14 +92,82 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByTestId("pipeline-builder-lifecycle-summary")).toHaveTextContent(
-      "Latest run uses this saved pipeline version",
+    const summary = await screen.findByTestId("pipeline-builder-lifecycle-summary");
+    expect(summary).toHaveTextContent("단계별 구성 현황 (Lifecycle Coverage)");
+    expect(summary).toHaveTextContent("파이프라인 전체 구성");
+    expect(screen.getByTestId("pipeline-lifecycle-saved-hint")).toHaveTextContent(
+      /마지막으로 저장된 파이프라인 버전/,
     );
-    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("Deploy");
+    expect(screen.getByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(
+      /최근 실행이 현재 저장 버전과 일치/,
+    );
+    expect(screen.getByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(/종료 진행률/);
+    expect(screen.getByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(/성공률이 아님/);
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("모델 배포");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-train")).toHaveTextContent("모델 학습·평가");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-source_transform")).toHaveTextContent(
+      "데이터 입력·변환",
+    );
+    expect(screen.getByRole("link", { name: /최근 실행 #70/ })).toBeInTheDocument();
+    expect(PIPELINE_LIFECYCLE_STAGES.map((stage) => stage.id)).toEqual([
+      "source_transform",
+      "quality",
+      "train",
+      "registry",
+      "deploy",
+      "predict",
+      "monitor",
+    ]);
+    expect(PIPELINE_LIFECYCLE_STAGES.find((stage) => stage.id === "deploy")?.label).toBe("Deploy");
+    expect(lifecycleStageDisplayLabel("deploy")).toBe("모델 배포");
     expect(screen.getByTestId("pipeline-builder-stub")).toBeInTheDocument();
   });
 
-  it("surfaces run progress, first failed-node recovery cue, and cross-lifecycle lineage", async () => {
+  it("shows composition-only guidance when latest run uses another version", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/5/pipelines/3") return pipeline;
+      if (path === "/projects/5/pipelines/3/runs") {
+        return [{ ...run, pipeline_version_id: 99 }];
+      }
+      throw new Error(`Unhandled GET ${path}`);
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/5/pipelines/3"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines/:pipelineId" element={<PipelineBuilderLifecyclePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(
+      /다른 저장 버전/,
+    );
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("노드 구성됨");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-quality")).toHaveTextContent(
+      "구성된 노드 없음",
+    );
+  });
+
+  it("shows composition-only guidance when there is no run history", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/5/pipelines/3") return pipeline;
+      if (path === "/projects/5/pipelines/3/runs") return [];
+      throw new Error(`Unhandled GET ${path}`);
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/5/pipelines/3"]}>
+        <Routes>
+          <Route path="/projects/:projectId/pipelines/:pipelineId" element={<PipelineBuilderLifecyclePage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(
+      /실행 이력이 없습니다/,
+    );
+    expect(screen.queryByRole("link", { name: /최근 실행/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("노드 구성됨");
+  });
+
+  it("keeps PipelineRunLifecyclePage English StageStrip and recovery cues", async () => {
     render(
       <MemoryRouter initialEntries={["/projects/5/pipeline-runs/70"]}>
         <Routes>
@@ -107,6 +177,8 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     );
 
     expect(await screen.findByTestId("pipeline-run-progress")).toHaveTextContent("100%");
+    expect(screen.getByTestId("pipeline-run-progress")).toHaveTextContent("steps terminal");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("Deploy");
     expect(screen.getByTestId("pipeline-run-recovery-cue")).toHaveTextContent("deploy");
     expect(screen.getByTestId("pipeline-lineage-dataset_version-42")).toHaveTextContent(
       "DatasetVersion #42",
