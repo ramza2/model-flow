@@ -2102,6 +2102,15 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(await screen.findByTestId("pipeline-copilot-summary")).toHaveTextContent(
       /Forecasting pipeline for sales/i,
     );
+    expect(screen.getByTestId("pipeline-copilot-proposal-note")).toHaveTextContent(
+      /적용하기 전까지 편집기 그래프는 변경되지 않습니다/,
+    );
+    expect(screen.getByTestId("pipeline-copilot-proposal-note")).toHaveTextContent(
+      /적용하면 편집기 그래프가 변경되지만/,
+    );
+    expect(screen.getByTestId("pipeline-copilot-proposal-note")).toHaveTextContent(
+      /파이프라인 버전은 자동으로 저장되지 않습니다/,
+    );
     expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/적용 가능한 초안/);
     expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/노드 2개/);
     expect(screen.getByTestId("pipeline-copilot-validation-status")).toHaveTextContent(/test-model/i);

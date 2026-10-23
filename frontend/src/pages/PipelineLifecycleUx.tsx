@@ -32,12 +32,16 @@ function StageStrip({
         const label = localize ? lifecycleStageDisplayLabel(stage.id) : stage.label;
         const emptyLabel = localize ? "구성된 노드 없음" : "No steps";
         const configuredLabel = localize ? "노드 구성됨" : "Configured";
-        const countLabel =
-          stage.total === 0
-            ? emptyLabel
-            : localize
-              ? `종료 ${stage.terminal}/${stage.total}`
-              : `${stage.terminal}/${stage.total} terminal step${stage.total === 1 ? "" : "s"}`;
+        let countLabel: string;
+        if (stage.total === 0) {
+          countLabel = emptyLabel;
+        } else if (localize && !showStatus) {
+          countLabel = `구성 노드 ${stage.total}개`;
+        } else if (localize) {
+          countLabel = `종료 ${stage.terminal}/${stage.total}`;
+        } else {
+          countLabel = `${stage.terminal}/${stage.total} terminal step${stage.total === 1 ? "" : "s"}`;
+        }
         return (
           <div key={stage.id} data-testid={`pipeline-lifecycle-stage-${stage.id}`}>
             <div>

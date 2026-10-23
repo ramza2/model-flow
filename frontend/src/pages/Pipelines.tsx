@@ -1899,9 +1899,12 @@ export function PipelineBuilder() {
                 <p className="pipeline-copilot-summary-block" data-testid="pipeline-copilot-summary">
                   <strong>AI 제안 요약.</strong> {copilotDraft.summary}
                 </p>
-                <p className="form-hint pipeline-copilot-proposal-note">
-                  이 화면은 제안만 보여 줍니다. 적용하고 버전을 저장하기 전까지 편집기 그래프는
-                  바뀌지 않습니다.
+                <p
+                  className="form-hint pipeline-copilot-proposal-note"
+                  data-testid="pipeline-copilot-proposal-note"
+                >
+                  적용하기 전까지 편집기 그래프는 변경되지 않습니다. 적용하면 편집기 그래프가
+                  변경되지만, 파이프라인 버전은 자동으로 저장되지 않습니다.
                 </p>
                 <p
                   className={

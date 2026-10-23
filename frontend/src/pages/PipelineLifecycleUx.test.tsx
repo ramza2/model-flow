@@ -104,9 +104,17 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     expect(screen.getByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(/종료 진행률/);
     expect(screen.getByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(/성공률이 아님/);
     expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("모델 배포");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("종료 1/1");
     expect(screen.getByTestId("pipeline-lifecycle-stage-train")).toHaveTextContent("모델 학습·평가");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-train")).toHaveTextContent("종료 1/1");
     expect(screen.getByTestId("pipeline-lifecycle-stage-source_transform")).toHaveTextContent(
       "데이터 입력·변환",
+    );
+    expect(screen.getByTestId("pipeline-lifecycle-stage-source_transform")).toHaveTextContent(
+      "종료 1/1",
+    );
+    expect(screen.getByTestId("pipeline-lifecycle-stage-quality")).toHaveTextContent(
+      "구성된 노드 없음",
     );
     expect(screen.getByRole("link", { name: /최근 실행 #70/ })).toBeInTheDocument();
     expect(PIPELINE_LIFECYCLE_STAGES.map((stage) => stage.id)).toEqual([
@@ -141,7 +149,9 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     expect(await screen.findByTestId("pipeline-lifecycle-run-hint")).toHaveTextContent(
       /다른 저장 버전/,
     );
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("구성 노드 1개");
     expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("노드 구성됨");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).not.toHaveTextContent(/종료/);
     expect(screen.getByTestId("pipeline-lifecycle-stage-quality")).toHaveTextContent(
       "구성된 노드 없음",
     );
@@ -164,7 +174,9 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
       /실행 이력이 없습니다/,
     );
     expect(screen.queryByRole("link", { name: /최근 실행/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("구성 노드 1개");
     expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("노드 구성됨");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).not.toHaveTextContent(/종료/);
   });
 
   it("keeps PipelineRunLifecyclePage English StageStrip and recovery cues", async () => {
@@ -179,6 +191,12 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     expect(await screen.findByTestId("pipeline-run-progress")).toHaveTextContent("100%");
     expect(screen.getByTestId("pipeline-run-progress")).toHaveTextContent("steps terminal");
     expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("Deploy");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent(
+      "1/1 terminal step",
+    );
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).not.toHaveTextContent(
+      "구성 노드",
+    );
     expect(screen.getByTestId("pipeline-run-recovery-cue")).toHaveTextContent("deploy");
     expect(screen.getByTestId("pipeline-lineage-dataset_version-42")).toHaveTextContent(
       "DatasetVersion #42",
