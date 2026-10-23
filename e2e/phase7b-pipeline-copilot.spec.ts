@@ -144,7 +144,7 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
   await page.getByTestId("pipeline-copilot-apply").click();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toBeVisible();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toContainText(
-    /replaces the current in-memory Builder graph/i,
+    /이 초안을 적용하면 현재 편집 중인 그래프가 제안된 전체 그래프로 대체/,
   );
 
   await page.getByTestId("pipeline-copilot-confirm-apply").click();
