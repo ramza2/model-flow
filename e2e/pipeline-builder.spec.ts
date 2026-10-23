@@ -151,7 +151,7 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
   await page.getByRole("link", { name: "데이터 가공", exact: true }).click();
   await page.getByRole("button", { name: /새 데이터 가공|New preparation/i }).click();
   await page.getByTestId("preparation-name").fill(`prep-responsive-${Date.now()}`);
-  await page.getByTestId("preparation-create-submit").click();
+  await page.getByTestId("preparation-create").click();
   const prepLayout = page.getByTestId("preparation-builder-layout");
   await expect(prepLayout).toBeVisible({ timeout: 30_000 });
 
