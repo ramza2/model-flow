@@ -190,7 +190,7 @@ test("Phase 7-C Copilot patch previews operations and Apply marks dirty until Sa
   await page.getByTestId("pipeline-copilot-generate").click();
 
   await expect(page.getByTestId("pipeline-copilot-preview")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("pipeline-copilot-operations")).toContainText(/Update node/i);
+  await expect(page.getByTestId("pipeline-copilot-operations")).toContainText(/노드 수정/);
   await expect(page.getByTestId("pipeline-copilot-operations")).toContainText(/ridge/i);
   expect(capturedCurrentGraph?.nodes?.length).toBeGreaterThanOrEqual(2);
 
@@ -204,7 +204,7 @@ test("Phase 7-C Copilot patch previews operations and Apply marks dirty until Sa
   await page.getByTestId("pipeline-copilot-apply").click();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toBeVisible();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toContainText(
-    /Apply these Copilot changes/i,
+    /이 수정 제안을 적용할까요/,
   );
   await page.getByTestId("pipeline-copilot-confirm-apply").click();
   await expect(page.getByTestId("pipeline-copilot-drawer")).toHaveCount(0);
