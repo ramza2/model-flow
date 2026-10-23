@@ -148,7 +148,7 @@ test("Phase 7-C Copilot patch previews operations and Apply marks dirty until Sa
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("link", { name: "파이프라인", exact: true }).click();
-  await page.getByRole("button", { name: /New pipeline/i }).click();
+  await page.getByRole("button", { name: /New pipeline|새 파이프라인/i }).click();
   await page.getByTestId("pipeline-name").fill(`copilot-patch-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
 

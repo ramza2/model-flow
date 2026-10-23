@@ -179,7 +179,7 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
     expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).not.toHaveTextContent(/종료/);
   });
 
-  it("keeps PipelineRunLifecyclePage English StageStrip and recovery cues", async () => {
+  it("shows Korean PipelineRunLifecyclePage StageStrip and recovery cues", async () => {
     render(
       <MemoryRouter initialEntries={["/projects/5/pipeline-runs/70"]}>
         <Routes>
@@ -188,16 +188,28 @@ describe("Phase 3-C pipeline lifecycle pages", () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByTestId("pipeline-run-progress")).toHaveTextContent("100%");
-    expect(screen.getByTestId("pipeline-run-progress")).toHaveTextContent("steps terminal");
-    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("Deploy");
-    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent(
-      "1/1 terminal step",
+    expect(await screen.findByTestId("pipeline-run-lifecycle-summary")).toHaveTextContent(
+      "단계별 실행 진행 현황",
     );
-    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).not.toHaveTextContent(
-      "구성 노드",
-    );
+    const progress = await screen.findByTestId("pipeline-run-progress");
+    expect(progress).toHaveTextContent("100%");
+    expect(progress).toHaveTextContent(/종료 3\/3단계/);
+    expect(progress).toHaveTextContent(/성공률이 아님/);
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("모델 배포");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("종료 1/1");
+    expect(screen.getByTestId("pipeline-lifecycle-stage-deploy")).toHaveTextContent("실패");
     expect(screen.getByTestId("pipeline-run-recovery-cue")).toHaveTextContent("deploy");
+    expect(screen.getByTestId("pipeline-run-recovery-cue")).toHaveTextContent(
+      /오류 확인이 필요한 단계/,
+    );
+    expect(screen.getByRole("link", { name: "실패 단계 상세 보기" })).toHaveAttribute(
+      "href",
+      "#pipeline-run-execution-detail",
+    );
+    expect(screen.getByTestId("pipeline-run-lineage")).toHaveTextContent(
+      "작업 결과 추적 (Lineage)",
+    );
+    expect(screen.getByRole("link", { name: "파이프라인 열기" })).toBeInTheDocument();
     expect(screen.getByTestId("pipeline-lineage-dataset_version-42")).toHaveTextContent(
       "DatasetVersion #42",
     );

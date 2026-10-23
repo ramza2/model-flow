@@ -112,7 +112,7 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("link", { name: "파이프라인", exact: true }).click();
-  await page.getByRole("button", { name: /New pipeline/i }).click();
+  await page.getByRole("button", { name: /New pipeline|새 파이프라인/i }).click();
   await page.getByTestId("pipeline-name").fill(`copilot-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
 

@@ -26,7 +26,7 @@ test("schedules run-now creates history entry", async ({ page }) => {
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
   await page.getByRole("link", { name: "파이프라인", exact: true }).click();
-  await page.getByRole("button", { name: /New pipeline/i }).click();
+  await page.getByRole("button", { name: /New pipeline|새 파이프라인/i }).click();
   await page.getByTestId("pipeline-name").fill(`sched-pipe-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
   await expect(page.getByTestId("pipeline-library-notification")).toBeVisible({ timeout: 30_000 });

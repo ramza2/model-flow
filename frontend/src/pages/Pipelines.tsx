@@ -84,7 +84,11 @@ import {
 } from "../pipelineHelpers";
 import { isEditableKeyboardTarget } from "../preparationGraphHistory";
 import { userCanProject, useProject } from "../ProjectContext";
-import { UI_HELP } from "../uiTerminology";
+import {
+  UI_HELP,
+  pipelineLifecycleStatusLabel,
+  pipelineRunStatusLabel,
+} from "../uiTerminology";
 import { UNSAVED_CHANGES_MESSAGE } from "../unsavedChanges";
 
 type StepData = {
@@ -215,7 +219,10 @@ function PipelineStepNodeComponent({ data, selected }: NodeProps<StepNode>) {
       <span className="pipeline-step-type">{pipelineNodeTypeLabel(data.node_type)}</span>
       {data.runStatus && (
         <span className="pipeline-step-run-status">
-          <StatusBadge status={data.runStatus} />
+          <StatusBadge
+            status={data.runStatus}
+            label={pipelineRunStatusLabel(data.runStatus)}
+          />
         </span>
       )}
       {summary.map((line) => (
@@ -299,7 +306,7 @@ export function Pipelines() {
   async function deletePipeline(pipeline: Pipeline) {
     if (!projectId || deletingId !== null) return;
     const confirmed = confirmAction(
-      `Delete pipeline "${pipeline.name}"?\n\nThis permanently deletes the pipeline and its saved versions. Pipelines with run history cannot be deleted.`,
+      `"${pipeline.name}" 파이프라인을 삭제할까요?\n\n삭제하면 저장된 파이프라인 버전도 함께 삭제됩니다. 실행 이력이 있는 파이프라인은 삭제할 수 없으며, 해당 실행 이력은 감사 목적으로 보존됩니다.`,
     );
     if (!confirmed) return;
 
@@ -309,11 +316,11 @@ export function Pipelines() {
     try {
       await api(`/projects/${projectId}/pipelines/${pipeline.id}`, { method: "DELETE" });
       setPipelines((current) => current.filter((row) => row.id !== pipeline.id));
-      setSuccess(`Pipeline "${pipeline.name}" deleted.`);
+      setSuccess(`"${pipeline.name}" 파이프라인을 삭제했습니다.`);
     } catch (reason) {
       if (reason instanceof ApiRequestError && reason.status === 409) {
         setError(
-          "This pipeline has run history and cannot be deleted. Run history is retained for auditability.",
+          "실행 이력이 있는 파이프라인은 삭제할 수 없습니다. 해당 실행 이력은 감사 목적으로 보존됩니다.",
         );
       } else {
         setError(reason instanceof Error ? reason.message : "Pipeline could not be deleted.");
@@ -326,48 +333,55 @@ export function Pipelines() {
   return (
     <div className="page-stack pipeline-catalog-page">
       <PageHeader
-        title="Pipelines"
-        description="Build repeatable data, training, approval, and deployment workflows."
+        title="파이프라인"
+        description="데이터 준비부터 모델 학습·평가·배포까지 작업 흐름을 구성합니다. 만드는 것만으로 실행되지는 않습니다."
         actions={
           canWrite ? (
             <button className="btn" onClick={() => setShowCreate(!showCreate)}>
-              ＋ New pipeline
+              ＋ 새 파이프라인
             </button>
           ) : undefined
         }
       />
+      <p className="form-hint" data-testid="pipeline-catalog-hint">
+        {UI_HELP.pipelineCatalog}
+        <HelpTip text={UI_HELP.pipelineDelete} />
+      </p>
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
       {canWrite && showCreate && (
         <form className="panel inline-form pipeline-create-form" onSubmit={create} data-testid="pipeline-create-form">
           <label>
-            Pipeline name
+            파이프라인 이름
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
-              placeholder="Production training workflow"
+              placeholder="예: 열수요 예측 학습 파이프라인"
               data-testid="pipeline-name"
             />
           </label>
+          <p className="form-hint">
+            생성 후 편집기가 열립니다. 노드를 구성하고 버전을 저장해야 게시·실행할 수 있습니다.
+          </p>
           <button className="btn" data-testid="pipeline-create-submit">
-            Create and open builder
+            생성 후 편집기 열기
           </button>
           <button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>
-            Cancel
+            취소
           </button>
         </form>
       )}
       {loading ? (
-        <Loading label="Loading pipelines" />
+        <Loading label="파이프라인을 불러오는 중…" />
       ) : pipelines.length === 0 ? (
         <EmptyState
-          title="No pipelines"
-          description="Create a visual workflow to standardize your model lifecycle."
+          title="파이프라인이 없습니다"
+          description="파이프라인을 만들면 데이터 준비부터 모델 학습·평가·배포까지 작업 흐름을 구성할 수 있습니다."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowCreate(true)}>
-                Create pipeline
+                새 파이프라인
               </button>
             ) : undefined
           }
@@ -377,12 +391,12 @@ export function Pipelines() {
           <table>
             <thead>
               <tr>
-                <th>Pipeline</th>
-                <th>Status</th>
-                <th>Version</th>
-                <th>Type</th>
-                <th>Created</th>
-                <th><span className="sr-only">Actions</span></th>
+                <th>파이프라인</th>
+                <th>상태</th>
+                <th>버전</th>
+                <th>유형</th>
+                <th>생성일</th>
+                <th><span className="sr-only">작업</span></th>
               </tr>
             </thead>
             <tbody>
@@ -396,18 +410,21 @@ export function Pipelines() {
                       <strong>{pipeline.name}</strong>
                     </Link>
                     <small className="table-subtitle">
-                      {pipeline.description || "Visual workflow"}
+                      {pipeline.description || "시각적 작업 흐름"}
                     </small>
                   </td>
                   <td>
-                    <StatusBadge status={pipeline.status} />
+                    <StatusBadge
+                      status={pipeline.status}
+                      label={pipelineLifecycleStatusLabel(pipeline.status)}
+                    />
                   </td>
                   <td>
                     <span className="version-chip">v{pipeline.latest_version}</span>
                   </td>
                   <td>
                     <span className={`type-chip${pipeline.is_template ? "" : " is-muted"}`}>
-                      {pipeline.is_template ? "Template" : "Project pipeline"}
+                      {pipeline.is_template ? "템플릿" : "프로젝트 파이프라인"}
                     </span>
                   </td>
                   <td className="catalog-meta-date">{formatDate(pipeline.created_at)}</td>
@@ -419,7 +436,7 @@ export function Pipelines() {
                           data-testid={`pipeline-schedule-${pipeline.id}`}
                           to={`/projects/${projectId}/schedules?create=1&target_type=pipeline_run&pipeline_id=${pipeline.id}`}
                         >
-                          Schedule
+                          일정 등록
                         </Link>
                       )}
                       {canWrite && pipeline.status !== "published" && (
@@ -428,10 +445,10 @@ export function Pipelines() {
                           className="btn link pipeline-schedule-disabled"
                           data-testid={`pipeline-schedule-${pipeline.id}`}
                           disabled
-                          title="Publish this pipeline before scheduling."
-                          aria-label="Schedule unavailable. Publish this pipeline before scheduling."
+                          title="게시된 파이프라인만 일정에 등록할 수 있습니다."
+                          aria-label="일정 등록 불가. 게시된 파이프라인만 일정에 등록할 수 있습니다."
                         >
-                          Schedule
+                          일정 등록
                         </button>
                       )}
                       {canWrite && (
@@ -440,10 +457,10 @@ export function Pipelines() {
                           className="btn link danger-text"
                           data-testid={`pipeline-delete-${pipeline.id}`}
                           disabled={deletingId !== null}
-                          aria-label={`Delete ${pipeline.name}`}
+                          aria-label={`${pipeline.name} 삭제`}
                           onClick={() => void deletePipeline(pipeline)}
                         >
-                          {deletingId === pipeline.id ? "Deleting…" : "Delete"}
+                          {deletingId === pipeline.id ? "삭제 중…" : "삭제"}
                         </button>
                       )}
                     </div>
@@ -1492,7 +1509,7 @@ export function PipelineBuilder() {
       )}
 
       <div
-        className={`builder-layout-3zone${!canWrite ? " is-readonly" : ""}`}
+        className={`builder-layout-3zone pipeline-builder-layout${!canWrite ? " is-readonly" : ""}`}
         data-testid="pipeline-builder-layout"
         data-readonly={canWrite ? "false" : "true"}
       >
@@ -1501,19 +1518,22 @@ export function PipelineBuilder() {
             <div className="pipeline-copilot-entry" data-testid="pipeline-copilot-entry">
               <span className="eyebrow">AI 도우미</span>
               <strong>AI Pipeline Copilot</strong>
-              <p className="form-hint">
-                자연어로 파이프라인 초안을 만들거나 현재 구성을 수정하도록 요청할 수 있습니다. AI가
-                제안한 내용을 확인하고 적용하기 전까지 그래프는 변경되지 않습니다.
+              <p className="form-hint pipeline-copilot-entry-summary">
+                자연어로 초안을 만들거나 수정 제안을 받을 수 있습니다. 적용 전까지 그래프는
+                바뀌지 않습니다.
                 <HelpTip text={UI_HELP.pipelineCopilot} />
               </p>
-              <p className="form-hint" data-testid="pipeline-copilot-draft-hint">
-                초안(Draft): 새로운 전체 그래프 구성을 제안합니다. 적용 시 현재 편집 중인 그래프를
-                대체할 수 있습니다.
-              </p>
-              <p className="form-hint" data-testid="pipeline-copilot-patch-hint">
-                수정(Patch): 현재 그래프를 기준으로 수정사항을 제안합니다. 적용 전 변경 내용을
-                검토할 수 있습니다.
-              </p>
+              <details className="pipeline-copilot-entry-details">
+                <summary>초안·수정 제안 안내</summary>
+                <p className="form-hint" data-testid="pipeline-copilot-draft-hint">
+                  초안(Draft): 새로운 전체 그래프 구성을 제안합니다. 적용 시 현재 편집 중인
+                  그래프를 대체할 수 있습니다.
+                </p>
+                <p className="form-hint" data-testid="pipeline-copilot-patch-hint">
+                  수정(Patch): 현재 그래프를 기준으로 수정사항을 제안합니다. 적용 전 변경 내용을
+                  검토할 수 있습니다.
+                </p>
+              </details>
               <div className="pipeline-copilot-entry-actions">
                 <button
                   type="button"
@@ -1521,7 +1541,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-open"
                   onClick={() => openCopilotDrawer("draft")}
                 >
-                  새 파이프라인 초안 만들기
+                  새 초안 만들기
                 </button>
                 <button
                   type="button"
@@ -1529,7 +1549,7 @@ export function PipelineBuilder() {
                   data-testid="pipeline-copilot-patch-open"
                   onClick={() => openCopilotDrawer("patch")}
                 >
-                  현재 파이프라인 수정 제안
+                  수정 제안 받기
                 </button>
               </div>
             </div>
@@ -1788,21 +1808,21 @@ export function PipelineBuilder() {
       <section className="panel">
         <div className="panel-title">
           <div>
-            <span className="eyebrow">History</span>
-            <h2>Pipeline runs</h2>
+            <span className="eyebrow">실행 이력</span>
+            <h2>파이프라인 실행 내역</h2>
           </div>
         </div>
         {runs.length === 0 ? (
-          <p className="muted">No runs yet.</p>
+          <p className="muted">아직 실행 이력이 없습니다</p>
         ) : (
           <div className="activity-list">
             {runs.map((run) => (
               <Link key={run.id} to={`/projects/${projectId}/pipeline-runs/${run.id}`}>
                 <div>
-                  <strong>Run #{run.id}</strong>
+                  <strong>실행 #{run.id}</strong>
                   <small>{formatDate(run.created_at)}</small>
                 </div>
-                <StatusBadge status={run.status} />
+                <StatusBadge status={run.status} label={pipelineRunStatusLabel(run.status)} />
               </Link>
             ))}
           </div>
@@ -1815,7 +1835,8 @@ export function PipelineBuilder() {
           title={
             copilotMode === "patch" ? "AI 파이프라인 수정 제안" : "AI 파이프라인 초안 생성"
           }
-          size="large"
+          size="xlarge"
+          closeLabel="닫기"
           testId="pipeline-copilot-drawer"
           onClose={closeCopilotDrawer}
           footer={
@@ -1974,6 +1995,10 @@ export function PipelineBuilder() {
               </div>
               <div className="pipeline-copilot-preview-label">
                 <span className="eyebrow">읽기 전용 미리보기</span>
+                <p className="form-hint" data-testid="pipeline-copilot-preview-hint">
+                  전체 그래프 보기 · 마우스 휠로 확대·축소하고 드래그해 이동하세요. 노드는 편집할
+                  수 없습니다.
+                </p>
               </div>
               <div
                 className="pipeline-copilot-preview-canvas"
@@ -2274,54 +2299,64 @@ export function PipelineRunDetail() {
   return (
     <div className="page-stack pipeline-run-page">
       <PageHeader
-        title={`Pipeline run #${runId}`}
-        description="Step-level execution state against the immutable historical pipeline version."
+        title={`파이프라인 실행 #${runId}`}
+        description="실행 당시 저장된 파이프라인 버전을 기준으로 단계별 실행 상태를 보여 줍니다."
         actions={
           <>
             <span className="header-status">
-              <StatusBadge status={run?.status} />
+              <StatusBadge
+                status={run?.status}
+                label={pipelineRunStatusLabel(run?.status)}
+              />
             </span>
             {canWrite && run?.status === "failed" && (
               <button
                 className="btn"
                 disabled={rerunning}
                 data-testid="pipeline-rerun"
+                title={UI_HELP.pipelineRerunFromFailed}
                 onClick={() => void rerunFromFailed()}
               >
-                {rerunning ? "Restarting…" : "↻ Rerun from failed"}
+                {rerunning ? "다시 실행 요청 중…" : "↻ 실패 단계부터 다시 실행"}
               </button>
             )}
           </>
         }
       />
+      {canWrite && run?.status === "failed" ? (
+        <p className="form-hint" data-testid="pipeline-rerun-help">
+          {UI_HELP.pipelineRerunFromFailed}
+        </p>
+      ) : null}
       {version ? (
         <div className="builder-state-band pipeline-run-version-band" role="status">
-          <span className="builder-state-copy">Historical graph</span>
+          <span className="builder-state-copy">실행 당시 파이프라인 구성</span>
           <span className="version-chip" data-testid="pipeline-run-version-chip">
             v{version.version}
           </span>
-          <span className="muted mono">version id #{version.id}</span>
+          <span className="muted mono">버전 ID #{version.id}</span>
         </div>
       ) : null}
       <ErrorNotice message={error || versionError} />
       {!run ? (
-        <Loading label="Loading pipeline run" />
+        <Loading label="파이프라인 실행을 불러오는 중…" />
       ) : (
         <>
           {usedRerun && (
             <p className="muted pipeline-rerun-note" data-testid="pipeline-rerun-note">
-              Rerun from failed was used. Restarted steps show Attempt 2 or higher.
+              실패 단계부터 다시 실행을 사용했습니다. 재시작된 단계는 시도 2회차 이상으로
+              표시됩니다.
             </p>
           )}
           {run.status === "failed" && run.error_message && (
             <div className="pipeline-validation-errors pipeline-run-failed-banner">
-              <strong>Run failed</strong>
+              <strong>파이프라인 실행 실패</strong>
               <p>{run.error_message}</p>
             </div>
           )}
 
           {versionPending ? (
-            <Loading label="Loading pipeline version graph" />
+            <Loading label="실행 당시 그래프를 불러오는 중…" />
           ) : useCardFallback ? (
             <div className="card-grid pipeline-run-steps">
               {Object.entries(run.node_states).map(([id, state]) => {
@@ -2334,15 +2369,18 @@ export function PipelineRunDetail() {
                     data-testid={`pipeline-run-step-${id}`}
                   >
                     <span className="eyebrow">
-                      {state.node_type ? labelForType(state.node_type) : "Step"}
+                      {state.node_type ? pipelineNodeTypeLabel(state.node_type) : "단계"}
                     </span>
                     <h2>{title}</h2>
-                    <StatusBadge status={state.status} />
+                    <StatusBadge
+                      status={state.status}
+                      label={pipelineRunStatusLabel(state.status)}
+                    />
                     <p className="pipeline-run-attempt" data-testid={`pipeline-run-attempt-${id}`}>
-                      Attempt {attempt}
+                      시도 {attempt}회차
                     </p>
-                    <small className="muted pipeline-node-id mono">Node id: {id}</small>
-                    {state.branch && <p className="muted">Selected branch: {state.branch}</p>}
+                    <small className="muted pipeline-node-id mono">노드 ID: {id}</small>
+                    {state.branch && <p className="muted">선택된 분기: {state.branch}</p>}
                     {state.reason && <p className="muted">{state.reason}</p>}
                     {state.error && <p className="error">{state.error}</p>}
                   </article>
@@ -2350,8 +2388,8 @@ export function PipelineRunDetail() {
               })}
               {Object.keys(run.node_states).length === 0 && (
                 <EmptyState
-                  title="No steps in this run"
-                  description="This pipeline version contains an empty graph."
+                  title="이 실행에 단계가 없습니다"
+                  description="이 파이프라인 버전의 그래프가 비어 있습니다."
                 />
               )}
             </div>
@@ -2359,7 +2397,7 @@ export function PipelineRunDetail() {
             <div className="pipeline-run-layout pipeline-run-workspace">
               <div
                 className="pipeline-canvas"
-                aria-label="Pipeline run graph"
+                aria-label="파이프라인 실행 그래프"
                 data-testid="pipeline-run-canvas"
               >
                 <ReactFlow
@@ -2384,38 +2422,41 @@ export function PipelineRunDetail() {
                     data-testid={`pipeline-run-step-${selectedId}`}
                   >
                     <span className="eyebrow">
-                      {selectedType ? labelForType(selectedType) : "Step"}
+                      {selectedType ? pipelineNodeTypeLabel(selectedType) : "단계"}
                     </span>
                     <h2>{selectedLabel}</h2>
                     <div className="pipeline-run-inspector-status">
-                      <StatusBadge status={selectedState?.status || "pending"} />
+                      <StatusBadge
+                        status={selectedState?.status || "pending"}
+                        label={pipelineRunStatusLabel(selectedState?.status || "pending")}
+                      />
                       <p
                         className="pipeline-run-attempt"
                         data-testid={`pipeline-run-attempt-${selectedId}`}
                       >
-                        Attempt {selectedAttempt}
+                        시도 {selectedAttempt}회차
                       </p>
                     </div>
                     <dl className="pipeline-run-inspector-meta">
                       <div>
-                        <dt>Node id</dt>
+                        <dt>노드 ID</dt>
                         <dd className="mono pipeline-node-id">{selectedId}</dd>
                       </div>
                       {selectedState?.branch ? (
                         <div>
-                          <dt>Branch</dt>
+                          <dt>선택된 분기</dt>
                           <dd>{selectedState.branch}</dd>
                         </div>
                       ) : null}
                       {selectedState?.started_at ? (
                         <div>
-                          <dt>Started</dt>
+                          <dt>시작 시각</dt>
                           <dd className="catalog-meta-date">{formatDate(selectedState.started_at)}</dd>
                         </div>
                       ) : null}
                       {selectedState?.finished_at ? (
                         <div>
-                          <dt>Finished</dt>
+                          <dt>종료 시각</dt>
                           <dd className="catalog-meta-date">{formatDate(selectedState.finished_at)}</dd>
                         </div>
                       ) : null}
@@ -2428,7 +2469,7 @@ export function PipelineRunDetail() {
                     )}
                     {selectedArtifact != null && (
                       <div className="pipeline-run-artifact-block">
-                        <span className="eyebrow">Artifacts</span>
+                        <span className="eyebrow">생성·사용 산출물</span>
                         <pre className="code-block engineering-surface">
                           {artifactSnippet(selectedArtifact)}
                         </pre>
@@ -2436,7 +2477,7 @@ export function PipelineRunDetail() {
                     )}
                     {selectedState?.output != null && (
                       <div className="pipeline-run-artifact-block">
-                        <span className="eyebrow">Output</span>
+                        <span className="eyebrow">실행 출력</span>
                         <pre className="code-block engineering-surface">
                           {artifactSnippet(selectedState.output)}
                         </pre>
@@ -2444,16 +2485,16 @@ export function PipelineRunDetail() {
                     )}
                   </div>
                 ) : (
-                  <p className="muted">Select a step on the graph to inspect execution details.</p>
+                  <p className="muted">그래프에서 단계를 선택하면 실행 상세를 확인할 수 있습니다.</p>
                 )}
               </aside>
             </div>
           )}
 
           <section className="panel pipeline-run-logs-section">
-            <span className="eyebrow">Execution</span>
-            <h2>Logs</h2>
-            <div className="logs engineering-surface">{run.logs || "Waiting for execution…"}</div>
+            <span className="eyebrow">실행 정보</span>
+            <h2>실행 로그</h2>
+            <div className="logs engineering-surface">{run.logs || "실행을 기다리는 중…"}</div>
           </section>
         </>
       )}

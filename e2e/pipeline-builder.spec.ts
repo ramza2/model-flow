@@ -37,7 +37,7 @@ test("pipeline builder form UX saves dataset load step", async ({ page }) => {
 
   await page.getByRole("link", { name: "파이프라인", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pipelines", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /New pipeline/i }).click();
+  await page.getByRole("button", { name: /New pipeline|새 파이프라인/i }).click();
   await page.getByTestId("pipeline-name").fill(`builder-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
 

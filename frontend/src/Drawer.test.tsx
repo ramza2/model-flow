@@ -51,6 +51,34 @@ function Harness({ onClose = vi.fn() }: { onClose?: () => void }) {
   );
 }
 
+describe("Drawer close label and size", () => {
+  it("defaults to Close and supports optional Korean closeLabel with xlarge size", () => {
+    const { rerender } = render(
+      <Drawer open title="Default" onClose={() => undefined}>
+        <p>body</p>
+      </Drawer>,
+    );
+    expect(screen.getByTestId("drawer-close")).toHaveTextContent("Close");
+    expect(screen.getByTestId("drawer-panel").className).toContain("drawer-large");
+
+    rerender(
+      <Drawer
+        open
+        title="Copilot"
+        onClose={() => undefined}
+        size="xlarge"
+        closeLabel="닫기"
+        testId="pipeline-copilot-drawer"
+      >
+        <p>body</p>
+      </Drawer>,
+    );
+    expect(screen.getByTestId("drawer-close")).toHaveTextContent("닫기");
+    expect(screen.getByTestId("drawer-close")).toHaveAttribute("aria-label", "닫기");
+    expect(screen.getByTestId("drawer-panel").className).toContain("drawer-xlarge");
+  });
+});
+
 describe("Drawer focus lifecycle", () => {
   it("keeps field focus across parent rerenders and restores trigger on close", async () => {
     render(<Harness />);

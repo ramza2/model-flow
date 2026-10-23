@@ -75,7 +75,51 @@ export const UI_HELP = {
     "이 영역은 마지막으로 저장된 파이프라인 버전을 기준으로 단계별 노드 구성을 보여줍니다. 저장하지 않은 편집 내용은 반영되지 않을 수 있습니다. '노드 구성됨'은 실행 성공이나 검증 통과를 의미하지 않습니다.",
   pipelineCopilot:
     "자연어로 파이프라인 초안을 만들거나 현재 구성을 수정하도록 요청할 수 있습니다. AI가 제안한 내용을 확인하고 적용하기 전까지 그래프는 변경되지 않습니다. 적용은 편집기 메모리만 바꾸며, 버전 저장·게시·실행은 자동으로 되지 않습니다.",
+  pipelineCatalog:
+    "파이프라인을 만들면 데이터 준비부터 모델 학습·평가·배포까지 작업 흐름을 구성할 수 있습니다. 만드는 것만으로 실행되지는 않습니다.",
+  pipelineDelete:
+    "삭제하면 저장된 파이프라인 버전도 함께 삭제됩니다. 실행 이력이 있는 파이프라인은 삭제할 수 없으며, 해당 실행 이력은 감사 목적으로 보존됩니다.",
+  pipelineRerunFromFailed:
+    "실패 지점부터 재실행하는 기능입니다. 기존 실행 기록이나 그래프 버전을 수정하는 기능은 아닙니다.",
 } as const;
+
+/** Display-only pipeline lifecycle status (draft/published/…). Raw API status unchanged. */
+export function pipelineLifecycleStatusLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "draft":
+      return "초안";
+    case "published":
+      return "게시됨";
+    case "archived":
+      return "보관됨";
+    default:
+      return value ? String(value).replaceAll("_", " ") : "—";
+  }
+}
+
+/** Display-only pipeline / node run status. Not for MLflow experiment runs. */
+export function pipelineRunStatusLabel(value?: string | null): string {
+  switch (String(value || "").toLowerCase()) {
+    case "pending":
+    case "queued":
+      return "대기 중";
+    case "running":
+      return "실행 중";
+    case "succeeded":
+      return "성공";
+    case "failed":
+      return "실패";
+    case "skipped":
+      return "건너뜀";
+    case "reused":
+      return "이전 결과 재사용";
+    case "cancelled":
+    case "canceled":
+      return "취소됨";
+    default:
+      return value ? String(value).replaceAll("_", " ") : "—";
+  }
+}
 
 /** Display-only Korean labels for Pipeline lifecycle stage IDs. Raw stage catalog stays English. */
 export function lifecycleStageDisplayLabel(stageId: string): string {

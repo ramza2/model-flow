@@ -1634,9 +1634,9 @@ describe("PipelineRunDetail", () => {
     renderRunDetail();
     const card = await screen.findByTestId("pipeline-run-step-training-1");
     expect(within(card).getByRole("heading", { name: "Train model" })).toBeInTheDocument();
-    expect(screen.getByTestId("pipeline-run-attempt-training-1")).toHaveTextContent("Attempt 2");
+    expect(screen.getByTestId("pipeline-run-attempt-training-1")).toHaveTextContent("시도 2회차");
     expect(screen.getByTestId("pipeline-rerun-note")).toHaveTextContent(
-      /Restarted steps show Attempt 2 or higher/i,
+      /시도 2회차 이상/,
     );
     expect(screen.getByTestId("pipeline-rerun-note")).not.toHaveTextContent(/reused/i);
   });
@@ -1678,7 +1678,9 @@ describe("PipelineRunDetail", () => {
     renderRunDetail();
     const card = await screen.findByTestId("pipeline-run-step-dataset_load-9");
     expect(within(card).getByRole("heading", { name: "dataset_load-9" })).toBeInTheDocument();
-    expect(screen.getByTestId("pipeline-run-attempt-dataset_load-9")).toHaveTextContent("Attempt 1");
+    expect(screen.getByTestId("pipeline-run-attempt-dataset_load-9")).toHaveTextContent(
+      "시도 1회차",
+    );
     expect(screen.queryByTestId("pipeline-rerun-note")).not.toBeInTheDocument();
   });
 });
@@ -1713,12 +1715,17 @@ describe("Pipeline deletion", () => {
     expect(await screen.findByText("Disposable pipe")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("pipeline-delete-31"));
 
-    expect(confirmMock).toHaveBeenCalledWith(expect.stringContaining('Delete pipeline "Disposable pipe"?'));
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringContaining('"Disposable pipe" 파이프라인을 삭제할까요?'),
+    );
+    expect(confirmMock).toHaveBeenCalledWith(
+      expect.stringContaining("실행 이력이 있는 파이프라인은 삭제할 수 없"),
+    );
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith("/projects/7/pipelines/31", { method: "DELETE" });
       expect(screen.queryByText("Disposable pipe")).not.toBeInTheDocument();
     });
-    expect(screen.getByText('Pipeline "Disposable pipe" deleted.')).toBeInTheDocument();
+    expect(screen.getByText('"Disposable pipe" 파이프라인을 삭제했습니다.')).toBeInTheDocument();
     confirmMock.mockRestore();
   });
 
@@ -1748,7 +1755,7 @@ describe("Pipeline deletion", () => {
 
     expect(
       await screen.findByText(
-        "This pipeline has run history and cannot be deleted. Run history is retained for auditability.",
+        "실행 이력이 있는 파이프라인은 삭제할 수 없습니다. 해당 실행 이력은 감사 목적으로 보존됩니다.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Audited pipe")).toBeInTheDocument();
@@ -1810,7 +1817,10 @@ describe("Pipeline contextual scheduling gates", () => {
     const draft = screen.getByTestId("pipeline-schedule-1");
     expect(draft.tagName).toBe("BUTTON");
     expect(draft).toBeDisabled();
-    expect(draft).toHaveAttribute("title", "Publish this pipeline before scheduling.");
+    expect(draft).toHaveAttribute(
+      "title",
+      "게시된 파이프라인만 일정에 등록할 수 있습니다.",
+    );
   });
 
   it("blocks builder Schedule when draft or dirty, allows when published and clean", async () => {
@@ -2086,6 +2096,21 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(JSON.parse(String(draftCall?.[1]?.body))).toEqual({
       prompt: "Create a forecasting pipeline",
     });
+  });
+
+  it("uses wide Copilot drawer and keeps draft/patch guidance available", async () => {
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    const panel = await screen.findByTestId("drawer-panel");
+    expect(panel.className).toMatch(/drawer-xlarge/);
+    expect(screen.getByTestId("drawer-close")).toHaveTextContent("닫기");
+    expect(screen.getByTestId("pipeline-copilot-draft-hint")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    await waitFor(() => {
+      expect(screen.queryByTestId("pipeline-copilot-drawer")).not.toBeInTheDocument();
+    });
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-patch-open"));
+    expect(await screen.findByTestId("pipeline-copilot-patch-hint")).toBeInTheDocument();
   });
 
   it("renders preview metadata without mutating Builder or dirty state", async () => {
@@ -2474,10 +2499,10 @@ describe("Pipeline Copilot patch (Phase 7-C)", () => {
   it("keeps Draft new flow and shows Modify for writers only", async () => {
     renderBuilder();
     await screen.findByTestId("pipeline-copilot-entry");
-    expect(screen.getByTestId("pipeline-copilot-open")).toHaveTextContent(/새 파이프라인 초안 만들기/);
-    expect(screen.getByTestId("pipeline-copilot-patch-open")).toHaveTextContent(
-      /현재 파이프라인 수정 제안/,
-    );
+    expect(screen.getByTestId("pipeline-copilot-open")).toHaveTextContent(/새 초안 만들기/);
+    expect(screen.getByTestId("pipeline-copilot-patch-open")).toHaveTextContent(/수정 제안 받기/);
+    expect(screen.getByTestId("pipeline-copilot-draft-hint")).toHaveTextContent(/초안\(Draft\)/);
+    expect(screen.getByTestId("pipeline-copilot-patch-hint")).toHaveTextContent(/수정\(Patch\)/);
     cleanup();
 
     canWriteRef.value = false;

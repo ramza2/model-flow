@@ -34,7 +34,7 @@ async function loginAndOpenBuilder(page: Page, projectName: string): Promise<voi
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole("link", { name: "파이프라인", exact: true }).click();
-  await page.getByRole("button", { name: /New pipeline/i }).click();
+  await page.getByRole("button", { name: /New pipeline|새 파이프라인/i }).click();
   await page.getByTestId("pipeline-name").fill(`copilot-hard-${Date.now()}`);
   await page.getByTestId("pipeline-create-submit").click();
   await expect(page.getByTestId("pipeline-copilot-open")).toBeVisible({ timeout: 30_000 });
