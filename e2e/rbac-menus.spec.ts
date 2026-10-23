@@ -98,8 +98,8 @@ test("viewer menus and project actions are read-only", async ({ page }) => {
   await expect(page.getByRole("button", { name: /Upload dataset/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/pipelines`);
-  await expect(page.getByRole("heading", { name: "Pipelines", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /New pipeline/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^(Pipelines|파이프라인)$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /New pipeline|새 파이프라인/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/deployments`);
   await expect(page.getByRole("heading", { name: "Deployments", exact: true })).toBeVisible();

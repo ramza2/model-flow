@@ -1144,6 +1144,13 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .builder-layout-3zone.is-readonly {
   grid-template-columns: minmax(0, 1fr) 360px;
 }
+/* Pipeline Builder only — widen left library for Copilot entry without affecting Preparation. */
+.pipeline-builder-layout.builder-layout-3zone {
+  grid-template-columns: 260px minmax(0, 1fr) 360px;
+}
+.pipeline-builder-layout.builder-layout-3zone.is-readonly {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
 .builder-sidebar { display: flex; flex-direction: column; gap: .7rem; margin: 0; width: 100%; max-width: 320px; }
 .builder-sidebar h2 { margin: 0; }
 .pipeline-builder-header {
@@ -1176,12 +1183,35 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   background: var(--bg-soft);
 }
 .pipeline-copilot-entry strong { font-size: .9rem; }
+.pipeline-copilot-entry-summary {
+  margin: 0;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.pipeline-copilot-entry-details {
+  margin: 0;
+  font-size: .82rem;
+}
+.pipeline-copilot-entry-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+.pipeline-copilot-entry-details .form-hint { margin: .35rem 0 0; }
 .pipeline-copilot-entry-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: .4rem;
 }
-.pipeline-copilot-entry .btn { justify-self: start; }
+.pipeline-copilot-entry-actions .btn {
+  width: 100%;
+  justify-content: center;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
+  min-height: 2.25rem;
+  padding-block: .45rem;
+}
 .pipeline-copilot-op-list {
   margin: .35rem 0 0;
   padding-left: 1.1rem;
@@ -1234,7 +1264,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   border-color: color-mix(in srgb, #c45c5c 50%, var(--border));
 }
 .pipeline-copilot-preview-canvas {
-  height: 240px;
+  height: min(460px, 55vh);
+  min-height: 280px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -1244,6 +1275,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   width: 100%;
   height: 100%;
 }
+.pipeline-copilot-preview-label .form-hint { margin: .2rem 0 0; }
 .pipeline-copilot-preview-actions,
 .pipeline-copilot-confirm-actions {
   display: flex;
@@ -2711,6 +2743,12 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   .builder-layout { grid-template-columns: 260px minmax(0, 1fr); }
   .builder-layout-3zone { grid-template-columns: 180px minmax(0, 1fr) 310px; }
   .builder-layout-3zone.is-readonly { grid-template-columns: minmax(0, 1fr) 310px; }
+  .pipeline-builder-layout.builder-layout-3zone {
+    grid-template-columns: 220px minmax(0, 1fr) 310px;
+  }
+  .pipeline-builder-layout.builder-layout-3zone.is-readonly {
+    grid-template-columns: minmax(0, 1fr) 310px;
+  }
   .pipeline-run-layout { grid-template-columns: minmax(0, 1fr) 300px; }
 }
 
@@ -2773,6 +2811,11 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   .page-header, .section-heading { flex-direction: column; align-items: stretch; }
   .page-header-actions, .page-header > .row-actions { justify-content: flex-start; }
   .two-column, .predict-layout, .builder-layout, .builder-layout-3zone, .pipeline-run-layout, .form-grid, .api-usage-grid { grid-template-columns: 1fr; }
+  /* Match specificity of the desktop pipeline-builder-layout override so mobile stacks to 1 column. */
+  .pipeline-builder-layout.builder-layout-3zone,
+  .pipeline-builder-layout.builder-layout-3zone.is-readonly {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .preparation-success-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .builder-sidebar, .pipeline-node-library, .pipeline-inspector, .pipeline-run-inspector,
   .preparation-node-library, .preparation-inspector { order: 2; }
@@ -3163,6 +3206,7 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   min-width: 0;
 }
 .drawer-panel.drawer-large { width: min(520px, 100%); }
+.drawer-panel.drawer-xlarge { width: min(920px, 100%); }
 .drawer-header {
   display: flex;
   align-items: center;
@@ -3206,7 +3250,12 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 @media (max-width: 768px) {
   .ops-page .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .drawer-panel,
-  .drawer-panel.drawer-large { width: min(100%, 100vw); }
+  .drawer-panel.drawer-large,
+  .drawer-panel.drawer-xlarge { width: min(100%, 100vw); }
+  .pipeline-copilot-preview-canvas {
+    height: min(360px, 50vh);
+    min-height: 220px;
+  }
   .alert-card { grid-template-columns: 28px 1fr; }
   .schedule-actions-primary,
   .schedule-actions-secondary { flex-wrap: wrap; }

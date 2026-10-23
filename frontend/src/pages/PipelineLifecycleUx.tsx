@@ -8,39 +8,34 @@ import {
   summarizePipelineRunLifecycle,
   type LifecycleStageSummary,
 } from "../pipelineRunUx";
-import { UI_HELP, lifecycleStageDisplayLabel } from "../uiTerminology";
+import {
+  UI_HELP,
+  lifecycleStageDisplayLabel,
+  pipelineRunStatusLabel,
+} from "../uiTerminology";
 import { setUnsavedChangesActive } from "../unsavedChanges";
 import { PipelineBuilder, PipelineRunDetail } from "./Pipelines";
 
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "canceled"]);
 
-type StageStripVariant = "builder" | "run";
-
 function StageStrip({
   stages,
   showStatus,
-  variant = "run",
 }: {
   stages: LifecycleStageSummary[];
   showStatus: boolean;
-  variant?: StageStripVariant;
 }) {
-  const localize = variant === "builder";
   return (
     <div className="activity-list" data-testid="pipeline-lifecycle-stages">
       {stages.map((stage) => {
-        const label = localize ? lifecycleStageDisplayLabel(stage.id) : stage.label;
-        const emptyLabel = localize ? "구성된 노드 없음" : "No steps";
-        const configuredLabel = localize ? "노드 구성됨" : "Configured";
+        const label = lifecycleStageDisplayLabel(stage.id);
         let countLabel: string;
         if (stage.total === 0) {
-          countLabel = emptyLabel;
-        } else if (localize && !showStatus) {
+          countLabel = "구성된 노드 없음";
+        } else if (!showStatus) {
           countLabel = `구성 노드 ${stage.total}개`;
-        } else if (localize) {
-          countLabel = `종료 ${stage.terminal}/${stage.total}`;
         } else {
-          countLabel = `${stage.terminal}/${stage.total} terminal step${stage.total === 1 ? "" : "s"}`;
+          countLabel = `종료 ${stage.terminal}/${stage.total}`;
         }
         return (
           <div key={stage.id} data-testid={`pipeline-lifecycle-stage-${stage.id}`}>
@@ -49,9 +44,12 @@ function StageStrip({
               <small>{countLabel}</small>
             </div>
             {stage.total > 0 && showStatus ? (
-              <StatusBadge status={stage.status} />
+              <StatusBadge
+                status={stage.status}
+                label={pipelineRunStatusLabel(stage.status)}
+              />
             ) : stage.total > 0 ? (
-              <span className="muted">{configuredLabel}</span>
+              <span className="muted">노드 구성됨</span>
             ) : null}
           </div>
         );
@@ -156,7 +154,7 @@ export function PipelineBuilderLifecyclePage() {
                   ? "최근 실행은 다른 저장 버전을 사용했습니다. 아래 카드는 현재 저장 그래프의 구성만 보여 주며, 과거 실행 상태를 현재 버전 결과처럼 사용하지 않습니다."
                   : "실행 이력이 없습니다. 아래 카드는 현재 저장 그래프의 구성만 보여 줍니다. 이 버전을 실행하면 실행 상태가 표시됩니다."}
             </p>
-            <StageStrip stages={summary.stages} showStatus={latestMatchesGraph} variant="builder" />
+            <StageStrip stages={summary.stages} showStatus={latestMatchesGraph} />
           </>
         )}
       </section>
@@ -228,30 +226,37 @@ export function PipelineRunLifecyclePage() {
       <section className="panel" data-testid="pipeline-run-lifecycle-summary">
         <div className="panel-title">
           <div>
-            <span className="eyebrow">Unified execution</span>
-            <h2>Lifecycle progress</h2>
+            <span className="eyebrow">통합 실행 현황</span>
+            <h2>단계별 실행 진행 현황</h2>
           </div>
-          {run ? <StatusBadge status={run.status} /> : null}
+          {run ? (
+            <StatusBadge status={run.status} label={pipelineRunStatusLabel(run.status)} />
+          ) : null}
         </div>
         <ErrorNotice message={error} />
         {!run || !version ? (
-          <Loading label="Loading pipeline run lifecycle" />
+          <Loading label="실행 현황을 불러오는 중…" />
         ) : (
           <>
             <p data-testid="pipeline-run-progress">
-              <strong>{summary.progressPercent}%</strong> · {summary.terminal}/{summary.total} steps terminal
+              <strong>{summary.progressPercent}%</strong>
+              {" · "}
+              종료 {summary.terminal}/{summary.total}단계 (실패·취소·건너뜀 등 포함, 성공률이 아님)
             </p>
             {firstFailed ? (
               <div className="notice" data-testid="pipeline-run-recovery-cue">
-                <strong>Recovery focus: {firstFailed}</strong>
+                <strong>오류 확인이 필요한 단계: {firstFailed}</strong>
                 <p>
-                  The run detail below automatically focuses the first failed step. Inspect its error and artifacts, fix the cause, then use <strong>Rerun from failed</strong> when available.
+                  아래 실행 상세에서 첫 실패 단계를 자동으로 선택합니다. 오류와 산출물을 확인한 뒤,
+                  가능하면 <strong>실패 단계부터 다시 실행</strong>을 사용하세요.
                 </p>
-                <a className="btn link" href="#pipeline-run-execution-detail">Open failed-step detail</a>
+                <a className="btn link" href="#pipeline-run-execution-detail">
+                  실패 단계 상세 보기
+                </a>
               </div>
             ) : firstRunning ? (
               <p className="form-hint" data-testid="pipeline-run-active-cue">
-                Currently running: {firstRunning}
+                현재 실행 중: {firstRunning}
               </p>
             ) : null}
             <StageStrip stages={summary.stages} showStatus />
@@ -263,18 +268,18 @@ export function PipelineRunLifecyclePage() {
         <section className="panel" data-testid="pipeline-run-lineage">
           <div className="panel-title">
             <div>
-              <span className="eyebrow">Lineage</span>
-              <h2>Resources produced or consumed</h2>
+              <span className="eyebrow">작업 결과 추적 (Lineage)</span>
+              <h2>사용·생성된 리소스</h2>
             </div>
           </div>
           <div className="activity-list">
             <div>
               <div>
-                <strong>Pipeline version</strong>
+                <strong>파이프라인 버전</strong>
                 <small>Version #{run.pipeline_version_id}</small>
               </div>
               <Link className="btn link" to={`/projects/${projectId}/pipelines/${run.pipeline_id}`}>
-                Open pipeline
+                파이프라인 열기
               </Link>
             </div>
             {lineage.map((ref) => (
@@ -284,9 +289,11 @@ export function PipelineRunLifecyclePage() {
                   <small>{ref.kind.replaceAll("_", " ")}</small>
                 </div>
                 {ref.to ? (
-                  <Link className="btn link" to={ref.to}>Open</Link>
+                  <Link className="btn link" to={ref.to}>
+                    열기
+                  </Link>
                 ) : (
-                  <span className="muted">Recorded</span>
+                  <span className="muted">기록됨</span>
                 )}
               </div>
             ))}

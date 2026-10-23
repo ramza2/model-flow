@@ -10,7 +10,9 @@ type DrawerProps = {
   title: string;
   onClose: () => void;
   children: ReactNode;
-  size?: "default" | "large";
+  size?: "default" | "large" | "xlarge";
+  /** Visible close control label. Defaults to English "Close". */
+  closeLabel?: string;
   testId?: string;
   footer?: ReactNode;
 };
@@ -41,6 +43,7 @@ export function Drawer({
   onClose,
   children,
   size = "large",
+  closeLabel = "Close",
   testId,
   footer,
 }: DrawerProps) {
@@ -131,11 +134,11 @@ export function Drawer({
           <button
             type="button"
             className="btn secondary drawer-close"
-            aria-label="Close"
+            aria-label={closeLabel}
             data-testid="drawer-close"
             onClick={() => onCloseRef.current()}
           >
-            Close
+            {closeLabel}
           </button>
         </div>
         <div className="drawer-body">{children}</div>
