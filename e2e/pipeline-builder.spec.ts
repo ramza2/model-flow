@@ -149,7 +149,7 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
   await page.setViewportSize({ width: 1280, height: 900 });
   // Preparation Builder keeps the shared 190px desktop rail (not the pipeline 260px override).
   await page.getByRole("link", { name: "데이터 가공", exact: true }).click();
-  await page.getByRole("button", { name: /새 데이터 가공|New preparation/i }).click();
+  await page.getByTestId("preparation-create-toggle").click();
   await page.getByTestId("preparation-name").fill(`prep-responsive-${Date.now()}`);
   await page.getByTestId("preparation-create").click();
   const prepLayout = page.getByTestId("preparation-builder-layout");
