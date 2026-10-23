@@ -447,6 +447,52 @@ def build_messages(prompt: str, catalog: dict[str, Any]) -> list[dict[str, str]]
     ]
 
 
+def safe_draft_repair_error(detail: str) -> str:
+    """Map contract/structural failures to fixed repair hints.
+
+    Never returns provider-generated ids, types, or other embedded text from
+    ``detail``. Client 502 responses continue to use the original detail.
+    """
+    lower = str(detail or "").lower()
+    if "requires source and target" in lower:
+        return "Edge requires source and target."
+    if "unsupported type" in lower:
+        return "Node has unsupported type."
+    if "node" in lower and "missing id" in lower:
+        return "Node is missing id."
+    if "edge" in lower and "missing id" in lower:
+        return "Edge is missing id."
+    if "not valid json" in lower:
+        return "Provider response is not valid JSON."
+    if "duplicate node id" in lower:
+        return "Duplicate node id."
+    if "duplicate edge id" in lower:
+        return "Duplicate edge id."
+    if "unsupported branch" in lower:
+        return "Edge has unsupported branch."
+    if "failed structural validation" in lower or "unknown nodes" in lower:
+        return "Graph failed structural validation."
+    if "failed canonicalization" in lower:
+        return "Provider graph failed canonicalization."
+    if "exceeds max nodes" in lower:
+        return "Graph exceeds max nodes."
+    if "exceeds max edges" in lower:
+        return "Graph exceeds max edges."
+    if "must include a non-empty summary" in lower:
+        return "Provider JSON must include a non-empty summary."
+    if "must include a graph object" in lower:
+        return "Provider JSON must include a graph object."
+    if "nodes and edges must be arrays" in lower:
+        return "Graph nodes and edges must be arrays."
+    if "empty content" in lower:
+        return "Provider returned empty content."
+    if "exceeds size limits" in lower:
+        return "Provider content exceeds size limits."
+    if "must be an object" in lower:
+        return "Provider JSON field must be an object."
+    return "Graph failed contract validation."
+
+
 def build_draft_repair_messages(
     prompt: str,
     catalog: dict[str, Any],
@@ -462,7 +508,7 @@ def build_draft_repair_messages(
                 _draft_user_payload(
                     prompt,
                     catalog,
-                    repair_errors=[contract_error_detail],
+                    repair_errors=[safe_draft_repair_error(contract_error_detail)],
                 ),
                 separators=(",", ":"),
                 default=str,
