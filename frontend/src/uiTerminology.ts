@@ -71,7 +71,33 @@ export const UI_HELP = {
     "현재 평가 기준은 측정값이 최소값 이상(>=)일 때 통과합니다. Accuracy나 R²처럼 값이 높을수록 좋은 지표에 적합합니다. RMSE나 MAE는 낮을수록 좋으므로 이 최소 기준 비교를 그대로 적용하면 의도한 평가가 되지 않을 수 있습니다.",
   pipelineEvaluationGate:
     "기준 미달 시 실행 실패 처리를 켜면 평가 실패 시 파이프라인 실행이 오류로 중단됩니다. 끄면 평가 실패 상태를 기록하고 다음 단계를 계속할 수 있습니다. 없는 지표명을 입력하면 평가가 실패할 수 있습니다.",
+  pipelineLifecycleCoverage:
+    "이 영역은 마지막으로 저장된 파이프라인 버전을 기준으로 단계별 노드 구성을 보여줍니다. 저장하지 않은 편집 내용은 반영되지 않을 수 있습니다. '노드 구성됨'은 실행 성공이나 검증 통과를 의미하지 않습니다.",
+  pipelineCopilot:
+    "자연어로 파이프라인 초안을 만들거나 현재 구성을 수정하도록 요청할 수 있습니다. AI가 제안한 내용을 확인하고 적용하기 전까지 그래프는 변경되지 않습니다. 적용은 편집기 메모리만 바꾸며, 버전 저장·게시·실행은 자동으로 되지 않습니다.",
 } as const;
+
+/** Display-only Korean labels for Pipeline lifecycle stage IDs. Raw stage catalog stays English. */
+export function lifecycleStageDisplayLabel(stageId: string): string {
+  switch (stageId) {
+    case "source_transform":
+      return "데이터 입력·변환";
+    case "quality":
+      return "데이터 품질";
+    case "train":
+      return "모델 학습·평가";
+    case "registry":
+      return "모델 등록·승인";
+    case "deploy":
+      return "모델 배포";
+    case "predict":
+      return "예측 실행";
+    case "monitor":
+      return "모니터링";
+    default:
+      return stageId;
+  }
+}
 
 /** Display-only training job status labels. Raw status values stay English for API/tone. */
 export function jobStatusLabel(value?: string | null): string {

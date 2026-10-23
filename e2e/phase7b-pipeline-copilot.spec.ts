@@ -129,7 +129,9 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
 
   await expect(page.getByTestId("pipeline-copilot-preview")).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId("pipeline-copilot-summary")).toContainText(/Forecasting pipeline/i);
-  await expect(page.getByTestId("pipeline-copilot-validation-status")).toContainText(/Valid draft/i);
+  await expect(page.getByTestId("pipeline-copilot-validation-status")).toContainText(
+    /적용 가능한 초안/,
+  );
   await expect(page.getByTestId("pipeline-copilot-preview-canvas")).toBeVisible();
 
   // Preview must not mutate the live Builder yet.
@@ -142,7 +144,7 @@ test("Phase 7-B Copilot preview requires confirmation and Apply marks dirty unti
   await page.getByTestId("pipeline-copilot-apply").click();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toBeVisible();
   await expect(page.getByTestId("pipeline-copilot-confirm")).toContainText(
-    /replaces the current in-memory Builder graph/i,
+    /이 초안을 적용하면 현재 편집 중인 그래프가 제안된 전체 그래프로 대체/,
   );
 
   await page.getByTestId("pipeline-copilot-confirm-apply").click();
