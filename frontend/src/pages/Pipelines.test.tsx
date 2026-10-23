@@ -2266,9 +2266,39 @@ describe("Pipeline Copilot (Phase 7-B)", () => {
     expect(await screen.findByTestId("pipeline-copilot-error")).toHaveTextContent(
       /not configured/i,
     );
+    expect(screen.getByTestId("pipeline-copilot-error-title")).toHaveTextContent(
+      /Copilot 설정·네트워크·서비스 상태/,
+    );
     expect(screen.queryByTestId("pipeline-copilot-preview")).not.toBeInTheDocument();
     expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
     expect(screen.getByTestId("pipeline-canvas").querySelectorAll("[data-testid^='canvas-node-']")).toHaveLength(0);
+  });
+
+  it("shows structure-error guidance for invalid PipelineGraph proposals", async () => {
+    stubBuilderApiWithCopilot({
+      draftError: new ApiRequestError(
+        502,
+        "Edge at index 0 requires source and target.",
+        "The provider returned an invalid PipelineGraph proposal.",
+      ),
+    });
+    renderBuilder();
+    fireEvent.click(await screen.findByTestId("pipeline-copilot-open"));
+    fireEvent.change(await screen.findByTestId("pipeline-copilot-prompt"), {
+      target: { value: "열수요 데이터로 Ridge 회귀 파이프라인" },
+    });
+    fireEvent.click(screen.getByTestId("pipeline-copilot-generate"));
+    expect(await screen.findByTestId("pipeline-copilot-error-title")).toHaveTextContent(
+      /파이프라인 구조를 올바르게 생성하지 못했습니다/,
+    );
+    expect(screen.getByTestId("pipeline-copilot-error")).toHaveTextContent(
+      /requires source and target/i,
+    );
+    expect(screen.getByTestId("pipeline-copilot-error")).toHaveTextContent(
+      /invalid PipelineGraph proposal/i,
+    );
+    expect(screen.queryByTestId("pipeline-copilot-preview")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("pipeline-dirty-badge")).not.toBeInTheDocument();
   });
 
   it("Generate-again replaces preview only and resets confirmation", async () => {
