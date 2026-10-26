@@ -871,7 +871,8 @@ export function PipelineBuilder() {
     }
     const needsColumns =
       selectedNode.data.node_type === "training" ||
-      selectedNode.data.node_type === "dataset_load";
+      selectedNode.data.node_type === "dataset_load" ||
+      selectedNode.data.node_type === "split";
     if (!needsColumns) {
       setUpstreamColumns([]);
       return;
