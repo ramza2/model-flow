@@ -3,6 +3,9 @@
 # - restore.sh documents --traefik / --no-start
 # - Traefik overlay compose config clears MinIO host ports
 # - MinIO health can be probed via compose exec (no localhost published port)
+#
+# Does not write interpolated Compose config to disk (credentials may be present).
+# Does not require host Python, PyYAML, or jq.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,6 +15,7 @@ source "$ROOT/scripts/lib.sh"
 
 ARTIFACT_DIR="${VERIFY_ARTIFACT_DIR:-$ROOT/artifacts/verify}"
 mkdir -p "$ARTIFACT_DIR"
+PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.11-slim}"
 
 fail() {
   echo "[FAIL] restore traefik: $*" >&2
@@ -21,6 +25,18 @@ fail() {
 pass() {
   echo "[PASS] restore traefik: $*"
 }
+
+# Remove any prior full-config artifact that may contain interpolated secrets.
+# Overwrite before unlink so residual plaintext is not left on disk.
+scrub_compose_config_artifact() {
+  local path="$1"
+  if [[ -f "$path" ]]; then
+    : >"$path" || true
+    rm -f "$path" || true
+  fi
+}
+scrub_compose_config_artifact "$ARTIFACT_DIR/restore-traefik-compose-config.yml"
+scrub_compose_config_artifact "/opt/cursor/artifacts/restore-traefik-compose-config.yml"
 
 chmod +x "$ROOT/scripts/restore.sh"
 
@@ -59,23 +75,28 @@ source "$ENV_FILE"
 set +a
 export MODELFLOW_WEB_HOST="${MODELFLOW_WEB_HOST:-restore-traefik-test.example}"
 
-CONFIG_OUT="$ARTIFACT_DIR/restore-traefik-compose-config.yml"
 COMPOSE_FILE="$ROOT/docker-compose.yml:$ROOT/docker-compose.traefik.yml"
 export COMPOSE_FILE
-docker compose --env-file "$ENV_FILE" config >"$CONFIG_OUT" \
-  || fail "traefik overlay compose config failed"
 
-python3 - "$CONFIG_OUT" <<'PY' || fail "MinIO still publishes a host port under Traefik overlay"
-import sys, yaml
-path = sys.argv[1]
-with open(path, encoding="utf-8") as f:
-    cfg = yaml.safe_load(f)
+# Stream JSON config through a disposable Python container. Never persist the
+# interpolated document (it can embed DB/MinIO credentials). On failure, do not
+# dump compose stdout/stderr to the verification log.
+if ! docker compose --env-file "$ENV_FILE" config --format json 2>/dev/null \
+  | docker run --rm -i "$PYTHON_IMAGE" python -c '
+import json, sys
+try:
+    cfg = json.load(sys.stdin)
+except json.JSONDecodeError:
+    raise SystemExit("compose config json unavailable")
 minio = (cfg.get("services") or {}).get("minio") or {}
 ports = minio.get("ports") or []
 if ports:
-    raise SystemExit(f"expected minio.ports empty under Traefik, got {ports!r}")
+    # Count only — do not echo binding objects (may include host/IP detail).
+    raise SystemExit(f"expected minio.ports empty under Traefik, got {len(ports)} published port(s)")
 print("minio.ports=[]")
-PY
+'; then
+  fail "Traefik overlay compose config failed or MinIO still publishes a host port"
+fi
 pass "Traefik overlay compose config clears MinIO host ports"
 
 # Prefer a live verify/minio container when present; otherwise start a disposable one.
@@ -123,5 +144,11 @@ if ! grep -q 'NO_START' "$ROOT/scripts/restore.sh"; then
   fail "restore.sh missing --no-start handling"
 fi
 pass "restore.sh uses in-container MinIO health and --no-start"
+
+# Final guard: full compose config must not be left as a verification artifact.
+if [[ -e "$ARTIFACT_DIR/restore-traefik-compose-config.yml" ]] \
+  || [[ -e "/opt/cursor/artifacts/restore-traefik-compose-config.yml" ]]; then
+  fail "compose config artifact still present (must not persist interpolated secrets)"
+fi
 
 echo "[PASS] Traefik restore prerequisites"
