@@ -1015,6 +1015,321 @@ describe("PipelineBuilder", () => {
     });
   });
 
+  it("loads DatasetVersion columns into Split time_column when Dataset Load is upstream", async () => {
+    const graph = {
+      nodes: [
+        {
+          id: "dataset_load-1",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Load",
+            node_type: "dataset_load",
+            config: { dataset_id: 3, dataset_version_id: 11 },
+          },
+        },
+        {
+          id: "split-1",
+          position: { x: 240, y: 0 },
+          data: {
+            label: "Split",
+            node_type: "split",
+            config: defaultConfigFor("split"),
+          },
+        },
+        {
+          id: "training-1",
+          position: { x: 480, y: 0 },
+          data: {
+            label: "Train",
+            node_type: "training",
+            config: {
+              ...defaultConfigFor("training"),
+              target_column: "target",
+              feature_columns: ["sepal_length"],
+            },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e-load-split",
+          source: "dataset_load-1",
+          target: "split-1",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+        {
+          id: "e-split-train",
+          source: "split-1",
+          target: "training-1",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+      ],
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") {
+        return { ...pipeline, version: { id: 1, version: 1, graph } };
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") {
+        return [
+          {
+            ...versions[0],
+            columns: ["event_time", "sepal_length", "target"],
+          },
+        ];
+      }
+      if (path === "/projects/7/pipelines/9/validate" && method === "POST") {
+        return { valid: true, errors: [], order: [] };
+      }
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-split-1");
+    fireEvent.click(screen.getByTestId("canvas-node-split-1"));
+    await screen.findByTestId("node-config-split-strategy");
+    fireEvent.change(screen.getByTestId("node-config-split-strategy"), {
+      target: { value: "time" },
+    });
+    const timeSelect = await screen.findByTestId("node-config-time-column");
+    await waitFor(() => {
+      expect(within(timeSelect).getByRole("option", { name: "event_time" })).toBeInTheDocument();
+      expect(within(timeSelect).getByRole("option", { name: "sepal_length" })).toBeInTheDocument();
+    });
+    fireEvent.change(timeSelect, { target: { value: "event_time" } });
+    expect(timeSelect).toHaveValue("event_time");
+
+    // Training still resolves the same upstream DatasetVersion columns.
+    fireEvent.click(screen.getByTestId("canvas-node-training-1"));
+    await screen.findByTestId("node-config-training");
+    await waitFor(() => {
+      expect(screen.getByTestId("node-config-target")).toBeInTheDocument();
+    });
+    const targetSelect = screen.getByTestId("node-config-target");
+    await waitFor(() => {
+      expect(within(targetSelect).getByRole("option", { name: "target" })).toBeInTheDocument();
+      expect(
+        within(targetSelect).getByRole("option", { name: "event_time" }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("refreshes Split time columns when upstream DatasetVersion changes and stays empty without upstream", async () => {
+    const loadConfig = { dataset_id: 3, dataset_version_id: 11 };
+    const graph = {
+      nodes: [
+        {
+          id: "dataset_load-1",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Load",
+            node_type: "dataset_load",
+            config: loadConfig,
+          },
+        },
+        {
+          id: "split-1",
+          position: { x: 240, y: 0 },
+          data: {
+            label: "Split",
+            node_type: "split",
+            config: { ...defaultConfigFor("split"), split_strategy: "time", time_column: null },
+          },
+        },
+        {
+          id: "split-orphan",
+          position: { x: 240, y: 160 },
+          data: {
+            label: "Orphan Split",
+            node_type: "split",
+            config: { ...defaultConfigFor("split"), split_strategy: "time", time_column: null },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e-load-split",
+          source: "dataset_load-1",
+          target: "split-1",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+      ],
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") {
+        return { ...pipeline, version: { id: 1, version: 1, graph } };
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") {
+        return [
+          {
+            ...datasets[0],
+            columns: ["v1_ts", "a"],
+          },
+        ];
+      }
+      if (path === "/projects/7/datasets/3/versions") {
+        return [
+          { ...versions[0], id: 11, version: 1, columns: ["v1_ts", "a"] },
+          { ...versions[0], id: 12, version: 2, columns: ["v2_ts", "b", "c"] },
+        ];
+      }
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-split-1");
+    fireEvent.click(screen.getByTestId("canvas-node-split-1"));
+    let timeSelect = await screen.findByTestId("node-config-time-column");
+    await waitFor(() => {
+      expect(within(timeSelect).getByRole("option", { name: "v1_ts" })).toBeInTheDocument();
+      expect(within(timeSelect).queryByRole("option", { name: "v2_ts" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("canvas-node-dataset_load-1"));
+    await screen.findByTestId("node-config-version");
+    fireEvent.change(screen.getByTestId("node-config-version"), {
+      target: { value: "12" },
+    });
+    fireEvent.click(screen.getByTestId("canvas-node-split-1"));
+    timeSelect = await screen.findByTestId("node-config-time-column");
+    await waitFor(() => {
+      expect(within(timeSelect).getByRole("option", { name: "v2_ts" })).toBeInTheDocument();
+      expect(within(timeSelect).queryByRole("option", { name: "v1_ts" })).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByTestId("canvas-node-split-orphan"));
+    timeSelect = await screen.findByTestId("node-config-time-column");
+    await waitFor(() => {
+      expect(within(timeSelect).queryByRole("option", { name: "v2_ts" })).not.toBeInTheDocument();
+      expect(within(timeSelect).queryByRole("option", { name: "v1_ts" })).not.toBeInTheDocument();
+    });
+    expect(timeSelect).toHaveValue("");
+  });
+
+  it("ignores stale DatasetVersion responses after Split selection changes", async () => {
+    type Deferred = { promise: Promise<void>; resolve: () => void };
+    const deferreds: Deferred[] = [];
+    const graph = {
+      nodes: [
+        {
+          id: "dataset_load-1",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Load A",
+            node_type: "dataset_load",
+            config: { dataset_id: 3, dataset_version_id: 11 },
+          },
+        },
+        {
+          id: "dataset_load-2",
+          position: { x: 0, y: 160 },
+          data: {
+            label: "Load B",
+            node_type: "dataset_load",
+            config: { dataset_id: 3, dataset_version_id: 12 },
+          },
+        },
+        {
+          id: "split-1",
+          position: { x: 240, y: 0 },
+          data: {
+            label: "Split A",
+            node_type: "split",
+            config: { ...defaultConfigFor("split"), split_strategy: "time", time_column: null },
+          },
+        },
+        {
+          id: "split-2",
+          position: { x: 240, y: 160 },
+          data: {
+            label: "Split B",
+            node_type: "split",
+            config: { ...defaultConfigFor("split"), split_strategy: "time", time_column: null },
+          },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source: "dataset_load-1",
+          target: "split-1",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+        {
+          id: "e2",
+          source: "dataset_load-2",
+          target: "split-2",
+          sourceHandle: "data",
+          targetHandle: "data",
+          data: { branch: "always" },
+        },
+      ],
+    };
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path === "/projects/7/pipelines/9") {
+        return { ...pipeline, version: { id: 1, version: 1, graph } };
+      }
+      if (path === "/projects/7/pipelines/9/runs") return [];
+      if (path === "/projects/7/datasets") return datasets;
+      if (path === "/projects/7/datasets/3/versions") {
+        let resolve!: () => void;
+        const promise = new Promise<void>((res) => {
+          resolve = res;
+        });
+        deferreds.push({ promise, resolve });
+        await promise;
+        return [
+          { ...versions[0], id: 11, version: 1, columns: ["stale_only"] },
+          { ...versions[0], id: 12, version: 2, columns: ["fresh_only"] },
+        ];
+      }
+      if (path === "/projects/7/pipelines/9/versions" && method === "POST") {
+        return { id: 2, version: 2, graph: JSON.parse(String(init?.body || "{}")).graph };
+      }
+      throw new Error(`Unhandled api call ${method} ${path}`);
+    });
+
+    renderBuilder();
+    await screen.findByTestId("canvas-node-split-1");
+    fireEvent.click(screen.getByTestId("canvas-node-split-1"));
+    await waitFor(() => expect(deferreds.length).toBe(1));
+
+    // Switch selection while the first versions request is still in flight.
+    fireEvent.click(screen.getByTestId("canvas-node-split-2"));
+    await waitFor(() => expect(deferreds.length).toBe(2));
+
+    deferreds[1].resolve();
+    const timeSelect = await screen.findByTestId("node-config-time-column");
+    await waitFor(() => {
+      expect(within(timeSelect).getByRole("option", { name: "fresh_only" })).toBeInTheDocument();
+    });
+
+    deferreds[0].resolve();
+    await waitFor(() => {
+      expect(within(timeSelect).getByRole("option", { name: "fresh_only" })).toBeInTheDocument();
+      expect(within(timeSelect).queryByRole("option", { name: "stale_only" })).not.toBeInTheDocument();
+    });
+  });
+
   it("keeps new node ids unique against an existing saved graph", async () => {
     const existing = {
       ...pipeline,
