@@ -426,6 +426,12 @@ chmod +x ./scripts/test-frontend-nginx-copilot-timeout.sh
 ./scripts/test-frontend-nginx-copilot-timeout.sh
 pass "frontend nginx Copilot proxy_read_timeout"
 
+# Fresh CI runners lack the org-built MinIO image tag used by 1e/1f disposable
+# fixtures. Build it before those steps; step 2 still runs a full compose build.
+info "1e-pre) Build MinIO image for early disposable fixtures"
+modelflow_compose build minio
+pass "minio image available for upgrade/restore fixtures"
+
 info "1e) MLflow tracking-store upgrade 3.11.1 → 3.17.2 (disposable Postgres/MinIO)"
 chmod +x ./scripts/test-mlflow-upgrade.sh
 ./scripts/test-mlflow-upgrade.sh
