@@ -702,6 +702,12 @@ describe("NodeConfigForm", () => {
       expect(values).toContain("ridge");
       expect(values).not.toContain("sgd_regressor");
       expect(values).not.toContain("random_forest");
+      // Dropdown value, saved config, and (via config) node summary must agree.
+      expect(algorithm).toHaveValue("ridge");
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"algorithm":"ridge"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"alpha":1');
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent('"algorithm":"random_forest"');
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent('"n_estimators"');
     });
 
     fireEvent.change(screen.getByTestId("node-config-time-column"), {
@@ -739,8 +745,102 @@ describe("NodeConfigForm", () => {
       expect(screen.getByTestId("training-config")).toHaveTextContent('"training_task":"tabular"');
       expect(screen.getByTestId("training-config")).toHaveTextContent('"forecast_strategy":null');
       expect(screen.getByTestId("training-config")).toHaveTextContent('"forecast_horizons":[]');
+      // Ridge remains valid for tabular regression; dropdown and config stay aligned.
+      expect(screen.getByTestId("node-config-algorithm")).toHaveValue("ridge");
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"algorithm":"ridge"');
     });
     expect(screen.queryByTestId("node-config-forecast-fields")).not.toBeInTheDocument();
+  });
+
+  it("syncs algorithm when switching tabular ↔ forecasting even if catalog loads later", async () => {
+    let resolveCatalog: (value: {
+      algorithms: Array<Record<string, unknown>>;
+    }) => void = () => undefined;
+    const catalogPromise = new Promise<{ algorithms: Array<Record<string, unknown>> }>((resolve) => {
+      resolveCatalog = resolve;
+    });
+    apiMock.mockImplementation(() => catalogPromise);
+
+    function Harness() {
+      const [config, setConfig] = useState<Record<string, unknown>>({
+        ...defaultConfigFor("training"),
+        target_column: "sales",
+        problem_type: "classification",
+        algorithm: "random_forest",
+        hyperparameters: { n_estimators: 10 },
+        feature_columns: ["sales_lag_1"],
+      });
+      return (
+        <div>
+          <pre data-testid="training-config">{JSON.stringify(config)}</pre>
+          <NodeConfigForm
+            projectId="7"
+            nodeType="training"
+            config={config}
+            onChange={setConfig}
+            datasetColumns={["event_time", "sales", "sales_lag_1"]}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    await screen.findByTestId("node-config-training-task");
+
+    // Switch before the algorithm catalog resolves (async loading race).
+    fireEvent.change(screen.getByTestId("node-config-training-task"), {
+      target: { value: "forecasting" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"training_task":"forecasting"');
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"algorithm":"ridge"');
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent('"algorithm":"random_forest"');
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent('"n_estimators"');
+      // Placeholder option keeps the select value aligned before catalog arrives.
+      expect(screen.getByTestId("node-config-algorithm")).toHaveValue("ridge");
+    });
+
+    resolveCatalog({
+      algorithms: [
+        {
+          id: "random_forest",
+          display_name: "Random forest",
+          problem_types: ["classification", "regression"],
+          default_hyperparameters: { n_estimators: 10 },
+          supported_hyperparameters: [],
+          hyperparameters: [],
+          supports_forecasting: false,
+          forecasting_strategy: "unsupported",
+        },
+        {
+          id: "ridge",
+          display_name: "Ridge regression",
+          problem_types: ["regression"],
+          default_hyperparameters: { alpha: 1.0 },
+          supported_hyperparameters: [],
+          hyperparameters: [],
+          supports_forecasting: true,
+          forecasting_strategy: "direct_multioutput",
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      const algorithm = screen.getByTestId("node-config-algorithm") as HTMLSelectElement;
+      expect(algorithm).toHaveValue("ridge");
+      expect([...algorithm.options].map((option) => option.value)).toEqual(["ridge"]);
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"algorithm":"ridge"');
+      // Prior tabular RF hyperparameters must not linger after the task switch.
+      expect(screen.getByTestId("training-config")).not.toHaveTextContent('"n_estimators"');
+    });
+
+    fireEvent.change(screen.getByTestId("node-config-training-task"), {
+      target: { value: "tabular" },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"training_task":"tabular"');
+      expect(screen.getByTestId("node-config-algorithm")).toHaveValue("ridge");
+      expect(screen.getByTestId("training-config")).toHaveTextContent('"algorithm":"ridge"');
+    });
   });
 
   it("supports Split node Random / Time ordered UX", () => {

@@ -449,13 +449,33 @@ function TrainingForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [algorithm, catalog, problemType, trainingTask, visibleAlgorithms]);
 
+  function pickAlgorithmForTask(
+    task: "tabular" | "forecasting",
+    problem: string,
+    currentId: string,
+  ): { id: string; spec: AlgorithmSpec | undefined } {
+    const allowed = algorithmsForTrainingTask(catalog, problem, task);
+    const chosen =
+      allowed.find((item) => item.id === currentId) ||
+      allowed.find((item) => item.id === defaultAlgorithmId(catalog, problem)) ||
+      allowed[0];
+    if (chosen) return { id: chosen.id, spec: chosen };
+    // Catalog may still be loading; keep a task-safe fallback id.
+    const fallback = task === "forecasting" || problem === "regression" ? "ridge" : "random_forest";
+    return { id: fallback, spec: catalog.find((item) => item.id === fallback) };
+  }
+
   function setTrainingTask(next: "tabular" | "forecasting") {
     if (next === "forecasting") {
-      const nextAlgorithm =
-        visibleAlgorithms.find((item) => item.id === algorithm)?.id ||
-        algorithmsForTrainingTask(catalog, "regression", "forecasting")[0]?.id ||
-        "ridge";
-      const spec = catalog.find((item) => item.id === nextAlgorithm);
+      // Must use the *destination* task's allow-list. `visibleAlgorithms` still
+      // reflects the current (tabular) task, so random_forest would incorrectly
+      // remain selected and the <select> would show the first forecasting option.
+      const { id: nextAlgorithm, spec } = pickAlgorithmForTask(
+        "forecasting",
+        "regression",
+        algorithm,
+      );
+      const algorithmChanged = nextAlgorithm !== algorithm;
       const parsed = parseForecastHorizonsText(horizonsText || "1, 2, 3");
       onChange({
         ...config,
@@ -466,21 +486,41 @@ function TrainingForm({
         forecast_strategy: "direct_multioutput",
         forecast_horizons: parsed.ok ? parsed.value : [1, 2, 3],
         algorithm: nextAlgorithm,
-        hyperparameters: spec?.default_hyperparameters || config.hyperparameters || {},
+        hyperparameters: algorithmChanged
+          ? spec?.default_hyperparameters || {}
+          : (config.hyperparameters as Record<string, unknown>) ||
+            spec?.default_hyperparameters ||
+            {},
         feature_columns: features.filter(
           (column) => column !== target && !(timeColumn && column === timeColumn),
         ),
       });
-      if (spec) setHyperText(formatHyperparameters(spec.default_hyperparameters));
+      if (algorithmChanged && spec) {
+        setHyperText(formatHyperparameters(spec.default_hyperparameters || {}));
+      }
       setHorizonError(parsed.ok ? "" : parsed.message);
       return;
     }
+    const tabularProblem = asString(config.problem_type, "auto");
+    const { id: nextAlgorithm, spec } = pickAlgorithmForTask(
+      "tabular",
+      tabularProblem === "auto" ? "auto" : tabularProblem,
+      algorithm,
+    );
+    const algorithmChanged = nextAlgorithm !== algorithm;
     onChange({
       ...config,
       training_task: "tabular",
       forecast_strategy: null,
       forecast_horizons: [],
+      algorithm: nextAlgorithm,
+      ...(algorithmChanged
+        ? { hyperparameters: spec?.default_hyperparameters || {} }
+        : {}),
     });
+    if (algorithmChanged && spec) {
+      setHyperText(formatHyperparameters(spec.default_hyperparameters || {}));
+    }
     setHorizonError("");
   }
 
@@ -657,6 +697,10 @@ function TrainingForm({
           value={algorithm}
           onChange={(event) => setAlgorithm(event.target.value)}
         >
+          {visibleAlgorithms.length === 0 && algorithm ? (
+            // Keep dropdown value aligned with config while the catalog loads.
+            <option value={algorithm}>{algorithm.replaceAll("_", " ")}</option>
+          ) : null}
           {visibleAlgorithms.map((item) => (
             <option key={item.id} value={item.id}>
               {item.display_name}
