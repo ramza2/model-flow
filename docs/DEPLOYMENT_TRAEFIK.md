@@ -115,6 +115,114 @@ Redeploy:
 ./scripts/deploy.sh --traefik --build --migrate --force-recreate
 ```
 
+### MLflow image / schema upgrades (Compose + Traefik)
+
+`./scripts/deploy.sh --migrate` runs **ModelFlow Alembic only** (`alembic upgrade head`).
+It does **not** run `mlflow db upgrade`. When the Compose MLflow image tag changes
+(for example `v3.11.1` → `v3.17.2`), treat MLflow as a controlled maintenance window.
+
+**Do not** assume a newer MLflow schema can be read by an older MLflow image.
+**Do not** let old and new MLflow servers write to the same `mlflow` database at once.
+**Do not** delete or re-initialize production databases or MinIO buckets as part of this upgrade.
+
+Use `.env.deploy` (same as `deploy.sh`). Prefer `MODELFLOW_ENV_FILE=.env.deploy` so
+credentials stay out of ad-hoc command lines. Avoid `set -x` while database URLs that
+embed passwords are in scope, and do not paste a password-bearing URI into shell history.
+
+Compose helper used below (adjust paths if you do not use Traefik):
+
+```bash
+export MODELFLOW_ENV_FILE=.env.deploy
+COMPOSE=(docker compose --env-file .env.deploy -f docker-compose.yml -f docker-compose.traefik.yml)
+```
+
+1. Confirm no in-flight TrainingJob or PipelineRun work that still needs MLflow writes.
+   Drain or wait for active runs; do not start new training or pipeline executions.
+2. Stop new learning / MLflow write traffic (pause schedules if needed; keep the UI
+   read-only or offline during the window).
+3. Quiesce writers safely (leave Postgres and MinIO up for backup and migration):
+
+   ```bash
+   "${COMPOSE[@]}" stop frontend worker backend mlflow inference-runtime
+   ```
+
+4. Back up PostgreSQL (`modelflow` and `mlflow`) and MinIO:
+
+   ```bash
+   MODELFLOW_ENV_FILE=.env.deploy ./scripts/backup.sh
+   ```
+
+   Or with an explicit destination:
+
+   ```bash
+   MODELFLOW_ENV_FILE=.env.deploy BACKUP_DIR=/path/to/backups ./scripts/backup.sh
+   ```
+
+5. Verify the backup directory: `metadata.txt`, non-empty
+   `postgres/modelflow.dump` and `postgres/mlflow.dump`, and MinIO bucket trees
+   (`datasets`, `mlflow`, `batch-results`, `artifacts`). Note total size.
+6. Build the new MLflow image (does not start the server yet):
+
+   ```bash
+   "${COMPOSE[@]}" build mlflow
+   ```
+
+7. Apply the MLflow schema upgrade **explicitly** with the new image, while the old
+   server remains stopped. Pass DB credentials via environment (from `.env.deploy`)
+   and expand the URI **inside** the container so the password is not placed on the
+   compose command line:
+
+   ```bash
+   set -a
+   # shellcheck disable=SC1091
+   source .env.deploy
+   set +a
+   "${COMPOSE[@]}" run --rm --no-deps \
+     -e POSTGRES_USER \
+     -e POSTGRES_PASSWORD \
+     --entrypoint sh mlflow -c \
+     'mlflow db upgrade "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/mlflow"'
+   ```
+
+8. Start only the MLflow server and wait for health:
+
+   ```bash
+   "${COMPOSE[@]}" up -d mlflow
+   "${COMPOSE[@]}" ps mlflow
+   ```
+
+   Confirm the container is healthy (Compose healthcheck hits `/health`).
+9. Spot-check existing Experiments, Runs, logged models, artifacts, and Model Registry
+   entries that existed before the upgrade (via MLflow UI/API or a known ModelFlow
+   training/registry path). Confirm artifact objects under the `mlflow` MinIO bucket
+   remain reachable.
+10. Bring the rest of the stack back:
+
+    ```bash
+    "${COMPOSE[@]}" up -d
+    ```
+
+    Or, after this maintenance window, a full redeploy is fine for non-MLflow pieces:
+
+    ```bash
+    ./scripts/deploy.sh --traefik --build --migrate --force-recreate
+    ```
+
+    Remember: `--migrate` still covers Alembic only; MLflow schema was already upgraded
+    in step 7.
+11. Verify overall health (`/api/health`, UI) and that a **new** training job can log
+    to MLflow without disturbing historical runs.
+12. If anything fails after schema upgrade: stop application services again
+    (`frontend`, `worker`, `backend`, `mlflow`, `inference-runtime`), restore the
+    backup taken in step 4 with `./scripts/restore.sh <backup-dir>` (uses
+    `MODELFLOW_ENV_FILE=.env.deploy` when set), then return to a known-good MLflow
+    image/tag only after the databases and MinIO content are restored. Do not point
+    an older MLflow image at a database that already received `mlflow db upgrade`
+    without restoring first.
+
+This repository’s isolated regression for the documented path is
+`scripts/test-mlflow-upgrade.sh` (disposable Postgres/MinIO only; never production).
+
 ## Stopping ModelFlow
 
 ```bash
@@ -134,7 +242,7 @@ docker compose \
 | `--traefik` | Include `docker-compose.traefik.yml` (default) |
 | `--no-traefik` | Base `docker-compose.yml` only (local-style host ports) |
 | `--build` | `docker compose build` before start |
-| `--migrate` | `alembic upgrade head` via backend image before `up` |
+| `--migrate` | `alembic upgrade head` via backend image before `up` (ModelFlow DB only; **not** `mlflow db upgrade`) |
 | `--force-recreate` | Pass `--force-recreate` to `up -d` |
 | `--env-file PATH` | Override env file (default: `.env.deploy`) |
 

@@ -426,6 +426,11 @@ chmod +x ./scripts/test-frontend-nginx-copilot-timeout.sh
 ./scripts/test-frontend-nginx-copilot-timeout.sh
 pass "frontend nginx Copilot proxy_read_timeout"
 
+info "1e) MLflow tracking-store upgrade 3.11.1 → 3.17.2 (disposable Postgres/MinIO)"
+chmod +x ./scripts/test-mlflow-upgrade.sh
+./scripts/test-mlflow-upgrade.sh
+pass "mlflow tracking-store upgrade regression"
+
 info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKEND_HOST_PORT} MLflow=${MLFLOW_HOST_PORT}"
 
 info "2) Build & start isolated verification stack (clean verification volumes only)"
