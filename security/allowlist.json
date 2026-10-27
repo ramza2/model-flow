@@ -29,54 +29,6 @@
       "cve": "GHSA-h7x2-h6g9-p789",
       "reason": "Same AI Gateway SSRF as CVE-2026-71211; ModelFlow does not use MLflow AI Gateway secrets or raw_proxy.",
       "expires": "2026-11-05"
-    },
-    {
-      "package": "mlflow",
-      "cve": "CVE-2026-53995",
-      "reason": "FileStore trace path traversal; ModelFlow uses the Compose MLflow image for tracking/registry only and does not expose unauthenticated FileStore write APIs to end users. Track until the pinned MLflow image is upgraded.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "mlflow",
-      "cve": "GHSA-wqmh-qccw-pqwf",
-      "reason": "Same FileStore path traversal as CVE-2026-53995; ModelFlow does not expose unauthenticated MLflow FileStore write surfaces.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "mlflow",
-      "cve": "CVE-2026-115886",
-      "reason": "Unauthenticated scorer.invoke SSRF via optional trulens/litellm; ModelFlow Compose MLflow does not install those optional GenAI scorer packages or expose that endpoint for product use. Track until MLflow pin upgrades.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "mlflow",
-      "cve": "GHSA-2wqp-q3c6-ccj5",
-      "reason": "Same scorer.invoke SSRF as CVE-2026-115886; optional trulens path not used by ModelFlow.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "undici",
-      "cve": "GHSA-4qv8-2p9j-2685",
-      "reason": "Transitive frontend undici EventSource DoS; ModelFlow browser UI does not use undici EventSource. Track until the parent dependency bumps undici>=7.30.1.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "undici",
-      "cve": "GHSA-f72v-6w45-q472",
-      "reason": "Transitive frontend undici SRI bypass; ModelFlow does not rely on undici SRI verification in the browser UI. Track until undici>=7.30.1 lands via parent deps.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "undici",
-      "cve": "GHSA-xjj6-f33q-929c",
-      "reason": "Transitive frontend undici content-encoding DoS; not on a ModelFlow request path. Track until undici>=7.30.1 lands via parent deps.",
-      "expires": "2026-11-05"
-    },
-    {
-      "package": "zod",
-      "cve": "GHSA-mrhx-c7xc-m3w5",
-      "reason": "Transitive zod memory exhaustion on oversized constrained collections; ModelFlow does not accept untrusted oversized Zod inputs on that path. Track until the parent dependency bumps past the fixed range.",
-      "expires": "2026-11-05"
     }
   ]
 }
