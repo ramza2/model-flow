@@ -165,6 +165,9 @@ contents, so do not point it at a production stack without an external backup:
 
 ```bash
 ./scripts/restore.sh backups/20260731T053300Z
+# Traefik production overlay (no MinIO host port): add --traefik
+# Rollback without auto-starting new images: add --no-start
+# MODELFLOW_ENV_FILE=.env.deploy ./scripts/restore.sh --traefik --no-start backups/...
 ```
 
 Reset local development to clean volumes and wait for healthy services:

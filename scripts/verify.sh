@@ -431,6 +431,11 @@ chmod +x ./scripts/test-mlflow-upgrade.sh
 ./scripts/test-mlflow-upgrade.sh
 pass "mlflow tracking-store upgrade regression"
 
+info "1f) Traefik restore overlay + in-container MinIO health (--no-start docs)"
+chmod +x ./scripts/test-restore-traefik.sh
+./scripts/test-restore-traefik.sh
+pass "traefik restore prerequisites"
+
 info "Host ports for this verification run: UI=${FRONTEND_HOST_PORT} API=${BACKEND_HOST_PORT} MLflow=${MLFLOW_HOST_PORT}"
 
 info "2) Build & start isolated verification stack (clean verification volumes only)"

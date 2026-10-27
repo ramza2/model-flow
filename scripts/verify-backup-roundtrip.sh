@@ -162,5 +162,29 @@ if [[ -n "${ROUNDTRIP_ENDPOINT_ID:-}" ]]; then
     'import json,sys; d=json.load(sys.stdin); assert len(d["predictions"]) == 1'
 fi
 
+# Rollback safety: --no-start must leave app services stopped after data restore
+# (operators reattach known-good images before starting). Default restore above
+# already restarted the stack; this second pass reuses the same backup.
+./scripts/restore.sh --no-start "$BACKUP_DIR" \
+  | tee "$ARTIFACT_DIR/backup-roundtrip-restore-no-start.log"
+NO_START_PS="$ARTIFACT_DIR/backup-roundtrip-no-start-ps.txt"
+modelflow_compose ps -a --format '{{.Service}}={{.State}}' \
+  > "$NO_START_PS" || true
+for svc in mlflow backend worker frontend; do
+  state="$(grep -E "^${svc}=" "$NO_START_PS" | head -n 1 | cut -d= -f2- || true)"
+  case "$state" in
+    running|restarting)
+      fail "--no-start left $svc in state '$state' (expected stopped/exited)"
+      ;;
+  esac
+done
+grep -q 'Application services left stopped' \
+  "$ARTIFACT_DIR/backup-roundtrip-restore-no-start.log" \
+  || fail "restore --no-start did not report services left stopped"
+# Bring the verification stack back for later verify.sh steps.
+modelflow_compose up -d --wait --wait-timeout 300 mlflow backend worker frontend
+curl -fsS "http://localhost:${BACKEND_HOST_PORT}/api/health" >/dev/null \
+  || fail "stack did not recover after --no-start restore probe"
+
 echo "PASS" > "$ARTIFACT_DIR/backup-roundtrip-result.txt"
 echo "[PASS] PostgreSQL and MinIO backup/restore round-trip"
