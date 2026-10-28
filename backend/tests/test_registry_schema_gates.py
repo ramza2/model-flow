@@ -320,6 +320,88 @@ def test_evaluate_gates_schema_sample_without_preview(monkeypatch):
         }
 
 
+@pytest.mark.parametrize(
+    ("hour_preview", "expected_pass"),
+    [("7", True), ("not-a-number", False)],
+)
+@pytest.mark.parametrize("signature_prefix", ["", "DataType."])
+def test_gate_uses_model_signature_for_string_encoded_numeric_preview(
+    monkeypatch, hour_preview, expected_pass, signature_prefix
+):
+    """CSV preview text must not conflict with the model's numeric signature."""
+
+    signature = [
+        {"name": "HOUR_NUM", "dtype": f"{signature_prefix}long"},
+        {"name": "DAY_OF_WEEK", "dtype": f"{signature_prefix}long"},
+        {"name": "ta", "dtype": f"{signature_prefix}double"},
+    ]
+    monkeypatch.setattr(
+        registry_service.inference_client,
+        "check_model_loadable",
+        lambda uri: {"ok": True, "input_features": signature},
+    )
+    predictions = []
+
+    def predict(uri, instances, feature_schema):
+        predictions.append(instances)
+        assert instances == [{"HOUR_NUM": 7, "DAY_OF_WEEK": 3, "ta": 15.5}]
+        return [18.0]
+
+    monkeypatch.setattr(registry_service.inference_client, "predict", predict)
+
+    with SessionLocal() as db:
+        project = _seed_project(db)
+        _, version, job = _seed_lineage(db, project)
+        version.dtypes_json = json.dumps(
+            {"HOUR_NUM": "string", "DAY_OF_WEEK": "string", "ta": "float64"}
+        )
+        version.preview_json = json.dumps(
+            [{"HOUR_NUM": hour_preview, "DAY_OF_WEEK": "3", "ta": 15.5}]
+        )
+        job.feature_columns_json = json.dumps(["HOUR_NUM", "DAY_OF_WEEK", "ta"])
+        row = ModelVersion(
+            project_id=project.id,
+            name="forecast-regressor",
+            version="1",
+            lifecycle=ModelLifecycle.CANDIDATE,
+            mlflow_model_name=f"project-{project.id}-forecast-regressor",
+            mlflow_version="1",
+            mlflow_run_id=job.mlflow_run_id,
+            model_uri=f"models:/project-{project.id}-forecast-regressor/1",
+            metrics_json=job.metrics_json,
+            metadata_json=json.dumps(
+                {
+                    "artifact_path": "model",
+                    "problem_type": "regression",
+                    "feature_schema": [
+                        {"name": "HOUR_NUM", "dtype": "string"},
+                        {"name": "DAY_OF_WEEK", "dtype": "string"},
+                        {"name": "ta", "dtype": "float64"},
+                    ],
+                }
+            ),
+            training_job_id=job.id,
+            dataset_version_id=version.id,
+        )
+        db.add(row)
+        db.flush()
+
+        summary = registry_service.evaluate_gates(db, row)
+        gates = _gate_map(summary)
+        assert gates["test_inference"]["passed"] is expected_pass
+        assert summary["passed"] is expected_pass
+        assert bool(predictions) is expected_pass
+        assert gates["test_inference"]["observed"]["sample_source"] == "dataset"
+        if expected_pass:
+            assert gates["inference_latency"]["passed"] is True
+        else:
+            assert "HOUR_NUM" in gates["test_inference"]["message"]
+
+        schema = json.loads(row.metadata_json)["feature_schema"]
+        dtypes = {field["name"]: field["dtype"] for field in schema}
+        assert dtypes == {"HOUR_NUM": "long", "DAY_OF_WEEK": "long", "ta": "double"}
+
+
 def test_backfill_lineage_on_reevaluation(monkeypatch):
     model = _PredictModel()
     monkeypatch.setattr(inference, "load_model", lambda uri: model)
