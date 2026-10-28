@@ -56,6 +56,8 @@ import {
 import { Drawer } from "../Drawer";
 import { centerFlowOnMiniMapNode, centerFlowOnMiniMapPoint } from "../flowMiniMapNav";
 import { NodeConfigForm } from "../pipelineForms";
+import { getPipelineEvaluationSummary } from "../pipelineRunUx";
+import { copyToClipboard } from "../deploymentApiUsage";
 import {
   capturePipelineGraphSnapshot,
   createEmptyPipelineGraphHistory,
@@ -133,10 +135,11 @@ function toStepNodes(raw: PipelineGraph["nodes"] | undefined): StepNode[] {
   });
 }
 
-function findUpstreamDatasetLoad(
+function findUpstreamNode(
   nodeId: string,
   nodes: StepNode[],
   edges: Edge[],
+  nodeType: string,
 ): StepNode | null {
   const visited = new Set<string>();
   const queue = edges.filter((edge) => edge.target === nodeId).map((edge) => edge.source);
@@ -146,7 +149,7 @@ function findUpstreamDatasetLoad(
     visited.add(currentId);
     const node = nodes.find((row) => row.id === currentId);
     if (!node) continue;
-    if (node.data.node_type === "dataset_load") return node;
+    if (node.data.node_type === nodeType) return node;
     for (const edge of edges) {
       if (edge.target === currentId) queue.push(edge.source);
     }
@@ -845,7 +848,12 @@ export function PipelineBuilder() {
 
   const upstreamDataset = useMemo(() => {
     if (!selectedNode) return null;
-    return findUpstreamDatasetLoad(selectedNode.id, nodes, edges);
+    return findUpstreamNode(selectedNode.id, nodes, edges, "dataset_load");
+  }, [edges, nodes, selectedNode]);
+
+  const upstreamTraining = useMemo(() => {
+    if (selectedNode?.data.node_type !== "evaluation") return null;
+    return findUpstreamNode(selectedNode.id, nodes, edges, "training");
   }, [edges, nodes, selectedNode]);
 
   const upstreamDatasetId = useMemo(() => {
@@ -1717,6 +1725,7 @@ export function PipelineBuilder() {
                   onChange={onConfigChange}
                   upstreamDatasetId={upstreamDatasetId}
                   datasetColumns={upstreamColumns}
+                  upstreamTrainingConfig={upstreamTraining?.data.config}
                 />
               ) : (
                 <p className="muted">읽기 전용 설정입니다.</p>
@@ -2170,6 +2179,44 @@ function artifactSnippet(value: unknown): string {
   }
 }
 
+function artifactJson(value: unknown): string {
+  if (value == null) return "";
+  try {
+    return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function PipelineRunJsonBlock({ title, value }: { title: string; value: unknown }) {
+  const [copyMessage, setCopyMessage] = useState("");
+  const fullText = useMemo(() => artifactJson(value), [value]);
+  return (
+    <div className="pipeline-run-artifact-block">
+      <span className="eyebrow">{title}</span>
+      <pre className="code-block engineering-surface">{artifactSnippet(value)}</pre>
+      <div className="pipeline-run-json-actions">
+        <details>
+          <summary>전체 JSON 보기</summary>
+          <pre className="code-block engineering-surface" data-testid={`pipeline-run-full-${title === "실행 출력" ? "output" : "artifacts"}`}>
+            {fullText}
+          </pre>
+        </details>
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={() => void copyToClipboard(fullText)
+            .then(() => setCopyMessage("전체 내용 복사 완료"))
+            .catch(() => setCopyMessage("복사에 실패했습니다."))}
+        >
+          전체 복사
+        </button>
+      </div>
+      {copyMessage && <small role="status">{copyMessage}</small>}
+    </div>
+  );
+}
+
 export function PipelineRunDetail() {
   const { projectId, runId } = useParams();
   const { user } = useAuth();
@@ -2250,6 +2297,11 @@ export function PipelineRunDetail() {
       const state = run.node_states[node.id];
       return {
         ...node,
+        // MiniMap skips nodes without dimensions (nodeHasDimensions). Run-detail
+        // polling replaces node objects often enough that measured sizes may never
+        // stick; explicit size keeps .react-flow__minimap-node visible/clickable.
+        width: 200,
+        height: 80,
         data: {
           ...node.data,
           label: state?.label || node.data.label,
@@ -2291,6 +2343,9 @@ export function PipelineRunDetail() {
     selectedState?.node_type || selectedGraphNode?.data.node_type || undefined;
   const selectedAttempt = selectedState?.attempt ?? 1;
   const selectedArtifact = run && selectedId ? run.node_artifacts?.[selectedId] : undefined;
+  const evaluationSummary = selectedType === "evaluation"
+    ? getPipelineEvaluationSummary(selectedGraphNode?.data.config || {}, selectedState?.output)
+    : null;
 
   const versionPending = Boolean(run?.pipeline_version_id && !version && !versionError);
   const useCardFallback = Boolean(
@@ -2412,7 +2467,17 @@ export function PipelineRunDetail() {
                   fitView
                 >
                   <Background />
-                  <MiniMap />
+                  <MiniMap
+                    // Keep left so Evaluation/Register on the right stay clickable on wide graphs.
+                    position="bottom-left"
+                    pannable
+                    nodeColor={(node) => node.data?.runStatus === "failed" ? "#ef8e8e" : "#3db8a0"}
+                    nodeStrokeColor="#c7e8e1"
+                    nodeStrokeWidth={2}
+                    maskColor="rgba(12, 20, 27, 0.25)"
+                    ariaLabel="파이프라인 실행 미니맵"
+                    onNodeClick={(_event, node) => setSelectedId(node.id)}
+                  />
                   <Controls />
                 </ReactFlow>
               </div>
@@ -2468,21 +2533,28 @@ export function PipelineRunDetail() {
                     {selectedState?.error && (
                       <p className="error pipeline-run-error">{selectedState.error}</p>
                     )}
-                    {selectedArtifact != null && (
-                      <div className="pipeline-run-artifact-block">
-                        <span className="eyebrow">생성·사용 산출물</span>
-                        <pre className="code-block engineering-surface">
-                          {artifactSnippet(selectedArtifact)}
-                        </pre>
+                    {evaluationSummary && (
+                      <div className="pipeline-run-evaluation-summary" data-testid="pipeline-run-evaluation-summary">
+                        <strong>모델 평가 결과</strong>
+                        <dl>
+                          <div><dt>평가 지표</dt><dd>{evaluationSummary.metric}</dd></div>
+                          <div><dt>실제 측정값</dt><dd>{evaluationSummary.value?.toFixed(4) ?? "측정값 없음"}</dd></div>
+                          <div><dt>통과 기준</dt><dd>{evaluationSummary.operator === ">=" ? "≥" : "≤"} {evaluationSummary.threshold ?? "—"}</dd></div>
+                          <div>
+                            <dt>기준 판정</dt>
+                            <dd data-testid="pipeline-run-evaluation-verdict">
+                              {evaluationSummary.value === null ? "지표 없음" : evaluationSummary.passed === true ? "통과" : evaluationSummary.passed === false ? "기준 미달" : "판정 미확인"}
+                            </dd>
+                          </div>
+                        </dl>
+                        <small>실행 성공 여부와 평가 기준 통과 여부는 별개입니다.</small>
                       </div>
                     )}
+                    {selectedArtifact != null && (
+                      <PipelineRunJsonBlock title="생성·사용 산출물" value={selectedArtifact} />
+                    )}
                     {selectedState?.output != null && (
-                      <div className="pipeline-run-artifact-block">
-                        <span className="eyebrow">실행 출력</span>
-                        <pre className="code-block engineering-surface">
-                          {artifactSnippet(selectedState.output)}
-                        </pre>
-                      </div>
+                      <PipelineRunJsonBlock title="실행 출력" value={selectedState.output} />
                     )}
                   </div>
                 ) : (

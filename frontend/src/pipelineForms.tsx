@@ -20,6 +20,7 @@ export type NodeConfigFormProps = {
   upstreamDatasetId?: number | null;
   datasetColumns?: string[];
   formError?: string;
+  upstreamTrainingConfig?: Record<string, unknown>;
 };
 
 type GatePolicyOption = {
@@ -813,30 +814,64 @@ function TrainingForm({
 function EvaluationForm({
   config,
   onChange,
-}: Pick<NodeConfigFormProps, "config" | "onChange">) {
+  upstreamTrainingConfig,
+}: Pick<NodeConfigFormProps, "config" | "onChange" | "upstreamTrainingConfig">) {
+  const classificationMetrics = ["accuracy", "f1", "precision", "recall", "roc_auc", "log_loss"];
+  const regressionMetrics = ["r2", "test_r2", "val_r2", "rmse", "mae", "mse"];
+  const forecastMetrics = ["r2", "test_r2", "val_r2", "rmse", "mae", "val_rmse", "val_mae"];
+  const task = asString(upstreamTrainingConfig?.training_task);
+  const problem = asString(upstreamTrainingConfig?.problem_type);
+  const suggestions = task === "forecasting"
+    ? forecastMetrics
+    : problem === "regression"
+      ? regressionMetrics
+      : problem === "classification"
+        ? classificationMetrics
+        : [...new Set([...classificationMetrics, ...regressionMetrics, ...forecastMetrics])];
+  const metric = asString(config.metric, "accuracy");
+  const comparison = asString(config.operator, ">=");
   return (
     <div className="node-config-form" data-testid="node-config-evaluation">
       <p className="form-hint" data-testid="node-config-evaluation-hint">
-        현재 평가 기준은 측정값이 최소값 이상(&gt;=)일 때 통과합니다. Accuracy나 R²처럼 값이
-        높을수록 좋은 지표에 적합합니다.
+        평가 지표에 따라 이상(&gt;=) 또는 이하(&lt;=)를 선택할 수 있습니다.
         <HelpTip text={UI_HELP.pipelineEvaluation} />
       </p>
       <p className="form-hint" data-testid="node-config-evaluation-rmse-hint">
-        RMSE나 MAE는 낮을수록 좋으므로 현재 최소 기준 비교를 그대로 적용하면 의도한 평가가 되지
-        않을 수 있습니다.
+        R²·Accuracy는 보통 이상(&gt;=), RMSE·MAE는 이하(&lt;=) 기준을 사용합니다.
       </p>
       <label>
         <TermLabel ko="평가 지표" en="Metric" help={UI_HELP.pipelineEvaluation} />
         <input
           data-testid="node-config-metric"
-          value={asString(config.metric, "accuracy")}
-          onChange={(event) => onChange({ ...config, metric: event.target.value })}
-          placeholder="예: accuracy"
+          list="pipeline-evaluation-metrics"
+          value={metric}
+          onChange={(event) => {
+            const nextMetric = event.target.value;
+            const direction = /(?:^|_)(?:rmse|mae|mse|mape|loss)$/.test(nextMetric)
+              ? "<="
+              : suggestions.includes(nextMetric) ? ">=" : comparison;
+            onChange({ ...config, metric: nextMetric, operator: direction });
+          }}
+          placeholder="지표 선택 또는 직접 입력"
         />
-        <small>없는 지표명을 입력하면 평가가 실패할 수 있습니다.</small>
+        <datalist id="pipeline-evaluation-metrics">
+          {suggestions.map((key) => <option key={key} value={key} />)}
+        </datalist>
+        <small>학습 유형에 맞는 지표를 추천합니다. 실제 생성된 지표명은 직접 입력할 수도 있습니다.</small>
       </label>
       <label>
-        <TermLabel ko="최소 통과 기준값" en="Minimum" />
+        <TermLabel ko="통과 비교 조건" en="Operator" />
+        <select
+          data-testid="node-config-evaluation-operator"
+          value={comparison}
+          onChange={(event) => onChange({ ...config, operator: event.target.value })}
+        >
+          <option value=">=">이상 (≥)</option>
+          <option value="<=">이하 (≤)</option>
+        </select>
+      </label>
+      <label>
+        <TermLabel ko="통과 기준값" en="Threshold" />
         <input
           type="number"
           step="any"
@@ -1156,6 +1191,7 @@ export function NodeConfigForm({
   upstreamDatasetId,
   datasetColumns,
   formError,
+  upstreamTrainingConfig,
 }: NodeConfigFormProps) {
   let body: ReactNode;
   switch (nodeType) {
@@ -1188,7 +1224,7 @@ export function NodeConfigForm({
       );
       break;
     case "evaluation":
-      body = <EvaluationForm config={config} onChange={onChange} />;
+      body = <EvaluationForm config={config} onChange={onChange} upstreamTrainingConfig={upstreamTrainingConfig} />;
       break;
     case "condition":
       body = <ConditionForm config={config} onChange={onChange} />;

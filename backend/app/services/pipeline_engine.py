@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import operator
 import uuid
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -291,12 +292,15 @@ def _validate_strict_node_config(node_id: str, node_type: str, config: dict[str,
         metric = config.get("metric")
         if metric is None or str(metric).strip() == "":
             errors.append(f"Node '{node_id}' requires a metric.")
+        if str(config.get("operator", ">=")) not in {">=", "<="}:
+            errors.append(f"Node '{node_id}' requires evaluation operator >= or <=.")
         minimum = config.get("minimum", config.get("min"))
         if minimum is None or (isinstance(minimum, str) and minimum.strip() == ""):
             errors.append(f"Node '{node_id}' requires a numeric minimum (or min).")
         else:
             try:
-                float(minimum)
+                if not math.isfinite(float(minimum)):
+                    raise ValueError("non-finite threshold")
             except (TypeError, ValueError):
                 errors.append(f"Node '{node_id}' requires a numeric minimum (or min).")
     elif node_type == "condition":
@@ -750,14 +754,39 @@ def _execute_node(
 
     if node_type == "evaluation":
         metrics = _find(incoming, "metrics") or {}
-        metric = config.get("metric")
-        minimum = config.get("minimum", config.get("min"))
-        passed = True
-        if metric and minimum is not None:
-            passed = metric in metrics and float(metrics[metric]) >= float(minimum)
+        metric = str(config.get("metric") or "").strip()
+        threshold = float(config.get("minimum", config.get("min")))
+        comparison = str(config.get("operator", ">="))
+        if comparison not in {">=", "<="}:
+            raise ValueError(f"Unsupported evaluation operator '{comparison}'.")
+        raw_value = metrics.get(metric) if isinstance(metrics, dict) else None
+        try:
+            measured = float(raw_value) if raw_value is not None else None
+        except (TypeError, ValueError):
+            measured = None
+        if measured is not None and not math.isfinite(measured):
+            measured = None
+        passed = measured is not None and (
+            measured >= threshold if comparison == ">=" else measured <= threshold
+        )
+        evaluation = {
+            "metric": metric,
+            "operator": comparison,
+            "threshold": threshold,
+            "value": measured,
+            "passed": passed,
+            "status": "passed" if passed else ("unavailable" if measured is None else "failed"),
+        }
         if not passed and config.get("fail_on_gate", True):
-            raise ValueError(f"Evaluation gate failed for metric '{metric}'.")
-        return {**(incoming if isinstance(incoming, dict) else {}), "evaluation_passed": passed}
+            raise ValueError(
+                f"Evaluation gate failed for metric '{metric}' "
+                f"({measured if measured is not None else 'unavailable'} {comparison} {threshold})."
+            )
+        return {
+            **(incoming if isinstance(incoming, dict) else {}),
+            "evaluation": evaluation,
+            "evaluation_passed": passed,
+        }
 
     if node_type == "condition":
         metrics = _find(incoming, "metrics") or {}

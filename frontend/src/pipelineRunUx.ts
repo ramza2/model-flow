@@ -50,6 +50,46 @@ export type PipelineLineageRef = {
   to?: string;
 };
 
+export type PipelineEvaluationSummary = {
+  metric: string;
+  operator: ">=" | "<=";
+  threshold: number | null;
+  value: number | null;
+  passed: boolean | null;
+};
+
+/** Read both new explicit evaluation output and pre-existing run output. */
+export function getPipelineEvaluationSummary(
+  config: Record<string, unknown>,
+  output: unknown,
+): PipelineEvaluationSummary | null {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const result = output as Record<string, unknown>;
+  const detail = result.evaluation && typeof result.evaluation === "object"
+    ? result.evaluation as Record<string, unknown>
+    : {};
+  const metric = String(detail.metric ?? config.metric ?? "").trim();
+  if (!metric) return null;
+  const metrics = result.metrics && typeof result.metrics === "object"
+    ? result.metrics as Record<string, unknown>
+    : {};
+  const toFiniteNumber = (raw: unknown): number | null => {
+    if (raw === null || raw === undefined || raw === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : null;
+  };
+  const operator = (detail.operator ?? config.operator) === "<=" ? "<=" : ">=";
+  const threshold = toFiniteNumber(detail.threshold ?? config.minimum ?? config.min);
+  const value = toFiniteNumber(detail.value ?? metrics[metric]);
+  const recorded = detail.passed ?? result.evaluation_passed;
+  const passed = typeof recorded === "boolean"
+    ? recorded
+    : value !== null && threshold !== null
+      ? (operator === ">=" ? value >= threshold : value <= threshold)
+      : null;
+  return { metric, operator, threshold, value, passed };
+}
+
 const UNIFIED_STATUSES: UnifiedRunStatus[] = [
   "pending",
   "running",

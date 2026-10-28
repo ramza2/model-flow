@@ -2107,6 +2107,29 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
   white-space: pre-wrap;
   word-break: break-word;
 }
+.pipeline-run-json-actions {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: .55rem;
+}
+.pipeline-run-json-actions details { min-width: 0; flex: 1 1 10rem; }
+.pipeline-run-json-actions summary { cursor: pointer; color: var(--accent); font-size: .82rem; }
+.pipeline-run-json-actions .code-block { margin-top: .5rem; max-height: 360px; }
+.pipeline-run-json-actions .btn { font-size: .77rem; padding: .4rem .55rem; }
+.pipeline-run-evaluation-summary {
+  display: grid;
+  gap: .5rem;
+  padding: .85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+.pipeline-run-evaluation-summary dl { display: grid; gap: .4rem; margin: 0; }
+.pipeline-run-evaluation-summary dl > div { display: flex; justify-content: space-between; gap: .7rem; }
+.pipeline-run-evaluation-summary dt { color: var(--muted); }
+.pipeline-run-evaluation-summary dd { margin: 0; text-align: right; font-weight: 600; }
+.pipeline-run-evaluation-summary small { color: var(--muted); }
 .pipeline-run-logs-section .logs {
   max-height: 320px;
   overflow: auto;

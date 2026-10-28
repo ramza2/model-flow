@@ -432,7 +432,7 @@ export function configSummary(
       break;
     }
     case "evaluation":
-      lines.push(`${String(config.metric ?? "metric")} ≥ ${config.minimum ?? config.min ?? "?"}`);
+      lines.push(`${String(config.metric ?? "metric")} ${config.operator === "<=" ? "≤" : "≥"} ${config.minimum ?? config.min ?? "?"}`);
       break;
     case "condition": {
       const left = config.metric ?? config.left ?? "?";
@@ -524,7 +524,10 @@ export function nodeConfigWarnings(
     case "evaluation":
       if (!config.metric) warnings.push("Metric required");
       if (config.minimum === undefined && config.min === undefined) {
-        warnings.push("Minimum value required");
+        warnings.push("Threshold required");
+      }
+      if (config.operator && config.operator !== ">=" && config.operator !== "<=") {
+        warnings.push("Evaluation operator must be >= or <=");
       }
       break;
     case "condition":

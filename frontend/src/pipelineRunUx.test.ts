@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PipelineGraph, PipelineRun } from "./api";
 import {
   collectPipelineLineage,
+  getPipelineEvaluationSummary,
   normalizePipelineRunStatus,
   summarizePipelineRunLifecycle,
 } from "./pipelineRunUx";
@@ -43,6 +44,22 @@ function runFixture(): Pick<PipelineRun, "node_states" | "node_artifacts"> {
 }
 
 describe("pipeline run lifecycle UX helpers", () => {
+  it("shows evaluation evidence from both historical and new node outputs", () => {
+    const config = { metric: "r2", minimum: 0 };
+    const historical = getPipelineEvaluationSummary(config, {
+      metrics: { r2: 0.1598 }, evaluation_passed: true,
+    });
+    expect(historical).toEqual({
+      metric: "r2", operator: ">=", threshold: 0, value: 0.1598, passed: true,
+    });
+    const newOutput = getPipelineEvaluationSummary(
+      { metric: "rmse", operator: "<=", minimum: 20 },
+      { evaluation: { metric: "rmse", operator: "<=", threshold: 20, value: 17.99, passed: true } },
+    );
+    expect(newOutput?.passed).toBe(true);
+    expect(newOutput?.operator).toBe("<=");
+    expect(getPipelineEvaluationSummary(config, { evaluation_passed: false })?.value).toBeNull();
+  });
   it("normalizes runtime aliases into one consistent status vocabulary", () => {
     expect(normalizePipelineRunStatus("queued")).toBe("pending");
     expect(normalizePipelineRunStatus("in_progress")).toBe("running");
