@@ -913,6 +913,7 @@ describe("NodeConfigForm", () => {
             nodeType="evaluation"
             config={config}
             onChange={setConfig}
+            upstreamTrainingConfig={{ training_task: "forecasting", problem_type: "regression" }}
           />
         </div>
       );
@@ -921,8 +922,11 @@ describe("NodeConfigForm", () => {
     expect(screen.getByTestId("node-config-evaluation-hint")).toHaveTextContent(">=");
     expect(screen.getByTestId("node-config-evaluation-rmse-hint")).toHaveTextContent(/RMSE|MAE/);
     expect(screen.getByTestId("node-config-metric")).toHaveValue("accuracy");
+    expect(document.querySelector('#pipeline-evaluation-metrics option[value="r2"]')).toBeInTheDocument();
+    expect(document.querySelector('#pipeline-evaluation-metrics option[value="accuracy"]')).not.toBeInTheDocument();
     expect(screen.getByTestId("node-config-minimum")).toHaveValue(0.8);
     expect(screen.getByTestId("node-config-fail-on-gate")).toBeChecked();
+    expect(screen.getByTestId("node-config-evaluation-operator")).toHaveValue(">=");
     fireEvent.change(screen.getByTestId("node-config-metric"), {
       target: { value: "f1" },
     });
@@ -933,6 +937,18 @@ describe("NodeConfigForm", () => {
     expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"metric":"f1"');
     expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"minimum":0.55');
     expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"fail_on_gate":false');
+    fireEvent.change(screen.getByTestId("node-config-metric"), {
+      target: { value: "rmse" },
+    });
+    expect(screen.getByTestId("node-config-evaluation-operator")).toHaveValue("<=");
+    fireEvent.change(screen.getByTestId("node-config-metric"), {
+      target: { value: "custom_score" },
+    });
+    expect(screen.getByTestId("node-config-evaluation-operator")).toHaveValue("<=");
+    fireEvent.change(screen.getByTestId("node-config-evaluation-operator"), {
+      target: { value: ">=" },
+    });
+    expect(screen.getByTestId("evaluation-config")).toHaveTextContent('"operator":">="');
   });
 });
 
@@ -2097,6 +2113,44 @@ describe("PipelineRunDetail", () => {
       "시도 1회차",
     );
     expect(screen.queryByTestId("pipeline-rerun-note")).not.toBeInTheDocument();
+  });
+
+  it("shows historical evaluation results and the untruncated artifact JSON", async () => {
+    const longValue = "artifact-".repeat(130);
+    apiMock.mockImplementation(async (path: string) => {
+      if (path === "/projects/7/pipeline-runs/42") {
+        return {
+          id: 42, pipeline_id: 9, pipeline_version_id: 1, status: "succeeded",
+          parameters: {},
+          node_states: {
+            "evaluation-1": {
+              status: "succeeded", node_type: "evaluation",
+              output: { metrics: { r2: 0.1598 }, evaluation_passed: true, longValue },
+            },
+          },
+          node_artifacts: { "evaluation-1": { longValue } },
+          fail_policy: "stop", scheduled_for: null, logs: "ok", error_message: null,
+          created_at: "2026-08-10T10:00:00Z", started_at: null, finished_at: null,
+        };
+      }
+      if (path === "/projects/7/pipeline-versions/1") {
+        return {
+          id: 1, pipeline_id: 9, project_id: 7, version: 1,
+          graph: {
+            nodes: [{ id: "evaluation-1", position: { x: 0, y: 0 }, data: {
+              label: "Evaluation", node_type: "evaluation", config: { metric: "r2", minimum: 0 },
+            } }], edges: [],
+          },
+        };
+      }
+      throw new Error(`Unhandled ${path}`);
+    });
+    renderRunDetail();
+    expect(await screen.findByTestId("pipeline-run-evaluation-summary")).toHaveTextContent("0.1598");
+    expect(screen.getByTestId("pipeline-run-evaluation-verdict")).toHaveTextContent("통과");
+    expect(screen.getByTestId("pipeline-run-full-output")).toHaveTextContent(longValue);
+    expect(screen.getByTestId("pipeline-run-full-artifacts")).toHaveTextContent(longValue);
+    expect(screen.getAllByRole("button", { name: "전체 복사" })).toHaveLength(2);
   });
 });
 

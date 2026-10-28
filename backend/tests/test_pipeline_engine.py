@@ -82,6 +82,51 @@ def _states(run: PipelineRun) -> dict:
     return json.loads(run.node_states_json)
 
 
+def test_evaluation_supports_both_directions_and_records_measurement():
+    incoming = {"metrics": {"r2": 0.1598, "rmse": 17.992}, "training_job_id": 17}
+    r2 = pipeline_engine._execute_node(
+        None, None, "evaluation", {"metric": "r2", "minimum": 0}, incoming
+    )
+    assert r2["evaluation_passed"] is True
+    assert r2["evaluation"] == {
+        "metric": "r2", "operator": ">=", "threshold": 0.0,
+        "value": 0.1598, "passed": True, "status": "passed",
+    }
+    rmse = pipeline_engine._execute_node(
+        None, None, "evaluation",
+        {"metric": "rmse", "operator": "<=", "minimum": 20}, incoming,
+    )
+    assert rmse["evaluation_passed"] is True
+    assert rmse["evaluation"]["value"] == 17.992
+    failed = pipeline_engine._execute_node(
+        None, None, "evaluation",
+        {"metric": "rmse", "operator": "<=", "minimum": 10, "fail_on_gate": False},
+        incoming,
+    )
+    assert failed["evaluation_passed"] is False
+    assert failed["evaluation"]["status"] == "failed"
+    unavailable = pipeline_engine._execute_node(
+        None, None, "evaluation",
+        {"metric": "missing", "minimum": 0, "fail_on_gate": False}, incoming,
+    )
+    assert unavailable["evaluation"]["status"] == "unavailable"
+    assert unavailable["evaluation"]["value"] is None
+    with pytest.raises(ValueError, match="Evaluation gate failed"):
+        pipeline_engine._execute_node(
+            None, None, "evaluation",
+            {"metric": "rmse", "operator": "<=", "minimum": 10}, incoming,
+        )
+
+
+def test_evaluation_validation_rejects_invalid_operator():
+    result = pipeline_engine.validate_graph(
+        {"nodes": [_node("eval-operator", "evaluation", metric="r2", minimum=0, operator="==")], "edges": []},
+        strict=True,
+    )
+    assert result["valid"] is False
+    assert any("operator" in error for error in result["errors"])
+
+
 def test_independent_ready_nodes_execute_in_parallel(pipeline_db, monkeypatch):
     run = _seed_run(
         pipeline_db,
