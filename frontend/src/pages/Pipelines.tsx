@@ -2297,6 +2297,11 @@ export function PipelineRunDetail() {
       const state = run.node_states[node.id];
       return {
         ...node,
+        // MiniMap skips nodes without dimensions (nodeHasDimensions). Run-detail
+        // polling replaces node objects often enough that measured sizes may never
+        // stick; explicit size keeps .react-flow__minimap-node visible/clickable.
+        width: 200,
+        height: 80,
         data: {
           ...node.data,
           label: state?.label || node.data.label,
