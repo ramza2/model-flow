@@ -2463,11 +2463,15 @@ export function PipelineRunDetail() {
                 >
                   <Background />
                   <MiniMap
+                    // Keep left so Evaluation/Register on the right stay clickable on wide graphs.
+                    position="bottom-left"
+                    pannable
                     nodeColor={(node) => node.data?.runStatus === "failed" ? "#ef8e8e" : "#3db8a0"}
                     nodeStrokeColor="#c7e8e1"
                     nodeStrokeWidth={2}
                     maskColor="rgba(12, 20, 27, 0.25)"
                     ariaLabel="파이프라인 실행 미니맵"
+                    onNodeClick={(_event, node) => setSelectedId(node.id)}
                   />
                   <Controls />
                 </ReactFlow>
