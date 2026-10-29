@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -462,6 +463,69 @@ def _feature_schema(
     return schema, "training_job" if schema else None, version
 
 
+def _signature_dtype(field: dict[str, Any]) -> str:
+    raw = str(field.get("dtype") or field.get("type") or "").strip().lower()
+    return raw.removeprefix("datatype.")
+
+
+def _align_schema_to_model_signature(
+    schema: list[dict[str, Any]],
+    input_features: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Use the loaded model's input types when dataset metadata disagrees.
+
+    Imported dataset previews may preserve numeric fields as strings even when
+    training parsed those columns as numeric. The model signature is the
+    authoritative contract for inference input types.
+    """
+
+    signature_types = {
+        str(field["name"]): _signature_dtype(field)
+        for field in (input_features or [])
+        if isinstance(field, dict) and field.get("name")
+    }
+    return [
+        {**field, "dtype": signature_types[str(field["name"])]}
+        if signature_types.get(str(field["name"]))
+        else field
+        for field in schema
+    ]
+
+
+def _normalize_dataset_sample_to_signature(
+    sample: dict[str, Any],
+    input_features: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """Parse numeric text in a trusted dataset preview, not in client input.
+
+    CSV/Parquet ingestion and model training can infer different dtypes for
+    numeric-looking text. Invalid numeric text is left unchanged so the normal
+    schema validation fails rather than masking an actual data problem.
+    """
+
+    normalized = dict(sample)
+    for field in input_features or []:
+        if not isinstance(field, dict):
+            continue
+        name = str(field.get("name") or "")
+        value = normalized.get(name)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        dtype = _signature_dtype(field)
+        text = value.strip()
+        if dtype in {"integer", "long", "int", "int64", "int32"}:
+            if re.fullmatch(r"[+-]?\d+", text):
+                normalized[name] = int(text)
+        elif dtype in {"float", "double", "float64", "float32"}:
+            try:
+                numeric = float(text)
+            except ValueError:
+                continue
+            if math.isfinite(numeric):
+                normalized[name] = numeric
+    return normalized
+
+
 def _generated_value(field: dict[str, Any]) -> Any:
     for key in ("example", "sample", "default"):
         if key in field and field[key] is not None:
@@ -704,10 +768,6 @@ def evaluate_gates(
     metadata = _json(row.metadata_json)
     job = backfill_model_lineage(db, row)
     schema, schema_source, version = _feature_schema(db, row, metadata, job)
-    # Persist dtype enrichment for older registrations that only stored names.
-    if schema:
-        metadata["feature_schema"] = schema
-        row.metadata_json = json.dumps(metadata)
     results: list[dict[str, Any]] = []
 
     run: dict[str, Any] | None = None
@@ -782,6 +842,18 @@ def evaluate_gates(
             )
         )
 
+    input_features = (
+        load_info.get("input_features") if isinstance(load_info, dict) else None
+    )
+    if not isinstance(input_features, list):
+        input_features = None
+    schema = _align_schema_to_model_signature(schema, input_features)
+    # Persist the effective inference contract, including old registrations
+    # whose dataset dtypes differ from the successfully loaded model signature.
+    if schema:
+        metadata["feature_schema"] = schema
+        row.metadata_json = json.dumps(metadata)
+
     if config.get("require_schema", True):
         results.append(
             _gate_result(
@@ -797,11 +869,6 @@ def evaluate_gates(
             )
         )
 
-    input_features = (
-        load_info.get("input_features") if isinstance(load_info, dict) else None
-    )
-    if not isinstance(input_features, list):
-        input_features = None
     sample, sample_source = _test_sample(
         schema, version, None, input_features=input_features
     )
@@ -816,6 +883,10 @@ def evaluate_gates(
             prediction_error = ValueError("No test instance could be created.")
         else:
             try:
+                if sample_source == "dataset":
+                    sample = _normalize_dataset_sample_to_signature(
+                        sample, input_features
+                    )
                 inference.validate_instances([sample], schema)
                 started = time.perf_counter()
                 prediction = inference_client.predict(
