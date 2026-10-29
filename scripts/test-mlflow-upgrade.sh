@@ -65,25 +65,22 @@ docker run -d --name "$MINIO_NAME" --network "$NETWORK" --network-alias minio \
   "$MINIO_IMAGE" server /data >/dev/null \
   || fail "failed to start disposable MinIO"
 
+# pg_isready can succeed against PostgreSQL's temporary init server before
+# init-databases.sql creates mlflow. Check the mlflow DB over TCP instead:
+# the entrypoint's temporary server does not accept TCP connections.
 for _ in $(seq 1 90); do
-  if docker exec "$PG_NAME" pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null 2>&1 \
+  if docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_NAME" \
+      psql -h 127.0.0.1 -U "$PG_USER" -d mlflow -v ON_ERROR_STOP=1 -Atqc "SELECT 1" >/dev/null 2>&1 \
     && docker exec "$MINIO_NAME" curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
-docker exec "$PG_NAME" pg_isready -U "$PG_USER" -d "$PG_DB" >/dev/null \
-  || fail "Postgres not ready"
+docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_NAME" \
+  psql -h 127.0.0.1 -U "$PG_USER" -d mlflow -v ON_ERROR_STOP=1 -Atqc "SELECT 1" >/dev/null \
+  || fail "Postgres mlflow database not ready"
 docker exec "$MINIO_NAME" curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null \
   || fail "MinIO not ready"
-
-# Ensure mlflow DB exists even if init script raced.
-if ! docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_NAME" \
-  psql -U "$PG_USER" -d "$PG_DB" -Atqc "SELECT 1 FROM pg_database WHERE datname='mlflow'" \
-  | grep -qx 1; then
-  docker exec -e PGPASSWORD="$PG_PASSWORD" "$PG_NAME" \
-    psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -c "CREATE DATABASE mlflow;" >/dev/null
-fi
 
 docker run --rm --network "$NETWORK" \
   -e MINIO_ROOT_USER="$MINIO_USER" \
