@@ -114,9 +114,9 @@ test("data scientist sees training but no approval controls", async ({ page }) =
   await expect(page.getByRole("link", { name: "＋ 새 모델 학습", exact: true })).toBeVisible();
 
   await page.goto(`/projects/${projectAId}/models`);
-  await expect(page.getByRole("heading", { name: "Model Registry", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Approve/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Register from run/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "모델 관리", exact: true })).toBeVisible();
+  await expect(page.getByTestId("approve-model")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /학습 결과로 모델 등록/ })).toHaveCount(0);
 });
 
 test("direct navigation to another project is denied", async ({ page }) => {
