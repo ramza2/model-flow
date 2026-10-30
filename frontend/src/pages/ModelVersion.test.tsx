@@ -212,6 +212,7 @@ describe("ModelVersion lifecycle UX", () => {
         val_rmse: 22.185,
         val_HTDND_AMNT__t_plus_1_rmse: 20.527,
         val_HTDND_AMNT__t_plus_1_r2: -0.239,
+        val_HTDND_AMNT__t_plus_2_mae: 18.838,
       },
       gate_results: {
         passed: true,
@@ -224,8 +225,12 @@ describe("ModelVersion lifecycle UX", () => {
 
     const rmseCard = await screen.findByTestId("metric-card-val_HTDND_AMNT__t_plus_1_rmse");
     expect(within(rmseCard).getByText("검증 · RMSE")).toBeInTheDocument();
-    expect(within(rmseCard).getByText("예측 대상: HTDND_AMNT (1단계 후)"))
-      .toHaveAttribute("title", "HTDND_AMNT (1단계 후)");
+    expect(within(rmseCard).getByText("1단계 후 예측")).toBeInTheDocument();
+    expect(within(rmseCard).getByText("대상: HTDND_AMNT")).toBeInTheDocument();
+    expect(within(rmseCard).getByTitle("HTDND_AMNT (1단계 후)")).toBeInTheDocument();
+    const secondStepCard = screen.getByTestId("metric-card-val_HTDND_AMNT__t_plus_2_mae");
+    expect(within(secondStepCard).getByText("2단계 후 예측")).toBeInTheDocument();
+    expect(within(secondStepCard).getByText("대상: HTDND_AMNT")).toBeInTheDocument();
     expect(within(rmseCard).getByLabelText(/도움말:/)).toHaveAttribute(
       "aria-label",
       expect.stringMatching(/RMSE|낮을수록/),
@@ -235,8 +240,10 @@ describe("ModelVersion lifecycle UX", () => {
     expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · RMSE: 22.185");
     expect(screen.getByTestId("model-metric-relationship-hint"))
       .toHaveTextContent("검증은 정책에 지정된 지표를 사용");
-    expect(screen.getByText(/검증 정책 지표: R² · 측정값: 0.160/)).toBeInTheDocument();
-    expect(screen.getByText(/대표 지표나 예측 대상별 지표와 다를 수 있습니다/)).toBeInTheDocument();
+    const policyMetric = screen.getByTestId("gate-policy-metric");
+    expect(policyMetric.children).toHaveLength(2);
+    expect(policyMetric.children[0]).toHaveTextContent("검증 정책 지표: R² · 측정값: 0.160");
+    expect(policyMetric.children[1]).toHaveTextContent("대표 지표나 예측 대상별 지표와 다를 수 있습니다");
   });
 
   it("names the actual target when the validation policy uses a per-target metric", async () => {

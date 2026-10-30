@@ -27,6 +27,7 @@ describe("Korean Model Registry display-only labels", () => {
       scope: "검증",
       target: "HTDND_AMNT (1단계 후)",
       metric: "R²",
+      forecast: { step: 1, targetName: "HTDND_AMNT" },
     });
     expect(modelMetricDisplayKo("test_target_1_mae", ["cooling_load", "power_usage"])).toEqual({
       scope: "테스트",

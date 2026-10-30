@@ -3035,6 +3035,8 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .gate-checklist-title .badge { margin-left: auto; }
 .gate-checklist-item .form-hint { margin: .45rem 0; }
 .gate-checklist-item small { color: var(--muted); }
+.gate-policy-metric { display: grid; gap: .3rem; margin-top: .45rem; }
+.gate-policy-metric .form-hint { margin: 0; }
 .gate-schema-list { margin: .45rem 0 0; padding-left: 1.2rem; }
 .gate-schema-list li { margin-bottom: .2rem; }
 .technical-block { min-width: 0; }
@@ -3046,14 +3048,13 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 .model-metric-kind { display: block; font-weight: 650; }
 .model-metric-target {
   display: block;
-  max-width: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin-top: 0.25rem;
   font-size: 0.72rem;
+  overflow-wrap: anywhere;
 }
+.model-metric-horizon { display: block; font-weight: 650; }
+.model-metric-target-name { display: block; }
 .model-metric-relationship-hint { margin-top: -0.4rem; }
 .named-prediction {
   white-space: pre-wrap;

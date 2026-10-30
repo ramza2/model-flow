@@ -184,7 +184,18 @@ export function MetricSummary({
             </span>
             {metricDisplay.target && (
               <span className="model-metric-target" title={metricDisplay.target}>
-                예측 대상: {metricDisplay.target}
+                {metricDisplay.forecast ? (
+                  <>
+                    <span className="model-metric-horizon">
+                      {metricDisplay.forecast.step}단계 후 예측
+                    </span>
+                    <span className="model-metric-target-name">
+                      대상: {metricDisplay.forecast.targetName}
+                    </span>
+                  </>
+                ) : (
+                  <>예측 대상: {metricDisplay.target}</>
+                )}
               </span>
             )}
           </div>
@@ -273,10 +284,10 @@ export function GateSummary({
                   <small>실측 {latency.toFixed(1)}ms{limit != null ? ` / 허용 ${limit.toLocaleString("ko-KR")}ms` : ""}</small>
                 )}
                 {type === "metric_threshold" && typeof obs.metric === "string" && typeof obs.value === "number" && (
-                  <>
+                  <div className="gate-policy-metric" data-testid="gate-policy-metric">
                     <small>검증 정책 지표: {formatModelMetricLabelKo(obs.metric, targetColumns)} · 측정값: {obs.value.toFixed(3)}</small>
                     <small className="form-hint">이 값은 검증 정책에 지정된 지표로, 위의 모델 대표 지표나 예측 대상별 지표와 다를 수 있습니다.</small>
-                  </>
+                  </div>
                 )}
                 {type === "test_inference" && typeof obs.prediction_count === "number" && (
                   <small>예측 성공: {obs.prediction_count}건</small>

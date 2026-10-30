@@ -46,6 +46,7 @@ export function modelMetricDisplayKo(key: string, targetColumns: string[] = []):
   scope: string;
   target: string;
   metric: string;
+  forecast?: { step: number; targetName: string };
 } {
   let rest = key;
   let scope = "";
@@ -65,13 +66,16 @@ export function modelMetricDisplayKo(key: string, targetColumns: string[] = []):
   }
 
   const future = rest.match(/^(.+)_t_plus_(\d+)_(rmse|mae|r2)$/i);
-  if (future) {
-    target = `${future[1].replace(/_+$/, "")} (${future[2]}단계 후)`;
+  const forecast = future
+    ? { step: Number(future[2]), targetName: future[1].replace(/_+$/, "") }
+    : undefined;
+  if (future && forecast) {
+    target = `${forecast.targetName} (${forecast.step}단계 후)`;
     rest = future[3];
   }
 
   const metric = METRICS_KO[rest.toLowerCase()] ?? formatMetricLabel(rest);
-  return { scope, target, metric };
+  return { scope, target, metric, ...(forecast ? { forecast } : {}) };
 }
 
 export function formatModelMetricLabelKo(key: string, targetColumns: string[] = []): string {
