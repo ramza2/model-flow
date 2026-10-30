@@ -246,7 +246,7 @@ export default function ModelVersion() {
               {targets.length > 0 && (
                 <div className="lifecycle-targets">
                   <span className="eyebrow">예측 대상</span>
-                  <TargetChips targets={targets} testId="model-target-chips" />
+                  <TargetChips targets={targets} testId="model-target-chips" koreanForecast />
                 </div>
               )}
             </DetailSection>
