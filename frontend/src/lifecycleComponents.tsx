@@ -17,25 +17,32 @@ import {
   modelMetricDisplayKo,
   modelGateStatusKo,
   modelLifecycleLabelKo,
+  parseModelForecastTargetKo,
 } from "./modelRegistryLabels";
 
 export function TargetChips({
   targets,
   testId,
+  koreanForecast = false,
 }: {
   targets: string[];
   testId?: string;
+  /** Opt-in for the Korean Model Version detail; other callers stay unchanged. */
+  koreanForecast?: boolean;
 }) {
   if (targets.length === 0) {
     return <span data-testid={testId}>—</span>;
   }
   return (
     <ul className="target-chips" data-testid={testId}>
-      {targets.map((target) => (
-        <li key={target} className="target-chip">
-          {target}
-        </li>
-      ))}
+      {targets.map((target) => {
+        const forecast = koreanForecast ? parseModelForecastTargetKo(target) : undefined;
+        return (
+          <li key={target} className="target-chip" title={forecast ? target : undefined}>
+            {forecast ? `${forecast.step}단계 후 예측 · ${forecast.targetName}` : target}
+          </li>
+        );
+      })}
     </ul>
   );
 }
