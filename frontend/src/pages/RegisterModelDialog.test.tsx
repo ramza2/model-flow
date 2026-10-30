@@ -36,7 +36,7 @@ describe("RegisterModelDialog", () => {
     render(
       <RegisterModelDialog job={baseJob} busy={false} onClose={() => undefined} onSubmit={vi.fn()} />,
     );
-    expect(screen.getByTestId("register-problem-type")).toHaveTextContent("regression");
+    expect(screen.getByTestId("register-problem-type")).toHaveTextContent("회귀(수치 예측)");
   });
 
   it("shows resolved classification problem type for auto jobs", () => {
@@ -48,6 +48,6 @@ describe("RegisterModelDialog", () => {
         onSubmit={vi.fn()}
       />,
     );
-    expect(screen.getByTestId("register-problem-type")).toHaveTextContent("classification");
+    expect(screen.getByTestId("register-problem-type")).toHaveTextContent("분류");
   });
 });

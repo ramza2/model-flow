@@ -83,10 +83,40 @@ describe("Registry lifecycle UX", () => {
         </Routes>
       </MemoryRouter>,
     );
-    fireEvent.click(await screen.findByRole("button", { name: /Register from run/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /학습 결과로 모델 등록/i }));
     await waitFor(() => {
       expect(screen.getByTestId("register-name")).toHaveValue("multi_output_smoke_training");
     });
     expect(screen.getByTestId("register-name")).not.toHaveValue("classifier");
+  });
+
+  it("shows Korean lifecycle labels while keeping API filter values unchanged", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/projects/7/models")) return [{
+        id: 5,
+        name: "heat-demand-ridge-t123-uat",
+        version: "1",
+        lifecycle: "CANDIDATE",
+        gates_passed: true,
+        metrics: { val_rmse: 22.185 },
+        metadata: { problem_type: "regression" },
+        created_at: "2026-10-29T00:00:00Z",
+      }];
+      if (path.startsWith("/projects/7/experiments/runs")) return [];
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/registry"]}>
+        <Routes><Route path="/projects/:projectId/registry" element={<Registry />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByText("heat-demand-ridge-t123-uat")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "모델 관리" })).toBeInTheDocument();
+    expect(screen.getByText("검증 · RMSE: 22.185")).toBeInTheDocument();
+    expect(screen.getAllByText("후보 모델").length).toBeGreaterThanOrEqual(2);
+    const filter = screen.getByTestId("registry-lifecycle-filter");
+    expect(filter.querySelector('option[value="PENDING_APPROVAL"]')).toHaveTextContent("승인 대기");
+    fireEvent.change(filter, { target: { value: "CANDIDATE" } });
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("/projects/7/models?lifecycle=CANDIDATE"));
   });
 });
