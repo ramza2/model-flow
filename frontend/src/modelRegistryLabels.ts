@@ -42,6 +42,15 @@ const METRICS_KO: Record<string, string> = {
   recall: "재현율",
 };
 
+/** Parse a forecasting target name without changing the stored column. */
+export function parseModelForecastTargetKo(target: string): { step: number; targetName: string } | undefined {
+  const match = target.match(/^(.+?)_+t_plus_(\d+)$/i);
+  if (!match) return undefined;
+  const step = Number(match[2]);
+  if (!Number.isSafeInteger(step) || step < 1) return undefined;
+  return { step, targetName: match[1] };
+}
+
 export function modelMetricDisplayKo(key: string, targetColumns: string[] = []): {
   scope: string;
   target: string;
@@ -66,12 +75,14 @@ export function modelMetricDisplayKo(key: string, targetColumns: string[] = []):
   }
 
   const future = rest.match(/^(.+)_t_plus_(\d+)_(rmse|mae|r2)$/i);
-  const forecast = future
-    ? { step: Number(future[2]), targetName: future[1].replace(/_+$/, "") }
-    : undefined;
-  if (future && forecast) {
-    target = `${forecast.targetName} (${forecast.step}단계 후)`;
+  if (future) {
+    target = `${future[1]}_t_plus_${future[2]}`;
     rest = future[3];
+  }
+  // Indexed metrics (val_target_0_rmse) store their horizon in target_columns.
+  const forecast = parseModelForecastTargetKo(target);
+  if (forecast) {
+    target = `${forecast.targetName} (${forecast.step}단계 후)`;
   }
 
   const metric = METRICS_KO[rest.toLowerCase()] ?? formatMetricLabel(rest);
