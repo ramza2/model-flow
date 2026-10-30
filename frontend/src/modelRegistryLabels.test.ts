@@ -5,6 +5,7 @@ import {
   modelMetricDisplayKo,
   modelLifecycleLabelKo,
   modelProblemTypeKo,
+  parseModelForecastTargetKo,
 } from "./modelRegistryLabels";
 
 describe("Korean Model Registry display-only labels", () => {
@@ -34,5 +35,27 @@ describe("Korean Model Registry display-only labels", () => {
       target: "power_usage",
       metric: "MAE",
     });
+  });
+
+  it("recognizes forecast horizons from real indexed target metric keys", () => {
+    const targets = ["HTDND_AMNT__t_plus_1", "HTDND_AMNT__t_plus_2", "HTDND_AMNT__t_plus_3"];
+    expect(modelMetricDisplayKo("val_target_0_rmse", targets)).toEqual({
+      scope: "검증", target: "HTDND_AMNT (1단계 후)", metric: "RMSE",
+      forecast: { step: 1, targetName: "HTDND_AMNT" },
+    });
+    expect(modelMetricDisplayKo("val_target_1_mae", targets).forecast)
+      .toEqual({ step: 2, targetName: "HTDND_AMNT" });
+    expect(formatModelMetricLabelKo("test_target_2_r2", targets))
+      .toBe("테스트 · HTDND_AMNT (3단계 후) · R²");
+    expect(modelMetricDisplayKo("val_target_0_rmse").forecast).toBeUndefined();
+  });
+
+  it("preserves non-forecasting multi-output target names", () => {
+    expect(parseModelForecastTargetKo("power_usage")).toBeUndefined();
+    expect(parseModelForecastTargetKo("HTDND_AMNT__t_plus_0")).toBeUndefined();
+    expect(parseModelForecastTargetKo("HTDND_AMNT__t_plus_1"))
+      .toEqual({ step: 1, targetName: "HTDND_AMNT" });
+    expect(modelMetricDisplayKo("val_target_0_rmse", ["power_usage"]))
+      .toEqual({ scope: "검증", target: "power_usage", metric: "RMSE" });
   });
 });
