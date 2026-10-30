@@ -49,7 +49,7 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await page.getByTestId("approve-model").click();
   await expect(page.getByText("모델 승인을 완료했습니다.")).toBeVisible();
 
-  await page.getByRole("link", { name: /모델 배포|Deployments/ }).click();
+  await page.getByRole("link", { name: "모델 배포", exact: true }).click();
   await page.getByRole("button", { name: "New deployment" }).click();
   await page.getByTestId("endpoint-name").fill("api-usage-endpoint");
   await page.getByTestId("endpoint-create").click();

@@ -61,7 +61,7 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await expect(page.getByText("모델 승인을 완료했습니다.")).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/05-registry.png", fullPage: true });
 
-  await page.getByRole("link", { name: /모델 배포|Deployments/ }).click();
+  await page.getByRole("link", { name: "모델 배포", exact: true }).click();
   await page.getByRole("button", { name: "New deployment" }).click();
   await page.getByTestId("endpoint-name").fill("e2e-endpoint");
   await page.getByTestId("endpoint-create").click();
