@@ -72,6 +72,8 @@ describe("metricHelpers", () => {
     expect(metricHelpText("test_mae")).toMatch(/절댓값/);
     expect(metricHelpText("r2")).toMatch(/1에 가까울수록/);
     expect(metricHelpText("r2")).not.toMatch(/검증 데이터|테스트 데이터/);
+    expect(metricHelpText("val_HTDND_AMNT__t_plus_1_rmse")).toMatch(/검증 데이터.*낮을수록/);
+    expect(metricHelpText("val_HTDND_AMNT__t_plus_1_r2")).toMatch(/검증 데이터.*0보다 작을 수도/);
   });
 
   it("explains classification metrics and weighted variants", () => {

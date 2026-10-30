@@ -163,6 +163,13 @@ export function metricHelpText(metricKey: string): string {
     rest = perTarget[1];
   }
 
+  // Multi-step forecasting metrics retain their real target column in the key.
+  // Only identify the known metric suffix for tooltip copy; keep the raw key unchanged.
+  const forecastingMetric = rest.match(/^.+_t_plus_\d+_(rmse|mae|r2)$/);
+  if (forecastingMetric) {
+    rest = forecastingMetric[1];
+  }
+
   const weighted = rest.endsWith("_weighted");
   const family = weighted ? rest.slice(0, -"_weighted".length) : rest;
   const familyHelp = METRIC_FAMILY_HELP[family];
