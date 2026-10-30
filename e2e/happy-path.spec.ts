@@ -55,10 +55,10 @@ test("authenticated model lifecycle happy path", async ({ page }) => {
   await page.getByRole("link", { name: /모델 관리|Model Registry/ }).click();
   await expect(page.getByRole("link", { name: "e2e-rf" })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("link", { name: "e2e-rf" }).click();
-  await page.getByRole("button", { name: "Request approval" }).click();
-  await expect(page.getByRole("button", { name: /Approve/ })).toBeVisible();
+  await page.getByTestId("request-approval").click();
+  await expect(page.getByTestId("approve-model")).toBeVisible();
   await page.getByTestId("approve-model").click();
-  await expect(page.getByText("Model approved.")).toBeVisible();
+  await expect(page.getByText("모델 승인을 완료했습니다.")).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/05-registry.png", fullPage: true });
 
   await page.getByRole("link", { name: /모델 배포|Deployments/ }).click();
