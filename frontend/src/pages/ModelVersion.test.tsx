@@ -206,13 +206,13 @@ describe("ModelVersion lifecycle UX", () => {
       gates_passed: true,
       metadata: {
         ...baseModel.metadata,
-        target_columns: ["HTDND_AMNT__t_plus_1", "HTDND_AMNT__t_plus_2"],
+        target_columns: ["HTDND_AMNT__t_plus_1", "HTDND_AMNT__t_plus_2", "HTDND_AMNT__t_plus_3"],
       },
       metrics: {
         val_rmse: 22.185,
-        val_HTDND_AMNT__t_plus_1_rmse: 20.527,
-        val_HTDND_AMNT__t_plus_1_r2: -0.239,
-        val_HTDND_AMNT__t_plus_2_mae: 18.838,
+        val_target_0_rmse: 20.527,
+        val_target_0_r2: -0.239,
+        val_target_1_mae: 18.838,
       },
       gate_results: {
         passed: true,
@@ -223,20 +223,25 @@ describe("ModelVersion lifecycle UX", () => {
     });
     renderPage();
 
-    const rmseCard = await screen.findByTestId("metric-card-val_HTDND_AMNT__t_plus_1_rmse");
+    const rmseCard = await screen.findByTestId("metric-card-val_target_0_rmse");
     expect(within(rmseCard).getByText("검증 · RMSE")).toBeInTheDocument();
     expect(within(rmseCard).getByText("1단계 후 예측")).toBeInTheDocument();
     expect(within(rmseCard).getByText("대상: HTDND_AMNT")).toBeInTheDocument();
     expect(within(rmseCard).getByTitle("HTDND_AMNT (1단계 후)")).toBeInTheDocument();
-    const secondStepCard = screen.getByTestId("metric-card-val_HTDND_AMNT__t_plus_2_mae");
+    const secondStepCard = screen.getByTestId("metric-card-val_target_1_mae");
     expect(within(secondStepCard).getByText("2단계 후 예측")).toBeInTheDocument();
     expect(within(secondStepCard).getByText("대상: HTDND_AMNT")).toBeInTheDocument();
     expect(within(rmseCard).getByLabelText(/도움말:/)).toHaveAttribute(
       "aria-label",
       expect.stringMatching(/RMSE|낮을수록/),
     );
-    expect(screen.getByTestId("metric-card-val_HTDND_AMNT__t_plus_1_r2"))
+    expect(screen.getByTestId("metric-card-val_target_0_r2"))
       .toHaveTextContent("-0.239");
+    const chips = screen.getByTestId("model-target-chips");
+    for (const step of [1, 2, 3]) {
+      expect(within(chips).getByText(`${step}단계 후 예측 · HTDND_AMNT`))
+        .toHaveAttribute("title", `HTDND_AMNT__t_plus_${step}`);
+    }
     expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · RMSE: 22.185");
     expect(screen.getByTestId("model-metric-relationship-hint"))
       .toHaveTextContent("검증은 정책에 지정된 지표를 사용");
