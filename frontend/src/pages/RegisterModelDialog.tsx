@@ -1,7 +1,9 @@
 import { FormEvent, useState } from "react";
 import type { Job } from "../api";
+import { HelpTip } from "../components";
 import { effectiveTargetColumns } from "../jobHelpers";
 import { resolveDisplayProblemType } from "../metricHelpers";
+import { modelProblemTypeKo } from "../modelRegistryLabels";
 import { defaultModelNameFromJob } from "../registerModelHelpers";
 
 type RegisterModelDialogProps = {
@@ -37,21 +39,21 @@ export default function RegisterModelDialog({
       >
         <div className="panel-title">
           <div>
-            <span className="eyebrow">Model Registry</span>
-            <h2 id="register-model-title">Register model</h2>
+            <span className="eyebrow">모델 관리</span>
+            <h2 id="register-model-title">학습 결과를 후보 모델로 등록</h2>
           </div>
         </div>
         <dl className="key-values compact">
-          <div><dt>Training job</dt><dd>{job.name}</dd></div>
+          <div><dt>학습 작업</dt><dd>{job.name}</dd></div>
           <div data-testid="register-problem-type">
-            <dt>Problem type</dt>
-            <dd>{resolveDisplayProblemType(job.problem_type, job.metrics)}</dd>
+            <dt>예측 유형</dt>
+            <dd>{modelProblemTypeKo(resolveDisplayProblemType(job.problem_type, job.metrics))}</dd>
           </div>
-          <div><dt>Algorithm</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
-          <div><dt>Target{effectiveTargetColumns(job).length > 1 ? "s" : ""}</dt><dd className="mono">{effectiveTargetColumns(job).join(", ")}</dd></div>
+          <div><dt>알고리즘</dt><dd>{job.algorithm.replaceAll("_", " ")}</dd></div>
+          <div><dt>예측 대상</dt><dd className="mono">{effectiveTargetColumns(job).join(", ")}</dd></div>
         </dl>
         <label>
-          Model name *
+          모델명 * <HelpTip text="등록할 모델의 이름입니다. 기존 모델과 구분할 수 있도록 설정하세요." />
           <input
             value={modelName}
             onChange={(event) => setModelName(event.target.value)}
@@ -61,10 +63,10 @@ export default function RegisterModelDialog({
         </label>
         <div className="row-actions">
           <button className="btn" type="submit" disabled={busy || !modelName.trim()} data-testid="register-model-submit">
-            {busy ? "Registering…" : "Register model"}
+            {busy ? "등록 중…" : "후보 모델 등록"}
           </button>
           <button className="btn secondary" type="button" onClick={onClose} disabled={busy}>
-            Cancel
+            취소
           </button>
         </div>
       </form>

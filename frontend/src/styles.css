@@ -3011,6 +3011,30 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 }
 .detail-section { margin-bottom: 0; }
 .gate-summary { display: flex; flex-direction: column; gap: .75rem; }
+.gate-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: .65rem;
+}
+.gate-checklist-item {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  padding: .8rem;
+  background: var(--bg);
+  overflow-wrap: anywhere;
+}
+.gate-checklist-title {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-wrap: wrap;
+}
+.gate-checklist-title .badge { margin-left: auto; }
+.gate-checklist-item .form-hint { margin: .45rem 0; }
+.gate-checklist-item small { color: var(--muted); }
+.gate-schema-list { margin: .45rem 0 0; padding-left: 1.2rem; }
+.gate-schema-list li { margin-bottom: .2rem; }
 .technical-block { min-width: 0; }
 .metric-primary-hint { grid-column: 1 / -1; margin: 0; }
 .named-prediction {

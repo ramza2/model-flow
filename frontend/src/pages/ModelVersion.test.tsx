@@ -73,8 +73,8 @@ describe("ModelVersion lifecycle UX", () => {
     apiMock.mockResolvedValue({ ...baseModel, lifecycle: "REJECTED", gates_passed: true });
     renderPage();
     const stepper = await screen.findByTestId("lifecycle-stepper");
-    expect(stepper).toHaveTextContent("Rejected");
-    expect(stepper).not.toHaveTextContent("Production");
+    expect(stepper).toHaveTextContent("반려됨");
+    expect(stepper).not.toHaveTextContent("운영 중");
     expect(screen.getByTestId("approval-comment-value")).toHaveTextContent("Looks solid");
   });
 
@@ -82,14 +82,14 @@ describe("ModelVersion lifecycle UX", () => {
     apiMock.mockResolvedValue({ ...baseModel, lifecycle: "ARCHIVED" });
     renderPage();
     const stepper = await screen.findByTestId("lifecycle-stepper");
-    expect(stepper).toHaveTextContent("Archived");
+    expect(stepper).toHaveTextContent("보관됨");
   });
 
   it("blocks approval request when gates have not passed", async () => {
     apiMock.mockResolvedValue({ ...baseModel, lifecycle: "CANDIDATE", gates_passed: false });
     renderPage();
     await screen.findByTestId("lifecycle-stepper");
-    expect(screen.getByTestId("approval-blocked-hint")).toHaveTextContent(/Validation gates must pass/i);
+    expect(screen.getByTestId("approval-blocked-hint")).toHaveTextContent(/검증을 모두 통과/i);
     expect(screen.queryByTestId("request-approval")).not.toBeInTheDocument();
     expect(screen.getByTestId("rerun-validation")).toBeInTheDocument();
   });
@@ -104,7 +104,7 @@ describe("ModelVersion lifecycle UX", () => {
     apiMock.mockResolvedValue(baseModel);
     renderPage();
     await screen.findByTestId("entity-lineage");
-    expect(screen.getByRole("link", { name: /Job #42/i })).toHaveAttribute("href", "/projects/7/jobs/42");
+    expect(screen.getByRole("link", { name: /작업 #42/i })).toHaveAttribute("href", "/projects/7/jobs/42");
     expect(screen.getByRole("link", { name: /run-abc/i })).toHaveAttribute(
       "href",
       "/projects/7/experiments/runs/run-abc",
@@ -146,7 +146,7 @@ describe("ModelVersion lifecycle UX", () => {
     await screen.findByTestId("lifecycle-stepper");
     expect(screen.queryByTestId("create-deployment")).not.toBeInTheDocument();
     expect(screen.getByTestId("approval-comment-value")).toHaveTextContent("Looks solid");
-    expect(screen.getByTestId("approval-reviewed-by")).toHaveTextContent("User #3");
+    expect(screen.getByTestId("approval-reviewed-by")).toHaveTextContent("사용자 #3");
   });
 
   it("hides editable review comment for read-only users pending approval", async () => {
@@ -174,5 +174,29 @@ describe("ModelVersion lifecycle UX", () => {
     });
     renderPage();
     expect(await screen.findByTestId("approval-comment-input")).toBeInTheDocument();
+  });
+
+  it("renders Korean gate checklist and retains raw server JSON for technical review", async () => {
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      gates_passed: true,
+      gate_results: {
+        passed: true,
+        results: [
+          { type: "test_inference", passed: true, observed: { prediction_count: 1 } },
+          { type: "inference_latency", passed: true, observed: { latency_ms: 73.12 }, expected: { maximum_ms: 5000 } },
+          { type: "schema_present", passed: true, observed: [{ name: "HOUR_NUM", dtype: "long" }] },
+        ],
+      },
+    });
+    renderPage();
+    expect(await screen.findByRole("list", { name: "항목별 검증 결과" })).toBeInTheDocument();
+    expect(screen.getByText("단건 예측")).toBeInTheDocument();
+    expect(screen.getByText("예측 응답시간")).toBeInTheDocument();
+    expect(screen.getByText(/실측 73.1ms \/ 허용 5,000ms/)).toBeInTheDocument();
+    expect(screen.getByText("입력 컬럼 1개 확인")).toBeInTheDocument();
+    expect(screen.getAllByText(/HOUR_NUM/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("기술 상세 정보(JSON)")).toBeInTheDocument();
+    expect(screen.getByTestId("gate-results")).toHaveTextContent('"prediction_count": 1');
   });
 });
