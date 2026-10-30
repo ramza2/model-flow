@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ModelVersion from "./ModelVersion";
@@ -198,5 +198,61 @@ describe("ModelVersion lifecycle UX", () => {
     expect(screen.getAllByText(/HOUR_NUM/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("기술 상세 정보(JSON)")).toBeInTheDocument();
     expect(screen.getByTestId("gate-results")).toHaveTextContent('"prediction_count": 1');
+  });
+
+  it("separates forecast target labels and explains aggregate versus policy metrics", async () => {
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      gates_passed: true,
+      metadata: {
+        ...baseModel.metadata,
+        target_columns: ["HTDND_AMNT__t_plus_1", "HTDND_AMNT__t_plus_2"],
+      },
+      metrics: {
+        val_rmse: 22.185,
+        val_HTDND_AMNT__t_plus_1_rmse: 20.527,
+        val_HTDND_AMNT__t_plus_1_r2: -0.239,
+      },
+      gate_results: {
+        passed: true,
+        results: [
+          { type: "metric_threshold", passed: true, observed: { metric: "r2", value: 0.160 } },
+        ],
+      },
+    });
+    renderPage();
+
+    const rmseCard = await screen.findByTestId("metric-card-val_HTDND_AMNT__t_plus_1_rmse");
+    expect(within(rmseCard).getByText("검증 · RMSE")).toBeInTheDocument();
+    expect(within(rmseCard).getByText("예측 대상: HTDND_AMNT (1단계 후)"))
+      .toHaveAttribute("title", "HTDND_AMNT (1단계 후)");
+    expect(within(rmseCard).getByLabelText(/도움말:/)).toHaveAttribute(
+      "aria-label",
+      expect.stringMatching(/RMSE|낮을수록/),
+    );
+    expect(screen.getByTestId("metric-card-val_HTDND_AMNT__t_plus_1_r2"))
+      .toHaveTextContent("-0.239");
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · RMSE: 22.185");
+    expect(screen.getByTestId("model-metric-relationship-hint"))
+      .toHaveTextContent("검증은 정책에 지정된 지표를 사용");
+    expect(screen.getByText(/검증 정책 지표: R² · 측정값: 0.160/)).toBeInTheDocument();
+    expect(screen.getByText(/대표 지표나 예측 대상별 지표와 다를 수 있습니다/)).toBeInTheDocument();
+  });
+
+  it("names the actual target when the validation policy uses a per-target metric", async () => {
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      gates_passed: true,
+      gate_results: {
+        results: [{
+          type: "metric_threshold",
+          passed: true,
+          observed: { metric: "val_target_1_rmse", value: 1.4 },
+        }],
+      },
+    });
+    renderPage();
+    expect(await screen.findByText(/검증 정책 지표: 검증 · power_usage · RMSE · 측정값: 1.400/))
+      .toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ import {
 import {
   formatModelMetricLabelKo,
   gateLabelKo,
+  modelMetricDisplayKo,
   modelGateStatusKo,
   modelLifecycleLabelKo,
 } from "./modelRegistryLabels";
@@ -173,19 +174,35 @@ export function MetricSummary({
 
   return (
     <div className="grid stats-grid" data-testid="metric-summary">
-      {ordered.slice(0, limit).map(([name, value]) => (
-        <div className="stat" key={name} data-testid={`metric-card-${name}`}>
-          {showMetricHelp ? (
-            <div className="stat-label-row">
-              <div className="label">{metricLabel(name, targetColumns)}</div>
-              <HelpTip text={metricHelpText(name)} />
-            </div>
-          ) : (
-            <div className="label">{metricLabel(name, targetColumns)}</div>
-          )}
-          <div className="value metric-value">{Number(value).toFixed(3)}</div>
-        </div>
-      ))}
+      {ordered.slice(0, limit).map(([name, value]) => {
+        const metricDisplay = korean ? modelMetricDisplayKo(name, targetColumns) : null;
+        const metricTitle = metricLabel(name, targetColumns);
+        const renderedLabel = metricDisplay ? (
+          <div className="model-metric-label">
+            <span className="model-metric-kind">
+              {[metricDisplay.scope, metricDisplay.metric].filter(Boolean).join(" · ")}
+            </span>
+            {metricDisplay.target && (
+              <span className="model-metric-target" title={metricDisplay.target}>
+                예측 대상: {metricDisplay.target}
+              </span>
+            )}
+          </div>
+        ) : metricTitle;
+        return (
+          <div className="stat" key={name} data-testid={`metric-card-${name}`}>
+            {showMetricHelp ? (
+              <div className="stat-label-row">
+                <div className="label" title={metricTitle}>{renderedLabel}</div>
+                <HelpTip text={metricHelpText(name)} />
+              </div>
+            ) : (
+              <div className="label" title={metricTitle}>{renderedLabel}</div>
+            )}
+            <div className="value metric-value">{Number(value).toFixed(3)}</div>
+          </div>
+        );
+      })}
       {primary && (
         <p className="form-hint metric-primary-hint" data-testid="metric-primary-hint">
           {primaryPrefix} {korean
@@ -201,10 +218,12 @@ export function GateSummary({
   gatesPassed,
   gateResults,
   korean = false,
+  targetColumns = [],
 }: {
   gatesPassed: boolean;
   gateResults: Record<string, unknown>;
   korean?: boolean;
+  targetColumns?: string[];
 }) {
   const rows = Array.isArray(gateResults.results)
     ? gateResults.results.filter((item): item is Record<string, unknown> =>
@@ -254,7 +273,10 @@ export function GateSummary({
                   <small>실측 {latency.toFixed(1)}ms{limit != null ? ` / 허용 ${limit.toLocaleString("ko-KR")}ms` : ""}</small>
                 )}
                 {type === "metric_threshold" && typeof obs.metric === "string" && typeof obs.value === "number" && (
-                  <small>적용 지표: {formatModelMetricLabelKo(obs.metric)} · 측정값: {obs.value.toFixed(3)}</small>
+                  <>
+                    <small>검증 정책 지표: {formatModelMetricLabelKo(obs.metric, targetColumns)} · 측정값: {obs.value.toFixed(3)}</small>
+                    <small className="form-hint">이 값은 검증 정책에 지정된 지표로, 위의 모델 대표 지표나 예측 대상별 지표와 다를 수 있습니다.</small>
+                  </>
                 )}
                 {type === "test_inference" && typeof obs.prediction_count === "number" && (
                   <small>예측 성공: {obs.prediction_count}건</small>

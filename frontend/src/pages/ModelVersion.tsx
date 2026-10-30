@@ -278,6 +278,12 @@ export default function ModelVersion() {
                 showMetricHelp
                 labels={{ emptyTitle: "성능 지표", emptyHint: "학습 완료 후 표시됩니다.", primaryPrefix: "대표 지표:" }}
               />
+              {targets.length > 1 && (
+                <p className="form-hint model-metric-relationship-hint" data-testid="model-metric-relationship-hint">
+                  대표 지표는 모델 목록에서 우선 표시하는 요약 지표입니다. 예측 대상별 지표는 각 대상의 성능을 별도로 보여 주며,
+                  아래 성능 기준 검증은 정책에 지정된 지표를 사용하므로 값이 서로 다를 수 있습니다.
+                </p>
+              )}
               <p className="form-hint">검증 통과가 예측 성능이나 운영 적합성을 보장하지는 않습니다. <HelpTip text="RMSE·MAE는 낮을수록 좋으며, R²는 1에 가까울수록 좋습니다. 학습 데이터와 평가 조건이 다른 모델끼리는 수치를 직접 비교하지 마세요." /></p>
             </DetailSection>
           </div>
@@ -403,7 +409,7 @@ export default function ModelVersion() {
 
           <div className="governance-gates-section">
             <DetailSection eyebrow="모델 검증" title="적합성 검증 결과">
-              <GateSummary gatesPassed={mv.gates_passed} gateResults={mv.gate_results || {}} korean />
+              <GateSummary gatesPassed={mv.gates_passed} gateResults={mv.gate_results || {}} targetColumns={targets} korean />
             </DetailSection>
           </div>
         </>

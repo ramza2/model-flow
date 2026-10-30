@@ -42,7 +42,11 @@ const METRICS_KO: Record<string, string> = {
   recall: "재현율",
 };
 
-export function formatModelMetricLabelKo(key: string, targetColumns: string[] = []): string {
+export function modelMetricDisplayKo(key: string, targetColumns: string[] = []): {
+  scope: string;
+  target: string;
+  metric: string;
+} {
   let rest = key;
   let scope = "";
   if (rest.startsWith("val_")) {
@@ -67,6 +71,11 @@ export function formatModelMetricLabelKo(key: string, targetColumns: string[] = 
   }
 
   const metric = METRICS_KO[rest.toLowerCase()] ?? formatMetricLabel(rest);
+  return { scope, target, metric };
+}
+
+export function formatModelMetricLabelKo(key: string, targetColumns: string[] = []): string {
+  const { scope, target, metric } = modelMetricDisplayKo(key, targetColumns);
   return [scope, target, metric].filter(Boolean).join(" · ");
 }
 

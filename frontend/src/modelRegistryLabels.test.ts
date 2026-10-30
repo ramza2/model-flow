@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatModelMetricLabelKo,
   formatModelPrimaryMetricKo,
+  modelMetricDisplayKo,
   modelLifecycleLabelKo,
   modelProblemTypeKo,
 } from "./modelRegistryLabels";
@@ -22,5 +23,15 @@ describe("Korean Model Registry display-only labels", () => {
       .toBe("검증 · HTDND_AMNT (1단계 후) · R²");
     expect(formatModelPrimaryMetricKo({ val_rmse: 22.185 }, { problemType: "regression" }))
       .toBe("검증 · RMSE: 22.185");
+    expect(modelMetricDisplayKo("val_HTDND_AMNT__t_plus_1_r2")).toEqual({
+      scope: "검증",
+      target: "HTDND_AMNT (1단계 후)",
+      metric: "R²",
+    });
+    expect(modelMetricDisplayKo("test_target_1_mae", ["cooling_load", "power_usage"])).toEqual({
+      scope: "테스트",
+      target: "power_usage",
+      metric: "MAE",
+    });
   });
 });
