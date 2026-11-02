@@ -193,6 +193,11 @@ jobs:
           chmod +x scripts/test-lib-msys.sh
           ./scripts/test-lib-msys.sh
 
+      - name: Daily backup safety regression
+        run: |
+          set -euo pipefail
+          bash scripts/test-daily-backup.sh
+
       - name: Compose host-port config regressions
         run: |
           set -euo pipefail
