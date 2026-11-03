@@ -118,8 +118,7 @@ touch -d '20 days ago' "$old/verified.ok" "$manual/verified.ok"
 [[ ! -e "$old" ]] || { echo 'expired verified auto backup not removed' >&2; exit 1; }
 [[ -d "$unverified" ]] || { echo 'unverified backup was removed' >&2; exit 1; }
 [[ -d "$manual" ]] || { echo 'manual predeploy backup was removed' >&2; exit 1; }
-grep -q '^status=SUCCESS
- "$FIXTURE/backups/auto/last-run.status"
+grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
 latest_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
 test -f "$latest_log"
 grep -q '^RETENTION_PROTECTED=' "$latest_log"
