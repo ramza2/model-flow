@@ -198,6 +198,11 @@ jobs:
           set -euo pipefail
           bash scripts/test-daily-backup.sh
 
+      - name: Daily backup health and alert regression
+        run: |
+          set -euo pipefail
+          python3 scripts/test-backup-health.py
+
       - name: Compose host-port config regressions
         run: |
           set -euo pipefail
