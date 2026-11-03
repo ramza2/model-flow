@@ -121,14 +121,33 @@ echo 'BACKUP_DAILY_ARCHIVES_VERIFIED'
 
 now_epoch="$(date -u +%s)"
 expired_count=0
+RETENTION_MIN_KEEP=2
 shopt -s nullglob
+
+# Sorting exact-name, verified auto folders means the two newest successful
+# backups remain protected even if the schedule has been broken for weeks.
+verified_backups=()
 for candidate in "$AUTO_ROOT"/auto-*; do
   [[ -d "$candidate" && ! -L "$candidate" ]] || continue
   name="${candidate##*/}"
   [[ "$name" =~ ^auto-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || continue
   marker="$candidate/verified.ok"
   [[ -f "$marker" && ! -L "$marker" ]] || continue
-  verified_epoch="$(stat -c '%Y' "$marker")"
+  verified_backups+=("$candidate")
+done
+if (( ${#verified_backups[@]} > 0 )); then
+  mapfile -t verified_backups < <(printf '%s\n' "${verified_backups[@]}" | LC_ALL=C sort)
+fi
+
+for (( i=0; i<${#verified_backups[@]}; i++ )); do
+  candidate="${verified_backups[$i]}"
+  name="${candidate##*/}"
+  if (( i >= ${#verified_backups[@]} - RETENTION_MIN_KEEP )); then
+    echo "RETENTION_PROTECTED=$name"
+    continue
+  fi
+  marker="$candidate/verified.ok"
+  verified_epoch="$(stat -c '%Y' -- "$marker")"
   if ((now_epoch - verified_epoch >= RETENTION_SECONDS)); then
     ((expired_count += 1))
     if [[ "$RETENTION_APPLY" -eq 1 ]]; then
@@ -142,3 +161,4 @@ done
 
 echo "BACKUP_DAILY_RETENTION_CANDIDATES=$expired_count"
 echo "BACKUP_DAILY_RETENTION_APPLIED=$RETENTION_APPLY"
+echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"

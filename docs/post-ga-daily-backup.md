@@ -96,3 +96,71 @@ verification, then separately approved Cron installation and scheduling
 verification. Monitoring for stale backups, worker heartbeat, disk usage,
 error notifications, and off-host copies is a separate Issue #140 follow-up.
 Backups remaining on this server alone do **not** protect against host loss.
+
+
+## Post-GA backup health alerts (operator configuration needed)
+
+The new `scripts/ops/check-backup-health.py` performs a read-only check of
+the 03:00 KST backup. Run it at **04:00 KST**: the previous hour must contain
+a fresh SUCCESS status and matching verified.ok marker. A failed, interrupted,
+or missed run returns a nonzero status. The checker sends **one failure-only
+SMTP email** when invoked with `--notify`. A normal backup does not send mail.
+
+The SMTP credential file must be **outside Git**:
+`/home/openlink/.config/model-flow/backup-alert.json`. Require user
+`openlink` ownership, file mode `0600`, and directory mode `0700`.
+The supported JSON keys are host, port, transport (ssl/starttls), sender,
+recipient, username, and password. The file is never printed or committed.
+Use an approved mail relay and operator-owned recipient; do not share
+credentials in chat.
+
+Non-secret JSON example (replace on the host only):
+
+```json
+{
+  "host": "smtp.example.invalid",
+  "port": 465,
+  "transport": "ssl",
+  "sender": "backup-alerts@example.invalid",
+  "recipient": "operator@example.invalid",
+  "username": "smtp-user",
+  "password": "REPLACE_ON_HOST_ONLY"
+}
+```
+
+After creating the private configuration on the host, run:
+
+```bash
+python3 scripts/ops/check-backup-health.py --check
+python3 scripts/ops/check-backup-health.py --test-email
+```
+
+The explicit `--test-email` sends one harmless message with a TEST subject;
+confirm receipt in the intended mailbox. The `--check` command never
+sends mail. Missing/mis-permissioned credentials or SMTP errors remain
+visible as BACKUP_ALERT_CONFIG_ERROR / BACKUP_ALERT_DELIVERY_FAILED without
+leaking credential values.
+
+After **separate operator approval**, add exactly one monitoring Cron entry
+to the existing openlink crontab, preserving all other entries:
+
+```cron
+0 4 * * * /usr/bin/python3 /home/openlink/model-flow/scripts/ops/check-backup-health.py --notify >> /home/openlink/model-flow/backups/auto/health-alert.log 2>&1
+```
+
+Do not schedule `--test-email`. The health checker does not restart or
+modify production services. Real SMTP delivery has not been verified merely
+by passing offline CI.
+
+## Retention hardening and activation boundary
+
+The existing 03:00 production Cron entry continues with `--run` only.
+The new retention guard preserves the **two newest verified auto backups**
+regardless of age. The 14-day expiration, verified marker, exact directory
+name, and symlink exclusions remain in place. Historic/manual snapshots
+outside backups/auto are never selected.
+
+Before enabling `--apply-retention`, review the actual backup inventory
+and RETENTION_DRY_RUN_CANDIDATE lines in the private daily backup.log.
+The PR does not change the production schedule or authorize deletion.
+Continue to plan periodic isolated restoration and off-host copies.
