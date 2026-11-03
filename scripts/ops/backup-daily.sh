@@ -129,20 +129,20 @@ shopt -s nullglob
 verified_backups=()
 for candidate in "$AUTO_ROOT"/auto-*; do
   [[ -d "$candidate" && ! -L "$candidate" ]] || continue
-  name="\${candidate##*/}"
+  name="${candidate##*/}"
   [[ "$name" =~ ^auto-[0-9]{8}T[0-9]{6}Z-[0-9]+$ ]] || continue
   marker="$candidate/verified.ok"
   [[ -f "$marker" && ! -L "$marker" ]] || continue
   verified_backups+=("$candidate")
 done
-if (( \${#verified_backups[@]} > 0 )); then
-  mapfile -t verified_backups < <(printf '%s\n' "\${verified_backups[@]}" | LC_ALL=C sort)
+if (( ${#verified_backups[@]} > 0 )); then
+  mapfile -t verified_backups < <(printf '%s\n' "${verified_backups[@]}" | LC_ALL=C sort)
 fi
 
-for (( i=0; i<\${#verified_backups[@]}; i++ )); do
-  candidate="\${verified_backups[$i]}"
-  name="\${candidate##*/}"
-  if (( i >= \${#verified_backups[@]} - RETENTION_MIN_KEEP )); then
+for (( i=0; i<${#verified_backups[@]}; i++ )); do
+  candidate="${verified_backups[$i]}"
+  name="${candidate##*/}"
+  if (( i >= ${#verified_backups[@]} - RETENTION_MIN_KEEP )); then
     echo "RETENTION_PROTECTED=$name"
     continue
   fi
