@@ -81,6 +81,16 @@ export const UI_HELP = {
     "삭제하면 저장된 파이프라인 버전도 함께 삭제됩니다. 실행 이력이 있는 파이프라인은 삭제할 수 없으며, 해당 실행 이력은 감사 목적으로 보존됩니다.",
   pipelineRerunFromFailed:
     "실패 지점부터 재실행하는 기능입니다. 기존 실행 기록이나 그래프 버전을 수정하는 기능은 아닙니다.",
+  monitoringLatency:
+    "평균 응답시간은 요청 전체의 평균이고, p95 응답시간은 요청 100건 중 약 95건이 이 시간 이내에 끝난다는 의미입니다. 값이 낮을수록 응답이 빠릅니다.",
+  monitoringProductionQuality:
+    "운영 모델의 예측 결과를 실제 정답 데이터와 비교합니다. 품질 정책을 설정하고 평가가 실행되어야 결과가 표시됩니다.",
+  monitoringMatchRate:
+    "전체 예측 건수 중 실제 정답 데이터와 연결되어 품질 평가에 사용할 수 있는 건수의 비율입니다. 모델의 정답률과는 다릅니다.",
+  monitoringDataHealth:
+    "데이터 품질 상태는 데이터셋 버전에서 실행한 품질 검사 결과를 기준으로 합니다. 데이터셋이 존재한다는 사실만으로 정상 판정을 내리지 않습니다.",
+  monitoringModelHealth:
+    "모델 상태 표시는 최근 데이터 분포 변화(드리프트) 판정을 기준으로 합니다. 배포 준비 상태와 예측 요청 성공 여부는 별도 지표입니다.",
 } as const;
 
 /** Display-only pipeline lifecycle status (draft/published/…). Raw API status unchanged. */

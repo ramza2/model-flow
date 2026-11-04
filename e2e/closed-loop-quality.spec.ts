@@ -44,7 +44,11 @@ test("monitoring shows Production Quality and quality APIs stay candidate-bound"
 
   await page.goto(`/projects/${projectId}/monitoring`);
   await expect(page.getByTestId("monitoring-production-quality")).toBeVisible();
-  await expect(page.getByText("No production quality policies")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "설정된 운영 모델 품질 정책이 없습니다" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "품질 정책 열기" })).toHaveAttribute(
+    "href",
+    `/projects/${projectId}/model-quality/policies`,
+  );
 
   // Explicit regression: quality APIs must not invent PRODUCTION promotion endpoints.
   const bogusPromote = await request.post(
