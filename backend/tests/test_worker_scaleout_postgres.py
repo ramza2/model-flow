@@ -7,6 +7,7 @@ Postgres and must execute these paths.
 
 from __future__ import annotations
 
+import secrets
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.models import JobStatus, PipelineRun, TrainingJob
+from app.workers import leadership
 from app.workers.leadership import (
     SCHEDULER_MAINTENANCE_LOCK_KEY,
     release_scheduler_leadership,
@@ -42,7 +44,21 @@ def pg_engine():
     engine.dispose()
 
 
-def test_advisory_lock_singleton_and_release(pg_engine):
+@pytest.fixture
+def isolated_advisory_lock_key(monkeypatch):
+    """Keep leadership tests independent of the live verification worker.
+
+    The worker intentionally competes for the fixed production lock while the
+    full gate runs. A fresh negative int64 key preserves the PostgreSQL
+    cross-session contention proof without racing that worker.
+    """
+
+    key = -(secrets.randbits(62) + 1)
+    monkeypatch.setattr(leadership, "SCHEDULER_MAINTENANCE_LOCK_KEY", key)
+    return key
+
+
+def test_advisory_lock_singleton_and_release(pg_engine, isolated_advisory_lock_key):
     db_a = Session(bind=pg_engine.connect())
     db_b = Session(bind=pg_engine.connect())
     try:
@@ -170,15 +186,20 @@ def test_skip_locked_no_double_claim_generic_path(pg_engine):
         conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
 
 
-def test_non_leader_still_allows_profile_claims(pg_engine, monkeypatch):
+def test_non_leader_still_allows_profile_claims(
+    pg_engine, monkeypatch, isolated_advisory_lock_key
+):
     """Holding no leadership lock must not block normal claim eligibility."""
 
     monkeypatch.setattr(settings, "worker_profile", "general")
     leader = Session(bind=pg_engine.connect())
+    non_leader = Session(bind=pg_engine.connect())
     try:
         assert try_acquire_scheduler_leadership(leader) is True
+        assert try_acquire_scheduler_leadership(non_leader) is False
         assert runner._profile_allows_claim("training") is True
         assert runner._profile_allows_claim("pipeline") is True
     finally:
         release_scheduler_leadership(leader)
+        non_leader.close()
         leader.close()
