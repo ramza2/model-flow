@@ -11,13 +11,17 @@ import {
 import {
   EmptyState,
   ErrorNotice,
+  HelpTip,
   Loading,
   PageHeader,
   StatusBadge,
+  TermLabel,
   metric,
 } from "../components";
 import { DetailSection } from "../lifecycleComponents";
+import { modelLifecycleLabelKo } from "../modelRegistryLabels";
 import { buildMonitoringAttention } from "../operationsHelpers";
+import { UI_HELP } from "../uiTerminology";
 
 type ServiceMetrics = {
   request_count: number;
@@ -82,6 +86,25 @@ type QualitySummaryCard = {
 type QualityRunRow = Record<string, unknown> & { id: number };
 
 const HISTORY_PAGE_SIZE = 10;
+
+/** Monitoring-only display copy. API values and status badge tones remain unchanged. */
+function monitoringStatusLabel(value?: string | null): string {
+  const status = String(value || "unknown").toLowerCase();
+  const labels: Record<string, string> = {
+    unknown: "미확인 (Unknown)",
+    healthy: "정상",
+    passed: "통과",
+    pass: "통과",
+    ok: "정상",
+    succeeded: "성공",
+    warning: "경고",
+    failed: "실패",
+    fail: "실패",
+    critical: "심각",
+    insufficient_data: "평가 데이터 부족",
+  };
+  return labels[status] || status.replaceAll("_", " ");
+}
 
 function prettyMetric(name: string): string {
   if (name === "f1_macro") return "F1";
@@ -170,7 +193,7 @@ export default function Monitoring() {
       setData(dataRows);
       setModels(modelRows);
       setQualityCards(qualitySummary.items || []);
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "Monitoring metrics could not be loaded."))
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : "모니터링 지표를 불러올 수 없습니다."))
       .finally(() => setLoading(false));
   }, [hours, projectId]);
 
@@ -235,91 +258,103 @@ export default function Monitoring() {
   return (
     <div className="page-stack ops-page monitoring-page">
       <PageHeader
-        title="Monitoring"
-        description="Operational triage for service traffic, data quality, and model serving signals."
+        title="모니터링 (Monitoring)"
+        description="예측 서비스의 요청 현황과 데이터·모델 품질 신호를 한눈에 확인합니다."
         actions={(
           <label className="header-filter">
-            Window
+            조회 기간
             <select value={hours} onChange={(event) => setHours(event.target.value)} data-testid="monitoring-window">
-              <option value="24">Last 24 hours</option>
-              <option value="168">Last 7 days</option>
-              <option value="720">Last 30 days</option>
+              <option value="24">최근 24시간</option>
+              <option value="168">최근 7일</option>
+              <option value="720">최근 30일</option>
             </select>
           </label>
         )}
       />
       <ErrorNotice message={error} />
       {loading || !service || !data || !models ? (
-        <Loading label="Loading monitoring metrics" />
+        <Loading label="모니터링 지표를 불러오는 중" />
       ) : (
         <>
           <section
             className={`panel ops-attention-panel${attention.length > 0 ? " has-signals" : " is-clear"}`}
             data-testid="monitoring-attention"
           >
-            <span className="eyebrow">Attention</span>
+            <span className="eyebrow">확인 필요</span>
             {attention.length === 0 ? (
               <p className="muted">
-                No attention signals from current metrics
-                ({service.error_count} service errors, {data.failed_quality_check_count} failed quality checks,
-                {" "}{models.ready_endpoint_count}/{models.endpoint_count} deployments ready).
+                현재 수집된 지표에서 주의 신호가 없습니다.
+                {" "}(예측 오류 {service.error_count}건, 품질 검사 실패 {data.failed_quality_check_count}건,
+                {" "}배포 준비 완료 {models.ready_endpoint_count}/{models.endpoint_count}건)
               </p>
             ) : (
               <ul className="ops-signal-list">
                 {attention.map((item) => (
                   <li key={item.id}>
-                    {item.to ? <Link to={item.to}>{item.label}</Link> : item.label}
+                    {item.to ? (
+                      <Link to={item.to}>
+                        {item.id === "service-errors"
+                          ? `선택 기간의 예측 오류 ${service.error_count}건`
+                          : item.id === "quality"
+                            ? `실패한 데이터 품질 검사 ${data.failed_quality_check_count}건`
+                            : item.id === "ready"
+                              ? `배포 준비 완료 ${models.ready_endpoint_count}/${models.endpoint_count}건`
+                              : item.id === "drift"
+                                ? `최근 데이터 분포 변화 상태: ${monitoringStatusLabel(models.latest_drift_status)}`
+                                : item.label}
+                      </Link>
+                    ) : item.label}
                   </li>
                 ))}
               </ul>
             )}
             <div className="row-actions">
-              <Link to={`/projects/${projectId}/alerts`}>Open alerts</Link>
-              <Link to={`/projects/${projectId}/deployments`}>Deployments</Link>
-              <Link to={`/projects/${projectId}/datasets`}>Datasets</Link>
-              <Link to={`/projects/${projectId}/registry`}>Model registry</Link>
+              <Link to={`/projects/${projectId}/alerts`}>알림 확인</Link>
+              <Link to={`/projects/${projectId}/deployments`}>배포 관리</Link>
+              <Link to={`/projects/${projectId}/datasets`}>데이터셋</Link>
+              <Link to={`/projects/${projectId}/registry`}>모델 등록소</Link>
             </div>
           </section>
 
-          <DetailSection eyebrow="Service" title="Service health" testId="monitoring-service">
+          <DetailSection eyebrow="서비스" title="서비스 상태" testId="monitoring-service">
             <div className="grid stats-grid monitoring-metrics">
               <div className="stat metric-card">
-                <div className="label">Requests</div>
+                <div className="label">예측 요청</div>
                 <div className="value tabular-num">{service.request_count.toLocaleString()}</div>
               </div>
               <div className="stat metric-card">
-                <div className="label">Successes</div>
+                <div className="label">성공</div>
                 <div className="value tabular-num">{service.success_count.toLocaleString()}</div>
               </div>
               <div className={`stat metric-card${service.error_count > 0 ? " is-attention" : ""}`}>
-                <div className="label">Errors</div>
+                <div className="label">오류</div>
                 <div className="value tabular-num">{service.error_count.toLocaleString()}</div>
               </div>
               <div className="stat metric-card">
-                <div className="label">Success rate</div>
+                <div className="label">성공률</div>
                 <div className="value tabular-num">
                   {service.success_rate === null ? "—" : `${metric(service.success_rate * 100, 1)}%`}
                 </div>
               </div>
               <div className="stat metric-card">
-                <div className="label">Average latency</div>
+                <div className="label"><TermLabel ko="평균 응답시간" en="Avg latency" help={UI_HELP.monitoringLatency} /></div>
                 <div className="value metric-value tabular-num">{metric(service.average_latency_ms, 1)} ms</div>
               </div>
               <div className="stat metric-card">
-                <div className="label">p95 latency</div>
+                <div className="label"><TermLabel ko="p95 응답시간" help={UI_HELP.monitoringLatency} /></div>
                 <div className="value metric-value tabular-num">{metric(service.p95_latency_ms, 1)} ms</div>
               </div>
             </div>
             <div className="panel nested-panel">
               {service.series.length === 0 ? (
                 <EmptyState
-                  title="No prediction traffic"
-                  description="Service metrics appear after a deployment receives prediction requests."
+                  title="예측 요청 이력이 없습니다"
+                  description="배포된 모델에 예측 요청이 들어오면 시간별 요청 현황이 표시됩니다."
                 />
               ) : (
-                <div className="bar-chart" aria-label="Requests over time">
+                <div className="bar-chart" aria-label="시간별 예측 요청">
                   {service.series.map((point) => (
-                    <div className="bar-column" key={point.timestamp} title={`${point.requests} requests`}>
+                    <div className="bar-column" key={point.timestamp} title={`예측 요청 ${point.requests}건`}>
                       <div className="bar" style={{ height: `${Math.max(4, (point.requests / maxRequests) * 100)}%` }} />
                       <span>{new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit" })}</span>
                     </div>
@@ -330,22 +365,25 @@ export default function Monitoring() {
           </DetailSection>
 
           <DetailSection
-            eyebrow="Models"
-            title="Production Quality"
+            eyebrow="운영 모델"
+            title="운영 모델 품질 (Production Quality)"
             testId="monitoring-production-quality"
             actions={(
-              <Link to={`/projects/${projectId}/model-quality/policies`} data-testid="quality-policies-link">
-                Quality policies
-              </Link>
+              <span className="row-actions">
+                <HelpTip text={UI_HELP.monitoringProductionQuality} />
+                <Link to={`/projects/${projectId}/model-quality/policies`} data-testid="quality-policies-link">
+                  품질 정책 관리
+                </Link>
+              </span>
             )}
           >
             {qualityCards.length === 0 ? (
               <EmptyState
-                title="No production quality policies"
-                description="Create a model quality policy to evaluate prediction vs ground-truth and drive closed-loop retraining to CANDIDATE."
+                title="설정된 운영 모델 품질 정책이 없습니다"
+                description="예측 결과와 실제 정답을 비교하려면 품질 정책을 만들고 평가를 실행하세요. 조건에 따라 후보 모델 재학습을 연결할 수 있습니다."
                 action={(
                   <Link to={`/projects/${projectId}/model-quality/policies`} className="btn">
-                    Open quality policies
+                    품질 정책 열기
                   </Link>
                 )}
               />
@@ -366,11 +404,14 @@ export default function Monitoring() {
                       data-testid={`quality-card-${card.policy_id}`}
                     >
                       <div className="row-actions production-quality-card-head">
-                        <strong>{card.endpoint_name || `Endpoint #${card.endpoint_id}`}</strong>
-                        <StatusBadge status={card.latest_quality_status || "unknown"} />
+                        <strong>{card.endpoint_name || `배포 엔드포인트 #${card.endpoint_id}`}</strong>
+                        <StatusBadge
+                          status={card.latest_quality_status || "unknown"}
+                          label={monitoringStatusLabel(card.latest_quality_status)}
+                        />
                         {card.baseline_required ? (
                           <span className="notice notice-warning" data-testid={`baseline-required-${card.policy_id}`}>
-                            Baseline required
+                            기준 평가 필요
                           </span>
                         ) : null}
                         <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
@@ -402,13 +443,13 @@ export default function Monitoring() {
                         ) : null}
                         {decisionReason ? (
                           <p className="muted" data-testid={`trigger-decision-${card.policy_id}`}>
-                            Trigger: {triggerDecisionLabel(decisionReason)}
+                            재학습 판단: {triggerDecisionLabel(decisionReason)}
                           </p>
                         ) : null}
                       </div>
                       <dl className="key-values">
                         <div>
-                          <dt>Current model</dt>
+                          <dt>현재 모델</dt>
                           <dd>
                             {card.current_model_name
                               ? `${card.current_model_name} v${card.current_model_version}`
@@ -418,17 +459,17 @@ export default function Monitoring() {
                         {advanced ? (
                           <>
                             <div>
-                              <dt>Revision</dt>
+                              <dt>정책 개정 번호</dt>
                               <dd data-testid={`quality-revision-${card.policy_id}`}>{card.revision ?? "—"}</dd>
                             </div>
                             <div>
-                              <dt>Rules</dt>
+                              <dt>평가 규칙</dt>
                               <dd data-testid={`quality-rule-count-${card.policy_id}`}>
                                 {card.rule_count ?? 0} · {(card.rule_logic || "any").toUpperCase()}
                               </dd>
                             </div>
                             <div>
-                              <dt>Baseline run</dt>
+                              <dt>기준 평가 실행</dt>
                               <dd data-testid={`quality-baseline-${card.policy_id}`}>
                                 {card.baseline_quality_run_id == null
                                   ? "—"
@@ -436,11 +477,11 @@ export default function Monitoring() {
                               </dd>
                             </div>
                             <div>
-                              <dt>Evaluation delay</dt>
+                              <dt>평가 대기시간</dt>
                               <dd>{card.evaluation_delay_hours ?? 0}h</dd>
                             </div>
                             <div>
-                              <dt>Minimum match rate</dt>
+                              <dt><TermLabel ko="최소 연결률" en="Match rate" help={UI_HELP.monitoringMatchRate} /></dt>
                               <dd data-testid={`match-rate-min-${card.policy_id}`}>
                                 {card.minimum_match_rate == null
                                   ? "—"
@@ -448,13 +489,13 @@ export default function Monitoring() {
                               </dd>
                             </div>
                             <div>
-                              <dt>Latest status</dt>
-                              <dd>{card.latest_quality_status || "—"}</dd>
+                              <dt>최근 품질 상태</dt>
+                              <dd>{monitoringStatusLabel(card.latest_quality_status)}</dd>
                             </div>
                           </>
                         ) : (
                           <div>
-                            <dt>Primary metric</dt>
+                            <dt>대표 평가 지표</dt>
                             <dd>
                               {card.primary_metric}
                               {card.primary_metric_value == null ? "" : ` = ${metric(card.primary_metric_value, 4)}`}
@@ -462,21 +503,21 @@ export default function Monitoring() {
                           </div>
                         )}
                         <div>
-                          <dt>Matched ground truth</dt>
+                          <dt>연결된 실제 정답</dt>
                           <dd data-testid={`matched-gt-${card.policy_id}`}>{card.matched_ground_truth_count}</dd>
                         </div>
                         <div>
-                          <dt>Predictions</dt>
+                          <dt>예측 건수</dt>
                           <dd>{card.prediction_count}</dd>
                         </div>
                         <div>
-                          <dt>Match rate</dt>
+                          <dt><TermLabel ko="연결률" en="Match rate" help={UI_HELP.monitoringMatchRate} /></dt>
                           <dd data-testid={`match-rate-${card.policy_id}`}>
                             {card.match_rate == null ? "—" : `${metric(card.match_rate * 100, 1)}%`}
                           </dd>
                         </div>
                         <div>
-                          <dt>Last evaluated</dt>
+                          <dt>최근 평가 시각</dt>
                           <dd>{card.last_evaluated_at ? new Date(card.last_evaluated_at).toLocaleString() : "—"}</dd>
                         </div>
                       </dl>
@@ -488,14 +529,14 @@ export default function Monitoring() {
                         ))}
                         {card.current_model_version_id ? (
                           <Link to={`/projects/${projectId}/models/${card.current_model_version_id}`}>
-                            Open current model
+                            현재 모델 보기
                           </Link>
                         ) : null}
                         <Link
                           to={`/projects/${projectId}/feedback?endpoint_id=${card.endpoint_id}`}
                           data-testid={`review-feedback-${card.endpoint_id}`}
                         >
-                          Review feedback
+                          피드백 검토
                         </Link>
                         <button
                           type="button"
@@ -503,15 +544,15 @@ export default function Monitoring() {
                           onClick={() => openHistoryForCard(card)}
                           data-testid={`view-quality-history-${card.policy_id}`}
                         >
-                          View quality history
+                          품질 이력 보기
                         </button>
                         <Link
                           to={`/projects/${projectId}/model-quality/policies`}
                           data-testid={`manage-policy-${card.policy_id}`}
                         >
-                          Manage policy
+                          정책 관리
                         </Link>
-                        <Link to={`/projects/${projectId}/alerts`}>Open alerts</Link>
+                        <Link to={`/projects/${projectId}/alerts`}>알림 확인</Link>
                       </div>
                     </div>
                   );
@@ -520,10 +561,10 @@ export default function Monitoring() {
             )}
           </DetailSection>
 
-          <DetailSection eyebrow="Models" title="Quality history" testId="monitoring-quality-trend">
+          <DetailSection eyebrow="운영 모델" title="품질 평가 이력 (Quality History)" testId="monitoring-quality-trend">
             <div className="filter-bar catalog-filter" data-testid="quality-history-filters">
               <label>
-                Endpoint
+                배포 엔드포인트
                 <select
                   value={historyEndpointId}
                   onChange={(event) => {
@@ -533,14 +574,14 @@ export default function Monitoring() {
                   }}
                   data-testid="quality-history-endpoint-filter"
                 >
-                  <option value="">All</option>
+                  <option value="">전체</option>
                   {historyEndpoints.map(([id, name]) => (
                     <option key={id} value={String(id)}>{name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                Policy
+                품질 정책
                 <select
                   value={historyPolicyId}
                   onChange={(event) => {
@@ -549,30 +590,30 @@ export default function Monitoring() {
                   }}
                   data-testid="quality-history-policy-filter"
                 >
-                  <option value="">All</option>
+                  <option value="">전체</option>
                   {historyPolicies.map((policy) => (
                     <option key={policy.id} value={String(policy.id)}>{policy.name}</option>
                   ))}
                 </select>
               </label>
             </div>
-            {historyLoading ? <Loading label="Loading quality history" /> : null}
+            {historyLoading ? <Loading label="품질 평가 이력을 불러오는 중" /> : null}
             {!historyLoading && qualityRuns.length === 0 ? (
-              <p className="muted">No quality runs match the current filters.</p>
+              <p className="muted">현재 필터 조건에 해당하는 품질 평가 이력이 없습니다. 엔드포인트와 정책을 변경하거나 품질 평가를 실행해 보세요.</p>
             ) : null}
             {!historyLoading && qualityRuns.length > 0 ? (
               <div className="table-wrap catalog-table">
                 <table>
                   <thead>
                     <tr>
-                      <th>Run</th>
-                      <th>Status</th>
-                      <th>Policy rev</th>
-                      <th>Matched / Predictions</th>
-                      <th>Match rate</th>
-                      <th>Breached rules</th>
-                      <th>Evidence</th>
-                      <th>Finished</th>
+                      <th>실행 번호</th>
+                      <th>상태</th>
+                      <th>정책 개정</th>
+                      <th>정답 연결 / 예측</th>
+                      <th><TermLabel ko="연결률" en="Match rate" help={UI_HELP.monitoringMatchRate} /></th>
+                      <th>기준 위반 규칙</th>
+                      <th>평가 근거</th>
+                      <th>완료 시각</th>
                       <th />
                     </tr>
                   </thead>
@@ -595,7 +636,12 @@ export default function Monitoring() {
                         <Fragment key={String(run.id)}>
                           <tr data-testid={`quality-run-row-${run.id}`}>
                             <td>#{String(run.id)}</td>
-                            <td><StatusBadge status={String(run.quality_status || run.status || "unknown")} /></td>
+                            <td>
+                              <StatusBadge
+                                status={String(run.quality_status || run.status || "unknown")}
+                                label={monitoringStatusLabel(String(run.quality_status || run.status || "unknown"))}
+                              />
+                            </td>
                             <td data-testid={`run-policy-rev-${run.id}`}>
                               {run.policy_revision == null ? "—" : String(run.policy_revision)}
                             </td>
@@ -617,7 +663,7 @@ export default function Monitoring() {
                                 onClick={() => setExpandedRunId(expanded ? null : run.id)}
                                 data-testid={`expand-quality-run-${run.id}`}
                               >
-                                {expanded ? "Hide" : "Details"}
+                                {expanded ? "접기" : "상세"}
                               </button>
                             </td>
                           </tr>
@@ -625,29 +671,29 @@ export default function Monitoring() {
                             <tr data-testid={`quality-run-detail-${run.id}`}>
                               <td colSpan={9}>
                                 <dl className="key-values">
-                                  <div><dt>Quality Run ID</dt><dd>#{run.id}</dd></div>
-                                  <div><dt>Policy revision</dt><dd>{String(run.policy_revision ?? "—")}</dd></div>
-                                  <div><dt>ModelVersion</dt><dd>#{String(run.model_version_id ?? "—")}</dd></div>
+                                  <div><dt>품질 평가 실행 번호</dt><dd>#{run.id}</dd></div>
+                                  <div><dt>정책 개정 번호</dt><dd>{String(run.policy_revision ?? "—")}</dd></div>
+                                  <div><dt>모델 버전 (ModelVersion)</dt><dd>#{String(run.model_version_id ?? "—")}</dd></div>
                                   <div>
-                                    <dt>Window</dt>
+                                    <dt>평가 기간</dt>
                                     <dd>
                                       {run.window_start ? new Date(String(run.window_start)).toLocaleString() : "—"}
                                       {" → "}
                                       {run.window_end ? new Date(String(run.window_end)).toLocaleString() : "—"}
                                     </dd>
                                   </div>
-                                  <div><dt>Matched / Predictions</dt><dd>{matched} / {predictions}</dd></div>
+                                  <div><dt>정답 연결 / 예측 건수</dt><dd>{matched} / {predictions}</dd></div>
                                   <div>
-                                    <dt>Match rate</dt>
+                                    <dt><TermLabel ko="연결률" en="Match rate" help={UI_HELP.monitoringMatchRate} /></dt>
                                     <dd>
                                       {matchRate == null || typeof matchRate !== "number"
                                         ? "—"
                                         : `${metric(matchRate * 100, 1)}%`}
                                     </dd>
                                   </div>
-                                  <div><dt>Quality status</dt><dd>{String(run.quality_status || "—")}</dd></div>
+                                  <div><dt>품질 상태</dt><dd>{monitoringStatusLabel(String(run.quality_status || "unknown"))}</dd></div>
                                   <div>
-                                    <dt>Sufficiency reason</dt>
+                                    <dt>평가 데이터 충분 여부</dt>
                                     <dd data-testid={`run-sufficiency-${run.id}`}>
                                       {reasonLabel(
                                         evalObj && typeof evalObj.reason === "string"
@@ -657,23 +703,23 @@ export default function Monitoring() {
                                     </dd>
                                   </div>
                                   <div>
-                                    <dt>Rule evidence</dt>
+                                    <dt>규칙 평가 근거</dt>
                                     <dd>{evaluationEvidence(evaluation)}</dd>
                                   </div>
                                   <div>
-                                    <dt>Baseline run / model</dt>
+                                    <dt>기준 평가 실행 / 모델</dt>
                                     <dd>
                                       {evalObj?.baseline_quality_run_id != null
-                                        ? `Run #${String(evalObj.baseline_quality_run_id)}`
+                                        ? `실행 #${String(evalObj.baseline_quality_run_id)}`
                                         : "—"}
                                       {" / "}
                                       {evalObj?.baseline_model_version_id != null
-                                        ? `Model #${String(evalObj.baseline_model_version_id)}`
+                                        ? `모델 #${String(evalObj.baseline_model_version_id)}`
                                         : "—"}
                                     </dd>
                                   </div>
                                   <div>
-                                    <dt>Trigger decision</dt>
+                                    <dt>재학습 실행 판단</dt>
                                     <dd data-testid={`run-trigger-${run.id}`}>
                                       {triggerDecisionLabel(
                                         decision && typeof decision.reason === "string"
@@ -684,7 +730,7 @@ export default function Monitoring() {
                                   </div>
                                 </dl>
                                 <details className="advanced-json">
-                                  <summary>Advanced JSON</summary>
+                                  <summary>고급 정보 (JSON)</summary>
                                   <pre className="code-block">{JSON.stringify({ evaluation: evalObj, trigger_decision: decision }, null, 2)}</pre>
                                 </details>
                               </td>
@@ -705,12 +751,12 @@ export default function Monitoring() {
                 onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
                 data-testid="quality-history-prev"
               >
-                Previous
+                이전
               </button>
               <span className="muted">
                 {qualityRunTotal === 0
-                  ? "0 runs"
-                  : `${historySkip + 1}–${Math.min(historySkip + HISTORY_PAGE_SIZE, qualityRunTotal)} of ${qualityRunTotal}`}
+                  ? "평가 이력 0건"
+                  : `전체 ${qualityRunTotal}건 중 ${historySkip + 1}–${Math.min(historySkip + HISTORY_PAGE_SIZE, qualityRunTotal)}건`}
               </span>
               <button
                 type="button"
@@ -719,52 +765,78 @@ export default function Monitoring() {
                 onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
                 data-testid="quality-history-next"
               >
-                Next
+                다음
               </button>
             </div>
           </DetailSection>
 
           <div className="two-column">
             <DetailSection
-              eyebrow="Data"
-              title="Data health"
+              eyebrow="데이터"
+              title="데이터 품질 상태 (Data Health)"
               testId="monitoring-data"
-              actions={<StatusBadge status={data.latest_quality_status || "unknown"} />}
+              actions={(
+                <span className="row-actions">
+                  <StatusBadge
+                    status={data.latest_quality_status || "unknown"}
+                    label={monitoringStatusLabel(data.latest_quality_status)}
+                  />
+                  <HelpTip text={UI_HELP.monitoringDataHealth} />
+                </span>
+              )}
             >
               <dl className="key-values">
-                <div><dt>Datasets</dt><dd>{data.dataset_count}</dd></div>
-                <div><dt>Versions</dt><dd>{data.dataset_version_count}</dd></div>
-                <div><dt>Quality checks</dt><dd>{data.quality_check_count}</dd></div>
-                <div><dt>Failed checks</dt><dd>{data.failed_quality_check_count}</dd></div>
+                <div><dt>데이터셋</dt><dd>{data.dataset_count}</dd></div>
+                <div><dt>데이터셋 버전</dt><dd>{data.dataset_version_count}</dd></div>
+                <div><dt>품질 검사</dt><dd>{data.quality_check_count}</dd></div>
+                <div><dt>실패한 검사</dt><dd>{data.failed_quality_check_count}</dd></div>
               </dl>
-              {data.quality_check_count === 0 && (
-                <p className="muted">Run quality checks from a dataset version to establish a health signal.</p>
+              {!data.latest_quality_status && (
+                <p className="muted" data-testid="monitoring-data-unknown-help">
+                  {data.quality_check_count === 0
+                    ? "상태 미확인은 오류가 아닙니다. 아직 품질 검사를 실행하지 않아 판정할 결과가 없습니다. 데이터셋 버전에서 품질 검사를 실행하세요."
+                    : "최근 품질 검사 판정이 제공되지 않아 상태를 확인할 수 없습니다. 검사 실행 이력을 확인해 주세요."}
+                </p>
               )}
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/datasets`}>Open datasets</Link>
+                <Link to={`/projects/${projectId}/datasets`}>데이터셋 열기</Link>
               </div>
             </DetailSection>
 
             <DetailSection
-              eyebrow="Model"
-              title="Model health"
+              eyebrow="모델"
+              title="모델 상태 (Model Health)"
               testId="monitoring-models"
-              actions={<StatusBadge status={models.latest_drift_status || "unknown"} />}
+              actions={(
+                <span className="row-actions">
+                  <StatusBadge
+                    status={models.latest_drift_status || "unknown"}
+                    label={monitoringStatusLabel(models.latest_drift_status)}
+                  />
+                  <HelpTip text={UI_HELP.monitoringModelHealth} />
+                </span>
+              )}
             >
               <dl className="key-values">
-                <div><dt>Model versions</dt><dd>{models.model_version_count}</dd></div>
-                <div><dt>Ready deployments</dt><dd>{models.ready_endpoint_count} / {models.endpoint_count}</dd></div>
-                <div><dt>Total requests</dt><dd>{models.total_requests.toLocaleString()}</dd></div>
-                <div><dt>Total errors</dt><dd>{models.total_errors.toLocaleString()}</dd></div>
+                <div><dt>모델 버전</dt><dd>{models.model_version_count}</dd></div>
+                <div><dt>배포 준비 완료</dt><dd>{models.ready_endpoint_count} / {models.endpoint_count}</dd></div>
+                <div><dt>전체 예측 요청</dt><dd>{models.total_requests.toLocaleString()}</dd></div>
+                <div><dt>전체 예측 오류</dt><dd>{models.total_errors.toLocaleString()}</dd></div>
               </dl>
+              {!models.latest_drift_status && (
+                <p className="muted" data-testid="monitoring-model-unknown-help">
+                  상태 미확인은 배포 장애를 뜻하지 않습니다. 최근 데이터 분포 변화(Drift) 평가 결과가 없어 판정할 수 없습니다.
+                  배포 준비 상태와 예측 오류는 위의 별도 지표를 확인하세요.
+                </p>
+              )}
               <div className="tag-list">
                 {Object.entries(models.lifecycle_counts).map(([name, count]) => (
-                  <span key={name}>{name.replaceAll("_", " ")} · {count}</span>
+                  <span key={name}>{modelLifecycleLabelKo(name)} · {count}</span>
                 ))}
               </div>
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/registry`}>Open registry</Link>
-                <Link to={`/projects/${projectId}/deployments`}>Open deployments</Link>
+                <Link to={`/projects/${projectId}/registry`}>모델 등록소 열기</Link>
+                <Link to={`/projects/${projectId}/deployments`}>배포 관리 열기</Link>
               </div>
             </DetailSection>
           </div>
