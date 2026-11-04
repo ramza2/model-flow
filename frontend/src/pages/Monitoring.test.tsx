@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import Monitoring, { formatRuleEvidence } from "./Monitoring";
 
 const apiMock = vi.fn();
+let noQualityChecks = false;
 
 vi.mock("../api", async () => {
   const actual = await vi.importActual<typeof import("../api")>("../api");
@@ -29,6 +30,7 @@ describe("formatRuleEvidence", () => {
 describe("Monitoring", () => {
   beforeEach(() => {
     apiMock.mockReset();
+    noQualityChecks = false;
     apiMock.mockImplementation(async (path: string) => {
       if (path.includes("/monitoring/service")) {
         return {
@@ -42,6 +44,15 @@ describe("Monitoring", () => {
         };
       }
       if (path.endsWith("/monitoring/data")) {
+        if (noQualityChecks) {
+          return {
+            dataset_count: 1,
+            dataset_version_count: 1,
+            quality_check_count: 0,
+            failed_quality_check_count: 0,
+            latest_quality_status: null,
+          };
+        }
         return {
           dataset_count: 2,
           dataset_version_count: 4,
@@ -160,9 +171,9 @@ describe("Monitoring", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(await screen.findByTestId("monitoring-attention")).toHaveTextContent("2 prediction errors");
-    expect(screen.getByTestId("monitoring-attention")).toHaveTextContent("1 failed quality check");
-    expect(screen.getByTestId("monitoring-attention")).toHaveTextContent("1 / 2 deployments ready");
+    expect(await screen.findByTestId("monitoring-attention")).toHaveTextContent("예측 오류 2건");
+    expect(screen.getByTestId("monitoring-attention")).toHaveTextContent("품질 검사 1건");
+    expect(screen.getByTestId("monitoring-attention")).toHaveTextContent("배포 준비 완료 1/2건");
     expect(screen.getByTestId("monitoring-service")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-data")).toBeInTheDocument();
     expect(screen.getByTestId("monitoring-models")).toBeInTheDocument();
@@ -179,7 +190,12 @@ describe("Monitoring", () => {
       "/projects/7/registry?modelVersionId=91",
     );
     expect(screen.getByTestId("view-quality-history-1")).toBeInTheDocument();
-    expect(screen.getByText("No prediction traffic")).toBeInTheDocument();
+    expect(screen.getByText("예측 요청 이력이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("모니터링 (Monitoring)")).toBeInTheDocument();
+    expect(screen.getByText("평균 응답시간")).toBeInTheDocument();
+    expect(screen.getByTestId("monitoring-models")).toHaveTextContent("미확인 (Unknown)");
+    expect(screen.getByTestId("monitoring-model-unknown-help")).toHaveTextContent("배포 장애를 뜻하지 않습니다");
+    expect(screen.getByTestId("monitoring-models")).toHaveTextContent("운영 중 · 1");
     fireEvent.change(screen.getByTestId("monitoring-window"), { target: { value: "168" } });
     expect(apiMock).toHaveBeenCalledWith(expect.stringContaining("hours=168"));
   });
@@ -195,7 +211,7 @@ describe("Monitoring", () => {
     expect(await screen.findByTestId("quality-revision-1")).toHaveTextContent("4");
     expect(screen.getByTestId("quality-rule-count-1")).toHaveTextContent("2");
     expect(screen.getByTestId("quality-rule-count-1")).toHaveTextContent("ANY");
-    expect(screen.getByTestId("baseline-required-1")).toHaveTextContent("Baseline required");
+    expect(screen.getByTestId("baseline-required-1")).toHaveTextContent("기준 평가 필요");
     expect(screen.getByTestId("quality-policies-link")).toHaveAttribute(
       "href",
       "/projects/7/model-quality/policies",
@@ -206,5 +222,42 @@ describe("Monitoring", () => {
     expect(screen.getByTestId("run-evidence-11")).toHaveTextContent(
       "F1 baseline delta 0.12 → CRITICAL",
     );
+    expect(screen.getByTestId("monitoring-quality-trend")).toHaveTextContent("품질 평가 이력");
+    expect(screen.getByRole("columnheader", { name: /연결률/ })).toBeInTheDocument();
+    expect(screen.getByTestId("quality-history-next")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("expand-quality-run-11"));
+    expect(screen.getByTestId("quality-run-detail-11")).toHaveTextContent("평가 데이터 충분 여부");
+    expect(screen.getByTestId("expand-quality-run-11")).toHaveTextContent("접기");
+    expect(screen.getByText("고급 정보 (JSON)")).toBeInTheDocument();
+  });
+
+  it("explains missing data checks and drift evaluations without treating Unknown as a failure", async () => {
+    noQualityChecks = true;
+    render(
+      <MemoryRouter initialEntries={["/projects/7/monitoring"]}>
+        <Routes>
+          <Route path="/projects/:projectId/monitoring" element={<Monitoring />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const dataSection = await screen.findByTestId("monitoring-data");
+    expect(dataSection).toHaveTextContent("미확인 (Unknown)");
+    expect(dataSection).toHaveTextContent("품질 검사");
+    expect(screen.getByTestId("monitoring-data-unknown-help")).toHaveTextContent(
+      "아직 품질 검사를 실행하지 않아 판정할 결과가 없습니다",
+    );
+    expect(screen.getByTestId("monitoring-model-unknown-help")).toHaveTextContent(
+      "최근 데이터 분포 변화(Drift) 평가 결과가 없어",
+    );
+    expect(screen.getByRole("link", { name: "데이터셋 열기" })).toHaveAttribute(
+      "href",
+      "/projects/7/datasets",
+    );
+    expect(screen.getByRole("link", { name: "배포 관리 열기" })).toHaveAttribute(
+      "href",
+      "/projects/7/deployments",
+    );
+    expect(screen.getByTestId("monitoring-data").querySelector(".badge")).toHaveClass("neutral");
+    expect(screen.getByTestId("monitoring-models").querySelector(".badge")).toHaveClass("neutral");
   });
 });
