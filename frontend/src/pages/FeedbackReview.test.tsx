@@ -111,7 +111,7 @@ describe("FeedbackReview", () => {
     expect(await screen.findByTestId("feedback-review-page")).toBeInTheDocument();
     expect(screen.getByTestId("feedback-queue")).toBeInTheDocument();
     expect(screen.getByTestId("feedback-endpoint-filter")).toHaveValue("12");
-    expect(screen.getByTestId("feedback-snapshot-102")).toHaveTextContent("Not materializable");
+    expect(screen.getByTestId("feedback-snapshot-102")).toHaveTextContent("생성 불가");
     expect(screen.getByTestId("materialization-output-3")).toHaveAttribute(
       "href",
       "/projects/7/datasets/5?version=2",
@@ -126,6 +126,109 @@ describe("FeedbackReview", () => {
     fireEvent.change(screen.getByTestId("feedback-status-filter"), { target: { value: "PENDING" } });
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith(expect.stringContaining("review_status=PENDING"));
+    });
+  });
+
+  it("selects only pending editable feedback on the current page and confirms bulk review", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("/feedback/review")) return { count: 2, results: [] };
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      return {
+        items: [
+          { id: 201, review_status: "PENDING", materializable: true, input_snapshot_available: true },
+          { id: 202, review_status: "PENDING", materializable: false, input_snapshot_available: false },
+          { id: 203, review_status: "APPROVED", materializable: true, input_snapshot_available: true },
+          {
+            id: 204,
+            review_status: "PENDING",
+            materializable: false,
+            input_snapshot_available: true,
+            materialization_run_id: 13,
+          },
+        ],
+        total: 4,
+      };
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+          <Routes>
+            <Route path="/projects/:projectId/feedback" element={<FeedbackReview />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      const selectPage = await screen.findByTestId("feedback-select-page");
+      fireEvent.click(selectPage);
+
+      expect(screen.getByTestId("feedback-select-201")).toBeChecked();
+      expect(screen.getByTestId("feedback-select-202")).toBeChecked();
+      expect(screen.getByTestId("feedback-select-203")).not.toBeChecked();
+      expect(screen.getByTestId("feedback-select-204")).toBeDisabled();
+      expect(selectPage).toBeChecked();
+
+      fireEvent.click(screen.getByTestId("feedback-approve"));
+      await waitFor(() =>
+        expect(apiMock).toHaveBeenCalledWith(
+          "/projects/7/feedback/review",
+          expect.objectContaining({ method: "POST" }),
+        ),
+      );
+      const reviewCall = apiMock.mock.calls.find(
+        ([path]) => path === "/projects/7/feedback/review",
+      );
+      expect(JSON.parse(reviewCall?.[1].body)).toEqual({
+        items: [
+          { feedback_id: 201, decision: "approved" },
+          { feedback_id: 202, decision: "approved" },
+        ],
+      });
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("2건"));
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("does not submit selected rows from a previous page", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("/feedback/review")) return { count: 1, results: [] };
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      const skip = Number(new URLSearchParams(path.split("?")[1]).get("skip"));
+      return {
+        items: skip === 0
+          ? [{ id: 301, review_status: "PENDING", materializable: false, input_snapshot_available: true }]
+          : [{ id: 401, review_status: "PENDING", materializable: false, input_snapshot_available: true }],
+        total: 26,
+      };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+        <Routes>
+          <Route path="/projects/:projectId/feedback" element={<FeedbackReview />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByTestId("feedback-select-301"));
+    expect(screen.getByTestId("feedback-select-301")).toBeChecked();
+    fireEvent.click(screen.getByTestId("feedback-next"));
+    await screen.findByTestId("feedback-select-401");
+    expect(screen.getByTestId("feedback-select-401")).not.toBeChecked();
+    fireEvent.click(screen.getByTestId("feedback-select-401"));
+    fireEvent.click(screen.getByTestId("feedback-approve"));
+
+    await waitFor(() =>
+      expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/feedback/review",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+    const reviewCall = apiMock.mock.calls.find(
+      ([path]) => path === "/projects/7/feedback/review",
+    );
+    expect(JSON.parse(reviewCall?.[1].body)).toEqual({
+      items: [{ feedback_id: 401, decision: "approved" }],
     });
   });
 
@@ -146,6 +249,7 @@ describe("FeedbackReview", () => {
     );
     await screen.findByTestId("feedback-review-page");
     expect(screen.queryByTestId("feedback-approve")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("feedback-select-page")).not.toBeInTheDocument();
     expect(screen.queryByTestId("feedback-materialize")).not.toBeInTheDocument();
   });
 });
