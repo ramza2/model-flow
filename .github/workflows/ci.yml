@@ -284,6 +284,22 @@ jobs:
           chmod +x scripts/test-kubernetes-helm.sh
           ./scripts/test-kubernetes-helm.sh
 
+      - name: Reclaim unused hosted-runner disk space
+        run: |
+          set -euo pipefail
+          # Full verification builds the application and starts several large
+          # pinned database images. It does not use Android, .NET or GHC.
+          [[ "${RUNNER_ENVIRONMENT:-}" == "github-hosted" ]]
+          [[ "${RUNNER_OS:-}" == "Linux" ]]
+          df -h /
+          for path in /usr/local/lib/android /usr/share/dotnet /opt/ghc; do
+            if [[ -d "$path" && ! -L "$path" ]]; then
+              sudo du -sh "$path"
+              sudo rm -rf -- "$path"
+            fi
+          done
+          df -h /
+
       - name: Clean previous verification Compose state
         run: |
           set -euo pipefail
