@@ -183,8 +183,12 @@ describe("Monitoring", () => {
       "/projects/7/feedback?endpoint_id=9",
     );
     expect(screen.getByTestId("matched-gt-1")).toHaveTextContent("25");
-    expect(screen.getByTestId("closed-loop-state-9")).toHaveTextContent("Candidate ready");
+    expect(screen.getByTestId("closed-loop-state-9")).toHaveTextContent("후보 모델 검토 가능");
     expect(await screen.findByTestId("closed-loop-detail-1")).toBeInTheDocument();
+    expect(screen.getByTestId("closed-loop-reason-1")).toHaveTextContent("심각한 품질 저하로 재학습이 시작되었습니다");
+    expect(screen.getByTestId("closed-loop-next-1")).toHaveTextContent("승인을 요청하기 전에 후보 모델 버전을 검토하세요");
+    expect(screen.getByTestId("recovery-policy-1")).toHaveTextContent("품질 정책");
+    expect(screen.getByTestId("recovery-candidate-1")).toHaveTextContent("후보 모델 검토");
     expect(screen.getByTestId("recovery-candidate-1")).toHaveAttribute(
       "href",
       "/projects/7/registry?modelVersionId=91",

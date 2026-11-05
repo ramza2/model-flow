@@ -2,7 +2,10 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api";
 import {
+  closedLoopNextActionDisplayLabel,
   closedLoopRecoveryLinks,
+  closedLoopReasonDisplayLabel,
+  closedLoopStateDisplayLabel,
   formatMatchedSamples,
   reasonLabel,
   triggerDecisionLabel,
@@ -415,17 +418,17 @@ export default function Monitoring() {
                           </span>
                         ) : null}
                         <span className="muted" data-testid={`closed-loop-state-${card.endpoint_id}`}>
-                          {detail.label || card.closed_loop_state}
+                          {closedLoopStateDisplayLabel(detail.label || card.closed_loop_state)}
                         </span>
                       </div>
                       <div className="notice" data-testid={`closed-loop-detail-${card.policy_id}`}>
                         <p data-testid={`closed-loop-code-${card.policy_id}`}>
-                          <strong>{detail.label}</strong>
+                          <strong>{closedLoopStateDisplayLabel(detail.label)}</strong>
                           {detail.reason ? (
                             <>
                               {" — "}
                               <span data-testid={`closed-loop-reason-${card.policy_id}`}>
-                                {detail.reason_label || reasonLabel(detail.reason)}
+                                {closedLoopReasonDisplayLabel(detail.reason, detail.reason_label)}
                               </span>
                             </>
                           ) : null}
@@ -439,7 +442,9 @@ export default function Monitoring() {
                           </p>
                         ) : null}
                         {detail.next_action ? (
-                          <p data-testid={`closed-loop-next-${card.policy_id}`}>{detail.next_action}</p>
+                          <p data-testid={`closed-loop-next-${card.policy_id}`}>
+                            {closedLoopNextActionDisplayLabel(detail.next_action)}
+                          </p>
                         ) : null}
                         {decisionReason ? (
                           <p className="muted" data-testid={`trigger-decision-${card.policy_id}`}>
