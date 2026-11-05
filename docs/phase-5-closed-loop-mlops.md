@@ -52,6 +52,13 @@ Rules:
 - Materialization does not auto-create TrainingJobs; Phase 5-A discovery path remains the retrain trigger
 - Automation still stops at CANDIDATE
 
+Post-GA feedback review guard (2026-11-05):
+
+- `GET /projects/{project_id}/feedback-materializations/preflight?endpoint_id={id}` is a read-only, project-scoped (`DATA_READ`) advisory check for the endpoint's current model lifecycle and source training/dataset lineage. It returns `ready`, stable `reason`, and the current model identity for frontend preflight messaging.
+- The feedback list's `materializable` filter continues to mean **feedback-data readiness** (approved, input snapshot retained, not yet reserved/materialized), not the production lifecycle of the connected model. The UI labels the distinction explicitly.
+- The create POST retains all authoritative write-time checks and row locking; it may still reject stale selections or concurrent operations. Failed requests before run creation do not appear in the materialization run history. The UI explains that outcome in Korean, without translating internal API reason codes.
+- Model promotion to `PRODUCTION` remains an explicit governance action; preflight never promotes models or creates data.
+
 See [`phase-5b-verification.md`](./phase-5b-verification.md).
 
 ## Phase 5-C (complete)

@@ -245,6 +245,72 @@ def _seed_production(db, project_id: int, *, multi_output: bool = False):
     }
 
 
+def test_materialization_preflight_reports_approved_model_without_creating_run(
+    client, auth_headers, viewer_headers, project_id
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        model_id = seeded["model"].id
+        seeded["model"].lifecycle = ModelLifecycle.APPROVED
+        db.commit()
+
+    url = f"/api/v1/projects/{project_id}/feedback-materializations/preflight"
+    response = client.get(url, params={"endpoint_id": endpoint_id}, headers=viewer_headers)
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "endpoint_id": endpoint_id,
+        "model_version_id": model_id,
+        "model_name": "iris",
+        "model_version": "1",
+        "model_lifecycle": "APPROVED",
+        "ready": False,
+        "reason": "endpoint_model_not_production",
+    }
+    assert client.get(url, params={"endpoint_id": endpoint_id}, headers=auth_headers).status_code == 200
+
+    rejected = client.post(
+        f"/api/v1/projects/{project_id}/feedback-materializations",
+        headers=auth_headers,
+        json={"endpoint_id": endpoint_id, "feedback_ids": [999999]},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["detail"]["hint"] == "endpoint_model_not_production"
+
+    with TestingSessionLocal() as db:
+        assert db.scalar(select(FeedbackMaterializationRun.id)) is None
+        assert db.get(ModelVersion, model_id).lifecycle == ModelLifecycle.APPROVED
+
+
+def test_materialization_preflight_checks_source_job_and_project_scope(
+    client, auth_headers, project_id
+):
+    with TestingSessionLocal() as db:
+        seeded = _seed_production(db, project_id)
+        endpoint_id = seeded["endpoint"].id
+        source_job_id = seeded["job"].id
+
+    url = f"/api/v1/projects/{project_id}/feedback-materializations/preflight"
+    ready = client.get(url, params={"endpoint_id": endpoint_id}, headers=auth_headers)
+    assert ready.status_code == 200
+    assert ready.json()["ready"] is True
+    assert ready.json()["reason"] is None
+
+    with TestingSessionLocal() as db:
+        db.get(TrainingJob, source_job_id).status = JobStatus.failed
+        db.commit()
+
+    blocked = client.get(url, params={"endpoint_id": endpoint_id}, headers=auth_headers)
+    assert blocked.status_code == 200
+    assert blocked.json()["ready"] is False
+    assert blocked.json()["reason"] == "source_training_job_not_succeeded"
+
+    missing = client.get(url, params={"endpoint_id": 999999}, headers=auth_headers)
+    assert missing.status_code == 404
+    with TestingSessionLocal() as db:
+        assert db.scalar(select(FeedbackMaterializationRun.id)) is None
+
+
 def test_prediction_stores_input_json_jwt_and_alignment(client, auth_headers, project_id, monkeypatch):
     with TestingSessionLocal() as db:
         seeded = _seed_production(db, project_id)

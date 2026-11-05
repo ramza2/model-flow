@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, ApiRequestError } from "../api";
 import { useAuth } from "../AuthContext";
 import { useProject, userCanProject } from "../ProjectContext";
-import { EmptyState, Loading, PageHeader, StatusBadge } from "../components";
+import { EmptyState, Loading, Notice, PageHeader, StatusBadge } from "../components";
 
 type FeedbackItem = {
   id: number;
@@ -38,6 +38,16 @@ type MaterializationRun = {
   created_at?: string | null;
   finished_at?: string | null;
   error_message?: string | null;
+};
+
+type MaterializationPreflight = {
+  endpoint_id: number;
+  model_version_id: number | null;
+  model_name: string | null;
+  model_version: string | null;
+  model_lifecycle: string | null;
+  ready: boolean;
+  reason: string | null;
 };
 
 const PAGE_SIZE = 25;
@@ -80,6 +90,30 @@ function stringifyValue(value: unknown): string {
   }
 }
 
+const materializationBlockReasons: Record<string, string> = {
+  endpoint_model_missing: "배포 엔드포인트에 연결된 모델이 없습니다. 모델 배포 설정을 확인하세요.",
+  endpoint_model_not_production: "현재 배포된 모델은 운영(PRODUCTION) 상태가 아닙니다. 운영 모델로 전환한 뒤 다시 시도하세요.",
+  source_training_job_missing: "모델에 연결된 원본 학습 작업이 없습니다. 학습 이력을 확인하세요.",
+  source_training_job_not_succeeded: "모델의 원본 학습 작업이 성공 상태가 아닙니다. 학습 작업을 확인하세요.",
+  source_dataset_version_missing: "모델의 원본 학습 데이터셋 버전이 없습니다. 학습 데이터 이력을 확인하세요.",
+  source_dataset_missing: "모델의 원본 학습 데이터셋 연결이 없습니다. 학습 이력을 확인하세요.",
+};
+
+function materializationStartError(reason: unknown): string {
+  if (reason instanceof ApiRequestError) {
+    if (reason.hint && materializationBlockReasons[reason.hint]) {
+      return `${materializationBlockReasons[reason.hint]} 생성 작업은 시작되지 않았으므로 이력에 표시되지 않습니다.`;
+    }
+    if (reason.status === 409) {
+      return "다른 학습 데이터 생성 작업이 진행 중이거나 선택 항목이 이미 사용되었습니다. 이력과 피드백 상태를 확인하세요.";
+    }
+    if (reason.status === 422) {
+      return "학습 데이터 생성 조건을 충족하지 못했습니다. 모델 상태와 선택 항목을 확인한 뒤 다시 시도하세요.";
+    }
+  }
+  return "학습 데이터 생성 요청에 실패했습니다. 연결 상태를 확인한 뒤 다시 시도하세요.";
+}
+
 export default function FeedbackReview() {
   const { projectId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,6 +136,10 @@ export default function FeedbackReview() {
   const [historySkip, setHistorySkip] = useState(0);
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
+  const [preflight, setPreflight] = useState<MaterializationPreflight | null>(null);
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightError, setPreflightError] = useState(false);
+  const [preflightRevision, setPreflightRevision] = useState(0);
 
   const syncUrl = (
     next: {
@@ -202,6 +240,58 @@ export default function FeedbackReview() {
     [items, selectedIds],
   );
 
+  const selectedEndpointId = materializableSelected[0]?.endpoint_id ?? null;
+  const selectedModelVersionId = materializableSelected[0]?.model_version_id ?? null;
+  const consistentSelection = materializableSelected.every(
+    (item) => item.endpoint_id === selectedEndpointId && item.model_version_id === selectedModelVersionId,
+  );
+  const allSelectedEligible = selectedIds.length === materializableSelected.length;
+
+  useEffect(() => {
+    let current = true;
+    setPreflight(null);
+    setPreflightError(false);
+    if (!projectId || !canWrite || !selectedEndpointId || !consistentSelection) {
+      setPreflightLoading(false);
+      return;
+    }
+    setPreflightLoading(true);
+    api<MaterializationPreflight>(
+      `/projects/${projectId}/feedback-materializations/preflight?endpoint_id=${selectedEndpointId}`,
+    )
+      .then((result) => { if (current) setPreflight(result); })
+      .catch(() => { if (current) setPreflightError(true); })
+      .finally(() => { if (current) setPreflightLoading(false); });
+    return () => { current = false; };
+  }, [projectId, canWrite, selectedEndpointId, selectedModelVersionId, consistentSelection, preflightRevision]);
+
+  const preflightMatchesSelection = Boolean(
+    preflight &&
+    preflight.endpoint_id === selectedEndpointId &&
+    preflight.model_version_id === selectedModelVersionId,
+  );
+  const canMaterialize = Boolean(
+    !busy && !preflightLoading && !preflightError && consistentSelection && allSelectedEligible &&
+    materializableSelected.length > 0 && preflightMatchesSelection && preflight?.ready,
+  );
+  const materializationBlockMessage = materializableSelected.length === 0
+    ? null
+    : !allSelectedEligible
+      ? "선택한 피드백 중 학습 데이터로 만들 수 없는 항목이 있습니다. 승인·입력 데이터 보관 상태를 확인하세요."
+      : !consistentSelection
+      ? "같은 배포 엔드포인트와 모델 버전의 피드백만 함께 선택할 수 있습니다."
+      : preflightLoading
+        ? "모델의 학습 데이터 생성 조건을 확인하고 있습니다…"
+        : preflightError
+          ? "모델 상태를 확인하지 못했습니다. 페이지를 새로고침한 후 다시 시도하세요."
+          : !preflight
+            ? "모델 상태를 확인한 후 학습 데이터를 생성할 수 있습니다."
+            : !preflightMatchesSelection
+              ? "피드백의 모델 버전이 현재 배포된 모델과 다릅니다. 배포 및 피드백 이력을 확인하세요."
+              : !preflight.ready
+                ? materializationBlockReasons[preflight.reason || ""] || "모델의 학습 데이터 생성 조건을 충족하지 못했습니다."
+                : null;
+
   const review = async (decision: "approved" | "rejected") => {
     if (!projectId || selectedIds.length === 0) return;
     if (
@@ -230,7 +320,7 @@ export default function FeedbackReview() {
   };
 
   const materialize = async () => {
-    if (!projectId || materializableSelected.length === 0) return;
+    if (!projectId || !canMaterialize || materializableSelected.length === 0) return;
     const endpointId = materializableSelected[0].endpoint_id;
     if (!endpointId || materializableSelected.some((item) => item.endpoint_id !== endpointId)) {
       setError("하나의 배포 엔드포인트에서 학습 데이터로 만들 수 있는 승인된 피드백만 선택하세요.");
@@ -240,7 +330,7 @@ export default function FeedbackReview() {
       [
         `승인된 피드백 ${materializableSelected.length}건으로 새 데이터셋 버전(DatasetVersion)을 생성하시겠습니까?`,
         `배포 엔드포인트 #${endpointId}`,
-        `운영 모델 #${materializableSelected[0].model_version_id}`,
+        `모델 #${materializableSelected[0].model_version_id}`,
       ].join("\n"),
     );
     if (!confirmed) return;
@@ -256,7 +346,11 @@ export default function FeedbackReview() {
       setSelected({});
       load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "학습 데이터 생성 작업을 시작하지 못했습니다.");
+      setError(materializationStartError(reason));
+      // Model lifecycle or feedback reservations may have changed after the
+      // advisory GET. Recheck before allowing another POST attempt.
+      setPreflight(null);
+      setPreflightRevision((revision) => revision + 1);
     } finally {
       setBusy(false);
     }
@@ -304,7 +398,7 @@ export default function FeedbackReview() {
             />
           </label>
           <label>
-            학습 데이터 생성 가능 여부
+            피드백 데이터 준비 여부
             <select
               value={materializableFilter}
               onChange={(event) => {
@@ -316,8 +410,8 @@ export default function FeedbackReview() {
               data-testid="feedback-materializable-filter"
             >
               <option value="">전체</option>
-              <option value="true">가능</option>
-              <option value="false">불가능</option>
+              <option value="true">준비됨</option>
+              <option value="false">준비되지 않음</option>
             </select>
           </label>
         </div>
@@ -346,7 +440,7 @@ export default function FeedbackReview() {
             </button>
             <button
               className="btn secondary"
-              disabled={busy || materializableSelected.length === 0}
+              disabled={!canMaterialize}
               onClick={materialize}
               data-testid="feedback-materialize"
             >
@@ -355,6 +449,25 @@ export default function FeedbackReview() {
           </div>
         ) : null}
       </div>
+
+      {canWrite && materializationBlockMessage ? (
+        <div data-testid="feedback-materialization-preflight">
+          <Notice
+            variant={preflightError ? "error" : preflightLoading ? "info" : "warning"}
+            title="학습 데이터 생성 안내"
+            message={materializationBlockMessage}
+            action={preflightError ? (
+              <button className="btn secondary" onClick={() => setPreflightRevision((revision) => revision + 1)}>
+                다시 확인
+              </button>
+            ) : preflightMatchesSelection && preflight && !preflight.ready && preflight.model_version_id ? (
+              <Link to={`/projects/${projectId}/models/${preflight.model_version_id}`}>
+                모델 상세에서 운영 전환 확인
+              </Link>
+            ) : undefined}
+          />
+        </div>
+      ) : null}
 
       {error ? <p className="error-text" data-testid="feedback-error">{error}</p> : null}
       {loading ? <Loading label="피드백 불러오는 중" /> : null}
@@ -470,7 +583,7 @@ export default function FeedbackReview() {
                           : item.materialization_run_id
                             ? `예약된 실행 #${item.materialization_run_id}`
                             : item.materializable
-                              ? "준비됨"
+                              ? "피드백 데이터 준비됨"
                               : "—"}
                       </td>
                     </tr>
