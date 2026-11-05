@@ -275,7 +275,11 @@ def test_materialization_preflight_reports_approved_model_without_creating_run(
         json={"endpoint_id": endpoint_id, "feedback_ids": [999999]},
     )
     assert rejected.status_code == 422
-    assert rejected.json()["detail"]["hint"] == "endpoint_model_not_production"
+    # /api/v1 normalizes friendly errors to top-level detail/hint fields.
+    assert rejected.json() == {
+        "detail": "Endpoint model is not ready for feedback materialization.",
+        "hint": "endpoint_model_not_production",
+    }
 
     with TestingSessionLocal() as db:
         assert db.scalar(select(FeedbackMaterializationRun.id)) is None
