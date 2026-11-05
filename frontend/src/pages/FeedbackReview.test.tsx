@@ -1,11 +1,13 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiRequestError } from "../api";
 import FeedbackReview from "./FeedbackReview";
 
 const apiMock = vi.fn();
 
-vi.mock("../api", () => ({
+vi.mock("../api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api")>()),
   api: (...args: unknown[]) => apiMock(...args),
 }));
 
@@ -257,5 +259,151 @@ describe("FeedbackReview", () => {
     expect(screen.queryByTestId("feedback-approve")).not.toBeInTheDocument();
     expect(screen.queryByTestId("feedback-select-page")).not.toBeInTheDocument();
     expect(screen.queryByTestId("feedback-materialize")).not.toBeInTheDocument();
+  });
+
+  it("blocks materialization before confirmation when the endpoint model is only APPROVED", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("/feedback-materializations/preflight")) {
+        return {
+          endpoint_id: 6, model_version_id: 8, model_name: "iris-classifier",
+          model_version: "1", model_lifecycle: "APPROVED", ready: false,
+          reason: "endpoint_model_not_production",
+        };
+      }
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      return {
+        items: [{
+          id: 501, endpoint_id: 6, model_version_id: 8, review_status: "APPROVED",
+          materializable: true, input_snapshot_available: true,
+        }],
+        total: 1,
+      };
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+        <Routes><Route path="/projects/:projectId/feedback" element={<FeedbackReview />} /></Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByTestId("feedback-select-501"));
+    expect(await screen.findByText(/운영\(PRODUCTION\) 상태가 아닙니다/)).toBeInTheDocument();
+    expect(screen.getByTestId("feedback-materialize")).toBeDisabled();
+    expect(screen.getByRole("link", { name: "모델 상세에서 운영 전환 확인" })).toHaveAttribute(
+      "href", "/projects/7/models/8",
+    );
+    expect(screen.getByTestId("feedback-row-501")).toHaveTextContent("피드백 데이터 준비됨");
+    expect(apiMock.mock.calls.some(([path, init]) =>
+      path === "/projects/7/feedback-materializations" && init?.method === "POST",
+    )).toBe(false);
+  });
+
+  it("creates a materialization only after a matching PRODUCTION model passes preflight", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes("/feedback-materializations/preflight")) {
+        return {
+          endpoint_id: 6, model_version_id: 8, model_name: "iris-classifier",
+          model_version: "1", model_lifecycle: "PRODUCTION", ready: true, reason: null,
+        };
+      }
+      if (path === "/projects/7/feedback-materializations" && init?.method === "POST") {
+        return { id: 99, status: "pending" };
+      }
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      return {
+        items: [{
+          id: 502, endpoint_id: 6, model_version_id: 8, review_status: "APPROVED",
+          materializable: true, input_snapshot_available: true,
+        }],
+        total: 1,
+      };
+    });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+          <Routes><Route path="/projects/:projectId/feedback" element={<FeedbackReview />} /></Routes>
+        </MemoryRouter>,
+      );
+      fireEvent.click(await screen.findByTestId("feedback-select-502"));
+      await waitFor(() => expect(screen.getByTestId("feedback-materialize")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("feedback-materialize"));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith(
+        "/projects/7/feedback-materializations",
+        expect.objectContaining({ method: "POST" }),
+      ));
+      const request = apiMock.mock.calls.find(([path, init]) =>
+        path === "/projects/7/feedback-materializations" && init?.method === "POST",
+      );
+      expect(JSON.parse(request?.[1].body)).toEqual({ endpoint_id: 6, feedback_ids: [502] });
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it("does not submit a prior model's feedback after an endpoint model swap", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.includes("/feedback-materializations/preflight")) {
+        return {
+          endpoint_id: 6, model_version_id: 9, model_name: "iris-classifier",
+          model_version: "2", model_lifecycle: "PRODUCTION", ready: true, reason: null,
+        };
+      }
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      return {
+        items: [{
+          id: 503, endpoint_id: 6, model_version_id: 8, review_status: "APPROVED",
+          materializable: true, input_snapshot_available: true,
+        }],
+        total: 1,
+      };
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+        <Routes><Route path="/projects/:projectId/feedback" element={<FeedbackReview />} /></Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByTestId("feedback-select-503"));
+    expect(await screen.findByText(/현재 배포된 모델과 다릅니다/)).toBeInTheDocument();
+    expect(screen.getByTestId("feedback-materialize")).toBeDisabled();
+  });
+
+  it("translates a server-side race rejection and preserves the selection", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.includes("/feedback-materializations/preflight")) {
+        return {
+          endpoint_id: 6, model_version_id: 8, model_name: "iris-classifier",
+          model_version: "1", model_lifecycle: "PRODUCTION", ready: true, reason: null,
+        };
+      }
+      if (path === "/projects/7/feedback-materializations" && init?.method === "POST") {
+        throw new ApiRequestError(422, "Endpoint model is not ready", "endpoint_model_not_production");
+      }
+      if (path.includes("/feedback-materializations")) return { items: [], total: 0 };
+      return {
+        items: [{
+          id: 504, endpoint_id: 6, model_version_id: 8, review_status: "APPROVED",
+          materializable: true, input_snapshot_available: true,
+        }],
+        total: 1,
+      };
+    });
+    try {
+      render(
+        <MemoryRouter initialEntries={["/projects/7/feedback"]}>
+          <Routes><Route path="/projects/:projectId/feedback" element={<FeedbackReview />} /></Routes>
+        </MemoryRouter>,
+      );
+      fireEvent.click(await screen.findByTestId("feedback-select-504"));
+      await waitFor(() => expect(screen.getByTestId("feedback-materialize")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("feedback-materialize"));
+      expect(await screen.findByTestId("feedback-error")).toHaveTextContent("운영(PRODUCTION) 상태가 아닙니다");
+      expect(screen.getByTestId("feedback-error")).toHaveTextContent("이력에 표시되지 않습니다");
+      expect(screen.getByTestId("feedback-select-504")).toBeChecked();
+    } finally {
+      confirmSpy.mockRestore();
+    }
   });
 });

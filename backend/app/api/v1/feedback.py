@@ -112,6 +112,21 @@ def list_materializations(
     return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
+@router.get("/projects/{project_id}/feedback-materializations/preflight")
+def materialization_preflight(
+    project_id: int,
+    endpoint_id: int = Query(ge=1),
+    _=Depends(require_project_perm(Permission.DATA_READ)),
+    db: Session = Depends(get_db),
+):
+    try:
+        return materialization_service.materialization_preflight(
+            db, project_id=project_id, endpoint_id=endpoint_id
+        )
+    except FeedbackMaterializationError as exc:
+        raise friendly(exc.status_code, exc.message, exc.detail) from exc
+
+
 @router.get("/projects/{project_id}/feedback-materializations/{run_id}")
 def get_materialization(
     project_id: int,

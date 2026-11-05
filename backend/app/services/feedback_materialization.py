@@ -107,6 +107,34 @@ def run_out(run: FeedbackMaterializationRun, db: Session | None = None) -> dict[
     }
 
 
+def materialization_preflight(
+    db: Session, *, project_id: int, endpoint_id: int
+) -> dict[str, Any]:
+    """Read-only prerequisites for the feedback materialization UI.
+
+    This is advisory: create_materialization_run must still enforce its own
+    checks under the write transaction, including feedback row reservations.
+    """
+    endpoint = db.get(Endpoint, endpoint_id)
+    if endpoint is None or endpoint.project_id != project_id:
+        raise FeedbackMaterializationError(404, "Endpoint was not found.")
+
+    model = db.get(ModelVersion, endpoint.model_version_id) if endpoint.model_version_id else None
+    ready, reason, source_job = quality_service.production_model_ready_for_retrain(db, model)
+    if ready and source_job is not None and source_job.dataset_id is None:
+        ready, reason = False, "source_dataset_missing"
+
+    return {
+        "endpoint_id": endpoint.id,
+        "model_version_id": model.id if model else None,
+        "model_name": model.name if model else None,
+        "model_version": model.version if model else None,
+        "model_lifecycle": model.lifecycle.value if model else None,
+        "ready": ready,
+        "reason": reason,
+    }
+
+
 def resolve_feature_columns(
     job: TrainingJob, base_version: DatasetVersion, target_columns: list[str]
 ) -> list[str]:
