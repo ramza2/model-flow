@@ -43,6 +43,31 @@ type MaterializationRun = {
 const PAGE_SIZE = 25;
 const HISTORY_PAGE_SIZE = 10;
 
+/** UI-only status translations. Filtering, requests, and badge tone use original values. */
+function feedbackReviewStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: "검토 대기",
+    approved: "승인됨",
+    rejected: "반려됨",
+  };
+  const normalized = status.toLowerCase();
+  return labels[normalized] || normalized.replaceAll("_", " ");
+}
+
+function materializationStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: "대기 중",
+    queued: "작업 대기",
+    running: "진행 중",
+    succeeded: "성공",
+    failed: "실패",
+    canceled: "취소됨",
+    cancelled: "취소됨",
+  };
+  const normalized = status.toLowerCase();
+  return labels[normalized] || normalized.replaceAll("_", " ");
+}
+
 function stringifyValue(value: unknown): string {
   if (value == null) return "—";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
@@ -429,7 +454,7 @@ export default function FeedbackReview() {
                       </td>
                       <td className="mono feedback-value-cell">{stringifyValue(item.predicted_value)}</td>
                       <td className="mono feedback-value-cell">{stringifyValue(item.actual_value)}</td>
-                      <td><StatusBadge status={item.review_status} /></td>
+                      <td><StatusBadge status={item.review_status} label={feedbackReviewStatusLabel(item.review_status)} /></td>
                       <td data-testid={`feedback-snapshot-${item.id}`}>
                         {item.input_snapshot_available ? (
                           <span className="feedback-snapshot-ok">보관됨</span>
@@ -520,7 +545,7 @@ export default function FeedbackReview() {
                 {runs.map((run) => (
                   <tr key={run.id} data-testid={`materialization-run-${run.id}`}>
                     <td className="mono">#{run.id}</td>
-                    <td><StatusBadge status={run.status} /></td>
+                    <td><StatusBadge status={run.status} label={materializationStatusLabel(run.status)} /></td>
                     <td className="mono">#{run.endpoint_id}</td>
                     <td className="mono">#{run.source_model_version_id}</td>
                     <td className="mono">
@@ -575,7 +600,7 @@ export default function FeedbackReview() {
             onClick={() => setHistorySkip((prev) => Math.max(0, prev - HISTORY_PAGE_SIZE))}
             data-testid="materialization-history-prev"
           >
-            Previous
+            이전
           </button>
           <span className="muted">
             {runTotal === 0
@@ -589,7 +614,7 @@ export default function FeedbackReview() {
             onClick={() => setHistorySkip((prev) => prev + HISTORY_PAGE_SIZE)}
             data-testid="materialization-history-next"
           >
-            Next
+            다음
           </button>
         </div>
       </section>

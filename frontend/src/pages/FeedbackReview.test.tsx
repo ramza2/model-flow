@@ -112,6 +112,12 @@ describe("FeedbackReview", () => {
     expect(screen.getByTestId("feedback-queue")).toBeInTheDocument();
     expect(screen.getByTestId("feedback-endpoint-filter")).toHaveValue("12");
     expect(screen.getByTestId("feedback-snapshot-102")).toHaveTextContent("생성 불가");
+    expect(screen.getByTestId("feedback-row-101")).toHaveTextContent("승인됨");
+    expect(screen.getByTestId("feedback-row-102")).toHaveTextContent("검토 대기");
+    expect(screen.getByTestId("materialization-run-3")).toHaveTextContent("성공");
+    expect(screen.getByTestId("materialization-run-4")).toHaveTextContent("실패");
+    expect(screen.getByTestId("materialization-history-prev")).toHaveTextContent("이전");
+    expect(screen.getByTestId("materialization-history-next")).toHaveTextContent("다음");
     expect(screen.getByTestId("materialization-output-3")).toHaveAttribute(
       "href",
       "/projects/7/datasets/5?version=2",
