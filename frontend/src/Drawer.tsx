@@ -13,6 +13,8 @@ type DrawerProps = {
   size?: "default" | "large" | "xlarge";
   /** Visible close control label. Defaults to English "Close". */
   closeLabel?: string;
+  /** Keep an in-flight form open until its request settles. */
+  closeDisabled?: boolean;
   testId?: string;
   footer?: ReactNode;
 };
@@ -23,6 +25,7 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled]):not([type='hidden'])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
   "[tabindex]:not([tabindex='-1'])",
 ].join(", ");
 
@@ -44,6 +47,7 @@ export function Drawer({
   children,
   size = "large",
   closeLabel = "Close",
+  closeDisabled = false,
   testId,
   footer,
 }: DrawerProps) {
@@ -51,10 +55,15 @@ export function Drawer({
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
+  const closeDisabledRef = useRef(closeDisabled);
 
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  useEffect(() => {
+    closeDisabledRef.current = closeDisabled;
+  }, [closeDisabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -71,7 +80,7 @@ export function Drawer({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onCloseRef.current();
+        if (!closeDisabledRef.current) onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -119,7 +128,9 @@ export function Drawer({
         className="drawer-backdrop"
         data-testid="drawer-backdrop"
         aria-hidden="true"
-        onClick={() => onCloseRef.current()}
+        onClick={() => {
+          if (!closeDisabledRef.current) onCloseRef.current();
+        }}
       />
       <div
         ref={panelRef}
@@ -136,7 +147,10 @@ export function Drawer({
             className="btn secondary drawer-close"
             aria-label={closeLabel}
             data-testid="drawer-close"
-            onClick={() => onCloseRef.current()}
+            disabled={closeDisabled}
+            onClick={() => {
+              if (!closeDisabledRef.current) onCloseRef.current();
+            }}
           >
             {closeLabel}
           </button>

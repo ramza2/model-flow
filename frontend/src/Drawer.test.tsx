@@ -77,6 +77,31 @@ describe("Drawer close label and size", () => {
     expect(screen.getByTestId("drawer-close")).toHaveAttribute("aria-label", "닫기");
     expect(screen.getByTestId("drawer-panel").className).toContain("drawer-xlarge");
   });
+
+  it("prevents closing from Escape, backdrop and close button while a form is busy", () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <Drawer open title="Retraining" onClose={onClose} closeDisabled>
+        <p>Waiting</p>
+      </Drawer>,
+    );
+
+    const close = screen.getByTestId("drawer-close");
+    expect(close).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(screen.getByTestId("drawer-backdrop"));
+    fireEvent.click(close);
+    expect(onClose).not.toHaveBeenCalled();
+
+    rerender(
+      <Drawer open title="Retraining" onClose={onClose} closeDisabled={false}>
+        <p>Done</p>
+      </Drawer>,
+    );
+    expect(screen.getByTestId("drawer-close")).not.toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
 
 describe("Drawer focus lifecycle", () => {
@@ -128,5 +153,21 @@ describe("Drawer focus lifecycle", () => {
     expect(panel.contains(document.activeElement)).toBe(true);
     target.focus();
     expect(target).toHaveFocus();
+  });
+
+  it("keeps keyboard focus inside the drawer when its last control is an advanced summary", () => {
+    render(
+      <Drawer open title="Advanced settings" onClose={() => undefined}>
+        <details>
+          <summary>고급 설정</summary>
+          <p>설정 값</p>
+        </details>
+      </Drawer>,
+    );
+    const summary = screen.getByText("고급 설정");
+    const close = screen.getByTestId("drawer-close");
+    summary.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(close).toHaveFocus();
   });
 });

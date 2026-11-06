@@ -141,7 +141,7 @@ describe("JobDetail retrain", () => {
         columns: ["a", "b", "target"],
         dtypes: {},
         stats: {},
-        source_type: "upload",
+        source_type: "feedback_materialization",
         created_at: "2026-01-02T00:00:00Z",
       },
     ];
@@ -155,11 +155,22 @@ describe("JobDetail retrain", () => {
       return [];
     });
     renderPage("42");
-    fireEvent.click(await screen.findByTestId("job-retrain"));
+    const trigger = await screen.findByTestId("job-retrain");
+    trigger.focus();
+    fireEvent.click(trigger);
+    const drawer = await screen.findByTestId("job-retrain-dialog");
+    expect(within(drawer).getByRole("dialog", { name: /전체 재학습.*학습 작업 #42/ })).toHaveAttribute("aria-modal", "true");
+    expect(screen.getByTestId("drawer-panel")).toBeVisible();
+    expect(screen.getByRole("button", { name: "닫기" })).toBeInTheDocument();
+    expect(screen.getByText(/기존 학습 데이터 버전이 선택되어 있습니다/)).toBeInTheDocument();
+    expect(screen.getByText("원본 학습 설정 보기 (고급)")).toBeInTheDocument();
+    expect(screen.getByTestId("retrain-dataset-version")).toHaveTextContent("피드백 반영");
+    await waitFor(() => expect(screen.getByTestId("retrain-dataset-version")).toHaveFocus());
     expect(await screen.findByTestId("retrain-source-summary")).toHaveTextContent("target");
     expect(screen.getByTestId("retrain-targets")).toHaveTextContent("target");
     expect(screen.getByTestId("retrain-source-summary")).toHaveTextContent("random forest");
     fireEvent.change(screen.getByTestId("retrain-dataset-version"), { target: { value: "31" } });
+    expect(screen.queryByText(/기존 학습 데이터 버전이 선택되어 있습니다/)).not.toBeInTheDocument();
     fireEvent.change(screen.getByTestId("retrain-name"), { target: { value: "baseline v2 retrain" } });
     fireEvent.click(screen.getByTestId("retrain-submit"));
     await waitFor(() => {
@@ -176,6 +187,22 @@ describe("JobDetail retrain", () => {
       );
     });
     expect(navigateMock).toHaveBeenCalledWith("/projects/7/jobs/99");
+  });
+
+  it("closes the retrain drawer with Escape and restores focus to the trigger", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) return succeededJob;
+      if (path.endsWith("/datasets/3/versions")) return [];
+      return [];
+    });
+    renderPage("42");
+    const trigger = await screen.findByTestId("job-retrain");
+    trigger.focus();
+    fireEvent.click(trigger);
+    expect(await screen.findByTestId("job-retrain-dialog")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("job-retrain-dialog")).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
   });
 
   it("shows retrain lineage link on retrained jobs", async () => {
