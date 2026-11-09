@@ -213,9 +213,9 @@ describe("QualityPolicies", () => {
     renderPage();
     expect(await screen.findByTestId("quality-policies-page")).toBeInTheDocument();
     expect(screen.getByTestId("policy-row-1")).toHaveTextContent("Legacy F1");
-    expect(screen.getByTestId("policy-row-1")).toHaveTextContent("legacy");
+    expect(screen.getByTestId("policy-row-1")).toHaveTextContent("기본");
     expect(screen.getByTestId("policy-row-2")).toHaveTextContent("Advanced multi-rule");
-    expect(screen.getByTestId("policy-row-2")).toHaveTextContent("advanced");
+    expect(screen.getByTestId("policy-row-2")).toHaveTextContent("고급");
     expect(screen.getByTestId("policy-row-2")).toHaveTextContent("3");
     expect(screen.getByTestId("policy-row-2")).toHaveTextContent("2");
   });
@@ -229,7 +229,7 @@ describe("QualityPolicies", () => {
     expect(screen.getByTestId("rule-row-0")).toBeInTheDocument();
     expect(screen.getByTestId("rule-metric-0")).toHaveValue("f1_macro");
     expect(screen.getByTestId("rule-comparison-0")).toHaveValue("absolute");
-    expect(screen.getByTestId("policy-revision")).toHaveTextContent("Revision 1");
+    expect(screen.getByTestId("policy-revision")).toHaveTextContent("수정 번호 1");
   });
 
   it("supports advanced rule builder with ANY/ALL and add/remove", async () => {
@@ -259,7 +259,7 @@ describe("QualityPolicies", () => {
       target: { value: "baseline_delta" },
     });
     expect(screen.getByTestId("baseline-delta-help-0")).toHaveTextContent(
-      "Positive delta means the production metric became worse than the pinned baseline.",
+      "기준값 대비 변화가 양수이면 운영 모델의 품질이 지정한 기준값보다 나빠진 것입니다.",
     );
     expect(screen.getByTestId("baseline-required-warning")).toBeInTheDocument();
   });

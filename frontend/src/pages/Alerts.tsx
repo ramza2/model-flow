@@ -12,6 +12,7 @@ import {
   formatDate,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
+import { operationalStatusLabel } from "../uiTerminology";
 
 type AlertFilter = "open" | "resolved" | "all";
 
@@ -37,7 +38,7 @@ export default function Alerts() {
     try {
       setAlerts(await api<Alert[]>(`/projects/${projectId}/alerts${query}`));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Alerts could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "알림 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -61,35 +62,35 @@ export default function Alerts() {
     setError("");
     try {
       await api(`/projects/${projectId}/alerts/${alert.id}/${name}`, { method: "POST" });
-      setSuccess(name === "read" ? "Alert marked as read." : "Alert resolved.");
+      setSuccess(name === "read" ? "알림을 읽음 처리했습니다." : "알림을 해결 완료 처리했습니다.");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Alert could not be updated.");
+      setError(reason instanceof Error ? reason.message : "알림 상태를 변경하지 못했습니다.");
     }
   }
 
   return (
     <div className="page-stack ops-page alerts-page">
       <PageHeader
-        title="Alerts"
-        description="Review project alerts for data, model, and service events."
+        title="알림"
+        description="데이터·모델·서비스에서 발생한 프로젝트 알림을 확인하고 처리합니다."
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      <div className="segmented alerts-filter" role="tablist" aria-label="Alert filters">
-        <button type="button" className={filter === "open" ? "active" : ""} onClick={() => setFilterAndUrl("open")}>Open</button>
-        <button type="button" className={filter === "resolved" ? "active" : ""} onClick={() => setFilterAndUrl("resolved")}>Resolved</button>
-        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilterAndUrl("all")}>All</button>
+      <div className="segmented alerts-filter" role="tablist" aria-label="알림 필터">
+        <button type="button" className={filter === "open" ? "active" : ""} onClick={() => setFilterAndUrl("open")}>미해결</button>
+        <button type="button" className={filter === "resolved" ? "active" : ""} onClick={() => setFilterAndUrl("resolved")}>해결 완료</button>
+        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilterAndUrl("all")}>전체</button>
       </div>
       {loading ? (
-        <Loading label="Loading alerts" />
+        <Loading label="알림 불러오는 중" />
       ) : alerts.length === 0 ? (
         <EmptyState
-          title={filter === "resolved" ? "No resolved alerts" : filter === "all" ? "No alerts" : "All clear"}
+          title={filter === "resolved" ? "해결 완료된 알림이 없습니다" : filter === "all" ? "알림이 없습니다" : "미해결 알림이 없습니다"}
           description={
             filter === "resolved"
-              ? "Resolved alerts will remain visible here."
-              : "There are no alerts requiring attention in this project."
+              ? "해결 완료한 알림은 이곳에서 다시 확인할 수 있습니다."
+              : "현재 프로젝트에서 조치가 필요한 알림이 없습니다."
           }
         />
       ) : (
@@ -109,32 +110,32 @@ export default function Alerts() {
               <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
               <div className="alert-copy">
                 <div className="row-actions alert-meta-row">
-                  <StatusBadge status={alert.severity} />
+                  <StatusBadge status={alert.severity} label={operationalStatusLabel(alert.severity)} />
                   <span className="catalog-meta-date">{formatDate(alert.created_at)}</span>
-                  {!alert.is_read && <span className="unread-label">Unread</span>}
-                  {alert.is_resolved && <StatusBadge status="resolved" />}
+                  {!alert.is_read && <span className="unread-label">읽지 않음</span>}
+                  {alert.is_resolved && <StatusBadge status="resolved" label="해결 완료" />}
                 </div>
                 <h2>{alert.title}</h2>
                 <p>{alert.message}</p>
                 <div className="row-actions alert-actions">
                   {alert.link_path && (
                     <Link className="btn link" to={alert.link_path} data-testid={`alert-link-${alert.id}`}>
-                      View related resource →
+                      관련 항목 보기 →
                     </Link>
                   )}
                   {!alert.is_read && (
                     <button className="btn link" onClick={() => action(alert, "read")}>
-                      Mark read
+                      읽음 처리
                     </button>
                   )}
                   {canResolve && !alert.is_resolved && (
                     <button
                       className="btn secondary"
-                      title="Mark this alert as resolved. It remains available in the Resolved tab."
-                      aria-label={`Resolve alert ${alert.title}. Mark this alert as resolved. It remains available in the Resolved tab.`}
+                      title="이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다."
+                      aria-label={`${alert.title} 알림 해결 완료 처리. 해결 완료 탭에서 계속 확인할 수 있습니다.`}
                       onClick={() => action(alert, "resolve")}
                     >
-                      Resolve
+                      해결 완료
                     </button>
                   )}
                 </div>

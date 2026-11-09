@@ -73,8 +73,8 @@ describe("Alerts page", () => {
     renderPage();
     expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
     expect(screen.getByText(driftCritical.title)).toBeInTheDocument();
-    expect(screen.getAllByText("View related resource →")).toHaveLength(2);
-    const monitoringLink = screen.getAllByRole("link", { name: "View related resource →" })[0];
+    expect(screen.getAllByText("관련 항목 보기 →")).toHaveLength(2);
+    const monitoringLink = screen.getAllByRole("link", { name: "관련 항목 보기 →" })[0];
     expect(monitoringLink.getAttribute("href")).toBe("/projects/1/monitoring");
   });
 
@@ -86,8 +86,8 @@ describe("Alerts page", () => {
     });
     renderPage();
     expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Resolve alert/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mark read" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /알림 해결 완료 처리/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "읽음 처리" })).toBeInTheDocument();
   });
 
   it("adds resolve tooltip and accessible description", async () => {
@@ -97,10 +97,10 @@ describe("Alerts page", () => {
     });
     renderPage();
     const resolveButton = await screen.findByTitle(
-      "Mark this alert as resolved. It remains available in the Resolved tab.",
+      "이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다.",
     );
-    expect(resolveButton.getAttribute("title")).toContain("Resolved tab");
-    expect(resolveButton.getAttribute("aria-label")).toContain("Mark this alert as resolved");
+    expect(resolveButton.getAttribute("title")).toContain("해결 완료 탭");
+    expect(resolveButton.getAttribute("aria-label")).toContain("알림 해결 완료 처리");
   });
 
   it("keeps resolved filter behavior while resolving", async () => {
@@ -116,7 +116,7 @@ describe("Alerts page", () => {
     });
     renderPage();
     const resolveButton = await screen.findByTitle(
-      "Mark this alert as resolved. It remains available in the Resolved tab.",
+      "이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다.",
     );
     fireEvent.click(resolveButton);
     await waitFor(() =>
@@ -125,7 +125,7 @@ describe("Alerts page", () => {
         expect.objectContaining({ method: "POST" }),
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Resolved" }));
+    fireEvent.click(screen.getByRole("button", { name: "해결 완료" }));
     expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
   });
 });

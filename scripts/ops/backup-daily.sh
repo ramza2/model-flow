@@ -9,13 +9,13 @@ ENV_FILE="$ROOT/.env.deploy"
 BACKUP_ROOT="$ROOT/backups"
 AUTO_ROOT="$BACKUP_ROOT/auto"
 PROJECT="model-flow"
-RETENTION_SECONDS=$((14 * 24 * 60 * 60))
+RETENTION_MIN_KEEP=2
 
 usage() {
   echo 'usage: backup-daily.sh --check | --run [--apply-retention]'
   echo '  --check: read-only production target preflight'
   echo '  --run: create and validate a daily backup; report retention candidates'
-  echo '  --apply-retention: after successful backup, remove only verified auto-* backups older than 14 days'
+  echo '  --apply-retention: after successful backup, apply the admin-configured verified auto-backup retention policy'
 }
 
 fail() {
@@ -119,9 +119,47 @@ done
 printf 'verified_at=%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" >"$BACKUP_DIR/verified.ok"
 echo 'BACKUP_DAILY_ARCHIVES_VERIFIED'
 
+# This host runner never trusts browser-supplied filesystem paths. Read the
+# administrator-controlled policy through the identified production backend,
+# not through a public HTTP endpoint or an arbitrary local .env override.
+# A backend/query/format error SKIPS deletion but retains the successful backup.
+backend_cid="$("${COMPOSE[@]}" ps -q backend 2>/dev/null || true)"
+backend_project=''
+backend_service=''
+backend_health=''
+if [[ -n "$backend_cid" ]]; then
+  backend_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$backend_cid" 2>/dev/null || true)"
+  backend_service="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$backend_cid" 2>/dev/null || true)"
+  backend_health="$(docker inspect --format '{{.State.Health.Status}}' "$backend_cid" 2>/dev/null || true)"
+fi
+if [[ "$backend_project" != "$PROJECT" || "$backend_service" != 'backend' || "$backend_health" != 'healthy' ]]; then
+  echo 'BACKUP_DAILY_RETENTION_SKIPPED=backend_identity_unavailable'
+  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
+  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
+  exit 0
+fi
+
+retention_policy="$("${COMPOSE[@]}" exec -T backend python -m app.services.backup_retention 2>/dev/null)" || retention_policy=''
+if [[ ! "$retention_policy" =~ ^enabled=([01])[[:space:]]days=([0-9]{1,3})$ ]]; then
+  echo 'BACKUP_DAILY_RETENTION_SKIPPED=policy_unavailable'
+  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
+  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
+  exit 0
+fi
+retention_enabled="${BASH_REMATCH[1]}"
+retention_days="$((10#${BASH_REMATCH[2]}))"
+if (( retention_days < 7 || retention_days > 365 )); then
+  echo 'BACKUP_DAILY_RETENTION_SKIPPED=policy_invalid'
+  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
+  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
+  exit 0
+fi
+RETENTION_SECONDS=$((retention_days * 24 * 60 * 60))
+echo "BACKUP_DAILY_RETENTION_DAYS=$retention_days"
+echo "BACKUP_DAILY_RETENTION_ENABLED=$retention_enabled"
+
 now_epoch="$(date -u +%s)"
 expired_count=0
-RETENTION_MIN_KEEP=2
 shopt -s nullglob
 
 # Sorting exact-name, verified auto folders means the two newest successful
@@ -150,7 +188,7 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
   verified_epoch="$(stat -c '%Y' -- "$marker")"
   if ((now_epoch - verified_epoch >= RETENTION_SECONDS)); then
     ((expired_count += 1))
-    if [[ "$RETENTION_APPLY" -eq 1 ]]; then
+    if [[ "$RETENTION_APPLY" -eq 1 && "$retention_enabled" -eq 1 ]]; then
       echo "RETENTION_REMOVE=$name"
       rm -rf -- "$candidate"
     else
@@ -160,5 +198,5 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
 done
 
 echo "BACKUP_DAILY_RETENTION_CANDIDATES=$expired_count"
-echo "BACKUP_DAILY_RETENTION_APPLIED=$RETENTION_APPLY"
+echo "BACKUP_DAILY_RETENTION_APPLIED=$((RETENTION_APPLY * retention_enabled))"
 echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"

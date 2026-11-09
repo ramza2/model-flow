@@ -14,6 +14,7 @@ import {
 } from "../components";
 import { DetailSection } from "../lifecycleComponents";
 import { useProject, userCanProject } from "../ProjectContext";
+import { operationalStatusLabel } from "../uiTerminology";
 
 const METRICS = [
   "accuracy",
@@ -24,6 +25,16 @@ const METRICS = [
   "rmse",
   "r2",
 ] as const;
+
+const METRIC_LABELS: Record<(typeof METRICS)[number], string> = {
+  accuracy: "정확도 (Accuracy)",
+  precision_macro: "정밀도 평균 (Precision Macro)",
+  recall_macro: "재현율 평균 (Recall Macro)",
+  f1_macro: "F1 점수 평균 (F1 Macro)",
+  mae: "평균 절대 오차 (MAE)",
+  rmse: "평균 제곱근 오차 (RMSE)",
+  r2: "설명력 (R²)",
+};
 
 const MAX_RULES = 10;
 
@@ -194,7 +205,7 @@ function buildRulesPayload(rules: RuleForm[]) {
 
 function endpointLabel(endpoints: Endpoint[], endpointId: number): string {
   const match = endpoints.find((row) => row.id === endpointId);
-  return match ? match.name : `Endpoint #${endpointId}`;
+  return match ? match.name : `배포 #${endpointId}`;
 }
 
 function isBaselineEligible(
@@ -285,7 +296,7 @@ export default function QualityPolicies() {
         setEndpoints(endpointRows);
       })
       .catch((reason) =>
-        setError(reason instanceof Error ? reason.message : "Quality policies could not be loaded."),
+        setError(reason instanceof Error ? reason.message : "품질 정책을 불러오지 못했습니다."),
       )
       .finally(() => setLoading(false));
   };
@@ -450,7 +461,7 @@ export default function QualityPolicies() {
           method: "POST",
           body: JSON.stringify(payload),
         });
-        setSuccess(`Created policy “${created.name}” (revision ${created.revision}).`);
+        setSuccess(`“${created.name}” 품질 정책을 생성했습니다. (수정 번호 ${created.revision})`);
         setSelectedId(created.id);
         setEditingId(created.id);
         setForm(formFromPolicy(created));
@@ -463,12 +474,12 @@ export default function QualityPolicies() {
           `/projects/${projectId}/model-quality/policies/${editingId}`,
           { method: "PATCH", body: JSON.stringify(patchBody) },
         );
-        setSuccess(`Updated policy “${updated.name}” (revision ${updated.revision}).`);
+        setSuccess(`“${updated.name}” 품질 정책을 수정했습니다. (수정 번호 ${updated.revision})`);
         setForm(formFromPolicy(updated));
       }
       load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Policy could not be saved.");
+      setError(reason instanceof Error ? reason.message : "품질 정책을 저장하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -485,15 +496,15 @@ export default function QualityPolicies() {
       );
       setSuccess(
         updated.is_active
-          ? `Enabled “${updated.name}”.`
-          : `Disabled “${updated.name}”.`,
+          ? `“${updated.name}” 품질 정책을 활성화했습니다.`
+          : `“${updated.name}” 품질 정책을 비활성화했습니다.`,
       );
       if (editingId === policy.id) {
         setForm((prev) => ({ ...prev, is_active: updated.is_active }));
       }
       load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Policy could not be updated.");
+      setError(reason instanceof Error ? reason.message : "품질 정책을 변경하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -508,10 +519,10 @@ export default function QualityPolicies() {
         method: "POST",
         body: JSON.stringify({ quality_run_id: runId }),
       });
-      setSuccess(`Baseline set to quality run #${runId}.`);
+      setSuccess(`품질 평가 #${runId}을(를) 기준값으로 지정했습니다.`);
       load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Baseline could not be set.");
+      setError(reason instanceof Error ? reason.message : "기준값을 지정하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -525,10 +536,10 @@ export default function QualityPolicies() {
       await api(`/projects/${projectId}/model-quality/policies/${selectedPolicy.id}/baseline`, {
         method: "DELETE",
       });
-      setSuccess("Baseline cleared.");
+      setSuccess("기준값 지정을 해제했습니다.");
       load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Baseline could not be cleared.");
+      setError(reason instanceof Error ? reason.message : "기준값 지정을 해제하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -551,12 +562,12 @@ export default function QualityPolicies() {
   return (
     <div className="page-stack ops-page quality-policies-page" data-testid="quality-policies-page">
       <PageHeader
-        title="Quality Policies"
-        description="Configure production quality evaluation rules, baselines, and closed-loop retrain triggers. Automation still stops at CANDIDATE."
+        title="품질 정책"
+        description="운영 모델의 품질 평가 규칙과 기준값, 재학습 요청 조건을 관리합니다. 자동 재학습은 후보(CANDIDATE) 모델 생성까지만 진행됩니다."
         actions={
           canWrite ? (
             <button type="button" className="btn" onClick={startCreate} data-testid="create-policy-btn">
-              New policy
+              새 정책
             </button>
           ) : undefined
         }
@@ -565,7 +576,7 @@ export default function QualityPolicies() {
       <SuccessNotice message={success} />
 
       {loading ? (
-        <Loading label="Loading quality policies" />
+        <Loading label="품질 정책 불러오는 중" />
       ) : (
         <>
           <div
@@ -576,15 +587,15 @@ export default function QualityPolicies() {
               .filter(Boolean)
               .join(" ")}
           >
-          <DetailSection eyebrow="Policies" title="Configured policies" testId="quality-policy-list">
+          <DetailSection eyebrow="정책 목록" title="등록된 품질 정책" testId="quality-policy-list">
             {policies.length === 0 ? (
               <EmptyState
-                title="No quality policies"
-                description="Create a policy to evaluate prediction vs ground-truth with absolute or baseline-delta rules."
+                title="등록된 품질 정책이 없습니다"
+                description="모델 예측값과 실제 정답을 비교하는 기준값·절대값 규칙을 설정해 보세요."
                 action={
                   canWrite ? (
                     <button type="button" className="btn" onClick={startCreate}>
-                      Create policy
+                      정책 만들기
                     </button>
                   ) : undefined
                 }
@@ -594,12 +605,12 @@ export default function QualityPolicies() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Name</th>
-                      <th>Endpoint</th>
-                      <th>Revision</th>
-                      <th>Mode</th>
-                      <th>Active</th>
-                      <th>Rules</th>
+                      <th>정책 이름</th>
+                      <th>배포</th>
+                      <th>수정 번호</th>
+                      <th>설정 방식</th>
+                      <th>활성 상태</th>
+                      <th>규칙 수</th>
                       <th />
                     </tr>
                   </thead>
@@ -633,9 +644,9 @@ export default function QualityPolicies() {
                           <span className="version-chip">r{policy.revision}</span>
                         </td>
                         <td>
-                          <StatusBadge status={policy.mode} />
+                          <StatusBadge status={policy.mode} label={operationalStatusLabel(policy.mode)} />
                         </td>
-                        <td>{policy.is_active ? "Yes" : "No"}</td>
+                        <td>{policy.is_active ? "예" : "아니요"}</td>
                         <td className="tabular-num">
                           {policy.effective_rules?.length ?? policy.rules?.length ?? 0}
                         </td>
@@ -647,7 +658,7 @@ export default function QualityPolicies() {
                               onClick={() => startEdit(policy)}
                               data-testid={`edit-policy-${policy.id}`}
                             >
-                              {canWrite ? "Edit" : "View"}
+                              {canWrite ? "수정" : "보기"}
                             </button>
                             {canWrite ? (
                               <button
@@ -657,7 +668,7 @@ export default function QualityPolicies() {
                                 onClick={() => toggleActive(policy)}
                                 data-testid={`toggle-policy-${policy.id}`}
                               >
-                                {policy.is_active ? "Disable" : "Enable"}
+                                {policy.is_active ? "비활성화" : "활성화"}
                               </button>
                             ) : null}
                           </div>
@@ -669,7 +680,7 @@ export default function QualityPolicies() {
               </div>
             )}
             <div className="row-actions">
-              <Link to={`/projects/${projectId}/monitoring`}>Open Monitoring</Link>
+              <Link to={`/projects/${projectId}/monitoring`}>모니터링으로 이동</Link>
             </div>
           </DetailSection>
 
@@ -677,13 +688,13 @@ export default function QualityPolicies() {
 
           {showForm ? (
             <DetailSection
-              eyebrow={editingId == null ? "Create" : "Edit"}
-              title={editingId == null ? "New quality policy" : `Edit policy #${editingId}`}
+              eyebrow={editingId == null ? "새 정책" : "정책 수정"}
+              title={editingId == null ? "새 품질 정책" : `품질 정책 #${editingId} 수정`}
               testId="quality-policy-form-section"
               actions={
                 editingId != null ? (
                   <span className="muted" data-testid="policy-revision">
-                    Revision {policies.find((row) => row.id === editingId)?.revision ?? "—"}
+                    수정 번호 {policies.find((row) => row.id === editingId)?.revision ?? "—"}
                   </span>
                 ) : undefined
               }
@@ -691,7 +702,7 @@ export default function QualityPolicies() {
               <form className="stack-gap" onSubmit={submit} data-testid="quality-policy-form">
                 <div className="form-grid">
                   <label>
-                    Name
+                    정책 이름
                     <input
                       required
                       value={form.name}
@@ -701,7 +712,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Endpoint
+                    모델 배포
                     <select
                       required
                       value={form.endpoint_id}
@@ -711,7 +722,7 @@ export default function QualityPolicies() {
                       disabled={!canWrite || editingId != null}
                       data-testid="policy-endpoint"
                     >
-                      <option value="">Select endpoint</option>
+                      <option value="">배포를 선택하세요</option>
                       {endpoints.map((endpoint) => (
                         <option key={endpoint.id} value={endpoint.id}>
                           {endpoint.name}
@@ -720,7 +731,7 @@ export default function QualityPolicies() {
                     </select>
                   </label>
                   <label>
-                    Window hours
+                    평가 기간(시간)
                     <input
                       type="number"
                       min={1}
@@ -734,7 +745,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Evaluation delay hours
+                    평가 지연(시간)
                     <input
                       type="number"
                       min={0}
@@ -751,7 +762,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Minimum matched samples
+                    최소 정답 연결 건수
                     <input
                       type="number"
                       min={1}
@@ -768,14 +779,14 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Minimum match rate
+                    최소 정답 연결 비율
                     <input
                       type="number"
                       min={0}
                       max={1}
                       step="0.01"
                       value={form.minimum_match_rate}
-                      placeholder="optional 0–1"
+                      placeholder="선택 입력 (0~1)"
                       onChange={(event) =>
                         setForm((prev) => ({
                           ...prev,
@@ -787,7 +798,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Consecutive breaches
+                    연속 기준 위반 횟수
                     <input
                       type="number"
                       min={1}
@@ -804,7 +815,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Cooldown hours
+                    재알림 대기 시간(시간)
                     <input
                       type="number"
                       min={0}
@@ -818,7 +829,7 @@ export default function QualityPolicies() {
                     />
                   </label>
                   <label>
-                    Rule logic
+                    규칙 결합 방식
                     <select
                       value={form.rule_logic}
                       onChange={(event) =>
@@ -830,8 +841,8 @@ export default function QualityPolicies() {
                       disabled={!canWrite}
                       data-testid="policy-rule-logic"
                     >
-                      <option value="any">ANY (breach if any rule fails)</option>
-                      <option value="all">ALL (breach only if all rules fail)</option>
+                      <option value="any">하나라도 위반하면 판정 (ANY)</option>
+                      <option value="all">모두 위반해야 판정 (ALL)</option>
                     </select>
                   </label>
                   <label className="checkbox-row">
@@ -844,7 +855,7 @@ export default function QualityPolicies() {
                       disabled={!canWrite}
                       data-testid="policy-auto-retrain"
                     />
-                    Auto-retrain on critical breach
+                    심각 기준 위반 시 자동 재학습 요청
                   </label>
                   <label className="checkbox-row">
                     <input
@@ -856,13 +867,13 @@ export default function QualityPolicies() {
                       disabled={!canWrite}
                       data-testid="policy-is-active"
                     />
-                    Active
+                    정책 활성화
                   </label>
                 </div>
 
                 <div className="stack-gap">
                   <div className="row-actions">
-                    <strong>Rules</strong>
+                    <strong>평가 규칙</strong>
                     {canWrite ? (
                       <button
                         type="button"
@@ -871,7 +882,7 @@ export default function QualityPolicies() {
                         disabled={form.rules.length >= MAX_RULES}
                         data-testid="add-rule"
                       >
-                        Add rule
+                        규칙 추가
                       </button>
                     ) : null}
                   </div>
@@ -883,7 +894,7 @@ export default function QualityPolicies() {
                     >
                       <div className="form-grid">
                         <label>
-                          Metric
+                          평가 지표
                           <select
                             value={rule.metric}
                             onChange={(event) => updateRule(index, { metric: event.target.value })}
@@ -892,20 +903,20 @@ export default function QualityPolicies() {
                           >
                             {METRICS.map((name) => (
                               <option key={name} value={name}>
-                                {name}
+                                {METRIC_LABELS[name]}
                               </option>
                             ))}
                           </select>
                         </label>
                         <label>
-                          Target
+                          예측 대상
                           <select
                             value={rule.target}
                             onChange={(event) => updateRule(index, { target: event.target.value })}
                             disabled={!canWrite}
                             data-testid={`rule-target-${index}`}
                           >
-                            <option value="">Overall (optional)</option>
+                            <option value="">전체 (선택 입력)</option>
                             {targetOptions.map((name) => (
                               <option key={name} value={name}>
                                 {name}
@@ -914,7 +925,7 @@ export default function QualityPolicies() {
                           </select>
                         </label>
                         <label>
-                          Comparison
+                          비교 방식
                           <select
                             value={rule.comparison}
                             onChange={(event) =>
@@ -928,12 +939,12 @@ export default function QualityPolicies() {
                             disabled={!canWrite}
                             data-testid={`rule-comparison-${index}`}
                           >
-                            <option value="absolute">absolute</option>
-                            <option value="baseline_delta">baseline_delta</option>
+                            <option value="absolute">절대 기준값 (absolute)</option>
+                            <option value="baseline_delta">기준값 대비 변화 (baseline_delta)</option>
                           </select>
                         </label>
                         <label>
-                          Warning threshold
+                          경고 기준값
                           <input
                             type="number"
                             step="any"
@@ -947,7 +958,7 @@ export default function QualityPolicies() {
                           />
                         </label>
                         <label>
-                          Critical threshold
+                          심각 기준값
                           <input
                             type="number"
                             step="any"
@@ -963,8 +974,7 @@ export default function QualityPolicies() {
                       </div>
                       {rule.comparison === "baseline_delta" ? (
                         <p className="muted" data-testid={`baseline-delta-help-${index}`}>
-                          Positive delta means the production metric became worse than the pinned
-                          baseline.
+                          기준값 대비 변화가 양수이면 운영 모델의 품질이 지정한 기준값보다 나빠진 것입니다.
                         </p>
                       ) : null}
                       {canWrite && form.rules.length > 1 ? (
@@ -974,7 +984,7 @@ export default function QualityPolicies() {
                           onClick={() => removeRule(index)}
                           data-testid={`remove-rule-${index}`}
                         >
-                          Remove rule
+                          규칙 삭제
                         </button>
                       ) : null}
                     </div>
@@ -988,8 +998,7 @@ export default function QualityPolicies() {
                     data-testid="baseline-required-warning"
                   >
                     <p className="notice-message">
-                      Baseline required — at least one rule uses baseline_delta and no baseline is
-                      pinned yet.
+                      기준값 지정 필요 — 기준값 대비 변화(baseline_delta) 규칙이 있지만 기준 평가가 아직 지정되지 않았습니다.
                     </p>
                   </div>
                 ) : null}
@@ -997,14 +1006,14 @@ export default function QualityPolicies() {
                 {canWrite ? (
                   <div className="row-actions">
                     <button type="submit" className="btn" disabled={busy} data-testid="save-policy">
-                      {editingId == null ? "Create policy" : "Save changes"}
+                      {editingId == null ? "정책 만들기" : "변경 사항 저장"}
                     </button>
                     <button
                       type="button"
                       className="btn secondary"
                       onClick={() => setShowForm(false)}
                     >
-                      Cancel
+                      취소
                     </button>
                   </div>
                 ) : null}
@@ -1014,26 +1023,26 @@ export default function QualityPolicies() {
 
           {selectedPolicy ? (
             <DetailSection
-              eyebrow="Baseline"
-              title={`Baseline for ${selectedPolicy.name}`}
+              eyebrow="기준값"
+              title={`${selectedPolicy.name}의 품질 기준값`}
               testId="baseline-section"
             >
               {selectedPolicy.baseline ? (
                 <dl className="key-values" data-testid="baseline-summary">
                   <div>
-                    <dt>Quality run</dt>
+                    <dt>품질 평가</dt>
                     <dd>#{selectedPolicy.baseline.quality_run_id}</dd>
                   </div>
                   <div>
-                    <dt>Model version</dt>
+                    <dt>모델 버전</dt>
                     <dd>#{selectedPolicy.baseline.model_version_id}</dd>
                   </div>
                   <div>
-                    <dt>Matched samples</dt>
+                    <dt>정답 연결 건수</dt>
                     <dd>{selectedPolicy.baseline.matched_ground_truth_count}</dd>
                   </div>
                   <div>
-                    <dt>Match rate</dt>
+                    <dt>정답 연결 비율</dt>
                     <dd>
                       {selectedPolicy.baseline.match_rate == null
                         ? "—"
@@ -1041,12 +1050,12 @@ export default function QualityPolicies() {
                     </dd>
                   </div>
                   <div>
-                    <dt>Pinned at</dt>
+                    <dt>기준값 지정 시각</dt>
                     <dd>{formatDate(selectedPolicy.baseline.created_at)}</dd>
                   </div>
                 </dl>
               ) : (
-                <p className="muted">No baseline pinned for this policy.</p>
+                <p className="muted">이 정책에 지정된 기준값이 없습니다.</p>
               )}
               {canWrite ? (
                 <div className="row-actions">
@@ -1058,7 +1067,7 @@ export default function QualityPolicies() {
                       onClick={clearBaseline}
                       data-testid="clear-baseline-btn"
                     >
-                      Clear baseline
+                      기준값 지정 해제
                     </button>
                   ) : null}
                 </div>
@@ -1067,18 +1076,18 @@ export default function QualityPolicies() {
                 <table data-testid="baseline-candidate-table">
                   <thead>
                     <tr>
-                      <th>Run</th>
-                      <th>Source policy</th>
-                      <th>Status</th>
-                      <th>Matched</th>
-                      <th>Finished</th>
+                      <th>평가 번호</th>
+                      <th>원본 정책</th>
+                      <th>상태</th>
+                      <th>정답 연결</th>
+                      <th>완료 시각</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
                     {baselineLoading ? (
                       <tr>
-                        <td colSpan={6}><Loading label="Loading baseline candidates" /></td>
+                        <td colSpan={6}><Loading label="기준값 후보 불러오는 중" /></td>
                       </tr>
                     ) : null}
                     {!baselineLoading
@@ -1086,11 +1095,11 @@ export default function QualityPolicies() {
                       <tr key={run.id} data-testid={`baseline-run-${run.id}`}>
                         <td>#{run.id}</td>
                         <td data-testid={`baseline-run-source-${run.id}`}>
-                          {policyNameById.get(run.policy_id) || `Policy #${run.policy_id}`}
+                          {policyNameById.get(run.policy_id) || `정책 #${run.policy_id}`}
                           <span className="muted"> #{run.policy_id}</span>
                         </td>
                         <td>
-                          <StatusBadge status={run.quality_status || run.status} />
+                          <StatusBadge status={run.quality_status || run.status} label={operationalStatusLabel(run.quality_status || run.status)} />
                         </td>
                         <td>{run.matched_ground_truth_count}</td>
                         <td>{run.finished_at ? formatDate(run.finished_at) : "—"}</td>
@@ -1103,7 +1112,7 @@ export default function QualityPolicies() {
                               onClick={() => setBaseline(run.id)}
                               data-testid="set-baseline-btn"
                             >
-                              Use as baseline
+                              기준값으로 지정
                             </button>
                           ) : null}
                         </td>
@@ -1121,12 +1130,12 @@ export default function QualityPolicies() {
                   onClick={() => setBaselineSkip((prev) => Math.max(0, prev - BASELINE_PAGE_SIZE))}
                   data-testid="baseline-candidates-prev"
                 >
-                  Previous
+                  이전
                 </button>
                 <span className="muted">
                   {baselineTotal === 0
-                    ? "0 candidates"
-                    : `${baselineSkip + 1}–${Math.min(baselineSkip + BASELINE_PAGE_SIZE, baselineTotal)} of ${baselineTotal}`}
+                    ? "후보 0건"
+                    : `${baselineTotal}건 중 ${baselineSkip + 1}–${Math.min(baselineSkip + BASELINE_PAGE_SIZE, baselineTotal)}건`}
                 </span>
                 <button
                   type="button"
@@ -1135,15 +1144,14 @@ export default function QualityPolicies() {
                   onClick={() => setBaselineSkip((prev) => prev + BASELINE_PAGE_SIZE)}
                   data-testid="baseline-candidates-next"
                 >
-                  Next
+                  다음
                 </button>
               </div>
               {!baselineLoading && eligibleRuns.length === 0 ? (
                 <p className="muted">
-                  Eligible baseline runs must share this policy&apos;s endpoint and current model,
-                  be succeeded with quality_status=ok, and meet sample / match-rate minimums.
-                  Runs from other policies on the same endpoint are allowed for first-time baseline
-                  bootstrap.
+                  기준값 후보는 이 정책과 같은 배포 및 현재 모델을 사용하고, 품질 평가가 정상(ok)으로 완료되어야 하며,
+                  최소 정답 연결 건수·비율을 충족해야 합니다. 기준값을 처음 지정할 때는 같은 배포의 다른 정책에서
+                  실행한 정상 평가도 사용할 수 있습니다.
                 </p>
               ) : null}
             </DetailSection>

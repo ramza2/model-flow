@@ -101,6 +101,50 @@ export const UI_HELP = {
     "요약은 사람이 읽기 쉬운 예측값이고, 원본 JSON은 API가 반환한 전체 응답입니다. 다중 출력 모델은 학습 때 지정한 예측 대상 이름을 그대로 표시합니다.",
 } as const;
 
+/** Display-only operations labels. Never replace API values with these strings. */
+export function operationalStatusLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    ok: "정상", healthy: "정상", unhealthy: "비정상", ready: "준비됨",
+    warning: "경고", critical: "심각", error: "오류", watch: "주의", info: "안내", resolved: "해결 완료",
+    succeeded: "성공", failed: "실패", active: "활성", inactive: "비활성",
+    legacy: "기본", advanced: "고급", pending: "대기", running: "진행 중",
+  };
+  return labels[String(value || "").toLowerCase()] || (value ? String(value).replaceAll("_", " ") : "—");
+}
+
+/** Display-only audit resource labels; raw resource_type is still used for filters. */
+export function auditResourceLabel(value: string): string {
+  const labels: Record<string, string> = {
+    project: "프로젝트", dataset: "데이터셋", training_job: "모델 학습 작업",
+    model_version: "모델 버전", endpoint: "모델 배포", user: "사용자", alert: "알림",
+    system_setting: "시스템 설정", quality_policy: "품질 정책",
+    data_import_job: "데이터 가져오기", model_gate_policy: "모델 승인 기준",
+    pipeline: "파이프라인", pipeline_version: "파이프라인 버전",
+    pipeline_run: "파이프라인 실행", automation_schedule: "자동 실행 일정",
+    drift_run: "데이터 변화 평가", batch_inference_job: "일괄 예측 작업",
+    dataset_split: "데이터 분할", retrain_trigger: "재학습 요청",
+  };
+  return labels[value] || value.replaceAll("_", " ");
+}
+
+/** Human-readable audit action, with the exact stored action kept separately. */
+export function auditActionLabel(value: string): string {
+  const actions: Record<string, string> = {
+    create: "생성", update: "수정", delete: "삭제", start: "시작", stop: "중지",
+    activate: "활성화", deactivate: "비활성화", enable: "활성화", disable: "비활성화",
+    read: "읽음 처리", resolve: "해결 완료", register: "등록", approve: "승인",
+    reject: "반려", archive: "보관", rollback: "이전 모델로 복구",
+    import: "가져오기", publish: "게시", run: "실행", cancel: "취소",
+    request_approval: "승인 요청", promote_production: "운영 모델 지정",
+    change_password: "비밀번호 변경", logout: "로그아웃", trigger: "요청",
+  };
+  const known = value.split(".");
+  if (known.length === 2 && actions[known[1]]) {
+    return `${auditResourceLabel(known[0] === "model" ? "model_version" : known[0])} ${actions[known[1]]}`;
+  }
+  return value;
+}
+
 /** Display-only pipeline lifecycle status (draft/published/…). Raw API status unchanged. */
 export function pipelineLifecycleStatusLabel(value?: string | null): string {
   switch (String(value || "").toLowerCase()) {
