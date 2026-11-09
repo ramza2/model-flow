@@ -166,7 +166,9 @@ describe("Endpoints model switch and recover UX", () => {
     fireEvent.click(screen.getByTestId("endpoint-swap-confirm"));
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
     await waitFor(() => expect(swapped).toBe(true));
-    expect(confirmMock.mock.calls.at(-1)?.[0]).toContain("운영 모델을 전환할까요");
+    expect(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0]).toContain(
+      "운영 모델을 전환할까요",
+    );
     expect(await screen.findByTestId("endpoint-previous-6")).toHaveTextContent("v1");
     expect(screen.getByTestId("endpoint-rollback-6")).toBeEnabled();
   });
@@ -239,7 +241,9 @@ describe("Endpoints model switch and recover UX", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByTestId("endpoint-rollback-6"));
     await waitFor(() => expect(rolledBack).toBe(true));
-    expect(confirmMock.mock.calls.at(-1)?.[0]).toContain("이전 모델로 복구할까요");
+    expect(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0]).toContain(
+      "이전 모델로 복구할까요",
+    );
     expect(await screen.findByText(/복구했습니다/)).toBeInTheDocument();
   });
 
