@@ -112,9 +112,44 @@ describe("Endpoints model switch and recover UX", () => {
   it("shows previous-model empty state and disables recover until a swap exists", async () => {
     renderPage();
     expect(await screen.findByTestId("endpoint-previous-empty-6")).toHaveTextContent(
-      "복구 가능한 이전 모델이 없습니다",
+      "기록된 이전 모델이 없습니다",
     );
     expect(screen.getByTestId("endpoint-rollback-6")).toBeDisabled();
+  });
+
+  it("requires an explicit model choice and does not auto-select the first candidate", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId("endpoint-swap-6"));
+    const dialog = await screen.findByTestId("endpoint-swap-dialog");
+    const select = screen.getByTestId("endpoint-swap-model") as HTMLSelectElement;
+    expect(select.value).toBe("");
+    expect(within(dialog).getByTestId("endpoint-swap-confirm")).toBeDisabled();
+    fireEvent.change(select, { target: { value: "12" } });
+    expect(select.value).toBe("12");
+    expect(screen.getByTestId("endpoint-swap-confirm")).toBeEnabled();
+  });
+
+  it("warns that a stopped endpoint becomes ready after a successful swap", async () => {
+    confirmMock.mockReturnValue(false);
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/endpoints") || path.includes("/projects/7/endpoints")) {
+        return [{ ...endpointV1, status: "stopped" }];
+      }
+      if (path.endsWith("/models")) return models;
+      return {};
+    });
+    renderPage();
+    fireEvent.click(await screen.findByTestId("endpoint-swap-6"));
+    expect(await screen.findByTestId("endpoint-swap-stopped-notice")).toHaveTextContent(
+      "배포 상태가 ready로 변경",
+    );
+    expect(screen.getByTestId("endpoint-swap-status")).toHaveTextContent("stopped");
+    fireEvent.change(screen.getByTestId("endpoint-swap-model"), { target: { value: "12" } });
+    fireEvent.click(screen.getByTestId("endpoint-swap-confirm"));
+    await waitFor(() => expect(confirmMock).toHaveBeenCalled());
+    expect(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0]).toContain(
+      "배포 상태가 ready로 변경됩니다",
+    );
   });
 
   it("opens switch dialog, cancels without calling swap, then confirms swap", async () => {
@@ -154,6 +189,7 @@ describe("Endpoints model switch and recover UX", () => {
     fireEvent.click(await screen.findByTestId("endpoint-swap-6"));
     const dialog = await screen.findByTestId("endpoint-swap-dialog");
     expect(within(dialog).getByTestId("endpoint-swap-current")).toHaveTextContent("demand · v1");
+    expect((screen.getByTestId("endpoint-swap-model") as HTMLSelectElement).value).toBe("");
     fireEvent.change(screen.getByTestId("endpoint-swap-model"), { target: { value: "12" } });
     fireEvent.click(screen.getByTestId("endpoint-swap-cancel"));
     await waitFor(() => expect(screen.queryByTestId("endpoint-swap-dialog")).not.toBeInTheDocument());
@@ -166,10 +202,11 @@ describe("Endpoints model switch and recover UX", () => {
     fireEvent.click(screen.getByTestId("endpoint-swap-confirm"));
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
     await waitFor(() => expect(swapped).toBe(true));
-    expect(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0]).toContain(
-      "운영 모델을 전환할까요",
-    );
-    expect(await screen.findByTestId("endpoint-previous-6")).toHaveTextContent("v1");
+    const confirmText = String(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0] || "");
+    expect(confirmText).toContain("운영 모델을 전환할까요");
+    expect(confirmText).toContain("복구 성공이 보장되지는 않습니다");
+    expect(await screen.findByTestId("endpoint-previous-6")).toHaveTextContent("이전 모델 있음");
+    expect(screen.getByTestId("endpoint-previous-6")).toHaveTextContent("복구 성공이 보장되지는 않습니다");
     expect(screen.getByTestId("endpoint-rollback-6")).toBeEnabled();
   });
 
@@ -232,7 +269,7 @@ describe("Endpoints model switch and recover UX", () => {
     });
 
     renderPage();
-    expect(await screen.findByTestId("endpoint-previous-6")).toHaveTextContent("v1");
+    expect(await screen.findByTestId("endpoint-previous-6")).toHaveTextContent("이전 모델 있음");
     confirmMock.mockReturnValueOnce(false);
     fireEvent.click(screen.getByTestId("endpoint-rollback-6"));
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
@@ -241,9 +278,9 @@ describe("Endpoints model switch and recover UX", () => {
     confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByTestId("endpoint-rollback-6"));
     await waitFor(() => expect(rolledBack).toBe(true));
-    expect(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0]).toContain(
-      "이전 모델로 복구할까요",
-    );
+    const rollbackConfirm = String(confirmMock.mock.calls[confirmMock.mock.calls.length - 1]?.[0] || "");
+    expect(rollbackConfirm).toContain("이전 모델로 복구할까요");
+    expect(rollbackConfirm).toContain("복구는 실패할 수 있습니다");
     expect(await screen.findByText(/복구했습니다/)).toBeInTheDocument();
   });
 

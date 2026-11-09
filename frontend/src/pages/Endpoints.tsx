@@ -20,7 +20,8 @@ type SwapTarget = {
   modelVersionId: string;
 };
 
-function canRollback(endpoint: Endpoint): boolean {
+/** Previous-model fields are recorded; does not guarantee a successful rollback load. */
+function hasPreviousModel(endpoint: Endpoint): boolean {
   if (typeof endpoint.can_rollback === "boolean") return endpoint.can_rollback;
   return Boolean(endpoint.previous_model_version && endpoint.previous_model_uri);
 }
@@ -102,12 +103,11 @@ export default function Endpoints() {
   }
 
   function openSwap(endpoint: Endpoint) {
-    const alternatives = models.filter((model) => model.id !== endpoint.model_version_id);
     setError("");
     setSuccess("");
     setSwapTarget({
       endpoint,
-      modelVersionId: String(alternatives[0]?.id || ""),
+      modelVersionId: "",
     });
   }
 
@@ -126,6 +126,10 @@ export default function Endpoints() {
     }
     const nextModel = models.find((model) => model.id === nextId);
     const current = swapTarget.endpoint;
+    const stoppedWarning =
+      current.status === "stopped"
+        ? "이 배포는 현재 중지 상태입니다. 전환이 성공하면 배포 상태가 ready로 변경됩니다."
+        : null;
     const confirmed = confirmAction(
       [
         `“${current.name}”의 운영 모델을 전환할까요?`,
@@ -133,7 +137,9 @@ export default function Endpoints() {
         `현재: ${current.model_name} · v${current.model_version}`,
         `변경: ${nextModel ? `${nextModel.name} · v${nextModel.version}` : `모델 #${nextId}`}`,
         "",
-        "현재 모델은 복구용으로 보관됩니다. 모델 승인 상태는 바뀌지 않습니다.",
+        "현재 모델 정보는 이전 모델로 보관됩니다. 모델 승인 상태는 바뀌지 않습니다.",
+        "이전 모델 정보가 있다고 해서 이후 복구 성공이 보장되지는 않습니다.",
+        ...(stoppedWarning ? ["", stoppedWarning] : []),
       ].join("\n"),
     );
     if (!confirmed) return;
@@ -158,15 +164,16 @@ export default function Endpoints() {
   }
 
   async function rollbackEndpoint(endpoint: Endpoint) {
-    if (!canRollback(endpoint)) return;
+    if (!hasPreviousModel(endpoint)) return;
     const confirmed = confirmAction(
       [
         `“${endpoint.name}”을(를) 이전 모델로 복구할까요?`,
         "",
         `현재: ${endpoint.model_name} · v${endpoint.model_version}`,
-        `복구: 이전 모델 v${endpoint.previous_model_version}`,
+        `이전 모델: v${endpoint.previous_model_version}`,
         "",
-        "복구 후 지금 모델은 다시 이전 모델 자리로 보관됩니다.",
+        "이전 모델 정보가 기록되어 있을 뿐이며, 로드 실패 시 복구는 실패할 수 있습니다.",
+        "복구 시도 후 지금 모델은 다시 이전 모델 자리로 보관됩니다.",
       ].join("\n"),
     );
     if (!confirmed) return;
@@ -192,7 +199,7 @@ export default function Endpoints() {
     <div className="page-stack deployments-page">
       <PageHeader
         title="모델 배포"
-        description="승인된 모델을 온라인으로 서빙하고, 운영 모델 전환·복구와 예측 테스트를 관리합니다."
+        description="승인된 모델을 온라인으로 서빙하고, 운영 모델 전환·이전 모델 복구 시도와 예측 테스트를 관리합니다."
         actions={
           canDeploy ? (
             <div className="row-actions">
@@ -291,14 +298,15 @@ export default function Endpoints() {
                 <span className="mono">{endpoint.model_name}</span>
                 <span className="version-chip">v{endpoint.model_version}</span>
               </p>
-              {canRollback(endpoint) ? (
+              {hasPreviousModel(endpoint) ? (
                 <p className="deployment-previous-model" data-testid={`endpoint-previous-${endpoint.id}`}>
-                  <span className="muted">이전 모델 (복구 가능)</span>{" "}
+                  <span className="muted">이전 모델 있음</span>{" "}
                   <span className="version-chip">v{endpoint.previous_model_version}</span>
+                  <span className="muted"> · 복구 성공이 보장되지는 않습니다</span>
                 </p>
               ) : (
                 <p className="muted deployment-previous-model" data-testid={`endpoint-previous-empty-${endpoint.id}`}>
-                  복구 가능한 이전 모델이 없습니다.
+                  기록된 이전 모델이 없습니다.
                 </p>
               )}
               <div className="deployment-metrics">
@@ -357,12 +365,12 @@ export default function Endpoints() {
                     <button
                       className="btn secondary"
                       type="button"
-                      disabled={Boolean(busy) || !canRollback(endpoint)}
+                      disabled={Boolean(busy) || !hasPreviousModel(endpoint)}
                       onClick={() => void rollbackEndpoint(endpoint)}
                       data-testid={`endpoint-rollback-${endpoint.id}`}
                       title={UI_HELP.endpointModelRollback}
                     >
-                      {busy === `rollback-${endpoint.id}` ? "복구 중…" : "이전 모델로 복구"}
+                      {busy === `rollback-${endpoint.id}` ? "복구 시도 중…" : "이전 모델로 복구"}
                     </button>
                     {endpoint.status === "ready" ? (
                       <button
@@ -406,10 +414,20 @@ export default function Endpoints() {
               </div>
             </div>
             <p className="form-hint">{UI_HELP.endpointModelSwap}</p>
+            {swapTarget.endpoint.status === "stopped" && (
+              <div className="notice" data-testid="endpoint-swap-stopped-notice">
+                이 배포는 중지 상태입니다. 전환이 성공하면 기존 API 동작에 따라 배포 상태가 ready로
+                변경됩니다.
+              </div>
+            )}
             <dl className="key-values compact">
               <div>
                 <dt>배포</dt>
                 <dd>{swapTarget.endpoint.name}</dd>
+              </div>
+              <div data-testid="endpoint-swap-status">
+                <dt>현재 상태</dt>
+                <dd>{swapTarget.endpoint.status}</dd>
               </div>
               <div data-testid="endpoint-swap-current">
                 <dt>현재 모델</dt>
@@ -417,9 +435,9 @@ export default function Endpoints() {
                   {swapTarget.endpoint.model_name} · v{swapTarget.endpoint.model_version}
                 </dd>
               </div>
-              {canRollback(swapTarget.endpoint) && (
+              {hasPreviousModel(swapTarget.endpoint) && (
                 <div data-testid="endpoint-swap-previous">
-                  <dt>보관 중인 이전 모델</dt>
+                  <dt>기록된 이전 모델</dt>
                   <dd>v{swapTarget.endpoint.previous_model_version}</dd>
                 </div>
               )}
@@ -437,7 +455,7 @@ export default function Endpoints() {
                 data-testid="endpoint-swap-model"
                 data-drawer-initial-focus
               >
-                <option value="">모델 선택</option>
+                <option value="">모델을 선택하세요</option>
                 {swapAlternatives.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name} · v{model.version} · {model.lifecycle.toLowerCase()}
