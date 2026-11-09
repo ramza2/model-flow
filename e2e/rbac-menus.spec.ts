@@ -102,8 +102,8 @@ test("viewer menus and project actions are read-only", async ({ page }) => {
   await expect(page.getByRole("button", { name: /New pipeline|새 파이프라인/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/deployments`);
-  await expect(page.getByRole("heading", { name: "Deployments", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /New deployment/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: /^(Deployments|모델 배포)$/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /New deployment|새 배포/ })).toHaveCount(0);
 });
 
 test("data scientist sees training but no approval controls", async ({ page }) => {

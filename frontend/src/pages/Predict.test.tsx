@@ -161,10 +161,12 @@ describe("Predict prediction sample payload", () => {
     });
     renderPredict();
     expect(await screen.findByTestId("endpoint-stopped-notice")).toHaveTextContent(
-      "This endpoint is stopped",
+      "이 배포는 중지된 상태입니다",
     );
-    expect(screen.getByTestId("start-endpoint")).toBeInTheDocument();
+    expect(screen.getByTestId("start-endpoint")).toHaveTextContent("배포 시작");
     expect(screen.getByTestId("predict-submit")).toBeDisabled();
+    expect(screen.getByTestId("predict-input-help")).toHaveTextContent("JSON 배열");
+    expect(screen.getByTestId("predict-expected-fields")).toHaveTextContent("site_id");
     expect(payloadValue()).toContain("SITE_A");
   });
 
@@ -215,15 +217,16 @@ describe("Predict prediction sample payload", () => {
       };
     });
     renderPredict();
-    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("Output: price");
+    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("예측 항목: price");
     fireEvent.click(screen.getByTestId("predict-submit"));
     const summary = await screen.findByTestId("predict-summary");
     expect(summary).toHaveTextContent("price: 2.4275");
     expect(screen.queryByTestId("predict-preview")).not.toBeInTheDocument();
     expect(screen.getByTestId("predict-result")).toHaveTextContent("2.427515273680638");
+    expect(screen.getByTestId("predict-result-help")).toHaveTextContent("요약은 사람이 읽기 쉬운 예측값");
   });
 
-  it("uses Prediction fallback label when output targets are missing", async () => {
+  it("uses Korean prediction fallback label when output targets are missing", async () => {
     apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
       if (path.endsWith("/predict") && init?.method === "POST") {
         return { predictions: [1.5], model_uri: "models:/legacy/1" };
@@ -236,9 +239,9 @@ describe("Predict prediction sample payload", () => {
       };
     });
     renderPredict();
-    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("Output: Prediction");
+    expect(await screen.findByTestId("predict-output-targets")).toHaveTextContent("예측 항목: 예측값");
     fireEvent.click(screen.getByTestId("predict-submit"));
-    expect(await screen.findByTestId("predict-summary")).toHaveTextContent("Prediction: 1.5000");
+    expect(await screen.findByTestId("predict-summary")).toHaveTextContent("예측값: 1.5000");
     expect(screen.queryByTestId("predict-preview")).not.toBeInTheDocument();
   });
 

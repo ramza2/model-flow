@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, type Endpoint } from "../api";
 import { useAuth } from "../AuthContext";
-import { ErrorNotice, Loading, PageHeader, StatusBadge, SuccessNotice } from "../components";
+import { ErrorNotice, HelpTip, Loading, PageHeader, StatusBadge, SuccessNotice } from "../components";
 import {
   formatNamedPrediction,
   formatOutputTargetsLabel,
@@ -11,6 +11,7 @@ import {
 } from "../lifecycleHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
 import { buildPredictionSamplePayload } from "../trainingConfig";
+import { UI_HELP } from "../uiTerminology";
 
 function formatPredictionPreview(prediction: unknown): string {
   if (prediction !== null && typeof prediction === "object" && !Array.isArray(prediction)) {
@@ -23,7 +24,7 @@ function formatPredictionPreview(prediction: unknown): string {
     }
   }
   if (Array.isArray(prediction)) {
-    return prediction.map((item, index) => `Item ${index + 1}\n${formatPredictionPreview(item)}`).join("\n\n");
+    return prediction.map((item, index) => `항목 ${index + 1}\n${formatPredictionPreview(item)}`).join("\n\n");
   }
   return String(prediction);
 }
@@ -33,6 +34,15 @@ function initialPayloadFromEndpoint(endpoint: Endpoint): string {
     return JSON.stringify([endpoint.prediction_sample], null, 2);
   }
   return JSON.stringify(buildPredictionSamplePayload(endpoint.feature_schema || []), null, 2);
+}
+
+function featureFieldNames(endpoint: Endpoint): string {
+  return (
+    endpoint.feature_schema
+      .map((field) => (typeof field === "string" ? field : String(field.name || field.field)))
+      .filter(Boolean)
+      .join(", ") || "선언된 입력 특성이 없습니다"
+  );
 }
 
 export default function Predict() {
@@ -58,7 +68,7 @@ export default function Predict() {
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : "Deployment could not be loaded.");
+          setError(reason instanceof Error ? reason.message : "배포 정보를 불러오지 못했습니다.");
         }
       });
     return () => {
@@ -74,9 +84,9 @@ export default function Predict() {
     try {
       const updated = await api<Endpoint>(`/endpoints/${ep.id}/start`, { method: "POST" });
       setEp(updated);
-      setSuccess("Endpoint started and ready for predictions.");
+      setSuccess("배포를 시작했습니다. 이제 예측을 실행할 수 있습니다.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Endpoint could not be started.");
+      setError(reason instanceof Error ? reason.message : "배포를 시작하지 못했습니다.");
     } finally {
       setStarting(false);
     }
@@ -89,14 +99,22 @@ export default function Predict() {
     setBusy(true);
     try {
       const instances = JSON.parse(payload);
-      if (!Array.isArray(instances) || instances.length === 0) throw new Error("Provide a JSON array containing at least one instance.");
+      if (!Array.isArray(instances) || instances.length === 0) {
+        throw new Error("입력은 하나 이상의 행이 들어 있는 JSON 배열이어야 합니다.");
+      }
       const res = await api<{ predictions: unknown[]; model_uri: string }>(`/endpoints/${endpointId}/predict`, {
         method: "POST",
         body: JSON.stringify({ instances }),
       });
       setResult(res);
     } catch (err) {
-      setError(err instanceof SyntaxError ? "Prediction input must be valid JSON." : err instanceof Error ? err.message : "Prediction failed.");
+      setError(
+        err instanceof SyntaxError
+          ? "입력 데이터가 올바른 JSON 형식이 아닙니다."
+          : err instanceof Error
+            ? err.message
+            : "예측에 실패했습니다.",
+      );
     } finally {
       setBusy(false);
     }
@@ -110,24 +128,29 @@ export default function Predict() {
   return (
     <div className="page-stack predict-page">
       <PageHeader
-        title="Prediction test"
+        title="예측 테스트"
         description={
-          ep ? `Send a test request to ${ep.name}.` : "Load deployment schema and test a prediction."
+          ep
+            ? `“${ep.name}” 배포에 샘플 입력을 보내 실시간 예측을 확인합니다.`
+            : "배포의 입력 특성(schema)을 확인하고 예측을 테스트합니다."
         }
         actions={ep ? <StatusBadge status={ep.status} /> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
       {!ep ? (
-        <Loading label="Loading deployment" />
+        <Loading label="배포 정보 불러오는 중" />
       ) : (
         <>
           <div
             className={`builder-state-band predict-state-band${stopped ? " is-blocked" : " is-ready"}`}
             role="status"
           >
-            <span className="builder-state-copy">Endpoint</span>
+            <span className="builder-state-copy">배포</span>
             <StatusBadge status={ep.status} />
+            <span className="builder-state-copy mono">
+              {ep.model_name} · v{ep.model_version}
+            </span>
             <span className="builder-state-copy" data-testid="predict-output-targets">
               {formatOutputTargetsLabel(outputTargets)}
             </span>
@@ -136,13 +159,16 @@ export default function Predict() {
             <form className="panel form form-wide predict-request-panel" onSubmit={onSubmit}>
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Request</span>
-                  <h2>Instances JSON</h2>
+                  <span className="eyebrow">요청</span>
+                  <h2>입력 데이터 (JSON)</h2>
                 </div>
               </div>
+              <p className="form-hint" data-testid="predict-input-help">
+                {UI_HELP.predictionPayload} <HelpTip text={UI_HELP.predictionPayload} />
+              </p>
               {stopped && (
                 <div className="notice predict-stopped-notice" data-testid="endpoint-stopped-notice">
-                  <p>This endpoint is stopped. Start the endpoint before running predictions.</p>
+                  <p>이 배포는 중지된 상태입니다. 예측을 실행하려면 먼저 배포를 시작하세요.</p>
                   <div className="row-actions">
                     {canDeploy ? (
                       <button
@@ -152,18 +178,18 @@ export default function Predict() {
                         onClick={() => void startEndpoint()}
                         data-testid="start-endpoint"
                       >
-                        {starting ? "Starting…" : "Start endpoint"}
+                        {starting ? "시작 중…" : "배포 시작"}
                       </button>
                     ) : (
                       <Link className="btn secondary" to={`/projects/${projectId}/deployments`}>
-                        Back to deployments
+                        배포 목록으로
                       </Link>
                     )}
                   </div>
                 </div>
               )}
               <label>
-                Payload
+                입력 JSON
                 <textarea
                   className="code-input predict-input engineering-surface"
                   value={payload}
@@ -171,13 +197,8 @@ export default function Predict() {
                   data-testid="predict-payload"
                   spellCheck={false}
                 />
-                <small>
-                  Expected fields:{" "}
-                  {ep.feature_schema
-                    .map((field) =>
-                      typeof field === "string" ? field : String(field.name || field.field),
-                    )
-                    .join(", ") || "schema not declared"}
+                <small data-testid="predict-expected-fields">
+                  기대하는 입력 특성: {featureFieldNames(ep)}
                 </small>
               </label>
               <button
@@ -186,20 +207,23 @@ export default function Predict() {
                 disabled={busy || ep.status !== "ready"}
                 data-testid="predict-submit"
               >
-                {busy ? "Running…" : "Run prediction"}
+                {busy ? "예측 중…" : "예측 실행"}
               </button>
             </form>
             <section className="panel result-panel predict-response-panel">
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Response</span>
-                  <h2>Prediction result</h2>
+                  <span className="eyebrow">응답</span>
+                  <h2>예측 결과</h2>
                 </div>
               </div>
+              <p className="form-hint" data-testid="predict-result-help">
+                {UI_HELP.predictionResult}
+              </p>
               {result ? (
                 <>
                   <div className="prediction-summary" data-testid="predict-summary">
-                    <span className="eyebrow">Summary</span>
+                    <span className="eyebrow">요약</span>
                     <pre className="prediction-value prediction-preview named-prediction">
                       {formatPredictionSummary(firstPrediction, outputTargets)}
                     </pre>
@@ -213,7 +237,7 @@ export default function Predict() {
                     </div>
                   )}
                   <div className="predict-raw-block">
-                    <span className="eyebrow">Raw JSON</span>
+                    <span className="eyebrow">원본 JSON</span>
                     <pre
                       className="json-view predict-result-json engineering-surface"
                       data-testid="predict-result"
@@ -223,13 +247,13 @@ export default function Predict() {
                   </div>
                 </>
               ) : (
-                <div className="result-placeholder">Run a prediction to inspect the response.</div>
+                <div className="result-placeholder">예측을 실행하면 여기에 결과가 표시됩니다.</div>
               )}
             </section>
           </div>
         </>
       )}
-      <Link to={`/projects/${projectId}/deployments`}>← Back to deployments</Link>
+      <Link to={`/projects/${projectId}/deployments`}>← 배포 목록으로</Link>
     </div>
   );
 }

@@ -13,6 +13,17 @@ import {
   metric,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
+import { UI_HELP } from "../uiTerminology";
+
+type SwapTarget = {
+  endpoint: Endpoint;
+  modelVersionId: string;
+};
+
+function canRollback(endpoint: Endpoint): boolean {
+  if (typeof endpoint.can_rollback === "boolean") return endpoint.can_rollback;
+  return Boolean(endpoint.previous_model_version && endpoint.previous_model_uri);
+}
 
 export default function Endpoints() {
   const { projectId } = useParams();
@@ -24,6 +35,7 @@ export default function Endpoints() {
   const [name, setName] = useState("prediction-service");
   const [modelVersionId, setModelVersionId] = useState(String(location.state?.modelVersionId || ""));
   const [showCreate, setShowCreate] = useState(Boolean(location.state?.modelVersionId));
+  const [swapTarget, setSwapTarget] = useState<SwapTarget | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -45,7 +57,7 @@ export default function Endpoints() {
   useEffect(() => {
     refresh().catch((reason) => {
       setLoading(false);
-      setError(reason instanceof Error ? reason.message : "Deployments could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "모델 배포 목록을 불러오지 못했습니다.");
     });
   }, [refresh]);
 
@@ -61,42 +73,134 @@ export default function Endpoints() {
       });
       await refresh();
       setShowCreate(false);
-      setSuccess("Deployment is ready for predictions.");
+      setSuccess("배포가 준비되었습니다. 예측 테스트로 확인할 수 있습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Deployment could not be created.");
+      setError(err instanceof Error ? err.message : "배포를 만들지 못했습니다.");
     } finally {
       setBusy("");
     }
   }
 
   async function endpointAction(endpoint: Endpoint, action: "start" | "stop") {
-    if (action === "stop" && !confirmAction(`Stop deployment “${endpoint.name}”? Predictions will be unavailable.`)) return;
+    if (
+      action === "stop" &&
+      !confirmAction(`“${endpoint.name}” 배포를 중지할까요?\n예측 요청을 받을 수 없게 됩니다.`)
+    ) {
+      return;
+    }
     setBusy(`${action}-${endpoint.id}`);
     setError("");
     try {
       await api(`/endpoints/${endpoint.id}/${action}`, { method: "POST" });
-      setSuccess(action === "start" ? "Deployment started." : "Deployment stopped.");
+      setSuccess(action === "start" ? "배포를 시작했습니다." : "배포를 중지했습니다.");
       await refresh();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : `Deployment could not ${action}.`);
+      setError(reason instanceof Error ? reason.message : `배포를 ${action === "start" ? "시작" : "중지"}하지 못했습니다.`);
     } finally {
       setBusy("");
     }
   }
 
+  function openSwap(endpoint: Endpoint) {
+    const alternatives = models.filter((model) => model.id !== endpoint.model_version_id);
+    setError("");
+    setSuccess("");
+    setSwapTarget({
+      endpoint,
+      modelVersionId: String(alternatives[0]?.id || ""),
+    });
+  }
+
+  function closeSwap() {
+    if (busy.startsWith("swap-")) return;
+    setSwapTarget(null);
+  }
+
+  async function confirmSwap(event: FormEvent) {
+    event.preventDefault();
+    if (!swapTarget) return;
+    const nextId = Number(swapTarget.modelVersionId);
+    if (!nextId) {
+      setError("교체할 모델을 선택하세요.");
+      return;
+    }
+    const nextModel = models.find((model) => model.id === nextId);
+    const current = swapTarget.endpoint;
+    const confirmed = confirmAction(
+      [
+        `“${current.name}”의 운영 모델을 전환할까요?`,
+        "",
+        `현재: ${current.model_name} · v${current.model_version}`,
+        `변경: ${nextModel ? `${nextModel.name} · v${nextModel.version}` : `모델 #${nextId}`}`,
+        "",
+        "현재 모델은 복구용으로 보관됩니다. 모델 승인 상태는 바뀌지 않습니다.",
+      ].join("\n"),
+    );
+    if (!confirmed) return;
+
+    setBusy(`swap-${current.id}`);
+    setError("");
+    try {
+      await api(`/endpoints/${current.id}/swap`, {
+        method: "POST",
+        body: JSON.stringify({ model_version_id: nextId }),
+      });
+      setSwapTarget(null);
+      setSuccess(
+        `운영 모델을 ${nextModel ? `${nextModel.name} v${nextModel.version}` : `#${nextId}`}(으)로 전환했습니다.`,
+      );
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "운영 모델 전환에 실패했습니다.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function rollbackEndpoint(endpoint: Endpoint) {
+    if (!canRollback(endpoint)) return;
+    const confirmed = confirmAction(
+      [
+        `“${endpoint.name}”을(를) 이전 모델로 복구할까요?`,
+        "",
+        `현재: ${endpoint.model_name} · v${endpoint.model_version}`,
+        `복구: 이전 모델 v${endpoint.previous_model_version}`,
+        "",
+        "복구 후 지금 모델은 다시 이전 모델 자리로 보관됩니다.",
+      ].join("\n"),
+    );
+    if (!confirmed) return;
+
+    setBusy(`rollback-${endpoint.id}`);
+    setError("");
+    try {
+      await api(`/endpoints/${endpoint.id}/rollback`, { method: "POST" });
+      setSuccess(`이전 모델 v${endpoint.previous_model_version}(으)로 복구했습니다.`);
+      await refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "이전 모델 복구에 실패했습니다.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const swapAlternatives = swapTarget
+    ? models.filter((model) => model.id !== swapTarget.endpoint.model_version_id)
+    : [];
+
   return (
     <div className="page-stack deployments-page">
       <PageHeader
-        title="Deployments"
-        description="Serve approved model versions and verify live predictions."
+        title="모델 배포"
+        description="승인된 모델을 온라인으로 서빙하고, 운영 모델 전환·복구와 예측 테스트를 관리합니다."
         actions={
           canDeploy ? (
             <div className="row-actions">
               <Link className="btn secondary" to={`/projects/${projectId}/deployments/batch`}>
-                Batch inference
+                배치 예측
               </Link>
               <button className="btn" onClick={() => setShowCreate(!showCreate)}>
-                ＋ New deployment
+                ＋ 새 배포
               </button>
             </div>
           ) : undefined
@@ -108,15 +212,15 @@ export default function Endpoints() {
         <form className="panel form deployment-create-panel" onSubmit={onCreate}>
           <div className="panel-title">
             <div>
-              <span className="eyebrow">Online prediction</span>
-              <h2>Create deployment</h2>
+              <span className="eyebrow">온라인 예측</span>
+              <h2>배포 만들기</h2>
             </div>
           </div>
           {models.length === 0 && (
-            <div className="notice">Approve a model version before creating a deployment.</div>
+            <div className="notice">배포하려면 먼저 모델을 승인하거나 운영(PRODUCTION)으로 승격하세요.</div>
           )}
           <label>
-            Deployment name
+            배포 이름
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -125,14 +229,14 @@ export default function Endpoints() {
             />
           </label>
           <label>
-            Approved model
+            승인된 모델
             <select
               value={modelVersionId}
               onChange={(event) => setModelVersionId(event.target.value)}
               required
               data-testid="endpoint-model"
             >
-              <option value="">Select a model</option>
+              <option value="">모델 선택</option>
               {models.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name} · v{model.version} · {model.lifecycle.toLowerCase()}
@@ -146,24 +250,24 @@ export default function Endpoints() {
               disabled={!modelVersionId || busy === "create"}
               data-testid="endpoint-create"
             >
-              {busy === "create" ? "Creating…" : "Create deployment"}
+              {busy === "create" ? "만드는 중…" : "배포 만들기"}
             </button>
             <button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>
-              Cancel
+              취소
             </button>
           </div>
         </form>
       )}
       {loading ? (
-        <Loading label="Loading deployments" />
+        <Loading label="배포 목록 불러오는 중" />
       ) : items.length === 0 ? (
         <EmptyState
-          title="No deployments"
-          description="Approve a registered model, then create a prediction service."
+          title="배포가 없습니다"
+          description="등록·승인된 모델로 예측 서비스를 만드세요."
           action={
             canDeploy ? (
               <button className="btn" onClick={() => setShowCreate(true)}>
-                Create deployment
+                배포 만들기
               </button>
             ) : undefined
           }
@@ -177,19 +281,30 @@ export default function Endpoints() {
             >
               <header>
                 <div>
-                  <span className="eyebrow">Online service</span>
+                  <span className="eyebrow">온라인 서비스</span>
                   <h2>{endpoint.name}</h2>
                 </div>
                 <StatusBadge status={endpoint.status} />
               </header>
               <p className="deployment-model-meta">
+                <span className="muted">현재 모델</span>{" "}
                 <span className="mono">{endpoint.model_name}</span>
                 <span className="version-chip">v{endpoint.model_version}</span>
               </p>
+              {canRollback(endpoint) ? (
+                <p className="deployment-previous-model" data-testid={`endpoint-previous-${endpoint.id}`}>
+                  <span className="muted">이전 모델 (복구 가능)</span>{" "}
+                  <span className="version-chip">v{endpoint.previous_model_version}</span>
+                </p>
+              ) : (
+                <p className="muted deployment-previous-model" data-testid={`endpoint-previous-empty-${endpoint.id}`}>
+                  복구 가능한 이전 모델이 없습니다.
+                </p>
+              )}
               <div className="deployment-metrics">
                 <div className="metric-card">
                   <strong className="tabular-num">{endpoint.request_count.toLocaleString()}</strong>
-                  <span>Requests</span>
+                  <span>요청</span>
                 </div>
                 <div className="metric-card">
                   <strong className="tabular-num">
@@ -197,7 +312,7 @@ export default function Endpoints() {
                       ? "—"
                       : `${metric(endpoint.success_rate * 100, 1)}%`}
                   </strong>
-                  <span>Success</span>
+                  <span>성공률</span>
                 </div>
                 <div className="metric-card">
                   <strong className="tabular-num">
@@ -205,11 +320,11 @@ export default function Endpoints() {
                       ? "—"
                       : `${metric(endpoint.average_latency_ms, 1)} ms`}
                   </strong>
-                  <span>Avg latency</span>
+                  <span>평균 응답</span>
                 </div>
                 <div className="metric-card">
                   <strong className="tabular-num">{metric(endpoint.latency_p95_ms, 1)} ms</strong>
-                  <span>p95 latency</span>
+                  <span>p95 응답</span>
                 </div>
               </div>
               <footer className="deployment-card-actions">
@@ -218,36 +333,141 @@ export default function Endpoints() {
                   to={`/projects/${projectId}/deployments/${endpoint.id}/predict`}
                   data-testid={`endpoint-predict-${endpoint.id}`}
                 >
-                  Test prediction
+                  예측 테스트
                 </Link>
                 <Link
                   className="btn secondary"
                   to={`/projects/${projectId}/deployments/${endpoint.id}/api`}
                   data-testid={`endpoint-api-usage-${endpoint.id}`}
                 >
-                  API usage
+                  API 사용법
                 </Link>
-                {canDeploy &&
-                  (endpoint.status === "ready" ? (
+                {canDeploy && (
+                  <>
                     <button
                       className="btn secondary"
-                      disabled={Boolean(busy)}
-                      onClick={() => endpointAction(endpoint, "stop")}
+                      type="button"
+                      disabled={Boolean(busy) || models.every((model) => model.id === endpoint.model_version_id)}
+                      onClick={() => openSwap(endpoint)}
+                      data-testid={`endpoint-swap-${endpoint.id}`}
+                      title={UI_HELP.endpointModelSwap}
                     >
-                      Stop
+                      운영 모델 전환
                     </button>
-                  ) : (
                     <button
                       className="btn secondary"
-                      disabled={Boolean(busy)}
-                      onClick={() => endpointAction(endpoint, "start")}
+                      type="button"
+                      disabled={Boolean(busy) || !canRollback(endpoint)}
+                      onClick={() => void rollbackEndpoint(endpoint)}
+                      data-testid={`endpoint-rollback-${endpoint.id}`}
+                      title={UI_HELP.endpointModelRollback}
                     >
-                      Start
+                      {busy === `rollback-${endpoint.id}` ? "복구 중…" : "이전 모델로 복구"}
                     </button>
-                  ))}
+                    {endpoint.status === "ready" ? (
+                      <button
+                        className="btn secondary"
+                        disabled={Boolean(busy)}
+                        onClick={() => endpointAction(endpoint, "stop")}
+                      >
+                        중지
+                      </button>
+                    ) : (
+                      <button
+                        className="btn secondary"
+                        disabled={Boolean(busy)}
+                        onClick={() => endpointAction(endpoint, "start")}
+                      >
+                        시작
+                      </button>
+                    )}
+                  </>
+                )}
               </footer>
             </article>
           ))}
+        </div>
+      )}
+      {swapTarget && (
+        <div className="modal-backdrop" role="presentation" onClick={closeSwap}>
+          <form
+            className="panel modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="endpoint-swap-title"
+            onSubmit={(event) => void confirmSwap(event)}
+            onClick={(event) => event.stopPropagation()}
+            data-testid="endpoint-swap-dialog"
+          >
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">운영 모델</span>
+                <h2 id="endpoint-swap-title">운영 모델 전환 확인</h2>
+              </div>
+            </div>
+            <p className="form-hint">{UI_HELP.endpointModelSwap}</p>
+            <dl className="key-values compact">
+              <div>
+                <dt>배포</dt>
+                <dd>{swapTarget.endpoint.name}</dd>
+              </div>
+              <div data-testid="endpoint-swap-current">
+                <dt>현재 모델</dt>
+                <dd className="mono">
+                  {swapTarget.endpoint.model_name} · v{swapTarget.endpoint.model_version}
+                </dd>
+              </div>
+              {canRollback(swapTarget.endpoint) && (
+                <div data-testid="endpoint-swap-previous">
+                  <dt>보관 중인 이전 모델</dt>
+                  <dd>v{swapTarget.endpoint.previous_model_version}</dd>
+                </div>
+              )}
+            </dl>
+            <label>
+              전환할 모델
+              <select
+                value={swapTarget.modelVersionId}
+                onChange={(event) =>
+                  setSwapTarget((current) =>
+                    current ? { ...current, modelVersionId: event.target.value } : current,
+                  )
+                }
+                required
+                data-testid="endpoint-swap-model"
+                data-drawer-initial-focus
+              >
+                <option value="">모델 선택</option>
+                {swapAlternatives.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} · v{model.version} · {model.lifecycle.toLowerCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {swapAlternatives.length === 0 && (
+              <div className="notice">전환 가능한 다른 승인/운영 모델이 없습니다.</div>
+            )}
+            <div className="row-actions">
+              <button
+                className="btn"
+                type="submit"
+                disabled={!swapTarget.modelVersionId || busy === `swap-${swapTarget.endpoint.id}`}
+                data-testid="endpoint-swap-confirm"
+              >
+                {busy === `swap-${swapTarget.endpoint.id}` ? "전환 중…" : "전환 확인"}
+              </button>
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={closeSwap}
+                disabled={busy === `swap-${swapTarget.endpoint.id}`}
+                data-testid="endpoint-swap-cancel"
+              >
+                취소
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

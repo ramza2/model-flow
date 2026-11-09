@@ -50,13 +50,13 @@ test("deployment API usage and service key management UX", async ({ page }) => {
   await expect(page.getByText("모델 승인을 완료했습니다.")).toBeVisible();
 
   await page.getByRole("link", { name: "모델 배포", exact: true }).click();
-  await page.getByRole("button", { name: "New deployment" }).click();
+  await page.getByRole("button", { name: /새 배포/ }).click();
   await page.getByTestId("endpoint-name").fill("api-usage-endpoint");
   await page.getByTestId("endpoint-create").click();
-  await expect(page.getByRole("link", { name: "API usage" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("link", { name: /API 사용법|API usage/ })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("link", { name: "API usage" }).click();
-  await expect(page.getByRole("heading", { name: "API usage" })).toBeVisible();
+  await page.getByRole("link", { name: /API 사용법|API usage/ }).click();
+  await expect(page.getByRole("heading", { name: /API 사용법|API usage/ })).toBeVisible();
   await expect(page.getByTestId("api-usage-method")).toHaveText("POST");
   await expect(page.getByTestId("api-usage-url")).toContainText(
     "/api/v1/inference/endpoints/",

@@ -211,7 +211,7 @@ export function formatPredictionSummary(
   outputTargets: string[] = [],
 ): string {
   if (isScalarPrediction(prediction)) {
-    const label = outputTargets[0]?.trim() || "Prediction";
+    const label = outputTargets[0]?.trim() || "예측값";
     const value =
       typeof prediction === "number" ? Number(prediction).toFixed(4) : String(prediction);
     return `${label}: ${value}`;
@@ -221,7 +221,7 @@ export function formatPredictionSummary(
 
 export function formatOutputTargetsLabel(outputTargets: string[] | null | undefined): string {
   const targets = (outputTargets ?? []).map((name) => name.trim()).filter(Boolean);
-  if (targets.length === 0) return "Output: Prediction";
-  if (targets.length === 1) return `Output: ${targets[0]}`;
-  return `Outputs: ${targets.join(", ")}`;
+  if (targets.length === 0) return "예측 항목: 예측값";
+  if (targets.length === 1) return `예측 항목: ${targets[0]}`;
+  return `예측 항목: ${targets.join(", ")}`;
 }
