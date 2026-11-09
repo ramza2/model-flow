@@ -283,6 +283,11 @@ describe("JobDetail retrain", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("register-model-dialog")).not.toBeInTheDocument();
     });
+    expect(screen.getByTestId("job-registered-model-link")).toHaveTextContent("운영 모델은 자동으로 변경되지 않습니다");
+    expect(within(screen.getByTestId("job-registered-model-link")).getByRole("link")).toHaveAttribute(
+      "href", "/projects/7/models/5",
+    );
+    expect(screen.getByTestId("retrain-registered-model")).toHaveAttribute("href", "/projects/7/models/5");
   });
 
   it("shows resolved problem type for succeeded auto regression jobs", async () => {

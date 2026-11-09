@@ -2177,6 +2177,75 @@ hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 1rem 0
 }
 
 /* Phase 9-C1 — Model Registry / Model Version governance */
+.retrain-review-panel {
+  margin: 1rem 0;
+}
+.retrain-review-panel .panel-title {
+  margin-bottom: 0.55rem;
+}
+.retrain-review-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0.9rem 0 0.5rem;
+}
+.retrain-review-compare-grid > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg-elevated);
+  overflow-wrap: anywhere;
+}
+.retrain-review-compare-grid small {
+  color: var(--muted);
+}
+.retrain-review-metric {
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.retrain-review-caution {
+  color: var(--warn);
+  border-left: 3px solid var(--warn);
+  background: rgba(230, 199, 95, 0.07);
+  padding: 0.55rem 0.75rem;
+}
+.retrain-review-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.retrain-review-steps li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.retrain-review-steps p {
+  color: var(--muted);
+  margin: 0;
+}
+.retrain-review-steps .btn {
+  margin-top: auto;
+}
+@media (max-width: 960px) {
+  .retrain-review-steps { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .retrain-review-compare-grid { grid-template-columns: 1fr; }
+}
 .registry-page,
 .model-version-page {
   min-width: 0;

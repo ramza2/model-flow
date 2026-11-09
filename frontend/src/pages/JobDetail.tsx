@@ -28,6 +28,7 @@ import type { AlgorithmSpec } from "../trainingConfig";
 import JobContinueTrainingDialog from "./JobContinueTrainingDialog";
 import JobRetrainDialog from "./JobRetrainDialog";
 import RegisterModelDialog from "./RegisterModelDialog";
+import RetrainReviewPanel from "./RetrainReviewPanel";
 
 export default function JobDetail() {
   const { projectId, jobId } = useParams();
@@ -42,6 +43,7 @@ export default function JobDetail() {
   const [showRetrain, setShowRetrain] = useState(false);
   const [showContinue, setShowContinue] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
+  const [registeredModel, setRegisteredModel] = useState<ModelVersion | null>(null);
   const canTrain = userCanProject(user, selectedProject, "DATA_SCIENTIST", "ML_ENGINEER", "PROJECT_ADMIN");
   const canRegister = userCanProject(user, selectedProject, "ML_ENGINEER", "PROJECT_ADMIN");
   const supportsContinued = Boolean(algorithmSpec?.supports_continued_training);
@@ -95,6 +97,7 @@ export default function JobDetail() {
         }),
       });
       setSuccess(`모델 ${model.name} v${model.version}을 등록했습니다.`);
+      setRegisteredModel(model);
       setShowRegister(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "모델을 등록하지 못했습니다.");
@@ -182,6 +185,15 @@ export default function JobDetail() {
       />
       <ErrorNotice message={error || job?.error_message || ""} />
       <SuccessNotice message={success} />
+      {job && registeredModel?.training_job_id === job.id && (
+        <p className="form-hint" data-testid="job-registered-model-link">
+          등록한 후보 모델을 검토하려면{" "}
+          <Link to={`/projects/${projectId}/models/${registeredModel.id}`}>
+            {registeredModel.name} v{registeredModel.version} 검증·승인 화면
+          </Link>
+          으로 이동하세요. 운영 모델은 자동으로 변경되지 않습니다.
+        </p>
+      )}
       {!job ? (
         <Loading label="학습 작업 불러오는 중" />
       ) : (
@@ -256,6 +268,14 @@ export default function JobDetail() {
               }}
             />
           </section>
+
+          <RetrainReviewPanel
+            job={job}
+            projectId={projectId!}
+            canRegister={canRegister}
+            onRegister={() => setShowRegister(true)}
+            registeredModel={registeredModel}
+          />
 
           <div className="two-column detail-two-column">
             <DetailSection eyebrow="설정" title="학습 설정 (Training setup)">
