@@ -459,6 +459,8 @@ def model_version_out(row: ModelVersion) -> dict[str, Any]:
 
 def endpoint_out(row: Endpoint) -> dict[str, Any]:
     count = row.request_count or 0
+    previous_version = row.previous_model_version
+    previous_uri = row.previous_model_uri
     return {
         "id": row.id,
         "project_id": row.project_id,
@@ -467,6 +469,9 @@ def endpoint_out(row: Endpoint) -> dict[str, Any]:
         "model_version": row.model_version,
         "model_version_id": row.model_version_id,
         "model_uri": row.model_uri,
+        "previous_model_version": previous_version,
+        "previous_model_uri": previous_uri,
+        "can_rollback": bool(previous_version and previous_uri),
         "status": row.status,
         "request_count": count,
         "success_count": row.success_count or 0,

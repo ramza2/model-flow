@@ -607,6 +607,11 @@ export type Endpoint = {
   model_version: string;
   model_version_id: number;
   model_uri: string;
+  /** Prior serving model metadata after swap; null when none is recorded. */
+  previous_model_version?: string | null;
+  previous_model_uri?: string | null;
+  /** True when previous_model_version and previous_model_uri are both set (record presence only). */
+  can_rollback?: boolean;
   status: string;
   request_count: number;
   success_count: number;

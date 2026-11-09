@@ -91,6 +91,14 @@ export const UI_HELP = {
     "데이터 품질 상태는 데이터셋 버전에서 실행한 품질 검사 결과를 기준으로 합니다. 데이터셋이 존재한다는 사실만으로 정상 판정을 내리지 않습니다.",
   monitoringModelHealth:
     "모델 상태 표시는 최근 데이터 분포 변화(드리프트) 판정을 기준으로 합니다. 배포 준비 상태와 예측 요청 성공 여부는 별도 지표입니다.",
+  endpointModelSwap:
+    "승인(APPROVED) 또는 운영(PRODUCTION) 상태의 모델로 현재 배포의 서빙 모델을 교체합니다. 교체 전 모델 정보는 한 단계 보관됩니다. 모델 승인 상태는 변경되지 않습니다. 중지된 배포에서 전환하면 배포 상태가 ready로 바뀝니다.",
+  endpointModelRollback:
+    "이전 모델 정보가 기록되어 있을 때 직전 서빙 모델로 되돌리기를 시도합니다. ‘이전 모델 있음’은 기록 존재만 의미하며, 로드 실패 등으로 복구가 보장되지는 않습니다.",
+  predictionPayload:
+    "JSON 배열로 하나 이상의 입력 행(인스턴스)을 넣습니다. 각 행은 배포가 기대하는 입력 특성(feature) 키를 포함해야 합니다. 예: [{\"온도\": 72.4, \"시간\": 9}]",
+  predictionResult:
+    "요약은 사람이 읽기 쉬운 예측값이고, 원본 JSON은 API가 반환한 전체 응답입니다. 다중 출력 모델은 학습 때 지정한 예측 대상 이름을 그대로 표시합니다.",
 } as const;
 
 /** Display-only pipeline lifecycle status (draft/published/…). Raw API status unchanged. */

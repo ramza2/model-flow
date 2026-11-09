@@ -108,10 +108,10 @@ describe("lifecycleHelpers", () => {
   it("labels scalar predictions with output target metadata once", () => {
     expect(isScalarPrediction(2.427515273680638)).toBe(true);
     expect(formatPredictionSummary(2.427515273680638, ["price"])).toBe("price: 2.4275");
-    expect(formatPredictionSummary(2.427515273680638, [])).toBe("Prediction: 2.4275");
-    expect(formatOutputTargetsLabel(["price"])).toBe("Output: price");
-    expect(formatOutputTargetsLabel(["price", "quantity"])).toBe("Outputs: price, quantity");
-    expect(formatOutputTargetsLabel([])).toBe("Output: Prediction");
+    expect(formatPredictionSummary(2.427515273680638, [])).toBe("예측값: 2.4275");
+    expect(formatOutputTargetsLabel(["price"])).toBe("예측 항목: price");
+    expect(formatOutputTargetsLabel(["price", "quantity"])).toBe("예측 항목: price, quantity");
+    expect(formatOutputTargetsLabel([])).toBe("예측 항목: 예측값");
   });
 
   it("keeps named multi-output prediction summaries", () => {
