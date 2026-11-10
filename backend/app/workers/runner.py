@@ -883,6 +883,13 @@ def process_import_job(job: DataImportJob) -> None:
             live.status = JobStatus.failed
             live.error_message = str(exc)
             live.finished_at = datetime.now(timezone.utc)
+            _failure_alert(
+                db,
+                project_id=live.project_id,
+                job_id=live.id,
+                job_kind="data_import_job",
+                message="Data import failed. Check the import job details for the cause.",
+            )
             db.commit()
     finally:
         if connector is not None:

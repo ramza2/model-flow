@@ -76,10 +76,10 @@ test("drift run generates operational alert and resolves through UI", async ({ p
 
   await page.goto(`/projects/${projectId}/alerts`);
   const alertTitle = overallStatus === "critical"
-    ? "Critical data drift detected"
-    : "Data drift requires attention";
+    ? "심각한 데이터 분포 변화 감지"
+    : "데이터 분포 변화 확인 필요";
   await expect(page.getByText(alertTitle)).toBeVisible();
-  await expect(page.getByText(/Drift run #/)).toBeVisible();
+  await expect(page.getByText(new RegExp(`데이터 분포 평가 #${runId}`))).toBeVisible();
   await expect(page.getByRole("link", { name: "관련 항목 보기 →" })).toBeVisible();
 
   await page.getByRole("link", { name: "관련 항목 보기 →" }).click();
