@@ -9,10 +9,13 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db.models import (
+    Alert,
+    AlertSeverity,
     AutomationSchedule,
     AutomationScheduleRun,
     Base,
     ConcurrencyPolicy,
+    DataImportJob,
     DataSource,
     DataSourceType,
     Dataset,
@@ -181,6 +184,101 @@ def test_inactive_data_source_fails_occurrence():
         assert run is not None
         assert run.status == ScheduleRunStatus.failed
         assert "inactive" in (run.error_message or "").lower()
+
+
+def test_cron_rest_import_failure_creates_project_alert(monkeypatch):
+    """Synthetic REST failure is reported without touching an external API."""
+
+    class FailingRestConnector:
+        supports_import = True
+
+        def __init__(self):
+            self.closed = False
+
+        def read_frame(self, query):
+            assert query == "synthetic.read"
+            raise RuntimeError("Synthetic REST failure: confidential-test-token")
+
+        def close(self):
+            self.closed = True
+
+    now = datetime.now(timezone.utc)
+    with TestingSessionLocal() as db:
+        project = Project(name="isolated-rest-alert-test")
+        db.add(project)
+        db.flush()
+        source = DataSource(
+            project_id=project.id,
+            name="synthetic REST source",
+            source_type=DataSourceType.rest_api,
+            config_json="{}",
+            is_active=True,
+        )
+        dataset = Dataset(project_id=project.id, name="synthetic dataset")
+        db.add_all([source, dataset])
+        db.flush()
+        schedule = AutomationSchedule(
+            project_id=project.id,
+            name="isolated cron import",
+            target_type=ScheduleTargetType.data_import,
+            target_config_json=json.dumps({
+                "data_source_id": source.id,
+                "dataset_id": dataset.id,
+                "query_or_table": "synthetic.read",
+            }),
+            cron_expression="0 * * * *",
+            timezone="UTC",
+            is_enabled=True,
+            max_retries=0,
+            next_run_at=now - timedelta(minutes=1),
+        )
+        db.add(schedule)
+        db.commit()
+
+        stats = scheduler.scheduler_tick(db, now=now)
+        assert stats["occurrences_created"] == 1
+        assert stats["dispatched"] == 1
+        schedule_run = db.scalar(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.schedule_id == schedule.id
+            )
+        )
+        assert schedule_run is not None
+        assert schedule_run.trigger_source == ScheduleTriggerSource.cron
+        assert schedule_run.status == ScheduleRunStatus.dispatched
+        assert schedule_run.target_resource_id is not None
+        job_id = schedule_run.target_resource_id
+        project_id = project.id
+
+    connector = FailingRestConnector()
+    monkeypatch.setattr(runner, "connector_for_source", lambda _source: connector)
+    runner.process_import_job(type("Claim", (), {"id": job_id})())
+    assert connector.closed
+
+    with TestingSessionLocal() as db:
+        job = db.get(DataImportJob, job_id)
+        assert job is not None
+        assert job.status == JobStatus.failed
+        assert "Synthetic REST failure" in (job.error_message or "")
+        alerts = db.scalars(
+            select(Alert).where(Alert.project_id == project_id)
+        ).all()
+        assert len(alerts) == 1
+        alert = alerts[0]
+        assert alert.severity == AlertSeverity.error
+        assert alert.alert_type == "data_import_job_failure"
+        assert alert.resource_type == "data_import_job"
+        assert alert.resource_id == str(job_id)
+        assert "confidential-test-token" not in alert.message
+
+        scheduler.scheduler_tick(db, now=now + timedelta(seconds=1))
+        schedule_run = db.scalar(
+            select(AutomationScheduleRun).where(
+                AutomationScheduleRun.target_resource_id == job_id
+            )
+        )
+        assert schedule_run is not None
+        assert schedule_run.status == ScheduleRunStatus.failed
 
 
 def _assert_last_run_at(schedule: AutomationSchedule | None, expected: datetime) -> None:
