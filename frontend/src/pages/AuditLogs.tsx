@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, type AuditEvent } from "../api";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
+import { auditActionLabel, auditResourceLabel } from "../uiTerminology";
 
 export default function AuditLogs() {
   const { projectId } = useParams();
@@ -18,7 +19,7 @@ export default function AuditLogs() {
     const base = projectId ? `/projects/${projectId}/audit` : "/admin/audit";
     api<AuditEvent[]>(`${base}${query}`)
       .then(setEvents)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Audit logs could not be loaded."))
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "감사 로그를 불러오지 못했습니다."))
       .finally(() => setLoading(false));
   }, [projectId, query]);
 
@@ -35,75 +36,75 @@ export default function AuditLogs() {
   return (
     <div className="page-stack ops-page audit-logs-page">
       <PageHeader
-        title={projectId ? "Audit Logs" : "Global Audit Logs"}
+        title={projectId ? "감사 로그" : "전체 감사 로그"}
         description={
           projectId
-            ? "Review security and lifecycle events for this project."
-            : "Review system-wide security and administration events."
+            ? "이 프로젝트에서 발생한 보안·모델 운영 변경 이력을 확인합니다."
+            : "시스템 전체의 보안·관리 작업 이력을 확인합니다."
         }
       />
       <ErrorNotice message={error} />
       <form className="filter-bar catalog-filter filter-form audit-filter-toolbar" onSubmit={filter}>
         <label>
-          Action
+          작업 유형
           <input
             value={action}
             onChange={(event) => setAction(event.target.value)}
-            placeholder="e.g. model.approve"
+            placeholder="예: model.approve (내부 작업 코드)"
           />
         </label>
         <label>
-          Resource
+          대상 유형
           <select value={resourceType} onChange={(event) => setResourceType(event.target.value)}>
-            <option value="">All resources</option>
-            <option value="project">Project</option>
-            <option value="dataset">Dataset</option>
-            <option value="training_job">Training job</option>
-            <option value="model_version">Model version</option>
-            <option value="endpoint">Deployment</option>
-            <option value="user">User</option>
+            <option value="">전체 대상</option>
+            <option value="project">프로젝트</option>
+            <option value="dataset">데이터셋</option>
+            <option value="training_job">모델 학습 작업</option>
+            <option value="model_version">모델 버전</option>
+            <option value="endpoint">모델 배포</option>
+            <option value="user">사용자</option>
           </select>
         </label>
         <label>
-          From
+          시작 날짜
           <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
         </label>
         <button className="btn" type="submit">
-          Apply filters
+          필터 적용
         </button>
       </form>
       {loading ? (
-        <Loading label="Loading audit events" />
+        <Loading label="감사 로그 불러오는 중" />
       ) : events.length === 0 ? (
         <EmptyState
-          title="No matching audit events"
-          description="Adjust the filters or perform an action in this scope."
+          title="조건에 맞는 감사 로그가 없습니다"
+          description="필터를 변경하거나 해당 범위에서 작업이 발생한 후 다시 확인해 주세요."
         />
       ) : (
         <div className="panel table-wrap catalog-table audit-catalog-table">
           <table>
             <thead>
               <tr>
-                <th>Time</th>
-                <th>Actor</th>
-                <th>Action</th>
-                <th>Resource</th>
-                <th>Outcome</th>
-                <th>Detail</th>
+                <th>발생 시각</th>
+                <th>수행자</th>
+                <th>작업 유형</th>
+                <th>대상</th>
+                <th>결과</th>
+                <th>상세 ID</th>
               </tr>
             </thead>
             <tbody>
               {events.map((event) => (
                 <tr key={event.id} className={event.success ? undefined : "is-failed"}>
                   <td className="catalog-meta-date">{formatDate(event.created_at)}</td>
-                  <td>{event.user_email || "System"}</td>
-                  <td className="mono">{event.action}</td>
+                  <td>{event.user_email || "시스템"}</td>
+                  <td title={event.action}>{auditActionLabel(event.action)} <small className="table-subtitle mono">{event.action}</small></td>
                   <td>
-                    {event.resource_type.replaceAll("_", " ")}{" "}
+                    {auditResourceLabel(event.resource_type)}{" "}
                     {event.resource_id ? <span className="mono">#{event.resource_id}</span> : null}
                   </td>
                   <td>
-                    <StatusBadge status={event.success ? "succeeded" : "failed"} />
+                    <StatusBadge status={event.success ? "succeeded" : "failed"} label={event.success ? "성공" : "실패"} />
                     {event.failure_reason ? (
                       <small className="table-subtitle break-word">{event.failure_reason}</small>
                     ) : null}

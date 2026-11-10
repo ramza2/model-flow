@@ -40,7 +40,12 @@ case "$1" in
     case "$*" in
       *' ps -q postgres') echo 'mock-postgres' ;;
       *' ps -q minio') echo 'mock-minio' ;;
+      *' ps -q backend') echo 'mock-backend' ;;
       *' exec -T postgres pg_restore --file=/dev/null') exit "${MOCK_PG_RESTORE_FAIL:-0}" ;;
+      *' exec -T backend python -m app.services.backup_retention')
+        [[ "${MOCK_RETENTION_POLICY_UNAVAILABLE:-0}" != '1' ]] || exit 8
+        echo "${MOCK_RETENTION_POLICY:-enabled=1 days=14}"
+        ;;
       *) echo 'unexpected docker compose invocation' >&2; exit 9 ;;
     esac
     ;;
@@ -48,9 +53,14 @@ case "$1" in
     case "$*" in
       *'com.docker.compose.project'*) echo "${MOCK_PROJECT:-model-flow}" ;;
       *'com.docker.compose.service'*)
-        if [[ "$*" == *'mock-postgres' ]]; then echo 'postgres'; else echo 'minio'; fi
+        if [[ "$*" == *'mock-postgres' ]]; then echo 'postgres';
+        elif [[ "$*" == *'mock-backend' ]]; then echo 'backend';
+        else echo 'minio'; fi
         ;;
-      *'.State.Health.Status'*) echo 'healthy' ;;
+      *'.State.Health.Status'*)
+        if [[ "$*" == *'mock-backend' ]]; then echo "${MOCK_BACKEND_HEALTH:-healthy}";
+        else echo 'healthy'; fi
+        ;;
       *) echo 'unexpected docker inspect invocation' >&2; exit 9 ;;
     esac
     ;;
@@ -112,6 +122,20 @@ touch -d '20 days ago' "$old/verified.ok" "$manual/verified.ok"
 # Without the explicit retention flag, even an expired auto backup is retained.
 "${runner[@]}" --run
 [[ -d "$old" ]] || { echo 'retention dry run deleted data' >&2; exit 1; }
+
+# Admin may disable cleanup or extend the retention window without editing Cron.
+MOCK_RETENTION_POLICY='enabled=0 days=14' "${runner[@]}" --run --apply-retention
+[[ -d "$old" ]] || { echo 'disabled retention deleted data' >&2; exit 1; }
+MOCK_RETENTION_POLICY='enabled=1 days=30' "${runner[@]}" --run --apply-retention
+[[ -d "$old" ]] || { echo 'extended retention deleted data' >&2; exit 1; }
+
+# Backend/policy errors must never revert to an unsafe deletion fallback.
+MOCK_RETENTION_POLICY_UNAVAILABLE=1 "${runner[@]}" --run --apply-retention
+[[ -d "$old" ]] || { echo 'unavailable policy deleted data' >&2; exit 1; }
+MOCK_BACKEND_HEALTH=unhealthy "${runner[@]}" --run --apply-retention
+[[ -d "$old" ]] || { echo 'unhealthy backend deleted data' >&2; exit 1; }
+MOCK_RETENTION_POLICY='enabled=1 days=invalid' "${runner[@]}" --run --apply-retention
+[[ -d "$old" ]] || { echo 'invalid policy deleted data' >&2; exit 1; }
 
 # Explicit retention only removes old, completed auto backups with known names.
 "${runner[@]}" --run --apply-retention

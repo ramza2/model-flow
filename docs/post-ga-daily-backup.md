@@ -1,5 +1,44 @@
 # Post-GA daily backup — Cron deployment (ModelFlow)
 
+## Operational status and configurable retention (2026-11-09)
+
+The existing production deployment was verified on 2026-11-09 KST:
+`cron` is active/enabled; the 03:00 daily entry includes `--apply-retention`;
+the 04:00 backup-health notification check is installed; the most recent
+backup and health check succeeded. A test email was received by the operator.
+This describes the observed ModelFlow production host, not a requirement for
+other environments. The sections below also retain the original deployment
+and activation instructions for reference.
+
+The post-GA administration enhancement adds **시스템 관리 → 환경 설정 → 검증 완료
+백업 보존 정책** (system-admin access only):
+
+- Enable/disable cleanup (default: enabled) and set a retention age of
+  **7–365 days** (default: **14**). Changes are stored in `system_settings` and
+  audited. No Alembic migration or backup-file manipulation occurs in the API.
+- The daily host Cron command remains unchanged. After a successful new
+  backup is verified, it reads the current policy from the running production
+  backend container using `python -m app.services.backup_retention`.
+- **`--apply-retention` is still an independent host-operator prerequisite.**
+  The UI does not edit Cron or grant cleanup permission to unscheduled jobs.
+  With the switch off, expired backups are reported but not removed.
+- Only verified, exact-name, non-symlink `backups/auto/auto-*` directories
+  older than the configured age are eligible. The latest **two** verified
+  automatic snapshots remain protected, as do failed/unverified runs and all
+  manual/predeployment backups.
+- Missing backend container, wrong Compose identity, unparseable policy,
+  invalid stored values or DB errors **skip cleanup** without causing the
+  successful fresh backup to be marked failed. The private backup log contains
+  `BACKUP_DAILY_RETENTION_SKIPPED=...`; investigate this signal if persistent.
+- Saving the policy does **not** delete anything immediately. It takes effect
+  at the next successful scheduled backup. Lowering the age or re-enabling
+  cleanup prompts the user to confirm potential future deletion.
+
+Verification before deployment: `bash scripts/test-daily-backup.sh`, targeted
+backend API/permission tests, frontend admin tests and the full `verify.sh`
+gate in a Docker-capable environment. Deploy the backend **before** the frontend
+so the UI can read `/api/v1/admin/backup-retention`. Retain existing Cron entries.
+
 ## Scope and deployment status
 
 The runner `scripts/ops/backup-daily.sh` reuses the existing `scripts/backup.sh`.

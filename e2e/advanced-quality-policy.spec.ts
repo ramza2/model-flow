@@ -55,7 +55,7 @@ test("quality policies page is reachable and supports admin write UI", async ({
 
   await page.getByTestId("rule-comparison-0").selectOption("baseline_delta");
   await expect(page.getByTestId("baseline-delta-help-0")).toContainText(
-    "Positive delta means the production metric became worse than the pinned baseline.",
+    "기준값 대비 변화가 양수이면 운영 모델의 품질이 지정한 기준값보다 나빠진 것입니다.",
   );
   await expect(page.getByTestId("baseline-required-warning")).toBeVisible();
 

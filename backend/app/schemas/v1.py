@@ -526,6 +526,11 @@ class SettingsUpdate(BaseModel):
     values: dict[str, Any]
 
 
+class BackupRetentionPolicyUpdate(BaseModel):
+    enabled: bool = Field(strict=True)
+    days: int = Field(ge=7, le=365, strict=True)
+
+
 class RetentionPolicyUpdate(BaseModel):
     training_logs_days: int = Field(ge=0)
     inference_stats_days: int = Field(ge=0)

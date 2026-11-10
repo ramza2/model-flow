@@ -20,8 +20,8 @@ from app.db.models import (
     WorkerHeartbeat,
 )
 from app.db.session import get_db
-from app.schemas.v1 import RetentionPolicyUpdate, SettingsUpdate
-from app.services import mlflow_service, storage
+from app.schemas.v1 import BackupRetentionPolicyUpdate, RetentionPolicyUpdate, SettingsUpdate
+from app.services import backup_retention, mlflow_service, storage
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 _EDITABLE_SETTINGS = {
@@ -207,3 +207,26 @@ def put_retention_policy(
     audit_event(db, auth, "retention_policy.update", "system_setting", after=values)
     db.commit()
     return values
+
+
+@router.get("/backup-retention")
+def get_backup_retention_policy(
+    _: AuthContext = Depends(require_system_admin),
+    db: Session = Depends(get_db),
+):
+    return backup_retention.read_policy(db)
+
+
+@router.put("/backup-retention")
+def put_backup_retention_policy(
+    body: BackupRetentionPolicyUpdate,
+    auth: AuthContext = Depends(require_system_admin),
+    db: Session = Depends(get_db),
+):
+    before = backup_retention.read_policy(db)
+    _setting_upsert(db, backup_retention.ENABLED_KEY, body.enabled, auth.user.id)
+    _setting_upsert(db, backup_retention.DAYS_KEY, body.days, auth.user.id)
+    after = {"enabled": body.enabled, "days": body.days, "minimum_verified_keep": backup_retention.MIN_VERIFIED_KEEP}
+    audit_event(db, auth, "backup_retention_policy.update", "system_setting", before=before, after=after)
+    db.commit()
+    return after
