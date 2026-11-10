@@ -71,8 +71,10 @@ describe("Alerts page", () => {
       throw new Error(`unexpected api ${path}`);
     });
     renderPage();
-    expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
-    expect(screen.getByText(driftCritical.title)).toBeInTheDocument();
+    expect(await screen.findByText("데이터 분포 변화 확인 필요")).toBeInTheDocument();
+    expect(screen.getByText("심각한 데이터 분포 변화 감지")).toBeInTheDocument();
+    expect(screen.getByText("데이터 분포 평가 #12에서 데이터셋 기준 버전 (#7)과 비교 버전 (#9) 사이에 주의가 필요한 분포 변화가 발견됐습니다.")).toBeInTheDocument();
+    expect(screen.getByText("데이터 분포 평가 #13에서 데이터셋 기준 버전 (#7)과 비교 버전 (#10) 사이에 심각한 분포 변화가 발견됐습니다.")).toBeInTheDocument();
     expect(screen.getAllByText("관련 항목 보기 →")).toHaveLength(2);
     const monitoringLink = screen.getAllByRole("link", { name: "관련 항목 보기 →" })[0];
     expect(monitoringLink.getAttribute("href")).toBe("/projects/1/monitoring");
@@ -85,7 +87,7 @@ describe("Alerts page", () => {
       throw new Error(`unexpected api ${path}`);
     });
     renderPage();
-    expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
+    expect(await screen.findByText("데이터 분포 변화 확인 필요")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /알림 해결 완료 처리/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "읽음 처리" })).toBeInTheDocument();
   });
@@ -126,6 +128,31 @@ describe("Alerts page", () => {
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "해결 완료" }));
-    expect(await screen.findByText(driftWarning.title)).toBeInTheDocument();
+    expect(await screen.findByText("데이터 분포 변화 확인 필요")).toBeInTheDocument();
+  });
+
+  it("translates persisted feedback-dataset alerts and preserves unfamiliar messages", async () => {
+    apiMock.mockResolvedValue([
+      {
+        ...driftWarning,
+        id: 21,
+        title: "Feedback dataset ready: Iris 붓꽃 데이터 v2",
+        message: "Materialized 3 approved feedback row(s) onto base DatasetVersion #14 creating DatasetVersion #15 (v2).",
+      },
+      { ...driftWarning, id: 22, title: "Custom alert title", message: "Custom alert details" },
+      {
+        ...driftWarning, id: 23,
+        title: "Data drift requires attention",
+        message: "Drift run #23 detected watch drift between dataset versions #4 and #5. Affected columns: temperature (watch, 0.31).",
+      },
+    ]);
+    renderPage();
+    expect(await screen.findByText("피드백 데이터셋 준비 완료: Iris 붓꽃 데이터 v2")).toBeInTheDocument();
+    expect(screen.getByText("승인된 피드백 3건을 데이터셋 버전 #14에 반영하여 새 버전 #15 (v2)를 생성했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("Custom alert title")).toBeInTheDocument();
+    expect(screen.getByText("Custom alert details")).toBeInTheDocument();
+    expect(
+      screen.getByText("데이터 분포 평가 #23에서 데이터셋 기준 버전 (#4)과 비교 버전 (#5) 사이에 주의가 필요한 분포 변화가 발견됐습니다. 영향받은 컬럼: temperature (watch, 0.31)."),
+    ).toBeInTheDocument();
   });
 });

@@ -98,7 +98,12 @@ export default function AuditLogs() {
                 <tr key={event.id} className={event.success ? undefined : "is-failed"}>
                   <td className="catalog-meta-date">{formatDate(event.created_at)}</td>
                   <td>{event.user_email || "시스템"}</td>
-                  <td title={event.action}>{auditActionLabel(event.action)} <small className="table-subtitle mono">{event.action}</small></td>
+                  <td title={event.action}>
+                    {auditActionLabel(event.action)}
+                    {auditActionLabel(event.action) !== event.action ? (
+                      <> <small className="table-subtitle mono">{event.action}</small></>
+                    ) : null}
+                  </td>
                   <td>
                     {auditResourceLabel(event.resource_type)}{" "}
                     {event.resource_id ? <span className="mono">#{event.resource_id}</span> : null}

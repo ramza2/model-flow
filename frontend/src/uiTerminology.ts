@@ -123,12 +123,36 @@ export function auditResourceLabel(value: string): string {
     pipeline_run: "파이프라인 실행", automation_schedule: "자동 실행 일정",
     drift_run: "데이터 변화 평가", batch_inference_job: "일괄 예측 작업",
     dataset_split: "데이터 분할", retrain_trigger: "재학습 요청",
+    dataset_version: "데이터셋 버전", data_source: "데이터 소스",
+    feedback_materialization_run: "피드백 데이터셋 생성 작업",
+    ground_truth_feedback: "실제 정답 피드백",
+    model_quality_run: "모델 품질 평가",
+    model_quality_policy: "모델 품질 정책",
+    dataset_preparation_run: "데이터 가공 실행",
+    dataset_preparation_version: "데이터 가공 버전",
   };
   return labels[value] || value.replaceAll("_", " ");
 }
 
 /** Human-readable audit action, with the exact stored action kept separately. */
 export function auditActionLabel(value: string): string {
+  const exactLabels: Record<string, string> = {
+    "auth.login": "사용자 로그인",
+    "endpoint.swap": "배포 모델 교체",
+    "model.gates": "모델 승인 기준 평가",
+    "training_job.retrain": "모델 재학습 요청",
+    "dataset.upload": "데이터셋 파일 업로드",
+    "data_source.test": "데이터 소스 연결 검사",
+    "feedback_materialization.succeed": "피드백 데이터셋 생성 완료",
+    "model_quality_run.complete": "모델 품질 평가 완료",
+    "pipeline.version.create": "파이프라인 버전 생성",
+    "dataset_preparation.run.queue": "데이터 가공 실행 대기열 등록",
+    "dataset_preparation.run.create": "데이터 가공 실행 생성",
+    "dataset_preparation.version.create": "데이터 가공 버전 생성",
+    "feedback.review.approve": "실제 정답 피드백 승인",
+    "pipeline.copilot.draft": "AI 파이프라인 초안 생성",
+  };
+  if (exactLabels[value]) return exactLabels[value];
   const actions: Record<string, string> = {
     create: "생성", update: "수정", delete: "삭제", start: "시작", stop: "중지",
     activate: "활성화", deactivate: "비활성화", enable: "활성화", disable: "비활성화",
@@ -143,6 +167,31 @@ export function auditActionLabel(value: string): string {
     return `${auditResourceLabel(known[0] === "model" ? "model_version" : known[0])} ${actions[known[1]]}`;
   }
   return value;
+}
+
+/** Presentation-only translations of known persisted alert messages. Unknown text stays verbatim. */
+export function alertDisplayCopy(title: string, message: string): { title: string; message: string } {
+  const feedbackTitle = /^Feedback dataset ready: (.+)$/u.exec(title);
+  const feedbackMessage = /^Materialized (\d+) approved feedback row\(s\) onto base DatasetVersion #(\d+) creating DatasetVersion #(\d+) \(v(\d+)\)\.$/u.exec(message);
+  if (feedbackTitle && feedbackMessage) {
+    return {
+      title: `피드백 데이터셋 준비 완료: ${feedbackTitle[1]}`,
+      message: `승인된 피드백 ${feedbackMessage[1]}건을 데이터셋 버전 #${feedbackMessage[2]}에 반영하여 새 버전 #${feedbackMessage[3]} (v${feedbackMessage[4]})를 생성했습니다.`,
+    };
+  }
+
+  const driftTitle: Record<string, string> = {
+    "Data drift requires attention": "데이터 분포 변화 확인 필요",
+    "Critical data drift detected": "심각한 데이터 분포 변화 감지",
+  };
+  const driftMessage = /^Drift run #(\d+) detected (watch|critical) drift between dataset versions #(\d+) and #(\d+)\.(?: Affected columns: (.+)\.)?$/u.exec(message);
+  if (driftTitle[title] && driftMessage) {
+    return {
+      title: driftTitle[title],
+      message: `데이터 분포 평가 #${driftMessage[1]}에서 데이터셋 기준 버전 (#${driftMessage[3]})과 비교 버전 (#${driftMessage[4]}) 사이에 ${driftMessage[2] === "critical" ? "심각한" : "주의가 필요한"} 분포 변화가 발견됐습니다.${driftMessage[5] ? ` 영향받은 컬럼: ${driftMessage[5]}.` : ""}`,
+    };
+  }
+  return { title, message };
 }
 
 /** Display-only pipeline lifecycle status (draft/published/…). Raw API status unchanged. */
