@@ -18,6 +18,8 @@ describe("Korean Model Registry display-only labels", () => {
 
   it("formats aggregate, per-target, and forecasting metric labels without changing keys", () => {
     expect(formatModelMetricLabelKo("val_rmse")).toBe("검증 · RMSE");
+    expect(formatModelMetricLabelKo("val_precision_weighted")).toBe("검증 · 가중 정밀도");
+    expect(formatModelMetricLabelKo("test_recall_weighted")).toBe("테스트 · 가중 재현율");
     expect(formatModelMetricLabelKo("test_target_1_mae", ["cooling_load", "power_usage"]))
       .toBe("테스트 · power_usage · MAE");
     expect(formatModelMetricLabelKo("val_HTDND_AMNT__t_plus_1_r2"))

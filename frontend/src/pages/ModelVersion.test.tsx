@@ -251,6 +251,19 @@ describe("ModelVersion lifecycle UX", () => {
     expect(policyMetric.children[1]).toHaveTextContent("대표 지표나 예측 대상별 지표와 다를 수 있습니다");
   });
 
+  it("renders weighted classification metrics in Korean without changing metric keys", async () => {
+    apiMock.mockResolvedValue({
+      ...baseModel,
+      metadata: { problem_type: "classification", target_columns: ["target"] },
+      metrics: { val_accuracy: 0.95, val_precision_weighted: 0.93, val_recall_weighted: 0.92 },
+    });
+    renderPage();
+    expect(await screen.findByTestId("metric-card-val_accuracy")).toHaveTextContent("검증 · 정확도");
+    expect(screen.getByTestId("metric-card-val_precision_weighted")).toHaveTextContent("검증 · 가중 정밀도");
+    expect(screen.getByTestId("metric-card-val_recall_weighted")).toHaveTextContent("검증 · 가중 재현율");
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · 정확도: 0.950");
+  });
+
   it("names the actual target when the validation policy uses a per-target metric", async () => {
     apiMock.mockResolvedValue({
       ...baseModel,

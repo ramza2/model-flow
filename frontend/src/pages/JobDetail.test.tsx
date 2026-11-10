@@ -602,7 +602,33 @@ describe("JobDetail retrain", () => {
     expect(rmseHelp.getAttribute("aria-label")).not.toEqual(maeHelp.getAttribute("aria-label"));
     expect(rmseHelp.getAttribute("aria-label")).not.toEqual(testRmseHelp.getAttribute("aria-label"));
     expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("대표 지표:");
-    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("val rmse: 18.128");
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · RMSE: 18.128");
+    expect(within(cards[0] as HTMLElement).getByText("검증 · RMSE")).toBeInTheDocument();
+    expect(within(cards[3] as HTMLElement).getByText("테스트 · RMSE")).toBeInTheDocument();
+  });
+
+  it("uses the same Korean classification metric names as the model registry", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/42")) {
+        return {
+          ...succeededJob,
+          metrics: {
+            val_accuracy: 0.95,
+            val_f1_weighted: 0.94,
+            val_precision_weighted: 0.93,
+            val_recall_weighted: 0.92,
+          },
+        };
+      }
+      return [];
+    });
+    renderPage("42");
+
+    expect(await screen.findByTestId("metric-card-val_accuracy")).toHaveTextContent("검증 · 정확도");
+    expect(screen.getByTestId("metric-card-val_f1_weighted")).toHaveTextContent("검증 · 가중 F1 점수");
+    expect(screen.getByTestId("metric-card-val_precision_weighted")).toHaveTextContent("검증 · 가중 정밀도");
+    expect(screen.getByTestId("metric-card-val_recall_weighted")).toHaveTextContent("검증 · 가중 재현율");
+    expect(screen.getByTestId("metric-primary-hint")).toHaveTextContent("검증 · 정확도: 0.950");
   });
 
 });

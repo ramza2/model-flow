@@ -304,14 +304,21 @@ describe("JobCreate UX", () => {
     expect(await screen.findByTestId("detected-problem-type")).toHaveTextContent("Classification");
     await waitFor(() => {
       const algorithm = screen.getByTestId("job-algorithm");
+      expect(algorithm).toHaveTextContent("랜덤 포레스트 분류 (Random forest)");
       expect(algorithm).toHaveTextContent("Random forest");
       expect(algorithm).not.toHaveTextContent("Ridge regression");
+      expect(screen.getByTestId("job-algorithm-hint")).toHaveTextContent("여러 결정 트리");
+      expect(screen.getByTestId("job-random-seed-hint")).toHaveTextContent(/난수 시드.*Random seed.*42/);
+      expect(within(screen.getByTestId("job-random-seed-hint")).getByLabelText(/도움말:/))
+        .toHaveAttribute("aria-label", expect.stringMatching(/결과를 재현/));
     });
     fireEvent.change(screen.getByTestId("job-problem-type"), { target: { value: "regression" } });
     await waitFor(() => {
       const algorithm = screen.getByTestId("job-algorithm");
+      expect(algorithm).toHaveTextContent("릿지 회귀 (Ridge regression)");
       expect(algorithm).toHaveTextContent("Ridge regression");
       expect(algorithm).not.toHaveTextContent("Logistic regression");
+      expect(screen.getByTestId("job-algorithm-hint")).toHaveTextContent("선형 관계");
     });
   });
 
@@ -325,6 +332,7 @@ describe("JobCreate UX", () => {
     );
     await screen.findByTestId("job-algorithm");
     fireEvent.change(screen.getByTestId("job-algorithm"), { target: { value: "logistic_regression" } });
+    expect(screen.getByTestId("job-algorithm-hint")).toHaveTextContent("범주에 속할 가능성");
     fireEvent.click(screen.getByTestId("job-hyperparameters-toggle"));
     await waitFor(() => {
       expect((screen.getByTestId("job-hyperparameters") as HTMLTextAreaElement).value).toContain('"C": 1');
@@ -1796,6 +1804,7 @@ describe("JobCreate time-aware split", () => {
     expect(screen.getByTestId("job-time-seed-hint")).toHaveTextContent(
       /데이터 행의 순서를 섞지 않습니다.*난수 시드는 데이터 순서에는 영향을 주지 않지만 모델 학습 과정에는 영향을 줄 수 있습니다/,
     );
+    expect(screen.queryByTestId("job-random-seed-hint")).not.toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByTestId("job-submit")).not.toBeDisabled());
     fireEvent.click(screen.getByTestId("job-submit"));

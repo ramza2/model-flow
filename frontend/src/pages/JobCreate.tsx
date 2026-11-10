@@ -3,7 +3,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type Dataset, type DatasetSplit, type DatasetVersion, type Job } from "../api";
 import { effectiveTargetColumns } from "../jobHelpers";
 import { EmptyState, ErrorNotice, Loading, Notice, PageHeader, TermLabel } from "../components";
-import { UI_HELP, problemTypeLabel } from "../uiTerminology";
+import { algorithmDescriptionKo, algorithmLabelKo, UI_HELP, problemTypeLabel } from "../uiTerminology";
 import {
   algorithmsForProblemType,
   algorithmsForTrainingTask,
@@ -918,6 +918,13 @@ export default function JobCreate() {
                 ) : null}
               </>
             )}
+            {(selectedSavedSplit
+              ? (selectedSavedSplit.split_strategy || "random") === "random"
+              : !isForecasting && splitStrategy === "random") && (
+              <p className="form-hint" data-testid="job-random-seed-hint">
+                <TermLabel ko="난수 시드" en="Random seed" help={UI_HELP.randomSeed} />: {randomSeed} · 같은 분할을 재현하기 위한 기준 숫자입니다.
+              </p>
+            )}
           </div>
           <div className="form-section">
             <span className="eyebrow">모델 설정</span>
@@ -930,10 +937,15 @@ export default function JobCreate() {
                 data-testid="job-algorithm"
               >
                 {visibleAlgorithms.map((item) => (
-                  <option key={item.id} value={item.id}>{item.display_name}</option>
+                  <option key={item.id} value={item.id}>{algorithmLabelKo(item.id, item.display_name)}</option>
                 ))}
               </select>
             </label>
+            {selectedAlgorithm && (
+              <p className="form-hint" data-testid="job-algorithm-hint">
+                {algorithmDescriptionKo(selectedAlgorithm.id)}
+              </p>
+            )}
             <div className="job-hyperparameters-panel" data-testid="job-hyperparameters-panel">
               <div className="job-hyperparameters-heading">
                 <TermLabel ko="세부 학습 설정" en="Hyperparameters" help={UI_HELP.hyperparameters} />

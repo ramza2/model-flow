@@ -260,6 +260,7 @@ export default function JobDetail() {
               metrics={job.metrics}
               problemType={job.problem_type}
               targetColumns={targets}
+              korean
               showMetricHelp
               labels={{
                 emptyTitle: "평가 지표",

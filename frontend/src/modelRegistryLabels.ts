@@ -39,7 +39,9 @@ const METRICS_KO: Record<string, string> = {
   f1: "F1 점수",
   f1_weighted: "가중 F1 점수",
   precision: "정밀도",
+  precision_weighted: "가중 정밀도",
   recall: "재현율",
+  recall_weighted: "가중 재현율",
 };
 
 /** Parse a forecasting target name without changing the stored column. */
