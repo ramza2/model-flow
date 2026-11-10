@@ -80,23 +80,23 @@ test("drift run generates operational alert and resolves through UI", async ({ p
     : "Data drift requires attention";
   await expect(page.getByText(alertTitle)).toBeVisible();
   await expect(page.getByText(/Drift run #/)).toBeVisible();
-  await expect(page.getByRole("link", { name: "View related resource →" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "관련 항목 보기 →" })).toBeVisible();
 
-  await page.getByRole("link", { name: "View related resource →" }).click();
+  await page.getByRole("link", { name: "관련 항목 보기 →" }).click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}/monitoring`));
 
   await page.goto(`/projects/${projectId}/alerts`);
   const resolve = page.getByTitle(
-    "Mark this alert as resolved. It remains available in the Resolved tab.",
+    "이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다.",
   );
   await expect(resolve).toHaveAttribute(
     "title",
-    "Mark this alert as resolved. It remains available in the Resolved tab.",
+    "이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다.",
   );
   await resolve.click();
-  await expect(page.getByText("Alert resolved.")).toBeVisible();
+  await expect(page.getByText("알림을 해결 완료 처리했습니다.")).toBeVisible();
   await expect(page.getByText(alertTitle)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Resolved" }).click();
+  await page.getByRole("button", { name: "해결 완료" }).click();
   await expect(page.getByText(alertTitle)).toBeVisible();
 });
