@@ -15,6 +15,8 @@ export const UI_HELP = {
     "과거 데이터로 학습하고 그보다 이후 시점으로 검증·테스트합니다. 실제 미래 예측과 유사한 평가 방식입니다.",
   algorithm:
     "데이터에서 규칙을 학습하는 모델 방식입니다. 문제 유형과 데이터 크기에 따라 적합한 알고리즘이 달라집니다.",
+  randomSeed:
+    "난수 시드는 데이터를 무작위로 나누거나 모델을 학습할 때 사용하는 기준 숫자입니다. 데이터와 설정, 시드가 같으면 결과를 재현하는 데 도움이 됩니다. 시간 순서 분할은 데이터 순서를 섞지 않습니다.",
   hyperparameters:
     "알고리즘의 학습 동작을 조정하는 세부 설정입니다. 잘 모르는 경우 기본값으로 시작한 뒤 실험 비교로 조정하는 것이 좋습니다.",
   savedSplit:
@@ -110,6 +112,51 @@ export function operationalStatusLabel(value?: string | null): string {
     legacy: "기본", advanced: "고급", pending: "대기", running: "진행 중",
   };
   return labels[String(value || "").toLowerCase()] || (value ? String(value).replaceAll("_", " ") : "—");
+}
+
+/** 화면에만 쓰는 이름과 설명입니다. API의 알고리즘 ID와 기본 설정은 변경하지 않습니다. */
+const ALGORITHM_GUIDANCE_KO: Record<string, { name: string; description: string }> = {
+  random_forest: {
+    name: "랜덤 포레스트 분류",
+    description: "여러 결정 트리의 결과를 모아 범주를 예측합니다. 복잡한 패턴에도 쓸 수 있지만 트리 수에 따라 학습 시간이 늘어납니다.",
+  },
+  logistic_regression: {
+    name: "로지스틱 회귀 분류",
+    description: "입력 항목으로 각 범주에 속할 가능성을 추정합니다. 분류 문제의 비교적 단순한 기준 모델로 시작하기 좋습니다.",
+  },
+  gradient_boosting: {
+    name: "그래디언트 부스팅 분류",
+    description: "이전 트리의 오차를 다음 트리가 보완하도록 순서대로 학습합니다. 세부 설정에 따라 과적합될 수 있습니다.",
+  },
+  sgd_classifier: {
+    name: "확률적 경사 하강법 분류",
+    description: "데이터를 조금씩 사용해 선형 분류 모델의 가중치를 갱신합니다. 입력값의 크기와 학습 설정에 영향을 받습니다.",
+  },
+  ridge: {
+    name: "릿지 회귀",
+    description: "입력 항목과 숫자 예측값 사이의 선형 관계를 학습합니다. 회귀·시계열 예측에서 비교용 기준 모델로 사용하기 좋습니다.",
+  },
+  random_forest_regressor: {
+    name: "랜덤 포레스트 회귀",
+    description: "여러 결정 트리의 예측 숫자를 평균내어 결과를 만듭니다. 비선형 관계를 학습할 수 있지만 트리 수에 따라 처리량이 늘어납니다.",
+  },
+  gradient_boosting_regressor: {
+    name: "그래디언트 부스팅 회귀",
+    description: "이전 트리의 숫자 예측 오차를 다음 트리가 보완하도록 학습합니다. 학습률과 트리 설정의 영향을 받습니다.",
+  },
+  sgd_regressor: {
+    name: "확률적 경사 하강법 회귀",
+    description: "데이터를 조금씩 사용해 선형 회귀 모델의 가중치를 갱신합니다. 입력값의 크기와 학습 설정에 영향을 받습니다.",
+  },
+};
+
+export function algorithmLabelKo(id: string, originalName: string): string {
+  const translated = ALGORITHM_GUIDANCE_KO[id]?.name;
+  return translated ? `${translated} (${originalName})` : originalName;
+}
+
+export function algorithmDescriptionKo(id: string): string {
+  return ALGORITHM_GUIDANCE_KO[id]?.description ?? UI_HELP.algorithm;
 }
 
 /** Display-only audit resource labels; raw resource_type is still used for filters. */
