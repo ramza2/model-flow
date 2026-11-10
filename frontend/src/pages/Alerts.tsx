@@ -12,7 +12,7 @@ import {
   formatDate,
 } from "../components";
 import { userCanProject, useProject } from "../ProjectContext";
-import { operationalStatusLabel } from "../uiTerminology";
+import { alertDisplayCopy, operationalStatusLabel } from "../uiTerminology";
 
 type AlertFilter = "open" | "resolved" | "all";
 
@@ -95,53 +95,56 @@ export default function Alerts() {
         />
       ) : (
         <div className="alert-list">
-          {alerts.map((alert) => (
-            <article
-              className={[
-                "alert-card",
-                alert.is_read ? "is-read" : "unread",
-                alert.is_resolved ? "is-resolved" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              key={alert.id}
-              data-testid={`alert-card-${alert.id}`}
-            >
-              <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
-              <div className="alert-copy">
-                <div className="row-actions alert-meta-row">
-                  <StatusBadge status={alert.severity} label={operationalStatusLabel(alert.severity)} />
-                  <span className="catalog-meta-date">{formatDate(alert.created_at)}</span>
-                  {!alert.is_read && <span className="unread-label">읽지 않음</span>}
-                  {alert.is_resolved && <StatusBadge status="resolved" label="해결 완료" />}
+          {alerts.map((alert) => {
+            const copy = alertDisplayCopy(alert.title, alert.message);
+            return (
+              <article
+                className={[
+                  "alert-card",
+                  alert.is_read ? "is-read" : "unread",
+                  alert.is_resolved ? "is-resolved" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                key={alert.id}
+                data-testid={`alert-card-${alert.id}`}
+              >
+                <div className={`severity-mark ${alert.severity}`} aria-hidden="true">!</div>
+                <div className="alert-copy">
+                  <div className="row-actions alert-meta-row">
+                    <StatusBadge status={alert.severity} label={operationalStatusLabel(alert.severity)} />
+                    <span className="catalog-meta-date">{formatDate(alert.created_at)}</span>
+                    {!alert.is_read && <span className="unread-label">읽지 않음</span>}
+                    {alert.is_resolved && <StatusBadge status="resolved" label="해결 완료" />}
+                  </div>
+                  <h2>{copy.title}</h2>
+                  <p>{copy.message}</p>
+                  <div className="row-actions alert-actions">
+                    {alert.link_path && (
+                      <Link className="btn link" to={alert.link_path} data-testid={`alert-link-${alert.id}`}>
+                        관련 항목 보기 →
+                      </Link>
+                    )}
+                    {!alert.is_read && (
+                      <button className="btn link" onClick={() => action(alert, "read")}>
+                        읽음 처리
+                      </button>
+                    )}
+                    {canResolve && !alert.is_resolved && (
+                      <button
+                        className="btn secondary"
+                        title="이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다."
+                        aria-label={`${copy.title} 알림 해결 완료 처리. 해결 완료 탭에서 계속 확인할 수 있습니다.`}
+                        onClick={() => action(alert, "resolve")}
+                      >
+                        해결 완료
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <h2>{alert.title}</h2>
-                <p>{alert.message}</p>
-                <div className="row-actions alert-actions">
-                  {alert.link_path && (
-                    <Link className="btn link" to={alert.link_path} data-testid={`alert-link-${alert.id}`}>
-                      관련 항목 보기 →
-                    </Link>
-                  )}
-                  {!alert.is_read && (
-                    <button className="btn link" onClick={() => action(alert, "read")}>
-                      읽음 처리
-                    </button>
-                  )}
-                  {canResolve && !alert.is_resolved && (
-                    <button
-                      className="btn secondary"
-                      title="이 알림을 해결 완료로 표시합니다. 해결 완료 탭에서 계속 확인할 수 있습니다."
-                      aria-label={`${alert.title} 알림 해결 완료 처리. 해결 완료 탭에서 계속 확인할 수 있습니다.`}
-                      onClick={() => action(alert, "resolve")}
-                    >
-                      해결 완료
-                    </button>
-                  )}
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

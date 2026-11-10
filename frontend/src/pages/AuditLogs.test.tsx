@@ -43,4 +43,20 @@ describe("Korean audit log screens", () => {
     fireEvent.click(screen.getByRole("button", { name: "필터 적용" }));
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith("/admin/audit?action=model.approve&resource_type=model_version"));
   });
+
+  it("shows known stored action/resource codes in Korean without losing the raw audit code", async () => {
+    apiMock.mockResolvedValue([
+      { ...sampleEvent, id: 11, action: "auth.login", resource_type: "user", resource_id: "1" },
+      { ...sampleEvent, id: 12, action: "endpoint.swap", resource_type: "endpoint", resource_id: "6" },
+      { ...sampleEvent, id: 13, action: "feedback_materialization.succeed", resource_type: "feedback_materialization_run", resource_id: "3" },
+      { ...sampleEvent, id: 14, action: "unfamiliar.custom", resource_type: "unfamiliar_resource", resource_id: "7" },
+    ]);
+    renderPage("/audit");
+    expect(await screen.findByText("사용자 로그인")).toBeInTheDocument();
+    expect(screen.getByText("배포 모델 교체")).toBeInTheDocument();
+    expect(screen.getByText("피드백 데이터셋 생성 완료")).toBeInTheDocument();
+    expect(screen.getByText("피드백 데이터셋 생성 작업")).toBeInTheDocument();
+    expect(screen.getByText("endpoint.swap")).toBeInTheDocument();
+    expect(screen.getAllByText("unfamiliar.custom")).toHaveLength(1);
+  });
 });
