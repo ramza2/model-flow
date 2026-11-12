@@ -551,17 +551,17 @@ export default function Schedules() {
     }
   }
 
-  if (loading) return <Loading label="Loading schedules..." />;
+  if (loading) return <Loading label="스케줄 불러오는 중…" />;
 
   return (
     <div className="page-stack ops-page">
       <PageHeader
-        title="Schedules"
-        description="Automation catalog for data imports, batch predictions, and pipeline runs."
+        title="스케줄"
+        description="데이터 가져오기·일괄 예측·파이프라인 실행을 자동화할 일정을 관리합니다."
         actions={
           canWrite ? (
             <button type="button" className="btn" data-testid="schedule-create-open" onClick={() => openCreate()} disabled={busy}>
-              Create schedule
+              스케줄 만들기
             </button>
           ) : undefined
         }
@@ -571,12 +571,12 @@ export default function Schedules() {
 
       {schedules.length === 0 ? (
         <EmptyState
-          title="No schedules yet"
-          description="Create a schedule to automate data imports, batch predictions, or pipeline runs."
+          title="등록된 스케줄이 없습니다"
+          description="스케줄을 만들면 데이터 가져오기·일괄 예측·파이프라인 실행을 자동으로 처리할 수 있습니다."
           action={
             canWrite ? (
               <button type="button" className="btn" data-testid="schedule-empty-create" onClick={() => openCreate()}>
-                Create schedule
+                스케줄 만들기
               </button>
             ) : undefined
           }
@@ -586,14 +586,14 @@ export default function Schedules() {
           <table data-testid="schedules-catalog">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Target</th>
-                <th>Frequency</th>
-                <th>Timezone</th>
-                <th>State</th>
-                <th>Last run</th>
-                <th>Next run</th>
-                <th>Actions</th>
+                <th>이름</th>
+                <th>실행 대상</th>
+                <th>실행 주기</th>
+                <th>시간대</th>
+                <th>사용 상태</th>
+                <th>최근 실행</th>
+                <th>다음 실행</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -617,7 +617,7 @@ export default function Schedules() {
                   </td>
                   <td className="catalog-meta-date">{schedule.timezone}</td>
                   <td>
-                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} />
+                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} label={operationalStatusLabel(schedule.is_enabled ? "enabled" : "disabled")} />
                   </td>
                   <td className="catalog-meta-date">
                     {schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}
@@ -630,25 +630,25 @@ export default function Schedules() {
                       <div className="row-actions schedule-actions-primary">
                         {canWrite && (
                           <button type="button" className="btn" onClick={() => void runNow(schedule)} disabled={busy}>
-                            Run now
+                            지금 실행
                           </button>
                         )}
                         <button type="button" className="btn secondary" onClick={() => void openHistory(schedule)}>
-                          History
+                          실행 이력
                         </button>
                         {canWrite && (
                           <button type="button" className="btn secondary" onClick={() => openEdit(schedule)} disabled={busy}>
-                            Edit
+                            수정
                           </button>
                         )}
                       </div>
                       {canWrite && (
                         <div className="row-actions schedule-actions-secondary">
                           <button type="button" className="btn link" onClick={() => void toggleEnabled(schedule)} disabled={busy}>
-                            {schedule.is_enabled ? "Disable" : "Enable"}
+                            {schedule.is_enabled ? "비활성화" : "활성화"}
                           </button>
                           <button type="button" className="btn link danger-text" onClick={() => void deleteSchedule(schedule)} disabled={busy}>
-                            Delete
+                            삭제
                           </button>
                         </div>
                       )}
@@ -665,26 +665,26 @@ export default function Schedules() {
         <section className="panel schedule-history-section">
           <div className="panel-header row-actions">
             <div>
-              <span className="eyebrow">History</span>
-              <h2>Run history — {historySchedule.name}</h2>
+              <span className="eyebrow">실행 이력</span>
+              <h2>실행 이력 — {historySchedule.name}</h2>
             </div>
-            <button type="button" className="btn secondary" onClick={closeHistory}>Close</button>
+            <button type="button" className="btn secondary" onClick={closeHistory}>닫기</button>
           </div>
           {runs.length === 0 ? (
-            <p className="muted">No runs recorded yet.</p>
+            <p className="muted">기록된 실행 이력이 없습니다.</p>
           ) : (
             <div className="table-wrap catalog-table">
               <table>
                 <thead>
                   <tr>
-                    <th>Scheduled</th>
-                    <th>Attempt</th>
-                    <th>Trigger</th>
-                    <th>Status</th>
-                    <th>Resource</th>
-                    <th>Started</th>
-                    <th>Finished</th>
-                    <th>Error</th>
+                    <th>예정 시각</th>
+                    <th>시도 횟수</th>
+                    <th>실행 계기</th>
+                    <th>상태</th>
+                    <th>대상 리소스</th>
+                    <th>시작 시각</th>
+                    <th>종료 시각</th>
+                    <th>오류 내용</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -695,7 +695,7 @@ export default function Schedules() {
                         <td className="catalog-meta-date">{formatDate(run.scheduled_for)}</td>
                         <td className="tabular-num">{run.attempt}</td>
                         <td>{run.trigger_source}</td>
-                        <td><StatusBadge status={run.status} /></td>
+                        <td><StatusBadge status={run.status} label={jobStatusLabel(run.status)} /></td>
                         <td className="mono">
                           {run.target_resource_id && href ? (
                             <Link to={href}>#{run.target_resource_id}</Link>
@@ -720,7 +720,7 @@ export default function Schedules() {
 
       <Drawer
         open={showForm}
-        title={editing ? "Edit schedule" : "Create schedule"}
+        title={editing ? "스케줄 수정" : "스케줄 만들기"}
         onClose={closeForm}
         testId="schedule-drawer"
         footer={(
