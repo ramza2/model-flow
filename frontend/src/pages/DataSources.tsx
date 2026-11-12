@@ -886,7 +886,7 @@ export default function DataSources() {
           ) : sourceType === "rest_api" ? (
             <>
               <label htmlFor="data-source-rest-base-url">
-                Base URL
+                기본 URL
                 <input
                   id="data-source-rest-base-url"
                   value={restApiForm.baseUrl}
@@ -900,7 +900,7 @@ export default function DataSources() {
                 />
               </label>
               <label htmlFor="data-source-rest-resource-path">
-                Default resource path
+                기본 리소스 경로
                 <input
                   id="data-source-rest-resource-path"
                   value={restApiForm.resourcePath}
@@ -911,11 +911,11 @@ export default function DataSources() {
                   autoComplete="off"
                   data-testid="data-source-rest-resource-path"
                 />
-                <small>GET only. Import can override this relative path without changing the source.</small>
+                <small>GET 요청만 사용합니다. 데이터 가져오기에서 이 경로를 임시로 바꿀 수 있습니다.</small>
               </label>
               <div className="form-grid">
                 <label htmlFor="data-source-rest-data-path">
-                  JSON data path
+                  JSON 데이터 경로
                   <input
                     id="data-source-rest-data-path"
                     value={restApiForm.dataPath}
@@ -925,10 +925,10 @@ export default function DataSources() {
                     placeholder="data.items"
                     data-testid="data-source-rest-data-path"
                   />
-                  <small>Optional dot path to the object array inside a wrapped JSON response.</small>
+                  <small>JSON 응답 안에 있는 데이터 배열의 위치를 점(.)으로 구분해 입력합니다. (선택)</small>
                 </label>
                 <label htmlFor="data-source-rest-timeout">
-                  Timeout (seconds)
+                  시간 제한 (초)
                   <input
                     id="data-source-rest-timeout"
                     type="number"
@@ -947,7 +947,7 @@ export default function DataSources() {
                 </label>
               </div>
               <label htmlFor="data-source-rest-auth-type">
-                Authentication
+                인증 방식
                 <select
                   id="data-source-rest-auth-type"
                   value={restApiForm.authType}
@@ -959,14 +959,14 @@ export default function DataSources() {
                   }
                   data-testid="data-source-rest-auth-type"
                 >
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer token</option>
-                  <option value="api_key">API key header</option>
+                  <option value="none">사용 안 함</option>
+                  <option value="bearer">Bearer 토큰</option>
+                  <option value="api_key">API 키 헤더</option>
                 </select>
               </label>
               {restApiForm.authType === "bearer" && (
                 <label htmlFor="data-source-rest-bearer-token">
-                  Bearer token
+                  Bearer 토큰
                   <input
                     id="data-source-rest-bearer-token"
                     type="password"
@@ -975,18 +975,18 @@ export default function DataSources() {
                     onChange={(event) => setBearerToken(event.target.value)}
                     placeholder={
                       editing?.has_secrets && previousRestAuthType === "bearer"
-                        ? "Leave blank to keep saved token"
+                        ? "기존 토큰을 유지하려면 비워 두세요"
                         : "Bearer token"
                     }
                     data-testid="data-source-rest-bearer-token"
                   />
-                  <small>The saved token is encrypted and never returned by the API.</small>
+                  <small>저장된 토큰은 암호화되며 API에서 다시 반환하지 않습니다.</small>
                 </label>
               )}
               {restApiForm.authType === "api_key" && (
                 <div className="form-grid">
                   <label htmlFor="data-source-rest-api-key-header">
-                    API key header
+                    API 키 헤더
                     <input
                       id="data-source-rest-api-key-header"
                       value={restApiForm.apiKeyHeader}
@@ -1001,7 +1001,7 @@ export default function DataSources() {
                     />
                   </label>
                   <label htmlFor="data-source-rest-api-key">
-                    API key
+                    API 키
                     <input
                       id="data-source-rest-api-key"
                       type="password"
@@ -1010,7 +1010,7 @@ export default function DataSources() {
                       onChange={(event) => setApiKey(event.target.value)}
                       placeholder={
                         editing?.has_secrets && previousRestAuthType === "api_key"
-                          ? "Leave blank to keep saved API key"
+                          ? "기존 API 키를 유지하려면 비워 두세요"
                           : "API key"
                       }
                       data-testid="data-source-rest-api-key"
@@ -1019,7 +1019,7 @@ export default function DataSources() {
                 </div>
               )}
               <label htmlFor="data-source-rest-query-params">
-                Query parameters
+                쿼리 매개변수
                 <textarea
                   id="data-source-rest-query-params"
                   className="code-input"
@@ -1030,11 +1030,11 @@ export default function DataSources() {
                   spellCheck={false}
                   data-testid="data-source-rest-query-params"
                 />
-                <small>Optional non-secret JSON object appended to every REST request.</small>
+                <small>모든 REST 요청에 추가할 비밀 정보가 없는 JSON 객체를 입력합니다. (선택)</small>
               </label>
               <div className="form-grid">
                 <label htmlFor="data-source-rest-secret-query-name">
-                  Secret query parameter name
+                  비밀 쿼리 매개변수 이름
                   <input
                     id="data-source-rest-secret-query-name"
                     value={restApiForm.secretQueryParamName}
@@ -1050,7 +1050,7 @@ export default function DataSources() {
                   />
                 </label>
                 <label htmlFor="data-source-rest-secret-query-value">
-                  Secret query parameter value
+                  비밀 쿼리 매개변수 값
                   <input
                     id="data-source-rest-secret-query-value"
                     type="password"
@@ -1061,19 +1061,18 @@ export default function DataSources() {
                       editing?.has_secrets &&
                       previousSecretQueryParamName === restApiForm.secretQueryParamName &&
                       restApiForm.secretQueryParamName
-                        ? "Leave blank to keep saved value"
-                        : "Secret value"
+                        ? "저장된 값을 유지하려면 비워 두세요"
+                        : "비밀 값"
                     }
                     data-testid="data-source-rest-secret-query-value"
                   />
                 </label>
               </div>
               <small>
-                Stored encrypted and never returned by the API. If this key also exists in Query
-                parameters, its value is moved into secret storage on save.
+                암호화해 저장하며 API에서 반환하지 않습니다. 이 키가 쿼리 매개변수에도 있으면 저장 시 비밀 정보 저장소로 옮깁니다.
               </small>
               <label htmlFor="data-source-rest-pagination-mode">
-                Pagination
+                페이지 나누기
                 <select
                   id="data-source-rest-pagination-mode"
                   value={restApiForm.paginationMode}
@@ -1085,15 +1084,15 @@ export default function DataSources() {
                   }
                   data-testid="data-source-rest-pagination-mode"
                 >
-                  <option value="none">None</option>
-                  <option value="page_number">Page number</option>
+                  <option value="none">사용 안 함</option>
+                  <option value="page_number">페이지 번호</option>
                 </select>
               </label>
               {restApiForm.paginationMode === "page_number" && (
                 <>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-page-param">
-                      Page parameter
+                      페이지 번호 매개변수
                       <input
                         id="data-source-rest-page-param"
                         value={restApiForm.paginationPageParam}
@@ -1108,7 +1107,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-page-size-param">
-                      Page-size parameter
+                      페이지 크기 매개변수
                       <input
                         id="data-source-rest-page-size-param"
                         value={restApiForm.paginationPageSizeParam}
@@ -1125,7 +1124,7 @@ export default function DataSources() {
                   </div>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-page-size">
-                      Page size
+                      페이지 크기
                       <input
                         id="data-source-rest-page-size"
                         type="number"
@@ -1143,7 +1142,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-start-page">
-                      Start page
+                      시작 페이지
                       <input
                         id="data-source-rest-start-page"
                         type="number"
@@ -1162,7 +1161,7 @@ export default function DataSources() {
                   </div>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-total-count-path">
-                      Total count JSON path
+                      전체 건수 JSON 경로
                       <input
                         id="data-source-rest-total-count-path"
                         value={restApiForm.paginationTotalCountPath}
@@ -1177,7 +1176,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-max-pages">
-                      Max pages
+                      최대 페이지 수
                       <input
                         id="data-source-rest-max-pages"
                         type="number"
@@ -1196,15 +1195,15 @@ export default function DataSources() {
                     </label>
                   </div>
                   <small>
-                    Import requests pages until Total count is reached or a short page is returned.
-                    Preview and connection tests request only the first page.
+                    데이터 가져오기는 전체 건수에 도달하거나 더 짧은 페이지가 반환될 때까지 요청합니다.
+                    미리보기와 연결 검사는 첫 페이지만 조회합니다.
                   </small>
                 </>
               )}
             </>
           ) : (
             <label>
-              Configuration
+              연결 설정(JSON)
               <textarea
                 className="code-input"
                 value={config}
@@ -1212,15 +1211,15 @@ export default function DataSources() {
                 spellCheck={false}
                 data-testid="data-source-config"
               />
-              <small>Connection metadata is visible to project members. Do not put passwords in this JSON.</small>
+              <small>연결 설정 정보는 프로젝트 구성원이 볼 수 있습니다. 이 JSON에 암호를 입력하지 마세요.</small>
             </label>
           )}
           <div className="row-actions">
             <button className="btn" disabled={busy === "save"} data-testid="data-source-save">
-              {busy === "save" ? "Saving…" : "Save data source"}
+              {busy === "save" ? "저장 중…" : "데이터 소스 저장"}
             </button>
             <button className="btn secondary" type="button" onClick={resetForm}>
-              Cancel
+              취소
             </button>
           </div>
         </form>
