@@ -34,7 +34,7 @@ import {
   type RestApiPaginationMode,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
-import { jobStatusLabel, operationalStatusLabel } from "../uiTerminology";
+import { operationalStatusLabel } from "../uiTerminology";
 
 type SqlSourceType = "postgres" | "mysql" | "mssql" | "oracle";
 type SourceTypeOption = "file" | SqlSourceType | "rest_api";
@@ -1300,7 +1300,7 @@ export default function DataSources() {
                   <ul>
                     {(recentJobs[source.id] || []).slice(0, 3).map((job) => (
                       <li key={job.id}>
-                        <StatusBadge status={job.status} label={jobStatusLabel(job.status)} />
+                        <StatusBadge status={job.status} label={operationalStatusLabel(job.status)} />
                         <span className="source-job-id">#{job.id}</span>
                         <span className="muted source-job-query">{job.table_or_query.slice(0, 48)}</span>
                       </li>
@@ -1569,7 +1569,7 @@ export default function DataSources() {
                             : `“${importState.datasetName || "데이터셋"}” 가져오는 중…`}
                       </p>
                       <p>
-                        상태: <StatusBadge status={importState.job.status} label={jobStatusLabel(importState.job.status)} />
+                        상태: <StatusBadge status={importState.job.status} label={operationalStatusLabel(importState.job.status)} />
                       </p>
                       {importState.job.error_message && (
                         <ErrorNotice message={importState.job.error_message} />
