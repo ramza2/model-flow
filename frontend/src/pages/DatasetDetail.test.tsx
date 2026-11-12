@@ -531,6 +531,9 @@ describe("DatasetDetail saved splits", () => {
     });
 
     renderPage();
+    // Wait for the initial version preview/splits request before creating a new split.
+    // Otherwise a late mocked GET /splits=[] can overwrite the successful POST result.
+    await screen.findByRole("cell", { name: "S1" });
     await screen.findByTestId("open-create-split");
     fireEvent.click(screen.getByTestId("open-create-split"));
     fireEvent.change(screen.getByTestId("split-name"), { target: { value: "split-custom" } });
@@ -579,6 +582,9 @@ describe("DatasetDetail saved splits", () => {
     });
 
     renderPage();
+    // Wait for the initial version preview/splits request before creating a new split.
+    // Otherwise a late mocked GET /splits=[] can overwrite the successful POST result.
+    await screen.findByRole("cell", { name: "S1" });
     await screen.findByTestId("open-create-split");
     fireEvent.click(screen.getByTestId("open-create-split"));
     fireEvent.change(screen.getByTestId("split-strategy"), { target: { value: "time" } });

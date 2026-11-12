@@ -5,6 +5,7 @@ import JobDetail from "./JobDetail";
 
 const apiMock = vi.fn();
 const navigateMock = vi.fn();
+const canManageRef = { value: true };
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
@@ -28,7 +29,7 @@ vi.mock("../AuthContext", () => ({
 
 vi.mock("../ProjectContext", () => ({
   useProject: () => ({ selectedProject: { id: 7, role: "ML_ENGINEER" } }),
-  userCanProject: () => true,
+  userCanProject: () => canManageRef.value,
 }));
 
 const succeededJob = {
@@ -82,11 +83,103 @@ describe("JobDetail retrain", () => {
   beforeEach(() => {
     apiMock.mockReset();
     navigateMock.mockReset();
+    canManageRef.value = true;
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("guides failed training to its raw error and logs without changing retry or clone routes", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/44")) return {
+        ...succeededJob,
+        id: 44,
+        status: "failed",
+        logs: "ValueError: missing feature column",
+        error_message: "Missing feature: temperature",
+      };
+      return [];
+    });
+    renderPage("44");
+
+    const guidance = await screen.findByTestId("job-failure-guidance");
+    expect(guidance).toHaveTextContent("학습이 실패했습니다 — 먼저 확인하세요");
+    expect(guidance).toHaveTextContent("설정 복제");
+    expect(screen.getByRole("alert")).toHaveTextContent("Missing feature: temperature");
+    expect(within(guidance).getByRole("link", { name: "실행 로그 보기" })).toHaveAttribute("href", "#job-execution-logs");
+    expect(screen.getByTestId("job-logs")).toHaveAttribute("id", "job-execution-logs");
+    expect(screen.getByTestId("job-logs")).toHaveTextContent("ValueError: missing feature column");
+    expect(screen.getByTestId("job-retry")).toBeInTheDocument();
+    expect(screen.getByTestId("job-clone")).toHaveAttribute("href", "/projects/7/jobs/new?cloneFrom=44");
+  });
+
+  it("does not invent a failure cause and keeps log navigation for read-only viewers", async () => {
+    canManageRef.value = false;
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/45")) return {
+        ...succeededJob,
+        id: 45,
+        status: "failed",
+        logs: "worker exited",
+        error_message: null,
+      };
+      return [];
+    });
+    renderPage("45");
+
+    const guidance = await screen.findByTestId("job-failure-guidance");
+    expect(guidance).toHaveTextContent("오류 메시지가 제공되지 않았습니다.");
+    expect(within(guidance).getByRole("link", { name: "실행 로그 보기" })).toHaveAttribute("href", "#job-execution-logs");
+    expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("job-clone")).not.toBeInTheDocument();
+    expect(screen.getByTestId("job-logs")).toHaveTextContent("worker exited");
+  });
+
+  it("does not show failure guidance for cancelled, pending, or succeeded jobs", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/46")) return { ...succeededJob, id: 46, status: "cancelled" };
+      if (path.endsWith("/jobs/43")) return pendingJob;
+      if (path.endsWith("/jobs/42")) return succeededJob;
+      return [];
+    });
+    const view = renderPage("46");
+    await screen.findByTestId("job-logs");
+    expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
+
+    view.unmount();
+    const pendingView = renderPage("43");
+    await screen.findByTestId("job-logs");
+    expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
+
+    pendingView.unmount();
+    renderPage("42");
+    await screen.findByTestId("job-retrain");
+    expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
+  });
+
+  it("does not expose unavailable retry actions to viewers and shows a useful empty-log fallback", async () => {
+    canManageRef.value = false;
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/47")) return {
+        ...succeededJob,
+        id: 47,
+        status: "failed",
+        logs: "",
+        error_message: "Training failed: invalid feature",
+      };
+      return [];
+    });
+    renderPage("47");
+
+    const guidance = await screen.findByTestId("job-failure-guidance");
+    expect(guidance).toHaveTextContent("학습 권한이 있는 담당자에게 문의하세요.");
+    expect(guidance).not.toHaveTextContent("동일 설정으로 다시 시도할 경우");
+    expect(screen.getByRole("alert")).toHaveTextContent("Training failed: invalid feature");
+    expect(screen.getByTestId("job-logs")).toHaveTextContent("기록된 실행 로그가 없습니다.");
+    expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("job-clone")).not.toBeInTheDocument();
   });
 
   it("shows Retrain on succeeded jobs only", async () => {
