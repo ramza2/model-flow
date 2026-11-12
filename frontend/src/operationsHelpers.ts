@@ -35,17 +35,17 @@ export function countAttentionAlerts(alerts: Array<Pick<Alert, "severity">>): nu
 }
 
 export function cronPresetLabel(expression: string): string {
-  if (expression === "0 * * * *") return "Every hour";
-  if (expression === "0 9 * * *") return "Daily at 09:00";
-  if (expression === "0 9 * * 1-5") return "Weekdays at 09:00";
-  if (/^0 9 \* \* 1$/.test(expression)) return "Weekly (Monday 09:00)";
-  return "Custom cron";
+  if (expression === "0 * * * *") return "매시간";
+  if (expression === "0 9 * * *") return "매일 오전 9시";
+  if (expression === "0 9 * * 1-5") return "평일 오전 9시";
+  if (/^0 9 \* \* 1$/.test(expression)) return "매주 월요일 오전 9시";
+  return "사용자 지정(Cron)";
 }
 
 export function targetTypeLabel(targetType: string): string {
-  if (targetType === "data_import") return "Data import";
-  if (targetType === "batch_inference") return "Batch prediction";
-  if (targetType === "pipeline_run") return "Pipeline run";
+  if (targetType === "data_import") return "데이터 가져오기";
+  if (targetType === "batch_inference") return "일괄 예측";
+  if (targetType === "pipeline_run") return "파이프라인 실행";
   return targetType.replaceAll("_", " ");
 }
 
