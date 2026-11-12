@@ -103,6 +103,17 @@ export const UI_HELP = {
     "요약은 사람이 읽기 쉬운 예측값이고, 원본 JSON은 API가 반환한 전체 응답입니다. 다중 출력 모델은 학습 때 지정한 예측 대상 이름을 그대로 표시합니다.",
 } as const;
 
+/** Project membership roles: labels only; never send these values to the API. */
+export function projectRoleLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    VIEWER: "조회자",
+    DATA_SCIENTIST: "데이터 분석가",
+    ML_ENGINEER: "ML 엔지니어",
+    PROJECT_ADMIN: "프로젝트 관리자",
+  };
+  return labels[String(value || "").toUpperCase()] || (value ? value.replaceAll("_", " ") : "—");
+}
+
 /** Display-only operations labels. Never replace API values with these strings. */
 export function operationalStatusLabel(value?: string | null): string {
   const labels: Record<string, string> = {
