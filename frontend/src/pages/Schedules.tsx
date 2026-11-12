@@ -617,7 +617,7 @@ export default function Schedules() {
                   </td>
                   <td className="catalog-meta-date">{schedule.timezone}</td>
                   <td>
-                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} label={operationalStatusLabel(schedule.is_enabled ? "enabled" : "disabled")} />
+                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} label={schedule.is_enabled ? "활성" : "비활성"} />
                   </td>
                   <td className="catalog-meta-date">
                     {schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}
