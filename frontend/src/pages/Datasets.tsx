@@ -70,7 +70,7 @@ export default function Datasets() {
         <form className="panel form workflow-create-panel" onSubmit={onUpload}>
           <div className="panel-title"><div><span className="eyebrow">새 버전</span><h2>데이터 업로드</h2></div></div>
           <label>
-            File
+            파일
             <input type="file" name="file" accept=".csv,.json,.parquet,text/csv,application/json" required data-testid="dataset-file" />
             <small>CSV·JSON·Parquet 파일을 업로드합니다. 기존 데이터를 변경하지 않고 새 데이터셋 버전을 생성합니다.</small>
           </label>
