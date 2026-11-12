@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "../api";
@@ -490,6 +490,129 @@ describe("DatasetDetail saved splits", () => {
     canWriteRef.value = true;
     apiMock.mockReset();
     stubQualityApi();
+  });
+
+  it("keeps a saved split when the initial GET resolves with a stale empty list", async () => {
+    let resolveInitialSplits!: (rows: unknown[]) => void;
+    const initialSplits = new Promise<unknown[]>((resolve) => { resolveInitialSplits = resolve; });
+    let getCount = 0;
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = (init?.method || "GET").toUpperCase();
+      if (path.endsWith("/dataset-versions/11/splits") && method === "GET") {
+        getCount += 1;
+        return initialSplits;
+      }
+      if (path.endsWith("/dataset-versions/11/splits") && method === "POST") {
+        const body = JSON.parse(String(init?.body));
+        return {
+          id: 77,
+          name: body.name,
+          dataset_version_id: 11,
+          train_ratio: body.train_ratio,
+          val_ratio: body.val_ratio,
+          test_ratio: body.test_ratio,
+          random_seed: body.random_seed,
+          split_strategy: "random",
+          time_column: null,
+          created_at: "2026-08-10T00:00:00Z",
+        };
+      }
+      return base(path, init);
+    });
+
+    renderPage();
+    await waitFor(() => expect(getCount).toBe(1));
+    fireEvent.click(await screen.findByTestId("open-create-split"));
+    fireEvent.change(screen.getByTestId("split-name"), { target: { value: "new-split" } });
+    fireEvent.click(screen.getByTestId("create-split-submit"));
+    expect(await screen.findByTestId("saved-split-77")).toHaveTextContent("new-split");
+
+    // The GET was sent before the POST; its delayed [] must not erase the saved split.
+    await act(async () => { resolveInitialSplits([]); await initialSplits; });
+    expect(screen.getByTestId("saved-split-77")).toHaveTextContent("new-split");
+    expect(screen.getByText(/데이터 분할 #77을 저장했습니다/)).toBeInTheDocument();
+  });
+
+  it("ignores the previous version's late split list after selecting a new version", async () => {
+    const v2 = { ...version, id: 22, version: 2, created_at: "2026-08-07T10:00:00Z" };
+    const splitV1 = {
+      id: 77, name: "version-one", dataset_version_id: 11,
+      train_ratio: 0.7, val_ratio: 0.15, test_ratio: 0.15,
+      random_seed: 42, split_strategy: "random", time_column: null,
+      created_at: "2026-08-10T00:00:00Z",
+    };
+    const splitV2 = { ...splitV1, id: 88, name: "version-two", dataset_version_id: 22 };
+    let resolveV1!: (rows: unknown[]) => void;
+    const pendingV1 = new Promise<unknown[]>((resolve) => { resolveV1 = resolve; });
+    let getV1Count = 0;
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets/3/versions") return [version, v2];
+      if (path.endsWith("/dataset-versions/11/splits") && !init?.method) {
+        getV1Count += 1;
+        return pendingV1;
+      }
+      if (path.endsWith("/dataset-versions/22/splits")) return [splitV2];
+      if (path.endsWith("/versions/2/preview")) {
+        return { columns: dataset.columns, rows: [{ site_id: "S2", a: 2, target: 1 }] };
+      }
+      if (path.endsWith("/quality-checks?dataset_version_id=22")) return [];
+      if (path.endsWith("/versions/2/lineage")) {
+        return { dataset_version: v2, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      return base(path, init);
+    });
+
+    renderPage();
+    await waitFor(() => expect(getV1Count).toBe(1));
+    fireEvent.change(screen.getByLabelText("데이터셋 버전"), { target: { value: "22" } });
+    expect(await screen.findByTestId("saved-split-88")).toHaveTextContent("version-two");
+
+    await act(async () => { resolveV1([splitV1]); await pendingV1; });
+    expect(screen.getByTestId("saved-split-88")).toHaveTextContent("version-two");
+    expect(screen.queryByTestId("saved-split-77")).not.toBeInTheDocument();
+  });
+
+  it("ignores an old version's completed POST after switching versions", async () => {
+    const v2 = { ...version, id: 22, version: 2, created_at: "2026-08-07T10:00:00Z" };
+    const oldSplit = {
+      id: 77, name: "late-save", dataset_version_id: 11,
+      train_ratio: 0.7, val_ratio: 0.15, test_ratio: 0.15,
+      random_seed: 42, split_strategy: "random", time_column: null,
+      created_at: "2026-08-10T00:00:00Z",
+    };
+    let resolvePost!: (row: typeof oldSplit) => void;
+    const pendingPost = new Promise<typeof oldSplit>((resolve) => { resolvePost = resolve; });
+    let postCount = 0;
+    const base = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/projects/7/datasets/3/versions") return [version, v2];
+      if (path.endsWith("/dataset-versions/11/splits") && init?.method === "POST") {
+        postCount += 1;
+        return pendingPost;
+      }
+      if (path.endsWith("/versions/2/preview")) {
+        return { columns: dataset.columns, rows: [{ site_id: "S2", a: 2, target: 1 }] };
+      }
+      if (path.endsWith("/quality-checks?dataset_version_id=22")) return [];
+      if (path.endsWith("/versions/2/lineage")) {
+        return { dataset_version: v2, upstream: null, training_jobs: [], model_versions: [] };
+      }
+      return base(path, init);
+    });
+
+    renderPage();
+    await screen.findByRole("cell", { name: "S1" });
+    fireEvent.click(screen.getByTestId("open-create-split"));
+    fireEvent.click(screen.getByTestId("create-split-submit"));
+    await waitFor(() => expect(postCount).toBe(1));
+    fireEvent.change(screen.getByLabelText("데이터셋 버전"), { target: { value: "22" } });
+    await screen.findByRole("cell", { name: "S2" });
+
+    await act(async () => { resolvePost(oldSplit); await pendingPost; });
+    expect(screen.queryByTestId("saved-split-77")).not.toBeInTheDocument();
+    expect(screen.queryByText(/데이터 분할 #77을 저장했습니다/)).not.toBeInTheDocument();
   });
 
   it("validates create-split ratios before posting", async () => {
