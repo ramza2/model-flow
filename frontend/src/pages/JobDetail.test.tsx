@@ -149,9 +149,37 @@ describe("JobDetail retrain", () => {
     expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
 
     view.unmount();
-    renderPage("43");
+    const pendingView = renderPage("43");
     await screen.findByTestId("job-logs");
     expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
+
+    pendingView.unmount();
+    renderPage("42");
+    await screen.findByTestId("job-retrain");
+    expect(screen.queryByTestId("job-failure-guidance")).not.toBeInTheDocument();
+  });
+
+  it("does not expose unavailable retry actions to viewers and shows a useful empty-log fallback", async () => {
+    canManageRef.value = false;
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.endsWith("/jobs/47")) return {
+        ...succeededJob,
+        id: 47,
+        status: "failed",
+        logs: "",
+        error_message: "Training failed: invalid feature",
+      };
+      return [];
+    });
+    renderPage("47");
+
+    const guidance = await screen.findByTestId("job-failure-guidance");
+    expect(guidance).toHaveTextContent("학습 권한이 있는 담당자에게 문의하세요.");
+    expect(guidance).not.toHaveTextContent("동일 설정으로 다시 시도할 경우");
+    expect(screen.getByRole("alert")).toHaveTextContent("Training failed: invalid feature");
+    expect(screen.getByTestId("job-logs")).toHaveTextContent("기록된 실행 로그가 없습니다.");
+    expect(screen.queryByTestId("job-retry")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("job-clone")).not.toBeInTheDocument();
   });
 
   it("shows Retrain on succeeded jobs only", async () => {
