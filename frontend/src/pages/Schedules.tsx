@@ -726,10 +726,10 @@ export default function Schedules() {
         footer={(
           <div className="form-actions row-actions">
             <button type="button" className="btn secondary" onClick={closeForm} disabled={busy}>
-              Cancel
+              취소
             </button>
             <button type="submit" form="schedule-form" className="btn" data-testid="schedule-submit" disabled={busy}>
-              {editing ? "Save changes" : "Create schedule"}
+              {editing ? "변경 사항 저장" : "스케줄 만들기"}
             </button>
           </div>
         )}
@@ -739,7 +739,7 @@ export default function Schedules() {
             <ErrorNotice message={contextualNotice} />
           ) : null}
           <label>
-            Name
+            이름
             <input
               data-drawer-initial-focus
               value={form.name}
@@ -748,23 +748,23 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Description
+            설명
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </label>
           <label>
-            Target type
+            실행 대상 유형
             <select
               value={form.target_type}
               disabled={Boolean(editing)}
               onChange={(e) => setForm({ ...form, target_type: e.target.value as TargetType })}
             >
-              <option value="data_import">Data import</option>
-              <option value="batch_inference">Batch prediction</option>
-              <option value="pipeline_run">Pipeline run</option>
+              <option value="data_import">데이터 가져오기</option>
+              <option value="batch_inference">일괄 예측</option>
+              <option value="pipeline_run">파이프라인 실행</option>
             </select>
           </label>
           <label>
-            Frequency
+            실행 주기
             <select
               value={form.cron_preset}
               onChange={(e) => {
@@ -773,14 +773,14 @@ export default function Schedules() {
                 if (cron_preset === "custom") setShowAdvanced(true);
               }}
             >
-              <option value="hourly">Every hour</option>
-              <option value="daily">Daily</option>
-              <option value="weekdays">Weekdays</option>
-              <option value="custom">Custom cron</option>
+              <option value="hourly">매시간</option>
+              <option value="daily">매일</option>
+              <option value="weekdays">평일</option>
+              <option value="custom">사용자 지정(Cron)</option>
             </select>
           </label>
           <label>
-            Timezone
+            시간대
             <select
               value={form.timezone}
               onChange={(e) => setForm({ ...form, timezone: e.target.value })}
@@ -794,7 +794,7 @@ export default function Schedules() {
             </select>
           </label>
           <label>
-            Concurrency policy
+            동시 실행 정책
             <select
               value={form.concurrency_policy}
               onChange={(e) =>
@@ -804,12 +804,12 @@ export default function Schedules() {
                 })
               }
             >
-              <option value="skip">Skip when busy</option>
-              <option value="queue">Queue when busy</option>
+              <option value="skip">실행 중이면 건너뛰기</option>
+              <option value="queue">실행 중이면 대기열에 추가</option>
             </select>
           </label>
           <label>
-            Max concurrent runs
+            최대 동시 실행 수
             <input
               type="number"
               min={1}
@@ -821,7 +821,7 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Max retries
+            최대 재시도 횟수
             <input
               type="number"
               min={0}
@@ -831,7 +831,7 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Retry delay (seconds)
+            재시도 간격 (초)
             <input
               type="number"
               min={1}
@@ -853,37 +853,37 @@ export default function Schedules() {
           {form.target_type === "data_import" && (
             <>
               <label>
-                Data source
+                데이터 소스
                 <select
                   value={form.data_source_id}
                   onChange={(e) => setForm({ ...form, data_source_id: e.target.value })}
                   required
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {dataSources.map((source) => (
                     <option key={source.id} value={source.id}>
-                      {source.name}{source.is_active ? "" : " (inactive)"}
+                      {source.name}{source.is_active ? "" : " (비활성)"}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Target dataset name
+                가져올 데이터셋 이름
                 <input
                   value={form.dataset_name}
                   onChange={(e) => setForm({ ...form, dataset_name: e.target.value })}
-                  placeholder="Leave blank when using existing dataset ID"
+                  placeholder="기존 데이터셋 ID 사용 시 비워 두세요"
                 />
               </label>
               <label>
-                Existing dataset ID
+                기존 데이터셋 ID
                 <input
                   value={form.dataset_id}
                   onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}
                 />
               </label>
               <label>
-                Table or query
+                테이블 또는 쿼리
                 <input
                   value={form.query_or_table}
                   onChange={(e) => setForm({ ...form, query_or_table: e.target.value })}
@@ -896,20 +896,20 @@ export default function Schedules() {
           {form.target_type === "batch_inference" && (
             <>
               <label>
-                Dataset
+                데이터셋
                 <select
                   value={form.dataset_id}
                   onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}
                   required
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {datasets.map((dataset) => (
                     <option key={dataset.id} value={dataset.id}>{dataset.name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                Version strategy
+                버전 선택 방식
                 <select
                   value={form.dataset_version_strategy}
                   onChange={(e) =>
@@ -919,19 +919,19 @@ export default function Schedules() {
                     })
                   }
                 >
-                  <option value="latest">Latest</option>
-                  <option value="fixed">Fixed</option>
+                  <option value="latest">최신 버전</option>
+                  <option value="fixed">특정 버전</option>
                 </select>
               </label>
               {form.dataset_version_strategy === "fixed" && (
                 <label>
-                  Dataset version
+                  데이터셋 버전
                   <select
                     value={form.dataset_version_id}
                     onChange={(e) => setForm({ ...form, dataset_version_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {versions.map((version) => (
                       <option key={version.id} value={version.id}>
                         v{version.version}
@@ -941,7 +941,7 @@ export default function Schedules() {
                 </label>
               )}
               <label>
-                Prediction target
+                예측 실행 대상
                 <select
                   value={form.batch_target_type}
                   onChange={(e) =>
@@ -951,19 +951,19 @@ export default function Schedules() {
                     })
                   }
                 >
-                  <option value="endpoint">Endpoint</option>
-                  <option value="model">Model version</option>
+                  <option value="endpoint">배포 엔드포인트</option>
+                  <option value="model">모델 버전</option>
                 </select>
               </label>
               {form.batch_target_type === "endpoint" ? (
                 <label>
-                  Endpoint
+                  배포 엔드포인트
                   <select
                     value={form.endpoint_id}
                     onChange={(e) => setForm({ ...form, endpoint_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {endpoints.map((endpoint) => (
                       <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
                     ))}
@@ -971,13 +971,13 @@ export default function Schedules() {
                 </label>
               ) : (
                 <label>
-                  Model version
+                  모델 버전
                   <select
                     value={form.model_version_id}
                     onChange={(e) => setForm({ ...form, model_version_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {models.map((model) => (
                       <option key={model.id} value={model.id}>
                         {model.name} v{model.version}
@@ -987,7 +987,7 @@ export default function Schedules() {
                 </label>
               )}
               <label>
-                Result format
+                결과 파일 형식
                 <select
                   value={form.result_format}
                   onChange={(e) => setForm({ ...form, result_format: e.target.value })}
@@ -1003,29 +1003,29 @@ export default function Schedules() {
           {form.target_type === "pipeline_run" && (
             <>
               <label>
-                Pipeline
+                파이프라인
                 <select
                   value={form.pipeline_id}
                   onChange={(e) => setForm({ ...form, pipeline_id: e.target.value })}
                   required
                   data-testid="schedule-pipeline-select"
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {publishedPipelines.map((pipeline) => (
                     <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                Fail policy
+                실패 시 처리
                 <select
                   value={form.fail_policy}
                   onChange={(e) =>
                     setForm({ ...form, fail_policy: e.target.value as "stop" | "continue" })
                   }
                 >
-                  <option value="stop">Stop on failure</option>
-                  <option value="continue">Continue on failure</option>
+                  <option value="stop">실패 시 중단</option>
+                  <option value="continue">실패해도 계속</option>
                 </select>
               </label>
             </>
@@ -1039,13 +1039,13 @@ export default function Schedules() {
               aria-expanded={showAdvanced}
               onClick={() => setShowAdvanced((value) => !value)}
             >
-              {showAdvanced ? "Hide advanced" : "Show advanced"}
+              {showAdvanced ? "고급 설정 닫기" : "고급 설정 보기"}
             </button>
             {showAdvanced && (
               <div className="ops-advanced-body" data-testid="schedule-advanced">
                 {form.cron_preset === "custom" && (
                   <label>
-                    Cron expression
+                    Cron 표현식
                     <input
                       className="mono"
                       value={form.cron_expression}
@@ -1057,7 +1057,7 @@ export default function Schedules() {
                 )}
                 {form.target_type === "pipeline_run" && (
                   <label>
-                    Parameters (JSON)
+                    매개변수(JSON)
                     <textarea
                       rows={4}
                       className="mono"
@@ -1075,11 +1075,11 @@ export default function Schedules() {
                         setForm({ ...form, refresh_pinned_version: e.target.checked })
                       }
                     />
-                    Refresh pinned pipeline version to current published version
+                    고정된 파이프라인 버전을 현재 게시 버전으로 갱신
                   </label>
                 )}
                 {form.cron_preset !== "custom" && form.target_type !== "pipeline_run" && !editing && (
-                  <p className="muted">No additional advanced fields for this configuration.</p>
+                  <p className="muted">이 설정에는 추가 고급 항목이 없습니다.</p>
                 )}
               </div>
             )}
