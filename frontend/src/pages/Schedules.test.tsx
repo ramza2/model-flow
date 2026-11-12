@@ -149,9 +149,9 @@ describe("Schedules page", () => {
     renderPage();
     expect(await screen.findByTestId("schedule-create-open")).toHaveClass("btn");
     expect(screen.getAllByRole("button", { name: "지금 실행" })[0]).toHaveClass("btn");
-    expect(screen.getAllByRole("button", { name: "Disable" })[0]).toHaveClass("btn", "link");
-    expect(screen.getAllByRole("button", { name: "Edit" })[0]).toHaveClass("btn", "secondary");
-    expect(screen.getAllByRole("button", { name: "Delete" })[0]).toHaveClass(
+    expect(screen.getAllByRole("button", { name: "비활성화" })[0]).toHaveClass("btn", "link");
+    expect(screen.getAllByRole("button", { name: "수정" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "삭제" })[0]).toHaveClass(
       "btn",
       "link",
       "danger-text",
