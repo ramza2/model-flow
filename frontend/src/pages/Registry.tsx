@@ -158,15 +158,19 @@ export default function Registry() {
           <Loading label="모델 목록 불러오는 중" />
         ) : models.length === 0 ? (
           <EmptyState
-            title="등록된 모델이 없습니다"
-            description="완료된 모델 학습 결과를 등록하면 검증과 승인 절차를 진행할 수 있습니다."
-            action={
-              canWrite ? (
-                <button className="btn" onClick={() => setShowRegister(true)}>
-                  학습 결과로 모델 등록
-                </button>
-              ) : undefined
-            }
+            title={lifecycle ? "선택한 상태의 모델이 없습니다" : "등록된 모델이 없습니다"}
+            description={lifecycle
+              ? `‘${modelLifecycleLabelKo(lifecycle)}’ 상태의 모델이 없습니다. 전체 상태에서 다른 모델을 확인하세요.`
+              : "완료된 모델 학습 결과를 등록하면 검증과 승인 절차를 진행할 수 있습니다."}
+            action={lifecycle ? (
+              <button type="button" className="btn secondary" onClick={() => setLifecycle("")} data-testid="registry-clear-lifecycle-filter">
+                전체 상태 보기
+              </button>
+            ) : canWrite ? (
+              <button className="btn" onClick={() => setShowRegister(true)}>
+                학습 결과로 모델 등록
+              </button>
+            ) : undefined}
           />
         ) : (
           <div className="panel table-wrap catalog-table registry-catalog-table">
