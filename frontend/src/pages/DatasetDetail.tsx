@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ApiRequestError,
@@ -160,6 +160,8 @@ export default function DatasetDetail() {
   const [legacyRules, setLegacyRules] = useState<QualityRule[]>([]);
   const [checks, setChecks] = useState<QualityCheck[]>([]);
   const [splits, setSplits] = useState<DatasetSplit[]>([]);
+  const splitLoadTokenRef = useRef(0);
+  const splitWriteRevisionRef = useRef(0);
   const [lineage, setLineage] = useState<DatasetVersionLineage | null>(null);
   const [showSplitForm, setShowSplitForm] = useState(false);
   const [splitName, setSplitName] = useState("split-1");
@@ -259,8 +261,11 @@ export default function DatasetDetail() {
   useEffect(() => {
     const selected = versions.find((version) => version.id === selectedVersionId);
     if (!selected) return;
+    const loadToken = ++splitLoadTokenRef.current;
+    const splitWriteRevision = splitWriteRevisionRef.current;
     setPreview(null);
     setLineage(null);
+    setSplits([]);
     Promise.all([
       api<{ columns: string[]; rows: Array<Record<string, unknown>> }>(
         `/projects/${projectId}/datasets/${datasetId}/versions/${selected.version}/preview`,
@@ -272,12 +277,23 @@ export default function DatasetDetail() {
       ).catch(() => null),
     ])
       .then(([previewRows, checkRows, splitRows, lineageRow]) => {
+        if (splitLoadTokenRef.current !== loadToken) return;
         setChecks(checkRows);
-        setSplits(splitRows);
+        // A split saved after this GET started takes precedence over its stale response.
+        if (splitWriteRevisionRef.current === splitWriteRevision) {
+          setSplits(splitRows);
+        }
         setPreview(previewRows);
         setLineage(lineageRow);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "데이터셋 버전 정보를 불러오지 못했습니다."));
+      .catch((reason) => {
+        if (splitLoadTokenRef.current === loadToken) {
+          setError(reason instanceof Error ? reason.message : "데이터셋 버전 정보를 불러오지 못했습니다.");
+        }
+      });
+    return () => {
+      if (splitLoadTokenRef.current === loadToken) splitLoadTokenRef.current += 1;
+    };
   }, [datasetId, projectId, selectedVersionId, versions]);
 
   function resetForm(fallbackColumn?: string) {
@@ -490,6 +506,7 @@ export default function DatasetDetail() {
 
   async function createSplit() {
     if (!selectedVersionId) return;
+    const loadToken = splitLoadTokenRef.current;
     const parsed = validateSplitForm();
     if (!parsed) return;
     setBusy("split");
@@ -511,6 +528,9 @@ export default function DatasetDetail() {
           }),
         },
       );
+      // Ignore a completed POST for a version the user has since left.
+      if (splitLoadTokenRef.current !== loadToken) return;
+      splitWriteRevisionRef.current += 1;
       setSplits((rows) => [split, ...rows.filter((row) => row.id !== split.id)]);
       setShowSplitForm(false);
       const ratios = `${Math.round(split.train_ratio * 100)}/${Math.round(split.val_ratio * 100)}/${Math.round(split.test_ratio * 100)}`;
