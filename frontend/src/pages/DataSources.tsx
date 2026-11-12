@@ -34,6 +34,7 @@ import {
   type RestApiPaginationMode,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
+import { jobStatusLabel, operationalStatusLabel } from "../uiTerminology";
 
 type SqlSourceType = "postgres" | "mysql" | "mssql" | "oracle";
 type SourceTypeOption = "file" | SqlSourceType | "rest_api";
@@ -655,12 +656,12 @@ export default function DataSources() {
   return (
     <div>
       <PageHeader
-        title="Data Sources"
-        description="Browse connected sources, check connection state, and import immutable dataset versions without exposing credentials."
+        title="데이터 소스"
+        description="데이터베이스나 REST API를 연결하고, 연결 상태를 검사한 뒤 데이터셋으로 가져옵니다. 연결 암호는 화면에 노출되지 않습니다."
         actions={
           canWrite ? (
             <button className="btn" onClick={() => setShowForm(!showForm)} data-testid="add-data-source">
-              ＋ Add data source
+              ＋ 데이터 소스 추가
             </button>
           ) : undefined
         }
@@ -671,22 +672,22 @@ export default function DataSources() {
         <form className="panel form" onSubmit={save} data-testid="data-source-form">
           <div className="panel-title">
             <div>
-              <span className="eyebrow">Connection</span>
-              <h2>{editing ? "Edit data source" : "New data source"}</h2>
+              <span className="eyebrow">연결 설정</span>
+              <h2>{editing ? "데이터 소스 수정" : "새 데이터 소스" }</h2>
             </div>
           </div>
           <label>
-            Name
+            이름
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
-              placeholder="Analytics warehouse"
+              placeholder="예: 분석용 데이터베이스"
               data-testid="data-source-name"
             />
           </label>
           <label>
-            Source type
+            소스 유형
             <select
               value={sourceType}
               disabled={Boolean(editing)}
@@ -713,13 +714,13 @@ export default function DataSources() {
               <option value="mssql">Microsoft SQL Server</option>
               <option value="oracle">Oracle Database</option>
               <option value="rest_api">REST API</option>
-              <option value="file">Managed file source</option>
+              <option value="file">관리형 파일 소스</option>
             </select>
           </label>
           {isSqlSourceType(sourceType) ? (
             <>
               <label htmlFor="data-source-connection-mode">
-                Connection mode
+                연결 방식
                 <select
                   id="data-source-connection-mode"
                   value={connectionMode}
@@ -728,13 +729,13 @@ export default function DataSources() {
                   }
                   data-testid="data-source-connection-mode"
                 >
-                  <option value="host_port">Host / Port</option>
-                  <option value="connection_url">Connection URL / DSN</option>
+                  <option value="host_port">호스트 / 포트</option>
+                  <option value="connection_url">연결 URL / DSN</option>
                 </select>
               </label>
               {connectionMode === "connection_url" ? (
                 <label htmlFor="data-source-connection-url">
-                  Connection URL / DSN
+                  연결 URL / DSN
                   <input
                     id="data-source-connection-url"
                     type="password"
@@ -744,7 +745,7 @@ export default function DataSources() {
                     required={!editing || previousConnectionMode === "host_port"}
                     placeholder={
                       editing && previousConnectionMode === "connection_url"
-                        ? "Leave blank to keep saved connection URL"
+                        ? "저장된 연결 URL을 유지하려면 비워 두세요"
                         : sourceType === "mysql"
                           ? "mysql://user:password@host:3306/database"
                           : sourceType === "mssql"
@@ -757,15 +758,15 @@ export default function DataSources() {
                   />
                   <small>
                     {editing && previousConnectionMode === "connection_url"
-                      ? "The saved connection URL is not shown. Leave blank to keep it, or enter a new value to replace it."
-                      : "Stored separately from connection metadata. Project members cannot read this value."}
+                      ? "저장된 연결 URL은 표시하지 않습니다. 유지하려면 비워 두고, 변경하려면 새 값을 입력하세요."
+                      : "연결 정보와 별도로 안전하게 저장되며 프로젝트 구성원에게 공개되지 않습니다."}
                   </small>
                 </label>
               ) : (
                 <>
                   <div className="form-grid">
                     <label htmlFor="data-source-host">
-                      Host
+                      호스트
                       <input
                         id="data-source-host"
                         value={postgresForm.host}
@@ -778,7 +779,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-port">
-                      Port
+                      포트
                       <input
                         id="data-source-port"
                         type="number"
@@ -799,7 +800,7 @@ export default function DataSources() {
                           : "data-source-database"
                       }
                     >
-                      {sourceType === "oracle" ? "Service name" : "Database"}
+                      {sourceType === "oracle" ? "서비스 이름" : "데이터베이스"}
                       <input
                         id={
                           sourceType === "oracle"
@@ -823,7 +824,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-user">
-                      User
+                      사용자
                       <input
                         id="data-source-user"
                         value={postgresForm.user}
@@ -837,7 +838,7 @@ export default function DataSources() {
                     </label>
                   </div>
                   <label htmlFor="data-source-password">
-                    Password
+                    암호
                     <input
                       id="data-source-password"
                       type="password"
@@ -846,15 +847,15 @@ export default function DataSources() {
                       onChange={(event) => setPassword(event.target.value)}
                       placeholder={
                         editing?.has_secrets && previousConnectionMode === "host_port"
-                          ? "Leave blank to keep saved password"
-                          : "Database password"
+                          ? "저장된 암호를 유지하려면 비워 두세요"
+                          : "데이터베이스 암호"
                       }
                       data-testid="data-source-password"
                     />
                     <small>
                       {editing && previousConnectionMode === "host_port"
-                        ? "Leave blank to keep the saved password. Enter a new value only to replace it."
-                        : "Stored separately from connection metadata. Project members cannot read this value."}
+                        ? "기존 암호를 유지하려면 비워 두세요. 암호를 변경할 때만 새 값을 입력하세요."
+                        : "연결 정보와 별도로 안전하게 저장되며 프로젝트 구성원에게 공개되지 않습니다."}
                     </small>
                   </label>
                   {sourceType === "mssql" && (
@@ -876,7 +877,7 @@ export default function DataSources() {
                         }
                         data-testid="data-source-trust-server-certificate"
                       />
-                      Trust server certificate (lab / self-signed only)
+                      서버 인증서 신뢰 (실습 또는 자체 서명 인증서에만 사용)
                     </label>
                   )}
                 </>
