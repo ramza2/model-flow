@@ -85,8 +85,16 @@ export default function Jobs() {
         ) : items.length === 0 ? (
           <EmptyState
             title={status ? "선택한 상태의 학습 작업이 없습니다" : "아직 모델 학습 작업이 없습니다"}
-            description="새 모델 학습을 만들어 데이터셋으로 학습을 시작할 수 있습니다."
-            action={!status && canTrain ? <Link className="btn" to={`/projects/${projectId}/jobs/new`}>새 모델 학습</Link> : undefined}
+            description={status
+              ? `‘${jobStatusLabel(status)}’ 상태의 학습 작업이 없습니다. 다른 상태를 선택하거나 전체 상태로 돌아가세요.`
+              : "새 모델 학습을 만들어 데이터셋으로 학습을 시작할 수 있습니다."}
+            action={status ? (
+              <button type="button" className="btn secondary" onClick={() => setStatus("")} data-testid="jobs-clear-status-filter">
+                전체 상태 보기
+              </button>
+            ) : canTrain ? (
+              <Link className="btn" to={`/projects/${projectId}/jobs/new`}>새 모델 학습</Link>
+            ) : undefined}
           />
         ) : (
           <div className="panel table-wrap catalog-table">
