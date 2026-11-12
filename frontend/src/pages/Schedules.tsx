@@ -694,7 +694,7 @@ export default function Schedules() {
                       <tr key={run.id}>
                         <td className="catalog-meta-date">{formatDate(run.scheduled_for)}</td>
                         <td className="tabular-num">{run.attempt}</td>
-                        <td>{run.trigger_source}</td>
+                        <td>{run.trigger_source === "manual" ? "수동" : run.trigger_source === "scheduled" ? "예약" : run.trigger_source === "retry" ? "재시도" : run.trigger_source}</td>
                         <td><StatusBadge status={run.status} label={jobStatusLabel(run.status)} /></td>
                         <td className="mono">
                           {run.target_resource_id && href ? (
@@ -847,7 +847,7 @@ export default function Schedules() {
               checked={form.is_enabled}
               onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })}
             />
-            Enabled
+            활성화
           </label>
 
           {form.target_type === "data_import" && (
