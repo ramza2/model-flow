@@ -214,7 +214,7 @@ describe("DataSources operations UX", () => {
     await screen.findByTestId("import-table");
     await waitFor(() => expect(screen.getByTestId("import-dataset-name")).toHaveValue("customers"));
     fireEvent.click(screen.getByTestId("import-submit"));
-    await waitFor(() => expect(screen.getByTestId("import-status")).toHaveTextContent(/Pending|pending/i));
+    await waitFor(() => expect(screen.getByTestId("import-status")).toHaveTextContent(/대기/));
     await vi.advanceTimersByTimeAsync(2100);
     await waitFor(() => expect(screen.getByTestId("open-imported-dataset")).toBeInTheDocument());
     expect(screen.getByTestId("open-imported-dataset")).toHaveAttribute(
@@ -290,7 +290,7 @@ describe("DataSources operations UX", () => {
     await screen.findByTestId("import-table");
     fireEvent.click(screen.getByTestId("import-submit"));
     expect(await screen.findByText(/relation "public.missing" does not exist/i)).toBeInTheDocument();
-    expect(screen.getByTestId("import-submit")).toHaveTextContent(/Retry import/i);
+    expect(screen.getByTestId("import-submit")).toHaveTextContent(/가져오기 재시도/i);
   });
 
   it("confirms permanent delete and surfaces 409 lineage protection", async () => {
@@ -629,7 +629,7 @@ describe("DataSources operations UX", () => {
       "placeholder",
       "Leave blank to keep saved connection URL",
     );
-    expect(screen.getByText(/saved connection URL is not shown/i)).toBeInTheDocument();
+    expect(screen.getByText(/저장된 연결 URL은 표시하지 않습니다/i)).toBeInTheDocument();
     expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
     expect(screen.queryByDisplayValue(/postgresql:/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByTestId("data-source-name"), {
@@ -699,7 +699,7 @@ describe("DataSources operations UX", () => {
     fireEvent.click(await screen.findByTestId("test-connection-3"));
     const notice = await screen.findByRole("status");
     expect(notice).toHaveClass("success");
-    expect(notice).toHaveTextContent(/Connection succeeded/i);
+    expect(notice).toHaveTextContent(/연결 검사에 성공했습니다/i);
     expect(screen.getByTestId("last-test-message-3")).toHaveClass("ok");
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -728,7 +728,7 @@ describe("DataSources operations UX", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveClass("error");
     expect(alert).toHaveTextContent(/Connection failed/i);
-    expect(screen.queryByRole("status", { name: /Connection succeeded/i })).toBeNull();
+    expect(screen.queryByRole("status", { name: /연결 검사에 성공했습니다/i })).toBeNull();
     expect(document.querySelector(".success")).toBeNull();
     expect(screen.getByTestId("last-test-message-3")).toHaveClass("err");
     expect(screen.getByTestId("last-test-message-3")).toHaveTextContent(/Connection failed/i);
@@ -875,7 +875,7 @@ describe("DataSources operations UX", () => {
 
     renderPage();
     fireEvent.click(await screen.findByTestId("import-data-6"));
-    expect(await screen.findByText("Import from REST API")).toBeInTheDocument();
+    expect(await screen.findByText("REST API에서 데이터 가져오기")).toBeInTheDocument();
     expect(screen.getByTestId("data-source-card-6")).toHaveClass("is-importing");
     expect(screen.queryByTestId("import-schema")).not.toBeInTheDocument();
     expect(screen.queryByTestId("import-mode-sql")).not.toBeInTheDocument();
