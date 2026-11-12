@@ -28,7 +28,7 @@ import {
   targetTypeLabel,
 } from "../operationsHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
-import { jobStatusLabel, operationalStatusLabel } from "../uiTerminology";
+import { operationalStatusLabel } from "../uiTerminology";
 import {
   hasActiveScheduleRuns,
   SCHEDULE_HISTORY_POLL_INTERVAL_MS,
@@ -695,7 +695,7 @@ export default function Schedules() {
                         <td className="catalog-meta-date">{formatDate(run.scheduled_for)}</td>
                         <td className="tabular-num">{run.attempt}</td>
                         <td>{run.trigger_source === "manual" ? "수동" : run.trigger_source === "scheduled" ? "예약" : run.trigger_source === "retry" ? "재시도" : run.trigger_source}</td>
-                        <td><StatusBadge status={run.status} label={jobStatusLabel(run.status)} /></td>
+                        <td><StatusBadge status={run.status} label={operationalStatusLabel(run.status)} /></td>
                         <td className="mono">
                           {run.target_resource_id && href ? (
                             <Link to={href}>#{run.target_resource_id}</Link>
