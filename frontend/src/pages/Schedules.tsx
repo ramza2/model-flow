@@ -28,6 +28,7 @@ import {
   targetTypeLabel,
 } from "../operationsHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+import { jobStatusLabel, operationalStatusLabel } from "../uiTerminology";
 import {
   hasActiveScheduleRuns,
   SCHEDULE_HISTORY_POLL_INTERVAL_MS,
@@ -99,18 +100,18 @@ function scheduleTargetSummary(
   const config = schedule.target_config;
   if (schedule.target_type === "pipeline_run") {
     const pipeline = pipelines.find((row) => row.id === Number(config.pipeline_id));
-    return pipeline ? pipeline.name : config.pipeline_id ? `Pipeline #${config.pipeline_id}` : "—";
+    return pipeline ? pipeline.name : config.pipeline_id ? `파이프라인 #${config.pipeline_id}` : "—";
   }
   if (schedule.target_type === "batch_inference") {
     const dataset = datasets.find((row) => row.id === Number(config.dataset_id));
     const endpoint = endpoints.find((row) => row.id === Number(config.endpoint_id));
     if (dataset && endpoint) return `${dataset.name} → ${endpoint.name}`;
     if (dataset) return dataset.name;
-    return config.dataset_id ? `Dataset #${config.dataset_id}` : "—";
+    return config.dataset_id ? `데이터셋 #${config.dataset_id}` : "—";
   }
   if (schedule.target_type === "data_import") {
     const source = dataSources.find((row) => row.id === Number(config.data_source_id));
-    return source ? source.name : config.data_source_id ? `Source #${config.data_source_id}` : "—";
+    return source ? source.name : config.data_source_id ? `데이터 소스 #${config.data_source_id}` : "—";
   }
   return "—";
 }
@@ -268,7 +269,7 @@ export default function Schedules() {
       setModels(modelRows);
       setPipelines(pipelineRows);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedules could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "스케줄 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -320,7 +321,7 @@ export default function Schedules() {
       if (!isHistoryResponseCurrent(generation, schedule.id)) {
         return;
       }
-      setError(reason instanceof Error ? reason.message : "Run history could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "실행 이력을 불러오지 못했습니다.");
     }
   }
 
@@ -409,7 +410,7 @@ export default function Schedules() {
         prefill.pipeline_id = pipelineId;
       } else {
         prefill.pipeline_id = "";
-        notice = "This pipeline must be published before it can be scheduled.";
+        notice = "스케줄에 등록하려면 파이프라인을 먼저 게시해야 합니다.";
       }
     }
     openCreate(prefill, notice);
@@ -443,10 +444,10 @@ export default function Schedules() {
     try {
       parameters = JSON.parse(form.parameters_json || "{}") as Record<string, unknown>;
     } catch {
-      throw new Error("Pipeline parameters must be valid JSON.");
+      throw new Error("파이프라인 매개변수는 유효한 JSON 형식이어야 합니다.");
     }
     if (!publishedPipelines.some((pipeline) => String(pipeline.id) === String(form.pipeline_id))) {
-      throw new Error("This pipeline must be published before it can be scheduled.");
+      throw new Error("스케줄에 등록하려면 파이프라인을 먼저 게시해야 합니다.");
     }
     return {
       pipeline_id: Number(form.pipeline_id),
@@ -484,18 +485,18 @@ export default function Schedules() {
             refresh_pinned_version: form.refresh_pinned_version,
           }),
         });
-        setSuccess("Schedule updated.");
+        setSuccess("스케줄을 수정했습니다.");
       } else {
         await api(`/projects/${projectId}/schedules`, {
           method: "POST",
           ...jsonBody(payload),
         });
-        setSuccess("Schedule created.");
+        setSuccess("스케줄을 생성했습니다.");
       }
       closeForm();
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be saved.");
+      setError(reason instanceof Error ? reason.message : "스케줄을 저장하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -510,7 +511,7 @@ export default function Schedules() {
       await api(`/projects/${projectId}/schedules/${schedule.id}/${path}`, { method: "POST" });
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be updated.");
+      setError(reason instanceof Error ? reason.message : "스케줄 상태를 변경하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -522,13 +523,13 @@ export default function Schedules() {
     setError("");
     try {
       await api(`/projects/${projectId}/schedules/${schedule.id}/run-now`, { method: "POST" });
-      setSuccess(`Run now queued for "${schedule.name}".`);
+      setSuccess(`“${schedule.name}” 즉시 실행을 요청했습니다.`);
       await load();
       if (historySchedule?.id === schedule.id) {
         await openHistory(schedule);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Run now failed.");
+      setError(reason instanceof Error ? reason.message : "즉시 실행에 실패했습니다.");
     } finally {
       setBusy(false);
     }
@@ -536,15 +537,15 @@ export default function Schedules() {
 
   async function deleteSchedule(schedule: AutomationSchedule) {
     if (!projectId || !canWrite) return;
-    if (!window.confirm(`Delete schedule "${schedule.name}"?`)) return;
+    if (!window.confirm(`“${schedule.name}” 스케줄을 삭제하시겠습니까?`)) return;
     setBusy(true);
     setError("");
     try {
       await api(`/projects/${projectId}/schedules/${schedule.id}`, { method: "DELETE" });
-      setSuccess("Schedule deleted.");
+      setSuccess("스케줄을 삭제했습니다.");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be deleted.");
+      setError(reason instanceof Error ? reason.message : "스케줄을 삭제하지 못했습니다.");
     } finally {
       setBusy(false);
     }
