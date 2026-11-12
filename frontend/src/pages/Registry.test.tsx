@@ -56,6 +56,46 @@ describe("Registry lifecycle UX", () => {
     ]));
   });
 
+  it("explains empty lifecycle filters and clears them without changing API values", async () => {
+    apiMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/projects/7/models")) return [];
+      if (path.startsWith("/projects/7/experiments/runs")) return [];
+      return [];
+    });
+    render(
+      <MemoryRouter initialEntries={["/projects/7/registry"]}>
+        <Routes><Route path="/projects/:projectId/registry" element={<Registry />} /></Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("heading", { name: "등록된 모델이 없습니다" })).toBeInTheDocument();
+
+    const filter = screen.getByTestId("registry-lifecycle-filter");
+    fireEvent.change(filter, { target: { value: "APPROVED" } });
+    expect(await screen.findByRole("heading", { name: "선택한 상태의 모델이 없습니다" })).toBeInTheDocument();
+    expect(screen.getByText("‘승인 완료’ 상태의 모델이 없습니다. 전체 상태에서 다른 모델을 확인하세요.")).toBeInTheDocument();
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith("/projects/7/models?lifecycle=APPROVED"));
+    fireEvent.click(screen.getByRole("button", { name: "전체 상태 보기" }));
+    expect(filter).toHaveValue("");
+    expect(await screen.findByRole("heading", { name: "등록된 모델이 없습니다" })).toBeInTheDocument();
+  });
+
+  it("keeps empty-filter recovery available to viewers without showing register controls", async () => {
+    canWriteRef.value = false;
+    apiMock.mockResolvedValue([]);
+    render(
+      <MemoryRouter initialEntries={["/projects/7/registry"]}>
+        <Routes><Route path="/projects/:projectId/registry" element={<Registry />} /></Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByRole("heading", { name: "등록된 모델이 없습니다" });
+    fireEvent.change(screen.getByTestId("registry-lifecycle-filter"), { target: { value: "CANDIDATE" } });
+    expect(await screen.findByRole("heading", { name: "선택한 상태의 모델이 없습니다" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /학습 결과로 모델 등록/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "전체 상태 보기" }));
+    expect(screen.getByTestId("registry-lifecycle-filter")).toHaveValue("");
+    expect(screen.queryByRole("button", { name: /학습 결과로 모델 등록/ })).not.toBeInTheDocument();
+  });
+
   it("suggests model name from run display name instead of classifier", async () => {
     apiMock.mockImplementation(async (path: string) => {
       if (path.startsWith("/projects/7/models")) return [];

@@ -235,9 +235,29 @@ describe("Jobs list", () => {
       await screen.findByRole("heading", { name: "선택한 상태의 학습 작업이 없습니다" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "새 모델 학습" })).not.toBeInTheDocument();
+    expect(screen.getByText("‘실패’ 상태의 학습 작업이 없습니다. 다른 상태를 선택하거나 전체 상태로 돌아가세요.")).toBeInTheDocument();
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith("/projects/7/jobs?status=failed");
     });
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 상태 보기" }));
+    expect(screen.getByTestId("jobs-status-filter")).toHaveValue("");
+    expect(await screen.findByRole("heading", { name: "아직 모델 학습 작업이 없습니다" })).toBeInTheDocument();
+  });
+
+  it("lets viewers clear an empty status filter without granting create access", async () => {
+    canTrainRef.value = false;
+    apiMock.mockResolvedValue([]);
+    renderPage();
+    await screen.findByRole("heading", { name: "아직 모델 학습 작업이 없습니다" });
+
+    fireEvent.change(screen.getByTestId("jobs-status-filter"), { target: { value: "failed" } });
+    expect(await screen.findByRole("heading", { name: "선택한 상태의 학습 작업이 없습니다" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /새 모델 학습/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 상태 보기" }));
+    expect(screen.getByTestId("jobs-status-filter")).toHaveValue("");
+    expect(screen.queryByRole("link", { name: /새 모델 학습/ })).not.toBeInTheDocument();
   });
 
   it("preserves backend error messages and Koreanizes app fallback", async () => {
