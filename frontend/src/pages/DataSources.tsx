@@ -181,7 +181,7 @@ export default function DataSources() {
     try {
       setSources(await api<DataSource[]>(`/projects/${projectId}/data-sources`));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data sources could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -278,7 +278,7 @@ export default function DataSources() {
               ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
             }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -289,7 +289,7 @@ export default function DataSources() {
               secrets: payload.secrets,
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       } else if (sourceType === "rest_api") {
         const payload = buildRestApiSavePayload({
@@ -312,7 +312,7 @@ export default function DataSources() {
               ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
             }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -323,7 +323,7 @@ export default function DataSources() {
               secrets: payload.secrets,
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       } else {
         const parsed = JSON.parse(config) as Record<string, unknown>;
@@ -332,7 +332,7 @@ export default function DataSources() {
             method: "PATCH",
             body: JSON.stringify({ name, config: parsed, secrets: {} }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -343,7 +343,7 @@ export default function DataSources() {
               secrets: {},
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       }
       resetForm();
@@ -351,10 +351,10 @@ export default function DataSources() {
     } catch (reason) {
       setError(
         reason instanceof SyntaxError
-          ? "Configuration must be valid JSON."
+          ? "설정은 유효한 JSON 형식이어야 합니다."
           : reason instanceof Error
             ? reason.message
-            : "Data source could not be saved.",
+            : "데이터 소스를 저장하지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -371,7 +371,7 @@ export default function DataSources() {
         { method: "POST" },
       );
       const message = result.message?.trim() || (
-        result.status === "ok" ? "Connection succeeded." : "Connection test failed."
+        result.status === "ok" ? "연결 검사에 성공했습니다." : "연결 검사에 실패했습니다."
       );
       if (result.status === "ok") {
         setSuccess(message);
@@ -380,7 +380,7 @@ export default function DataSources() {
       }
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Connection test failed.");
+      setError(reason instanceof Error ? reason.message : "연결 검사에 실패했습니다.");
     } finally {
       setBusy("");
     }
@@ -391,10 +391,10 @@ export default function DataSources() {
     setError("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}/activate`, { method: "POST" });
-      setSuccess(`“${source.name}” activated.`);
+      setSuccess(`“${source.name}” 데이터 소스를 활성화했습니다.`);
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data source could not be activated.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 활성화하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -403,7 +403,7 @@ export default function DataSources() {
   async function deactivateSource(source: DataSource) {
     if (
       !confirmAction(
-        `Deactivate “${source.name}”?\n\nNew imports will be disabled.\nPreviously imported datasets and lineage will remain available.`,
+        `“${source.name}” 데이터 소스를 비활성화하시겠습니까?\n\n새 데이터 가져오기가 중단됩니다.\n이전에 가져온 데이터셋과 연결 이력은 유지됩니다.`,
       )
     ) {
       return;
@@ -412,7 +412,7 @@ export default function DataSources() {
     setError("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}/deactivate`, { method: "POST" });
-      setSuccess(`“${source.name}” deactivated.`);
+      setSuccess(`“${source.name}” 데이터 소스를 비활성화했습니다.`);
       if (importingId === source.id) {
         stopPolling();
         setImportingId(null);
@@ -420,7 +420,7 @@ export default function DataSources() {
       }
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data source could not be deactivated.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 비활성화하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -429,7 +429,7 @@ export default function DataSources() {
   async function deleteSource(source: DataSource) {
     if (
       !confirmAction(
-        `Delete data source permanently?\n\n“${source.name}” will be permanently removed, including its saved connection credentials.\n\nThis action cannot be undone.`,
+        `데이터 소스를 영구 삭제하시겠습니까?\n\n“${source.name}”와 저장된 연결 인증 정보가 영구 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.`,
       )
     ) {
       return;
@@ -439,7 +439,7 @@ export default function DataSources() {
     setSuccess("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}`, { method: "DELETE" });
-      setSuccess(`“${source.name}” permanently deleted.`);
+      setSuccess(`“${source.name}” 데이터 소스를 영구 삭제했습니다.`);
       if (importingId === source.id) {
         stopPolling();
         setImportingId(null);
@@ -454,7 +454,7 @@ export default function DataSources() {
             : reason.message,
         );
       } else {
-        setError(reason instanceof Error ? reason.message : "Data source could not be deleted.");
+        setError(reason instanceof Error ? reason.message : "데이터 소스를 삭제하지 못했습니다.");
       }
     } finally {
       setBusy("");
@@ -508,7 +508,7 @@ export default function DataSources() {
         schemasError:
           reason instanceof Error
             ? reason.message
-            : "Could not load schemas. Test the data source connection and try again.",
+            : "스키마를 불러오지 못했습니다. 데이터 소스 연결을 검사한 뒤 다시 시도하세요.",
       }));
     }
   }
@@ -535,7 +535,7 @@ export default function DataSources() {
         ...current,
         previewLoading: false,
         previewError:
-          reason instanceof Error ? reason.message : "REST API preview could not be loaded.",
+          reason instanceof Error ? reason.message : "REST API 미리보기를 불러오지 못했습니다.",
       }));
     }
   }
@@ -571,7 +571,7 @@ export default function DataSources() {
           tablesError:
             reason instanceof Error
               ? reason.message
-              : "Could not load tables. Test the data source connection and try again.",
+              : "테이블 목록을 불러오지 못했습니다. 연결을 검사한 뒤 다시 시도하세요.",
         }));
       }
     })();
@@ -593,7 +593,7 @@ export default function DataSources() {
           }
         } catch (reason) {
           stopPolling();
-          setError(reason instanceof Error ? reason.message : "Import status could not be loaded.");
+          setError(reason instanceof Error ? reason.message : "데이터 가져오기 상태를 불러오지 못했습니다.");
         }
       })();
     }, 2000);
@@ -602,7 +602,7 @@ export default function DataSources() {
   async function submitImport(source: DataSource) {
     const datasetName = importState.datasetName.trim();
     if (!datasetName) {
-      setError("Dataset name is required.");
+      setError("데이터셋 이름을 입력하세요.");
       return;
     }
     let tableOrQuery = "";
@@ -610,14 +610,14 @@ export default function DataSources() {
       tableOrQuery = importState.resource.trim() || "/";
     } else if (importState.mode === "table") {
       if (!importState.schema || !importState.table) {
-        setError("Select a schema and table to import.");
+        setError("가져올 스키마와 테이블을 선택하세요.");
         return;
       }
       tableOrQuery = `${importState.schema}.${importState.table}`;
     } else {
       tableOrQuery = importState.sql.trim();
       if (!tableOrQuery) {
-        setError("Enter a read-only SQL query.");
+        setError("읽기 전용 SQL 쿼리를 입력하세요.");
         return;
       }
     }
@@ -637,7 +637,7 @@ export default function DataSources() {
       void loadRecentJobs(source.id);
     } catch (reason) {
       setImportState((current) => ({ ...current, submitting: false }));
-      setError(reason instanceof Error ? reason.message : "Import could not be started.");
+      setError(reason instanceof Error ? reason.message : "데이터 가져오기를 시작하지 못했습니다.");
     }
   }
 
