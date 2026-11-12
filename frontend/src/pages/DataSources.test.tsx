@@ -570,7 +570,7 @@ describe("DataSources operations UX", () => {
     expect(screen.getByTestId("data-source-password")).toHaveValue("");
     expect(screen.getByTestId("data-source-password")).toHaveAttribute(
       "placeholder",
-      "Leave blank to keep saved password",
+      "저장된 암호를 유지하려면 비워 두세요",
     );
     expect(screen.queryByDisplayValue("super-secret-password")).not.toBeInTheDocument();
     expect(screen.queryByText(/super-secret-password/)).not.toBeInTheDocument();
@@ -627,7 +627,7 @@ describe("DataSources operations UX", () => {
     expect(screen.getByTestId("data-source-connection-url")).toHaveValue("");
     expect(screen.getByTestId("data-source-connection-url")).toHaveAttribute(
       "placeholder",
-      "Leave blank to keep saved connection URL",
+      "저장된 연결 URL을 유지하려면 비워 두세요",
     );
     expect(screen.getByText(/저장된 연결 URL은 표시하지 않습니다/i)).toBeInTheDocument();
     expect(screen.queryByTestId("data-source-host")).not.toBeInTheDocument();
@@ -699,7 +699,7 @@ describe("DataSources operations UX", () => {
     fireEvent.click(await screen.findByTestId("test-connection-3"));
     const notice = await screen.findByRole("status");
     expect(notice).toHaveClass("success");
-    expect(notice).toHaveTextContent(/연결 검사에 성공했습니다/i);
+    expect(notice).toHaveTextContent(/Connection succeeded/i);
     expect(screen.getByTestId("last-test-message-3")).toHaveClass("ok");
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -819,7 +819,7 @@ describe("DataSources operations UX", () => {
     expect(screen.getByTestId("data-source-rest-bearer-token")).toHaveValue("");
     expect(screen.getByTestId("data-source-rest-bearer-token")).toHaveAttribute(
       "placeholder",
-      "Leave blank to keep saved token",
+      "기존 토큰을 유지하려면 비워 두세요",
     );
     expect(screen.queryByDisplayValue("secret-token")).not.toBeInTheDocument();
 
