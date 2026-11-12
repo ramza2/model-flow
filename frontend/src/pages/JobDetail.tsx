@@ -192,7 +192,9 @@ export default function JobDetail() {
             variant="warning"
             title="학습이 실패했습니다 — 먼저 확인하세요"
             message={job.error_message
-              ? "위 오류 메시지를 읽고 실행 로그에서 실패 시점의 내용을 확인하세요. 설정을 고쳐야 할 경우에는 ‘설정 복제’를, 동일 설정으로 다시 시도할 경우에는 ‘다시 실행’을 사용합니다."
+              ? canTrain
+                ? "위 오류 메시지를 읽고 실행 로그에서 실패 시점의 내용을 확인하세요. 설정을 고쳐야 할 경우에는 ‘설정 복제’를, 동일 설정으로 다시 시도할 경우에는 ‘다시 실행’을 사용합니다."
+                : "위 오류 메시지와 실행 로그를 확인하세요. 재실행이나 설정 변경은 학습 권한이 있는 담당자에게 문의하세요."
               : "오류 메시지가 제공되지 않았습니다. 실행 로그에서 실패 시점의 내용을 확인하고, 필요하면 학습 담당자에게 문의하세요."}
             action={<a className="btn secondary" href="#job-execution-logs">실행 로그 보기</a>}
           />
@@ -485,7 +487,9 @@ export default function JobDetail() {
             actions={active ? <span className="live-indicator"><span /> 실시간</span> : undefined}
           >
             <div className="engineering-surface">
-              <div className="logs" id="job-execution-logs" data-testid="job-logs">{job.logs || "학습 시작을 기다리는 중…"}</div>
+              <div className="logs" id="job-execution-logs" data-testid="job-logs">{job.logs || (job.status === "failed"
+                ? "기록된 실행 로그가 없습니다. 위 오류 내용을 확인하거나 학습 담당자에게 문의하세요."
+                : "학습 시작을 기다리는 중…")}</div>
             </div>
           </DetailSection>
 
