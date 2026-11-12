@@ -1225,15 +1225,15 @@ export default function DataSources() {
         </form>
       )}
       {loading ? (
-        <Loading label="Loading data sources" />
+        <Loading label="데이터 소스 불러오는 중" />
       ) : sources.length === 0 ? (
         <EmptyState
-          title="No connected data sources"
-          description="Add PostgreSQL, MySQL / MariaDB, Microsoft SQL Server, Oracle Database, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
+          title="연결된 데이터 소스가 없습니다"
+          description="PostgreSQL·MySQL·MariaDB·SQL Server·Oracle·REST API를 연결하거나, 데이터셋 화면에서 파일을 직접 업로드할 수 있습니다."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
-                Add data source
+                데이터 소스 추가
               </button>
             ) : undefined
           }
@@ -1243,7 +1243,7 @@ export default function DataSources() {
           <div className="catalog-summary" aria-live="polite">
             <span className="catalog-summary-count">{sources.length}</span>
             <span className="catalog-summary-label">
-              {sources.length === 1 ? "data source in this project" : "data sources in this project"}
+              {sources.length === 1 ? "개 데이터 소스" : "개 데이터 소스"}
             </span>
           </div>
           <div className="card-grid source-catalog-grid">
@@ -1265,12 +1265,12 @@ export default function DataSources() {
                   <div className="source-card-copy">
                     <div className="source-card-meta">
                       <span className="type-chip">{sqlSourceLabel(source.source_type)}</span>
-                      {!source.is_active ? <span className="type-chip is-muted">Inactive</span> : null}
+                      {!source.is_active ? <span className="type-chip is-muted">비활성</span> : null}
                     </div>
                     <h2>{source.name}</h2>
                   </div>
                 </div>
-                <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
+                <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} label={operationalStatusLabel(source.is_active ? source.last_test_status || "active" : "inactive")} />
               </div>
               <dl className="key-values source-card-facts">
                 {Object.entries(source.config)
@@ -1282,7 +1282,7 @@ export default function DataSources() {
                     </div>
                   ))}
                 <div>
-                  <dt>Last tested</dt>
+                  <dt>최근 연결 검사</dt>
                   <dd>{formatDate(source.last_tested_at)}</dd>
                 </div>
               </dl>
@@ -1296,11 +1296,11 @@ export default function DataSources() {
               )}
               {(recentJobs[source.id] || []).length > 0 && (
                 <div className="source-recent-jobs" data-testid={`recent-imports-${source.id}`}>
-                  <span className="eyebrow">Recent imports</span>
+                  <span className="eyebrow">최근 데이터 가져오기</span>
                   <ul>
                     {(recentJobs[source.id] || []).slice(0, 3).map((job) => (
                       <li key={job.id}>
-                        <StatusBadge status={job.status} />
+                        <StatusBadge status={job.status} label={jobStatusLabel(job.status)} />
                         <span className="source-job-id">#{job.id}</span>
                         <span className="muted source-job-query">{job.table_or_query.slice(0, 48)}</span>
                       </li>
@@ -1317,7 +1317,7 @@ export default function DataSources() {
                       disabled={busy === `test-${source.id}`}
                       data-testid={`test-connection-${source.id}`}
                     >
-                      {busy === `test-${source.id}` ? "Testing…" : "Test connection"}
+                      {busy === `test-${source.id}` ? "검사 중…" : "연결 검사"}
                     </button>
                   )}
                   {source.is_active &&
@@ -1327,7 +1327,7 @@ export default function DataSources() {
                       onClick={() => openImport(source)}
                       data-testid={`import-data-${source.id}`}
                     >
-                      Import data
+                      데이터 가져오기
                     </button>
                   )}
                   {!source.is_active && (
@@ -1337,11 +1337,11 @@ export default function DataSources() {
                       disabled={busy === `activate-${source.id}`}
                       data-testid={`activate-${source.id}`}
                     >
-                      {busy === `activate-${source.id}` ? "Activating…" : "Activate"}
+                      {busy === `activate-${source.id}` ? "활성화 중…" : "활성화"}
                     </button>
                   )}
                   <button className="btn link" onClick={() => editSource(source)} data-testid={`edit-${source.id}`}>
-                    Edit
+                    수정
                   </button>
                   {source.is_active && (
                     <button
@@ -1350,7 +1350,7 @@ export default function DataSources() {
                       disabled={busy === `deactivate-${source.id}`}
                       data-testid={`deactivate-${source.id}`}
                     >
-                      Deactivate
+                      비활성화
                     </button>
                   )}
                   <button
@@ -1359,7 +1359,7 @@ export default function DataSources() {
                     disabled={busy === `delete-${source.id}`}
                     data-testid={`delete-${source.id}`}
                   >
-                    Delete permanently
+                    영구 삭제
                   </button>
                 </div>
               )}
@@ -1367,19 +1367,19 @@ export default function DataSources() {
                 <div className="panel form source-import-panel" data-testid={`import-panel-${source.id}`}>
                   <div className="panel-title">
                     <div>
-                      <span className="eyebrow">Import</span>
+                      <span className="eyebrow">데이터 가져오기</span>
                       <h3>
                         {source.source_type === "rest_api"
-                          ? "Import from REST API"
-                          : `Import from ${sqlSourceLabel(source.source_type)}`}
+                          ? "REST API에서 데이터 가져오기"
+                          : `${sqlSourceLabel(source.source_type)}에서 데이터 가져오기`}
                       </h3>
                     </div>
                     <button className="btn link" type="button" onClick={closeImport}>
-                      Close
+                      닫기
                     </button>
                   </div>
                   {isSqlSourceType(source.source_type) && (
-                    <div className="row-actions" role="tablist" aria-label="Import mode">
+                    <div className="row-actions" role="tablist" aria-label="데이터 가져오기 방식">
                       <button
                         type="button"
                         className={importState.mode === "table" ? "btn" : "btn secondary"}
@@ -1387,7 +1387,7 @@ export default function DataSources() {
                         data-testid="import-mode-table"
                         disabled={importBusy}
                       >
-                        Table
+                        테이블
                       </button>
                       <button
                         type="button"
@@ -1396,12 +1396,12 @@ export default function DataSources() {
                         data-testid="import-mode-sql"
                         disabled={importBusy}
                       >
-                        SQL Query
+                        SQL 쿼리
                       </button>
                     </div>
                   )}
                   <label>
-                    Dataset name
+                    데이터셋 이름
                     <input
                       value={importState.datasetName}
                       onChange={(event) =>
@@ -1415,7 +1415,7 @@ export default function DataSources() {
                   {source.source_type === "rest_api" ? (
                     <>
                       <label>
-                        Resource path
+                        리소스 경로
                         <input
                           value={importState.resource}
                           onChange={(event) =>
@@ -1430,7 +1430,7 @@ export default function DataSources() {
                           disabled={importBusy}
                           data-testid="import-rest-resource"
                         />
-                        <small>Relative GET path under the configured Base URL.</small>
+                        <small>설정한 기본 URL 아래의 상대 GET 경로입니다.</small>
                       </label>
                       <div className="row-actions">
                         <button
@@ -1440,7 +1440,7 @@ export default function DataSources() {
                           disabled={importBusy || importState.previewLoading}
                           data-testid="import-rest-preview"
                         >
-                          {importState.previewLoading ? "Loading preview…" : "Preview response"}
+                          {importState.previewLoading ? "미리보기 불러오는 중…" : "응답 미리보기"}
                         </button>
                       </div>
                       {importState.previewError && <ErrorNotice message={importState.previewError} />}
@@ -1473,7 +1473,7 @@ export default function DataSources() {
                   ) : importState.mode === "table" ? (
                     <>
                       <label>
-                        {source.source_type === "mysql" ? "Database" : "Schema"}
+                        {source.source_type === "mysql" ? "데이터베이스" : "스키마"}
                         <select
                           value={importState.schema}
                           onChange={(event) =>
@@ -1486,9 +1486,9 @@ export default function DataSources() {
                           disabled={importState.schemasLoading || importBusy}
                           data-testid="import-schema"
                         >
-                          {importState.schemasLoading && <option value="">Loading schemas…</option>}
+                          {importState.schemasLoading && <option value="">스키마 불러오는 중…</option>}
                           {!importState.schemasLoading && importState.schemas.length === 0 && (
-                            <option value="">No schemas found</option>
+                            <option value="">스키마가 없습니다</option>
                           )}
                           {importState.schemas.map((schema) => (
                             <option key={schema} value={schema}>
@@ -1499,7 +1499,7 @@ export default function DataSources() {
                       </label>
                       {importState.schemasError && <ErrorNotice message={importState.schemasError} />}
                       <label>
-                        Table
+                        테이블
                         <select
                           value={importState.table}
                           onChange={(event) =>
@@ -1512,9 +1512,9 @@ export default function DataSources() {
                           disabled={importState.tablesLoading || !importState.schema || importBusy}
                           data-testid="import-table"
                         >
-                          {importState.tablesLoading && <option value="">Loading tables…</option>}
+                          {importState.tablesLoading && <option value="">테이블 불러오는 중…</option>}
                           {!importState.tablesLoading && importState.tables.length === 0 && (
-                            <option value="">No tables found</option>
+                            <option value="">테이블이 없습니다</option>
                           )}
                           {importState.tables.map((table) => (
                             <option key={table.name} value={table.name}>
@@ -1527,7 +1527,7 @@ export default function DataSources() {
                     </>
                   ) : (
                     <label>
-                      SQL Query
+                      SQL 쿼리
                       <textarea
                         className="code-input"
                         value={importState.sql}
@@ -1539,7 +1539,7 @@ export default function DataSources() {
                         placeholder={"SELECT *\nFROM schema.table\nWHERE ..."}
                         data-testid="import-sql"
                       />
-                      <small>Only read-only SELECT / WITH queries are supported.</small>
+                      <small>읽기 전용 SELECT / WITH 쿼리만 사용할 수 있습니다.</small>
                     </label>
                   )}
                   <div className="row-actions">
@@ -1551,25 +1551,25 @@ export default function DataSources() {
                       data-testid="import-submit"
                     >
                       {importState.submitting
-                        ? "Starting…"
+                        ? "시작 중…"
                         : importState.job?.status === "pending" || importState.job?.status === "running"
-                          ? "Importing…"
+                          ? "가져오는 중…"
                           : importState.job?.status === "failed"
-                            ? "Retry import"
-                            : "Start import"}
+                            ? "가져오기 재시도"
+                            : "가져오기 시작"}
                     </button>
                   </div>
                   {importState.job && (
                     <div className="source-import-status" data-testid="import-status">
                       <p>
                         {importState.job.status === "succeeded"
-                          ? `Import completed for “${importState.datasetName || "dataset"}”.`
+                          ? `“${importState.datasetName || "데이터셋"}” 가져오기를 완료했습니다.`
                           : importState.job.status === "failed"
-                            ? "Import failed."
-                            : `Importing ${importState.datasetName || "dataset"}…`}
+                            ? "데이터 가져오기에 실패했습니다."
+                            : `“${importState.datasetName || "데이터셋"}” 가져오는 중…`}
                       </p>
                       <p>
-                        Status: <StatusBadge status={importState.job.status} />
+                        상태: <StatusBadge status={importState.job.status} label={jobStatusLabel(importState.job.status)} />
                       </p>
                       {importState.job.error_message && (
                         <ErrorNotice message={importState.job.error_message} />
@@ -1580,7 +1580,7 @@ export default function DataSources() {
                           to={`/projects/${projectId}/datasets/${importState.job.dataset_id}`}
                           data-testid="open-imported-dataset"
                         >
-                          Open dataset
+                          데이터셋 열기
                         </Link>
                       )}
                     </div>
