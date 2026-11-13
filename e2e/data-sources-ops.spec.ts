@@ -71,14 +71,14 @@ test("data source lifecycle activate deactivate and permanent delete", async ({ 
 
   const unusedCard = page.locator("article.source-card").filter({ hasText: unusedName });
   page.once("dialog", (dialog) => dialog.accept());
-  await unusedCard.getByRole("button", { name: "Deactivate" }).click();
-  await expect(unusedCard.getByRole("button", { name: "Activate" })).toBeVisible({ timeout: 15_000 });
+  await unusedCard.getByRole("button", { name: "비활성화" }).click();
+  await expect(unusedCard.getByRole("button", { name: "활성화" })).toBeVisible({ timeout: 15_000 });
 
-  await unusedCard.getByRole("button", { name: "Activate" }).click();
-  await expect(unusedCard.getByRole("button", { name: "Deactivate" })).toBeVisible();
+  await unusedCard.getByRole("button", { name: "활성화" }).click();
+  await expect(unusedCard.getByRole("button", { name: "비활성화" })).toBeVisible();
 
   page.once("dialog", (dialog) => dialog.accept());
-  await unusedCard.getByRole("button", { name: "Delete permanently" }).click();
+  await unusedCard.getByRole("button", { name: "영구 삭제" }).click();
   await expect(page.getByRole("heading", { name: unusedName })).toHaveCount(0);
 
   // Create a postgres source and give it import history via API, then assert delete blocked.
@@ -122,15 +122,15 @@ test("data source lifecycle activate deactivate and permanent delete", async ({ 
     await page.waitForTimeout(2000);
 
     page.once("dialog", (dialog) => dialog.accept());
-    await usedCard.getByRole("button", { name: "Delete permanently" }).click();
+    await usedCard.getByRole("button", { name: "영구 삭제" }).click();
     await expect(page.getByText(/import history|cannot be permanently deleted/i)).toBeVisible({
       timeout: 15_000,
     });
     await expect(page.getByRole("heading", { name: usedName })).toBeVisible();
 
     page.once("dialog", (dialog) => dialog.accept());
-    await usedCard.getByRole("button", { name: "Deactivate" }).click();
-    await expect(usedCard.getByRole("button", { name: "Activate" })).toBeVisible({ timeout: 15_000 });
+    await usedCard.getByRole("button", { name: "비활성화" }).click();
+    await expect(usedCard.getByRole("button", { name: "활성화" })).toBeVisible({ timeout: 15_000 });
   } else {
     test.info().annotations.push({
       type: "note",
@@ -163,14 +163,14 @@ test("postgres import discovery UI when source credentials are available", async
   });
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   const successNotice = page.getByRole("status").filter({ hasText: /Connection succeeded/i });
   await expect(successNotice).toBeVisible({ timeout: 30_000 });
   await expect(successNotice).toHaveClass(/success/);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(card.getByTestId(/last-test-message-/)).toHaveClass(/ok/);
 
-  await card.getByRole("button", { name: "Import data" }).click();
+  await card.getByRole("button", { name: "데이터 가져오기" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("import-schema")).toBeVisible();
@@ -217,21 +217,21 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await expect(page.getByRole("heading", { name: sourceName })).toBeVisible();
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 30_000,
   });
 
-  await card.getByRole("button", { name: "Edit" }).click();
+  await card.getByRole("button", { name: "수정" }).click();
   await expect(page.getByTestId("data-source-connection-mode")).toHaveValue("connection_url");
   const connectionUrlInput = page.getByTestId("data-source-connection-url");
   await expect(connectionUrlInput).toHaveValue("");
   await expect(connectionUrlInput).toHaveAttribute("type", "password");
   await expect(connectionUrlInput).toHaveAttribute(
     "placeholder",
-    "Leave blank to keep saved connection URL",
+    "저장된 연결 URL을 유지하려면 비워 두세요",
   );
-  await expect(page.getByText(/saved connection URL is not shown/i)).toBeVisible();
+  await expect(page.getByText(/저장된 연결 URL은 표시하지 않습니다/i)).toBeVisible();
   await expect(page.getByTestId("data-source-host")).toHaveCount(0);
   await expect(page.getByTestId("data-source-password")).toHaveCount(0);
 
@@ -240,12 +240,12 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await expect(page.getByRole("heading", { name: renamed })).toBeVisible();
 
   const renamedCard = page.locator("article.source-card").filter({ hasText: renamed });
-  await renamedCard.getByRole("button", { name: "Test connection" }).click();
+  await renamedCard.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 30_000,
   });
 
-  await renamedCard.getByRole("button", { name: "Edit" }).click();
+  await renamedCard.getByRole("button", { name: "수정" }).click();
   await page.getByTestId("data-source-connection-mode").selectOption("host_port");
   await page.getByTestId("data-source-host").fill(host);
   await page.getByTestId("data-source-port").fill(port);
@@ -255,17 +255,17 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await page.getByTestId("data-source-save").click();
   await expect(page.getByRole("heading", { name: renamed })).toBeVisible();
 
-  await renamedCard.getByRole("button", { name: "Test connection" }).click();
+  await renamedCard.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 30_000,
   });
 
-  await renamedCard.getByRole("button", { name: "Edit" }).click();
+  await renamedCard.getByRole("button", { name: "수정" }).click();
   await expect(page.getByTestId("data-source-connection-mode")).toHaveValue("host_port");
   const passwordInput = page.getByTestId("data-source-password");
   await expect(passwordInput).toHaveValue("");
   await expect(passwordInput).toHaveAttribute("type", "password");
-  await expect(passwordInput).toHaveAttribute("placeholder", "Leave blank to keep saved password");
+  await expect(passwordInput).toHaveAttribute("placeholder", "저장된 암호를 유지하려면 비워 두세요");
   await expect(page.getByTestId("data-source-connection-url")).toHaveCount(0);
 });
 
@@ -291,7 +291,7 @@ test("typed postgres form connection test shows error styling on refused connect
   });
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   const alert = page.getByRole("alert");
   await expect(alert).toBeVisible({ timeout: 20_000 });
   await expect(alert).toHaveClass(/error/);
@@ -359,12 +359,12 @@ async function importMysqlFamilyCustomers(
 
   const card = page.locator("article.source-card").filter({ hasText: options.sourceName });
   await expect(card).toContainText("MySQL / MariaDB");
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 60_000,
   });
 
-  await card.getByRole("button", { name: "Import data" }).click();
+  await card.getByRole("button", { name: "데이터 가져오기" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("import-schema")).toBeVisible();
@@ -465,12 +465,12 @@ test("mssql import discovery UI when source credentials are available", async ({
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
   await expect(card).toContainText("Microsoft SQL Server");
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 60_000,
   });
 
-  await card.getByRole("button", { name: "Import data" }).click();
+  await card.getByRole("button", { name: "데이터 가져오기" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
   await expect(panel.getByTestId("import-schema")).toBeVisible();
@@ -547,12 +547,12 @@ test("oracle import discovery UI when source credentials are available", async (
 
   const card = page.locator("article.source-card").filter({ hasText: sourceName });
   await expect(card).toContainText("Oracle Database");
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Connection succeeded/i })).toBeVisible({
     timeout: 60_000,
   });
 
-  await card.getByRole("button", { name: "Import data" }).click();
+  await card.getByRole("button", { name: "데이터 가져오기" }).click();
   const panel = page.getByTestId(/import-panel-/);
   await expect(panel).toBeVisible();
   const schemaSelect = panel.getByTestId("import-schema");
@@ -600,14 +600,14 @@ test("REST API source test preview and import use the existing dataset lifecycle
   await expect(card).toBeVisible();
   await expect(card).toContainText("REST API");
 
-  await card.getByRole("button", { name: "Test connection" }).click();
+  await card.getByRole("button", { name: "연결 검사" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: /JSON response received/i }),
   ).toBeVisible({ timeout: 30_000 });
 
-  await card.getByRole("button", { name: "Import data" }).click();
+  await card.getByRole("button", { name: "데이터 가져오기" }).click();
   const panel = page.getByTestId(/import-panel-/);
-  await expect(panel.getByText("Import from REST API")).toBeVisible();
+  await expect(panel.getByText("REST API에서 데이터 가져오기")).toBeVisible();
   await expect(panel.getByTestId("import-rest-resource")).toHaveValue("/api/v1/health");
   await panel.getByTestId("import-dataset-name").fill(datasetName);
 

@@ -29,7 +29,7 @@ async function openPipelineBuilder(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
   await page.getByRole("link", { name: "데이터셋", exact: true }).click();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
+  await page.getByRole("button", { name: "↑ 데이터셋 업로드", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(iris);
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText("iris.csv")).toBeVisible({ timeout: 30_000 });

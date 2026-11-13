@@ -26,7 +26,7 @@ export default function Datasets() {
   useEffect(() => {
     refresh().catch((reason) => {
       setLoading(false);
-      setError(reason instanceof Error ? reason.message : "Datasets could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "데이터셋을 불러오지 못했습니다.");
     });
   }, [refresh]);
 
@@ -49,9 +49,9 @@ export default function Datasets() {
       form.reset();
       await refresh();
       setShowUpload(false);
-      setSuccess("Dataset uploaded and profiled.");
+      setSuccess("데이터셋을 업로드하고 데이터 특성을 분석했습니다.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Dataset upload failed.");
+      setError(err instanceof Error ? err.message : "데이터셋 업로드에 실패했습니다.");
     } finally {
       setBusy(false);
     }
@@ -60,53 +60,53 @@ export default function Datasets() {
   return (
     <div>
       <PageHeader
-        title="Datasets"
-        description="Scan versioned datasets, then open a detail view to inspect the latest immutable DatasetVersion."
-        actions={canWrite ? <button className="btn" onClick={() => setShowUpload(!showUpload)}>↑ Upload dataset</button> : undefined}
+        title="데이터셋"
+        description="버전별 데이터셋을 확인하고 상세 화면에서 최신 데이터셋 버전(DatasetVersion)을 살펴보세요."
+        actions={canWrite ? <button className="btn" onClick={() => setShowUpload(!showUpload)}>↑ 데이터셋 업로드</button> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
       {showUpload && (
         <form className="panel form workflow-create-panel" onSubmit={onUpload}>
-          <div className="panel-title"><div><span className="eyebrow">New version</span><h2>Upload data</h2></div></div>
+          <div className="panel-title"><div><span className="eyebrow">새 버전</span><h2>데이터 업로드</h2></div></div>
           <label>
-            File
+            파일
             <input type="file" name="file" accept=".csv,.json,.parquet,text/csv,application/json" required data-testid="dataset-file" />
-            <small>CSV, JSON, or Parquet. Upload creates a new immutable DatasetVersion.</small>
+            <small>CSV·JSON·Parquet 파일을 업로드합니다. 기존 데이터를 변경하지 않고 새 데이터셋 버전을 생성합니다.</small>
           </label>
-          <label>Name (optional)<input name="name" placeholder="Defaults to the file name" /></label>
-          <label>Description (optional)<input name="description" placeholder="Source and intended use" /></label>
+          <label>이름 (선택)<input name="name" placeholder="미입력 시 파일 이름 사용" /></label>
+          <label>설명 (선택)<input name="description" placeholder="데이터 출처와 사용 목적" /></label>
           <div className="row-actions">
             <button className="btn" type="submit" disabled={busy} data-testid="dataset-upload">
-              {busy ? "Uploading…" : "Upload and profile"}
+              {busy ? "업로드 중…" : "업로드 및 분석"}
             </button>
-            <button className="btn secondary" type="button" onClick={() => setShowUpload(false)}>Cancel</button>
+            <button className="btn secondary" type="button" onClick={() => setShowUpload(false)}>취소</button>
           </div>
         </form>
       )}
-      {loading ? <Loading label="Loading datasets" /> : items.length === 0 ? (
+      {loading ? <Loading label="데이터셋 불러오는 중" /> : items.length === 0 ? (
         <EmptyState
-          title="No datasets"
-          description="Upload a data file or import one from a connected data source."
-          action={canWrite ? <button className="btn" onClick={() => setShowUpload(true)}>Upload dataset</button> : undefined}
+          title="등록된 데이터셋이 없습니다"
+          description="파일을 업로드하거나 연결된 데이터 소스에서 데이터를 가져오세요."
+          action={canWrite ? <button className="btn" onClick={() => setShowUpload(true)}>데이터셋 업로드</button> : undefined}
         />
       ) : (
         <div className="workflow-catalog">
           <div className="catalog-summary" aria-live="polite">
             <span className="catalog-summary-count">{items.length}</span>
             <span className="catalog-summary-label">
-              {items.length === 1 ? "dataset in this project" : "datasets in this project"}
+              {`이 프로젝트의 데이터셋 ${items.length}개`}
             </span>
           </div>
           <div className="panel table-wrap catalog-table">
             <table>
               <thead>
                 <tr>
-                  <th>Dataset</th>
-                  <th>Latest version</th>
-                  <th>Rows</th>
-                  <th>Columns</th>
-                  <th>Updated</th>
+                  <th>데이터셋</th>
+                  <th>최신 버전</th>
+                  <th>행 수</th>
+                  <th>컬럼 수</th>
+                  <th>최근 수정</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,11 +120,11 @@ export default function Datasets() {
                         <strong>{dataset.name}</strong>
                       </Link>
                       <small className="table-subtitle">
-                        {dataset.description || "Uploaded dataset"}
+                        {dataset.description || "업로드한 데이터셋"}
                       </small>
                     </td>
                     <td>
-                      <span className="version-chip" title="Latest immutable DatasetVersion">
+                      <span className="version-chip" title="기존 내용이 변경되지 않는 최신 데이터셋 버전">
                         v{dataset.latest_version}
                       </span>
                     </td>

@@ -89,8 +89,8 @@ describe("operationsHelpers", () => {
   });
 
   it("labels schedule frequency and target types", () => {
-    expect(cronPresetLabel("0 9 * * *")).toMatch(/Daily/i);
-    expect(targetTypeLabel("pipeline_run")).toBe("Pipeline run");
+    expect(cronPresetLabel("0 9 * * *")).toMatch(/매일/i);
+    expect(targetTypeLabel("pipeline_run")).toBe("파이프라인 실행");
   });
 
   it("builds monitoring attention from factual metrics only", () => {

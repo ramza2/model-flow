@@ -130,9 +130,9 @@ describe("Schedules page", () => {
       return [];
     });
     renderPage();
-    expect(await screen.findByText("No schedules yet")).toBeInTheDocument();
+    expect(await screen.findByText("등록된 스케줄이 없습니다")).toBeInTheDocument();
     expect(
-      screen.getByText(/automate data imports, batch predictions, or pipeline runs/i),
+      screen.getByText(/데이터 가져오기·일괄 예측·파이프라인 실행을 자동으로 처리/i),
     ).toBeInTheDocument();
   });
 
@@ -148,15 +148,15 @@ describe("Schedules page", () => {
     });
     renderPage();
     expect(await screen.findByTestId("schedule-create-open")).toHaveClass("btn");
-    expect(screen.getAllByRole("button", { name: "Run now" })[0]).toHaveClass("btn");
-    expect(screen.getAllByRole("button", { name: "Disable" })[0]).toHaveClass("btn", "link");
-    expect(screen.getAllByRole("button", { name: "Edit" })[0]).toHaveClass("btn", "secondary");
-    expect(screen.getAllByRole("button", { name: "Delete" })[0]).toHaveClass(
+    expect(screen.getAllByRole("button", { name: "지금 실행" })[0]).toHaveClass("btn");
+    expect(screen.getAllByRole("button", { name: "비활성화" })[0]).toHaveClass("btn", "link");
+    expect(screen.getAllByRole("button", { name: "수정" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "삭제" })[0]).toHaveClass(
       "btn",
       "link",
       "danger-text",
     );
-    expect(screen.getAllByRole("button", { name: "History" })[0]).toHaveClass("btn", "secondary");
+    expect(screen.getAllByRole("button", { name: "실행 이력" })[0]).toHaveClass("btn", "secondary");
   });
 
   it("allows Run now on disabled schedules", async () => {
@@ -174,8 +174,8 @@ describe("Schedules page", () => {
     });
     renderPage();
     expect(await screen.findByText("paused-import")).toBeInTheDocument();
-    expect(screen.getByText(/disabled/i)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run now" }));
+    expect(screen.getByText(/비활성/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "지금 실행" }));
     await waitFor(() => {
       expect(apiMock).toHaveBeenCalledWith(
         "/projects/7/schedules/11/run-now",
@@ -183,7 +183,7 @@ describe("Schedules page", () => {
       );
     });
     expect(
-      await screen.findByText(/Run now queued for "paused-import"/i),
+      await screen.findByText(/“paused-import” 즉시 실행을 요청했습니다/i),
     ).toBeInTheDocument();
   });
 
@@ -204,7 +204,7 @@ describe("Schedules page", () => {
     expect(enabledCheckbox.closest("label")).toHaveClass("checkbox-row");
     expect(enabledCheckbox).toBeInTheDocument();
     expect(screen.getByTestId("schedule-submit")).toHaveClass("btn");
-    expect(screen.getByRole("button", { name: "Cancel" })).toHaveClass("btn", "secondary");
+    expect(screen.getByRole("button", { name: "취소" })).toHaveClass("btn", "secondary");
     fireEvent.click(screen.getByTestId("schedule-advanced-toggle"));
     expect(screen.getByTestId("schedule-advanced")).toBeInTheDocument();
   });
@@ -254,7 +254,7 @@ describe("Schedules page", () => {
     expect(await screen.findByTestId("schedule-drawer")).toBeInTheDocument();
     expect(screen.getByTestId("schedule-pipeline-select")).toHaveValue("");
     expect(
-      screen.getByText("This pipeline must be published before it can be scheduled."),
+      screen.getByText("스케줄에 등록하려면 파이프라인을 먼저 게시해야 합니다."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Draft ops" })).not.toBeInTheDocument();
   });
@@ -273,9 +273,9 @@ describe("Schedules page", () => {
     const trigger = await screen.findByTestId("schedule-create-open");
     trigger.focus();
     fireEvent.click(trigger);
-    const name = await screen.findByLabelText("Name");
+    const name = await screen.findByLabelText("이름");
     await waitFor(() => expect(name).toHaveFocus());
-    const timezone = screen.getByLabelText("Timezone");
+    const timezone = screen.getByLabelText("시간대");
     timezone.focus();
     fireEvent.change(timezone, { target: { value: "UTC" } });
     expect(timezone).toHaveFocus();
@@ -325,12 +325,12 @@ describe("Schedules page", () => {
     });
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "History" }));
-    expect(await screen.findByText(/pending/i)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "실행 이력" }));
+    expect(await screen.findByText(/대기/i)).toBeInTheDocument();
     const initialCalls = historyCalls;
 
     await vi.advanceTimersByTimeAsync(2600);
-    await waitFor(() => expect(screen.getByText(/succeeded/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/성공/i)).toBeInTheDocument());
     expect(historyCalls).toBeGreaterThan(initialCalls);
 
     const callsAfterTerminal = historyCalls;
@@ -372,10 +372,10 @@ describe("Schedules page", () => {
     });
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "History" }));
-    await screen.findByText(/pending/i);
+    fireEvent.click(await screen.findByRole("button", { name: "실행 이력" }));
+    await screen.findByText(/대기/i);
     const callsBeforeClose = historyCalls;
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
     await vi.advanceTimersByTimeAsync(5200);
     expect(historyCalls).toBe(callsBeforeClose);
   });
@@ -427,12 +427,12 @@ describe("Schedules page", () => {
     });
 
     renderPage();
-    const historyButtons = await screen.findAllByRole("button", { name: "History" });
+    const historyButtons = await screen.findAllByRole("button", { name: "실행 이력" });
     fireEvent.click(historyButtons[0]);
-    await screen.findByText(/Run history — weekly-pipeline/i);
+    await screen.findByText(/실행 이력 — weekly-pipeline/i);
     const callsBeforeSwitch = historyCallsFor10;
     fireEvent.click(historyButtons[1]);
-    await screen.findByText(/Run history — paused-import/i);
+    await screen.findByText(/실행 이력 — paused-import/i);
     await vi.advanceTimersByTimeAsync(5200);
     expect(historyCallsFor10).toBe(callsBeforeSwitch);
     expect(historyCallsFor11).toBe(1);
@@ -484,25 +484,25 @@ describe("Schedules page", () => {
     });
 
     renderPage();
-    const historyButtons = await screen.findAllByRole("button", { name: "History" });
+    const historyButtons = await screen.findAllByRole("button", { name: "실행 이력" });
     fireEvent.click(historyButtons[0]);
-    await screen.findByText(/Run history — weekly-pipeline/i);
+    await screen.findByText(/실행 이력 — weekly-pipeline/i);
     await waitFor(() => expect(historyCallsFor10).toBe(1));
 
     fireEvent.click(historyButtons[1]);
-    await screen.findByText(/Run history — paused-import/i);
-    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    await screen.findByText(/실행 이력 — paused-import/i);
+    expect(screen.getByText(/대기/i)).toBeInTheDocument();
 
     resolveStaleA?.([runATerminal]);
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(screen.getByText(/Run history — paused-import/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Run history — weekly-pipeline/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    expect(screen.getByText(/실행 이력 — paused-import/i)).toBeInTheDocument();
+    expect(screen.queryByText(/실행 이력 — weekly-pipeline/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/대기/i)).toBeInTheDocument();
 
     await vi.advanceTimersByTimeAsync(2600);
-    await waitFor(() => expect(screen.getByText(/succeeded/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/성공/i)).toBeInTheDocument());
     expect(historyCallsFor11).toBeGreaterThan(1);
   });
 
@@ -536,12 +536,12 @@ describe("Schedules page", () => {
     });
 
     renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "History" }));
-    await screen.findByText(/Run history — paused-import/i);
+    fireEvent.click(await screen.findByRole("button", { name: "실행 이력" }));
+    await screen.findByText(/실행 이력 — paused-import/i);
     await waitFor(() => expect(historyCalls).toBe(1));
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByText(/Run history — paused-import/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+    expect(screen.queryByText(/실행 이력 — paused-import/i)).not.toBeInTheDocument();
 
     resolveStale?.([runTerminal]);
     await Promise.resolve();
@@ -549,6 +549,6 @@ describe("Schedules page", () => {
 
     await vi.advanceTimersByTimeAsync(5200);
     expect(historyCalls).toBe(1);
-    expect(screen.queryByText(/succeeded/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/성공/i)).not.toBeInTheDocument();
   });
 });

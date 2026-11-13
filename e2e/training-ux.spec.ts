@@ -31,8 +31,8 @@ async function createProject(page: import("@playwright/test").Page, projectName:
 
 async function uploadIrisAndOpenTrain(page: import("@playwright/test").Page) {
   await page.getByRole("link", { name: "데이터셋", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Datasets", exact: true })).toBeVisible();
-  const uploadToggle = page.getByRole("button", { name: "↑ Upload dataset", exact: true });
+  await expect(page.getByRole("heading", { name: "데이터셋", exact: true })).toBeVisible();
+  const uploadToggle = page.getByRole("button", { name: "↑ 데이터셋 업로드", exact: true });
   await uploadToggle.click();
   await expect(page.getByTestId("dataset-file")).toBeVisible();
   await page.getByTestId("dataset-file").setInputFiles(iris);

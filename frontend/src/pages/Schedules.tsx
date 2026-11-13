@@ -28,6 +28,7 @@ import {
   targetTypeLabel,
 } from "../operationsHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+import { operationalStatusLabel } from "../uiTerminology";
 import {
   hasActiveScheduleRuns,
   SCHEDULE_HISTORY_POLL_INTERVAL_MS,
@@ -99,18 +100,18 @@ function scheduleTargetSummary(
   const config = schedule.target_config;
   if (schedule.target_type === "pipeline_run") {
     const pipeline = pipelines.find((row) => row.id === Number(config.pipeline_id));
-    return pipeline ? pipeline.name : config.pipeline_id ? `Pipeline #${config.pipeline_id}` : "—";
+    return pipeline ? pipeline.name : config.pipeline_id ? `파이프라인 #${config.pipeline_id}` : "—";
   }
   if (schedule.target_type === "batch_inference") {
     const dataset = datasets.find((row) => row.id === Number(config.dataset_id));
     const endpoint = endpoints.find((row) => row.id === Number(config.endpoint_id));
     if (dataset && endpoint) return `${dataset.name} → ${endpoint.name}`;
     if (dataset) return dataset.name;
-    return config.dataset_id ? `Dataset #${config.dataset_id}` : "—";
+    return config.dataset_id ? `데이터셋 #${config.dataset_id}` : "—";
   }
   if (schedule.target_type === "data_import") {
     const source = dataSources.find((row) => row.id === Number(config.data_source_id));
-    return source ? source.name : config.data_source_id ? `Source #${config.data_source_id}` : "—";
+    return source ? source.name : config.data_source_id ? `데이터 소스 #${config.data_source_id}` : "—";
   }
   return "—";
 }
@@ -268,7 +269,7 @@ export default function Schedules() {
       setModels(modelRows);
       setPipelines(pipelineRows);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedules could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "스케줄 목록을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -320,7 +321,7 @@ export default function Schedules() {
       if (!isHistoryResponseCurrent(generation, schedule.id)) {
         return;
       }
-      setError(reason instanceof Error ? reason.message : "Run history could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "실행 이력을 불러오지 못했습니다.");
     }
   }
 
@@ -409,7 +410,7 @@ export default function Schedules() {
         prefill.pipeline_id = pipelineId;
       } else {
         prefill.pipeline_id = "";
-        notice = "This pipeline must be published before it can be scheduled.";
+        notice = "스케줄에 등록하려면 파이프라인을 먼저 게시해야 합니다.";
       }
     }
     openCreate(prefill, notice);
@@ -443,10 +444,10 @@ export default function Schedules() {
     try {
       parameters = JSON.parse(form.parameters_json || "{}") as Record<string, unknown>;
     } catch {
-      throw new Error("Pipeline parameters must be valid JSON.");
+      throw new Error("파이프라인 매개변수는 유효한 JSON 형식이어야 합니다.");
     }
     if (!publishedPipelines.some((pipeline) => String(pipeline.id) === String(form.pipeline_id))) {
-      throw new Error("This pipeline must be published before it can be scheduled.");
+      throw new Error("스케줄에 등록하려면 파이프라인을 먼저 게시해야 합니다.");
     }
     return {
       pipeline_id: Number(form.pipeline_id),
@@ -484,18 +485,18 @@ export default function Schedules() {
             refresh_pinned_version: form.refresh_pinned_version,
           }),
         });
-        setSuccess("Schedule updated.");
+        setSuccess("스케줄을 수정했습니다.");
       } else {
         await api(`/projects/${projectId}/schedules`, {
           method: "POST",
           ...jsonBody(payload),
         });
-        setSuccess("Schedule created.");
+        setSuccess("스케줄을 생성했습니다.");
       }
       closeForm();
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be saved.");
+      setError(reason instanceof Error ? reason.message : "스케줄을 저장하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -510,7 +511,7 @@ export default function Schedules() {
       await api(`/projects/${projectId}/schedules/${schedule.id}/${path}`, { method: "POST" });
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be updated.");
+      setError(reason instanceof Error ? reason.message : "스케줄 상태를 변경하지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -522,13 +523,13 @@ export default function Schedules() {
     setError("");
     try {
       await api(`/projects/${projectId}/schedules/${schedule.id}/run-now`, { method: "POST" });
-      setSuccess(`Run now queued for "${schedule.name}".`);
+      setSuccess(`“${schedule.name}” 즉시 실행을 요청했습니다.`);
       await load();
       if (historySchedule?.id === schedule.id) {
         await openHistory(schedule);
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Run now failed.");
+      setError(reason instanceof Error ? reason.message : "즉시 실행에 실패했습니다.");
     } finally {
       setBusy(false);
     }
@@ -536,31 +537,31 @@ export default function Schedules() {
 
   async function deleteSchedule(schedule: AutomationSchedule) {
     if (!projectId || !canWrite) return;
-    if (!window.confirm(`Delete schedule "${schedule.name}"?`)) return;
+    if (!window.confirm(`“${schedule.name}” 스케줄을 삭제하시겠습니까?`)) return;
     setBusy(true);
     setError("");
     try {
       await api(`/projects/${projectId}/schedules/${schedule.id}`, { method: "DELETE" });
-      setSuccess("Schedule deleted.");
+      setSuccess("스케줄을 삭제했습니다.");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Schedule could not be deleted.");
+      setError(reason instanceof Error ? reason.message : "스케줄을 삭제하지 못했습니다.");
     } finally {
       setBusy(false);
     }
   }
 
-  if (loading) return <Loading label="Loading schedules..." />;
+  if (loading) return <Loading label="스케줄 불러오는 중…" />;
 
   return (
     <div className="page-stack ops-page">
       <PageHeader
-        title="Schedules"
-        description="Automation catalog for data imports, batch predictions, and pipeline runs."
+        title="스케줄"
+        description="데이터 가져오기·일괄 예측·파이프라인 실행을 자동화할 일정을 관리합니다."
         actions={
           canWrite ? (
             <button type="button" className="btn" data-testid="schedule-create-open" onClick={() => openCreate()} disabled={busy}>
-              Create schedule
+              스케줄 만들기
             </button>
           ) : undefined
         }
@@ -570,12 +571,12 @@ export default function Schedules() {
 
       {schedules.length === 0 ? (
         <EmptyState
-          title="No schedules yet"
-          description="Create a schedule to automate data imports, batch predictions, or pipeline runs."
+          title="등록된 스케줄이 없습니다"
+          description="스케줄을 만들면 데이터 가져오기·일괄 예측·파이프라인 실행을 자동으로 처리할 수 있습니다."
           action={
             canWrite ? (
               <button type="button" className="btn" data-testid="schedule-empty-create" onClick={() => openCreate()}>
-                Create schedule
+                스케줄 만들기
               </button>
             ) : undefined
           }
@@ -585,14 +586,14 @@ export default function Schedules() {
           <table data-testid="schedules-catalog">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Target</th>
-                <th>Frequency</th>
-                <th>Timezone</th>
-                <th>State</th>
-                <th>Last run</th>
-                <th>Next run</th>
-                <th>Actions</th>
+                <th>이름</th>
+                <th>실행 대상</th>
+                <th>실행 주기</th>
+                <th>시간대</th>
+                <th>사용 상태</th>
+                <th>최근 실행</th>
+                <th>다음 실행</th>
+                <th>작업</th>
               </tr>
             </thead>
             <tbody>
@@ -616,7 +617,7 @@ export default function Schedules() {
                   </td>
                   <td className="catalog-meta-date">{schedule.timezone}</td>
                   <td>
-                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} />
+                    <StatusBadge status={schedule.is_enabled ? "enabled" : "disabled"} label={schedule.is_enabled ? "활성" : "비활성"} />
                   </td>
                   <td className="catalog-meta-date">
                     {schedule.last_run_at ? formatDate(schedule.last_run_at) : "—"}
@@ -629,25 +630,25 @@ export default function Schedules() {
                       <div className="row-actions schedule-actions-primary">
                         {canWrite && (
                           <button type="button" className="btn" onClick={() => void runNow(schedule)} disabled={busy}>
-                            Run now
+                            지금 실행
                           </button>
                         )}
                         <button type="button" className="btn secondary" onClick={() => void openHistory(schedule)}>
-                          History
+                          실행 이력
                         </button>
                         {canWrite && (
                           <button type="button" className="btn secondary" onClick={() => openEdit(schedule)} disabled={busy}>
-                            Edit
+                            수정
                           </button>
                         )}
                       </div>
                       {canWrite && (
                         <div className="row-actions schedule-actions-secondary">
                           <button type="button" className="btn link" onClick={() => void toggleEnabled(schedule)} disabled={busy}>
-                            {schedule.is_enabled ? "Disable" : "Enable"}
+                            {schedule.is_enabled ? "비활성화" : "활성화"}
                           </button>
                           <button type="button" className="btn link danger-text" onClick={() => void deleteSchedule(schedule)} disabled={busy}>
-                            Delete
+                            삭제
                           </button>
                         </div>
                       )}
@@ -664,26 +665,26 @@ export default function Schedules() {
         <section className="panel schedule-history-section">
           <div className="panel-header row-actions">
             <div>
-              <span className="eyebrow">History</span>
-              <h2>Run history — {historySchedule.name}</h2>
+              <span className="eyebrow">실행 이력</span>
+              <h2>실행 이력 — {historySchedule.name}</h2>
             </div>
-            <button type="button" className="btn secondary" onClick={closeHistory}>Close</button>
+            <button type="button" className="btn secondary" onClick={closeHistory}>닫기</button>
           </div>
           {runs.length === 0 ? (
-            <p className="muted">No runs recorded yet.</p>
+            <p className="muted">기록된 실행 이력이 없습니다.</p>
           ) : (
             <div className="table-wrap catalog-table">
               <table>
                 <thead>
                   <tr>
-                    <th>Scheduled</th>
-                    <th>Attempt</th>
-                    <th>Trigger</th>
-                    <th>Status</th>
-                    <th>Resource</th>
-                    <th>Started</th>
-                    <th>Finished</th>
-                    <th>Error</th>
+                    <th>예정 시각</th>
+                    <th>시도 횟수</th>
+                    <th>실행 계기</th>
+                    <th>상태</th>
+                    <th>대상 리소스</th>
+                    <th>시작 시각</th>
+                    <th>종료 시각</th>
+                    <th>오류 내용</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -693,8 +694,8 @@ export default function Schedules() {
                       <tr key={run.id}>
                         <td className="catalog-meta-date">{formatDate(run.scheduled_for)}</td>
                         <td className="tabular-num">{run.attempt}</td>
-                        <td>{run.trigger_source}</td>
-                        <td><StatusBadge status={run.status} /></td>
+                        <td>{run.trigger_source === "manual" ? "수동" : run.trigger_source === "cron" ? "예약 실행" : run.trigger_source}</td>
+                        <td><StatusBadge status={run.status} label={operationalStatusLabel(run.status)} /></td>
                         <td className="mono">
                           {run.target_resource_id && href ? (
                             <Link to={href}>#{run.target_resource_id}</Link>
@@ -719,16 +720,16 @@ export default function Schedules() {
 
       <Drawer
         open={showForm}
-        title={editing ? "Edit schedule" : "Create schedule"}
+        title={editing ? "스케줄 수정" : "스케줄 만들기"}
         onClose={closeForm}
         testId="schedule-drawer"
         footer={(
           <div className="form-actions row-actions">
             <button type="button" className="btn secondary" onClick={closeForm} disabled={busy}>
-              Cancel
+              취소
             </button>
             <button type="submit" form="schedule-form" className="btn" data-testid="schedule-submit" disabled={busy}>
-              {editing ? "Save changes" : "Create schedule"}
+              {editing ? "변경 사항 저장" : "스케줄 만들기"}
             </button>
           </div>
         )}
@@ -738,7 +739,7 @@ export default function Schedules() {
             <ErrorNotice message={contextualNotice} />
           ) : null}
           <label>
-            Name
+            이름
             <input
               data-drawer-initial-focus
               value={form.name}
@@ -747,23 +748,23 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Description
+            설명
             <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </label>
           <label>
-            Target type
+            실행 대상 유형
             <select
               value={form.target_type}
               disabled={Boolean(editing)}
               onChange={(e) => setForm({ ...form, target_type: e.target.value as TargetType })}
             >
-              <option value="data_import">Data import</option>
-              <option value="batch_inference">Batch prediction</option>
-              <option value="pipeline_run">Pipeline run</option>
+              <option value="data_import">데이터 가져오기</option>
+              <option value="batch_inference">일괄 예측</option>
+              <option value="pipeline_run">파이프라인 실행</option>
             </select>
           </label>
           <label>
-            Frequency
+            실행 주기
             <select
               value={form.cron_preset}
               onChange={(e) => {
@@ -772,14 +773,14 @@ export default function Schedules() {
                 if (cron_preset === "custom") setShowAdvanced(true);
               }}
             >
-              <option value="hourly">Every hour</option>
-              <option value="daily">Daily</option>
-              <option value="weekdays">Weekdays</option>
-              <option value="custom">Custom cron</option>
+              <option value="hourly">매시간</option>
+              <option value="daily">매일</option>
+              <option value="weekdays">평일</option>
+              <option value="custom">사용자 지정(Cron)</option>
             </select>
           </label>
           <label>
-            Timezone
+            시간대
             <select
               value={form.timezone}
               onChange={(e) => setForm({ ...form, timezone: e.target.value })}
@@ -793,7 +794,7 @@ export default function Schedules() {
             </select>
           </label>
           <label>
-            Concurrency policy
+            동시 실행 정책
             <select
               value={form.concurrency_policy}
               onChange={(e) =>
@@ -803,12 +804,12 @@ export default function Schedules() {
                 })
               }
             >
-              <option value="skip">Skip when busy</option>
-              <option value="queue">Queue when busy</option>
+              <option value="skip">실행 중이면 건너뛰기</option>
+              <option value="queue">실행 중이면 대기열에 추가</option>
             </select>
           </label>
           <label>
-            Max concurrent runs
+            최대 동시 실행 수
             <input
               type="number"
               min={1}
@@ -820,7 +821,7 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Max retries
+            최대 재시도 횟수
             <input
               type="number"
               min={0}
@@ -830,7 +831,7 @@ export default function Schedules() {
             />
           </label>
           <label>
-            Retry delay (seconds)
+            재시도 간격 (초)
             <input
               type="number"
               min={1}
@@ -846,43 +847,43 @@ export default function Schedules() {
               checked={form.is_enabled}
               onChange={(e) => setForm({ ...form, is_enabled: e.target.checked })}
             />
-            Enabled
+            활성화
           </label>
 
           {form.target_type === "data_import" && (
             <>
               <label>
-                Data source
+                데이터 소스
                 <select
                   value={form.data_source_id}
                   onChange={(e) => setForm({ ...form, data_source_id: e.target.value })}
                   required
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {dataSources.map((source) => (
                     <option key={source.id} value={source.id}>
-                      {source.name}{source.is_active ? "" : " (inactive)"}
+                      {source.name}{source.is_active ? "" : " (비활성)"}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                Target dataset name
+                가져올 데이터셋 이름
                 <input
                   value={form.dataset_name}
                   onChange={(e) => setForm({ ...form, dataset_name: e.target.value })}
-                  placeholder="Leave blank when using existing dataset ID"
+                  placeholder="기존 데이터셋 ID 사용 시 비워 두세요"
                 />
               </label>
               <label>
-                Existing dataset ID
+                기존 데이터셋 ID
                 <input
                   value={form.dataset_id}
                   onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}
                 />
               </label>
               <label>
-                Table or query
+                테이블 또는 쿼리
                 <input
                   value={form.query_or_table}
                   onChange={(e) => setForm({ ...form, query_or_table: e.target.value })}
@@ -895,20 +896,20 @@ export default function Schedules() {
           {form.target_type === "batch_inference" && (
             <>
               <label>
-                Dataset
+                데이터셋
                 <select
                   value={form.dataset_id}
                   onChange={(e) => setForm({ ...form, dataset_id: e.target.value })}
                   required
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {datasets.map((dataset) => (
                     <option key={dataset.id} value={dataset.id}>{dataset.name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                Version strategy
+                버전 선택 방식
                 <select
                   value={form.dataset_version_strategy}
                   onChange={(e) =>
@@ -918,19 +919,19 @@ export default function Schedules() {
                     })
                   }
                 >
-                  <option value="latest">Latest</option>
-                  <option value="fixed">Fixed</option>
+                  <option value="latest">최신 버전</option>
+                  <option value="fixed">특정 버전</option>
                 </select>
               </label>
               {form.dataset_version_strategy === "fixed" && (
                 <label>
-                  Dataset version
+                  데이터셋 버전
                   <select
                     value={form.dataset_version_id}
                     onChange={(e) => setForm({ ...form, dataset_version_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {versions.map((version) => (
                       <option key={version.id} value={version.id}>
                         v{version.version}
@@ -940,7 +941,7 @@ export default function Schedules() {
                 </label>
               )}
               <label>
-                Prediction target
+                예측 실행 대상
                 <select
                   value={form.batch_target_type}
                   onChange={(e) =>
@@ -950,19 +951,19 @@ export default function Schedules() {
                     })
                   }
                 >
-                  <option value="endpoint">Endpoint</option>
-                  <option value="model">Model version</option>
+                  <option value="endpoint">배포 엔드포인트</option>
+                  <option value="model">모델 버전</option>
                 </select>
               </label>
               {form.batch_target_type === "endpoint" ? (
                 <label>
-                  Endpoint
+                  배포 엔드포인트
                   <select
                     value={form.endpoint_id}
                     onChange={(e) => setForm({ ...form, endpoint_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {endpoints.map((endpoint) => (
                       <option key={endpoint.id} value={endpoint.id}>{endpoint.name}</option>
                     ))}
@@ -970,13 +971,13 @@ export default function Schedules() {
                 </label>
               ) : (
                 <label>
-                  Model version
+                  모델 버전
                   <select
                     value={form.model_version_id}
                     onChange={(e) => setForm({ ...form, model_version_id: e.target.value })}
                     required
                   >
-                    <option value="">Select...</option>
+                    <option value="">선택하세요</option>
                     {models.map((model) => (
                       <option key={model.id} value={model.id}>
                         {model.name} v{model.version}
@@ -986,7 +987,7 @@ export default function Schedules() {
                 </label>
               )}
               <label>
-                Result format
+                결과 파일 형식
                 <select
                   value={form.result_format}
                   onChange={(e) => setForm({ ...form, result_format: e.target.value })}
@@ -1002,29 +1003,29 @@ export default function Schedules() {
           {form.target_type === "pipeline_run" && (
             <>
               <label>
-                Pipeline
+                파이프라인
                 <select
                   value={form.pipeline_id}
                   onChange={(e) => setForm({ ...form, pipeline_id: e.target.value })}
                   required
                   data-testid="schedule-pipeline-select"
                 >
-                  <option value="">Select...</option>
+                  <option value="">선택하세요</option>
                   {publishedPipelines.map((pipeline) => (
                     <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
                   ))}
                 </select>
               </label>
               <label>
-                Fail policy
+                실패 시 처리
                 <select
                   value={form.fail_policy}
                   onChange={(e) =>
                     setForm({ ...form, fail_policy: e.target.value as "stop" | "continue" })
                   }
                 >
-                  <option value="stop">Stop on failure</option>
-                  <option value="continue">Continue on failure</option>
+                  <option value="stop">실패 시 중단</option>
+                  <option value="continue">실패해도 계속</option>
                 </select>
               </label>
             </>
@@ -1038,13 +1039,13 @@ export default function Schedules() {
               aria-expanded={showAdvanced}
               onClick={() => setShowAdvanced((value) => !value)}
             >
-              {showAdvanced ? "Hide advanced" : "Show advanced"}
+              {showAdvanced ? "고급 설정 닫기" : "고급 설정 보기"}
             </button>
             {showAdvanced && (
               <div className="ops-advanced-body" data-testid="schedule-advanced">
                 {form.cron_preset === "custom" && (
                   <label>
-                    Cron expression
+                    Cron 표현식
                     <input
                       className="mono"
                       value={form.cron_expression}
@@ -1056,7 +1057,7 @@ export default function Schedules() {
                 )}
                 {form.target_type === "pipeline_run" && (
                   <label>
-                    Parameters (JSON)
+                    매개변수(JSON)
                     <textarea
                       rows={4}
                       className="mono"
@@ -1074,11 +1075,11 @@ export default function Schedules() {
                         setForm({ ...form, refresh_pinned_version: e.target.checked })
                       }
                     />
-                    Refresh pinned pipeline version to current published version
+                    고정된 파이프라인 버전을 현재 게시 버전으로 갱신
                   </label>
                 )}
                 {form.cron_preset !== "custom" && form.target_type !== "pipeline_run" && !editing && (
-                  <p className="muted">No additional advanced fields for this configuration.</p>
+                  <p className="muted">이 설정에는 추가 고급 항목이 없습니다.</p>
                 )}
               </div>
             )}

@@ -34,6 +34,7 @@ import {
   type RestApiPaginationMode,
 } from "../dataSourceForm";
 import { userCanProject, useProject } from "../ProjectContext";
+import { operationalStatusLabel } from "../uiTerminology";
 
 type SqlSourceType = "postgres" | "mysql" | "mssql" | "oracle";
 type SourceTypeOption = "file" | SqlSourceType | "rest_api";
@@ -181,7 +182,7 @@ export default function DataSources() {
     try {
       setSources(await api<DataSource[]>(`/projects/${projectId}/data-sources`));
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data sources could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -278,7 +279,7 @@ export default function DataSources() {
               ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
             }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -289,7 +290,7 @@ export default function DataSources() {
               secrets: payload.secrets,
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       } else if (sourceType === "rest_api") {
         const payload = buildRestApiSavePayload({
@@ -312,7 +313,7 @@ export default function DataSources() {
               ...(payload.clear_secrets ? { clear_secrets: payload.clear_secrets } : {}),
             }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -323,7 +324,7 @@ export default function DataSources() {
               secrets: payload.secrets,
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       } else {
         const parsed = JSON.parse(config) as Record<string, unknown>;
@@ -332,7 +333,7 @@ export default function DataSources() {
             method: "PATCH",
             body: JSON.stringify({ name, config: parsed, secrets: {} }),
           });
-          setSuccess("Data source updated.");
+          setSuccess("데이터 소스를 수정했습니다.");
         } else {
           await api(`/projects/${projectId}/data-sources`, {
             method: "POST",
@@ -343,7 +344,7 @@ export default function DataSources() {
               secrets: {},
             }),
           });
-          setSuccess("Data source created.");
+          setSuccess("데이터 소스를 추가했습니다.");
         }
       }
       resetForm();
@@ -351,10 +352,10 @@ export default function DataSources() {
     } catch (reason) {
       setError(
         reason instanceof SyntaxError
-          ? "Configuration must be valid JSON."
+          ? "설정은 유효한 JSON 형식이어야 합니다."
           : reason instanceof Error
             ? reason.message
-            : "Data source could not be saved.",
+            : "데이터 소스를 저장하지 못했습니다.",
       );
     } finally {
       setBusy("");
@@ -371,7 +372,7 @@ export default function DataSources() {
         { method: "POST" },
       );
       const message = result.message?.trim() || (
-        result.status === "ok" ? "Connection succeeded." : "Connection test failed."
+        result.status === "ok" ? "연결 검사에 성공했습니다." : "연결 검사에 실패했습니다."
       );
       if (result.status === "ok") {
         setSuccess(message);
@@ -380,7 +381,7 @@ export default function DataSources() {
       }
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Connection test failed.");
+      setError(reason instanceof Error ? reason.message : "연결 검사에 실패했습니다.");
     } finally {
       setBusy("");
     }
@@ -391,10 +392,10 @@ export default function DataSources() {
     setError("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}/activate`, { method: "POST" });
-      setSuccess(`“${source.name}” activated.`);
+      setSuccess(`“${source.name}” 데이터 소스를 활성화했습니다.`);
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data source could not be activated.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 활성화하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -403,7 +404,7 @@ export default function DataSources() {
   async function deactivateSource(source: DataSource) {
     if (
       !confirmAction(
-        `Deactivate “${source.name}”?\n\nNew imports will be disabled.\nPreviously imported datasets and lineage will remain available.`,
+        `“${source.name}” 데이터 소스를 비활성화하시겠습니까?\n\n새 데이터 가져오기가 중단됩니다.\n이전에 가져온 데이터셋과 연결 이력은 유지됩니다.`,
       )
     ) {
       return;
@@ -412,7 +413,7 @@ export default function DataSources() {
     setError("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}/deactivate`, { method: "POST" });
-      setSuccess(`“${source.name}” deactivated.`);
+      setSuccess(`“${source.name}” 데이터 소스를 비활성화했습니다.`);
       if (importingId === source.id) {
         stopPolling();
         setImportingId(null);
@@ -420,7 +421,7 @@ export default function DataSources() {
       }
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Data source could not be deactivated.");
+      setError(reason instanceof Error ? reason.message : "데이터 소스를 비활성화하지 못했습니다.");
     } finally {
       setBusy("");
     }
@@ -429,7 +430,7 @@ export default function DataSources() {
   async function deleteSource(source: DataSource) {
     if (
       !confirmAction(
-        `Delete data source permanently?\n\n“${source.name}” will be permanently removed, including its saved connection credentials.\n\nThis action cannot be undone.`,
+        `데이터 소스를 영구 삭제하시겠습니까?\n\n“${source.name}”와 저장된 연결 인증 정보가 영구 삭제됩니다.\n\n이 작업은 되돌릴 수 없습니다.`,
       )
     ) {
       return;
@@ -439,7 +440,7 @@ export default function DataSources() {
     setSuccess("");
     try {
       await api(`/projects/${projectId}/data-sources/${source.id}`, { method: "DELETE" });
-      setSuccess(`“${source.name}” permanently deleted.`);
+      setSuccess(`“${source.name}” 데이터 소스를 영구 삭제했습니다.`);
       if (importingId === source.id) {
         stopPolling();
         setImportingId(null);
@@ -454,7 +455,7 @@ export default function DataSources() {
             : reason.message,
         );
       } else {
-        setError(reason instanceof Error ? reason.message : "Data source could not be deleted.");
+        setError(reason instanceof Error ? reason.message : "데이터 소스를 삭제하지 못했습니다.");
       }
     } finally {
       setBusy("");
@@ -508,7 +509,7 @@ export default function DataSources() {
         schemasError:
           reason instanceof Error
             ? reason.message
-            : "Could not load schemas. Test the data source connection and try again.",
+            : "스키마를 불러오지 못했습니다. 데이터 소스 연결을 검사한 뒤 다시 시도하세요.",
       }));
     }
   }
@@ -535,7 +536,7 @@ export default function DataSources() {
         ...current,
         previewLoading: false,
         previewError:
-          reason instanceof Error ? reason.message : "REST API preview could not be loaded.",
+          reason instanceof Error ? reason.message : "REST API 미리보기를 불러오지 못했습니다.",
       }));
     }
   }
@@ -571,7 +572,7 @@ export default function DataSources() {
           tablesError:
             reason instanceof Error
               ? reason.message
-              : "Could not load tables. Test the data source connection and try again.",
+              : "테이블 목록을 불러오지 못했습니다. 연결을 검사한 뒤 다시 시도하세요.",
         }));
       }
     })();
@@ -593,7 +594,7 @@ export default function DataSources() {
           }
         } catch (reason) {
           stopPolling();
-          setError(reason instanceof Error ? reason.message : "Import status could not be loaded.");
+          setError(reason instanceof Error ? reason.message : "데이터 가져오기 상태를 불러오지 못했습니다.");
         }
       })();
     }, 2000);
@@ -602,7 +603,7 @@ export default function DataSources() {
   async function submitImport(source: DataSource) {
     const datasetName = importState.datasetName.trim();
     if (!datasetName) {
-      setError("Dataset name is required.");
+      setError("데이터셋 이름을 입력하세요.");
       return;
     }
     let tableOrQuery = "";
@@ -610,14 +611,14 @@ export default function DataSources() {
       tableOrQuery = importState.resource.trim() || "/";
     } else if (importState.mode === "table") {
       if (!importState.schema || !importState.table) {
-        setError("Select a schema and table to import.");
+        setError("가져올 스키마와 테이블을 선택하세요.");
         return;
       }
       tableOrQuery = `${importState.schema}.${importState.table}`;
     } else {
       tableOrQuery = importState.sql.trim();
       if (!tableOrQuery) {
-        setError("Enter a read-only SQL query.");
+        setError("읽기 전용 SQL 쿼리를 입력하세요.");
         return;
       }
     }
@@ -637,7 +638,7 @@ export default function DataSources() {
       void loadRecentJobs(source.id);
     } catch (reason) {
       setImportState((current) => ({ ...current, submitting: false }));
-      setError(reason instanceof Error ? reason.message : "Import could not be started.");
+      setError(reason instanceof Error ? reason.message : "데이터 가져오기를 시작하지 못했습니다.");
     }
   }
 
@@ -655,12 +656,12 @@ export default function DataSources() {
   return (
     <div>
       <PageHeader
-        title="Data Sources"
-        description="Browse connected sources, check connection state, and import immutable dataset versions without exposing credentials."
+        title="데이터 소스"
+        description="데이터베이스나 REST API를 연결하고, 연결 상태를 검사한 뒤 데이터셋으로 가져옵니다. 연결 암호는 화면에 노출되지 않습니다."
         actions={
           canWrite ? (
             <button className="btn" onClick={() => setShowForm(!showForm)} data-testid="add-data-source">
-              ＋ Add data source
+              ＋ 데이터 소스 추가
             </button>
           ) : undefined
         }
@@ -671,22 +672,22 @@ export default function DataSources() {
         <form className="panel form" onSubmit={save} data-testid="data-source-form">
           <div className="panel-title">
             <div>
-              <span className="eyebrow">Connection</span>
-              <h2>{editing ? "Edit data source" : "New data source"}</h2>
+              <span className="eyebrow">연결 설정</span>
+              <h2>{editing ? "데이터 소스 수정" : "새 데이터 소스" }</h2>
             </div>
           </div>
           <label>
-            Name
+            이름
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               required
-              placeholder="Analytics warehouse"
+              placeholder="예: 분석용 데이터베이스"
               data-testid="data-source-name"
             />
           </label>
           <label>
-            Source type
+            소스 유형
             <select
               value={sourceType}
               disabled={Boolean(editing)}
@@ -713,13 +714,13 @@ export default function DataSources() {
               <option value="mssql">Microsoft SQL Server</option>
               <option value="oracle">Oracle Database</option>
               <option value="rest_api">REST API</option>
-              <option value="file">Managed file source</option>
+              <option value="file">관리형 파일 소스</option>
             </select>
           </label>
           {isSqlSourceType(sourceType) ? (
             <>
               <label htmlFor="data-source-connection-mode">
-                Connection mode
+                연결 방식
                 <select
                   id="data-source-connection-mode"
                   value={connectionMode}
@@ -728,13 +729,13 @@ export default function DataSources() {
                   }
                   data-testid="data-source-connection-mode"
                 >
-                  <option value="host_port">Host / Port</option>
-                  <option value="connection_url">Connection URL / DSN</option>
+                  <option value="host_port">호스트 / 포트</option>
+                  <option value="connection_url">연결 URL / DSN</option>
                 </select>
               </label>
               {connectionMode === "connection_url" ? (
                 <label htmlFor="data-source-connection-url">
-                  Connection URL / DSN
+                  연결 URL / DSN
                   <input
                     id="data-source-connection-url"
                     type="password"
@@ -744,7 +745,7 @@ export default function DataSources() {
                     required={!editing || previousConnectionMode === "host_port"}
                     placeholder={
                       editing && previousConnectionMode === "connection_url"
-                        ? "Leave blank to keep saved connection URL"
+                        ? "저장된 연결 URL을 유지하려면 비워 두세요"
                         : sourceType === "mysql"
                           ? "mysql://user:password@host:3306/database"
                           : sourceType === "mssql"
@@ -757,15 +758,15 @@ export default function DataSources() {
                   />
                   <small>
                     {editing && previousConnectionMode === "connection_url"
-                      ? "The saved connection URL is not shown. Leave blank to keep it, or enter a new value to replace it."
-                      : "Stored separately from connection metadata. Project members cannot read this value."}
+                      ? "저장된 연결 URL은 표시하지 않습니다. 유지하려면 비워 두고, 변경하려면 새 값을 입력하세요."
+                      : "연결 정보와 별도로 안전하게 저장되며 프로젝트 구성원에게 공개되지 않습니다."}
                   </small>
                 </label>
               ) : (
                 <>
                   <div className="form-grid">
                     <label htmlFor="data-source-host">
-                      Host
+                      호스트
                       <input
                         id="data-source-host"
                         value={postgresForm.host}
@@ -778,7 +779,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-port">
-                      Port
+                      포트
                       <input
                         id="data-source-port"
                         type="number"
@@ -799,7 +800,7 @@ export default function DataSources() {
                           : "data-source-database"
                       }
                     >
-                      {sourceType === "oracle" ? "Service name" : "Database"}
+                      {sourceType === "oracle" ? "서비스 이름" : "데이터베이스"}
                       <input
                         id={
                           sourceType === "oracle"
@@ -823,7 +824,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-user">
-                      User
+                      사용자
                       <input
                         id="data-source-user"
                         value={postgresForm.user}
@@ -837,7 +838,7 @@ export default function DataSources() {
                     </label>
                   </div>
                   <label htmlFor="data-source-password">
-                    Password
+                    암호
                     <input
                       id="data-source-password"
                       type="password"
@@ -846,15 +847,15 @@ export default function DataSources() {
                       onChange={(event) => setPassword(event.target.value)}
                       placeholder={
                         editing?.has_secrets && previousConnectionMode === "host_port"
-                          ? "Leave blank to keep saved password"
-                          : "Database password"
+                          ? "저장된 암호를 유지하려면 비워 두세요"
+                          : "데이터베이스 암호"
                       }
                       data-testid="data-source-password"
                     />
                     <small>
                       {editing && previousConnectionMode === "host_port"
-                        ? "Leave blank to keep the saved password. Enter a new value only to replace it."
-                        : "Stored separately from connection metadata. Project members cannot read this value."}
+                        ? "기존 암호를 유지하려면 비워 두세요. 암호를 변경할 때만 새 값을 입력하세요."
+                        : "연결 정보와 별도로 안전하게 저장되며 프로젝트 구성원에게 공개되지 않습니다."}
                     </small>
                   </label>
                   {sourceType === "mssql" && (
@@ -876,7 +877,7 @@ export default function DataSources() {
                         }
                         data-testid="data-source-trust-server-certificate"
                       />
-                      Trust server certificate (lab / self-signed only)
+                      서버 인증서 신뢰 (실습 또는 자체 서명 인증서에만 사용)
                     </label>
                   )}
                 </>
@@ -885,7 +886,7 @@ export default function DataSources() {
           ) : sourceType === "rest_api" ? (
             <>
               <label htmlFor="data-source-rest-base-url">
-                Base URL
+                기본 URL
                 <input
                   id="data-source-rest-base-url"
                   value={restApiForm.baseUrl}
@@ -899,7 +900,7 @@ export default function DataSources() {
                 />
               </label>
               <label htmlFor="data-source-rest-resource-path">
-                Default resource path
+                기본 리소스 경로
                 <input
                   id="data-source-rest-resource-path"
                   value={restApiForm.resourcePath}
@@ -910,11 +911,11 @@ export default function DataSources() {
                   autoComplete="off"
                   data-testid="data-source-rest-resource-path"
                 />
-                <small>GET only. Import can override this relative path without changing the source.</small>
+                <small>GET 요청만 사용합니다. 데이터 가져오기에서 이 경로를 임시로 바꿀 수 있습니다.</small>
               </label>
               <div className="form-grid">
                 <label htmlFor="data-source-rest-data-path">
-                  JSON data path
+                  JSON 데이터 경로
                   <input
                     id="data-source-rest-data-path"
                     value={restApiForm.dataPath}
@@ -924,10 +925,10 @@ export default function DataSources() {
                     placeholder="data.items"
                     data-testid="data-source-rest-data-path"
                   />
-                  <small>Optional dot path to the object array inside a wrapped JSON response.</small>
+                  <small>JSON 응답 안에 있는 데이터 배열의 위치를 점(.)으로 구분해 입력합니다. (선택)</small>
                 </label>
                 <label htmlFor="data-source-rest-timeout">
-                  Timeout (seconds)
+                  시간 제한 (초)
                   <input
                     id="data-source-rest-timeout"
                     type="number"
@@ -946,7 +947,7 @@ export default function DataSources() {
                 </label>
               </div>
               <label htmlFor="data-source-rest-auth-type">
-                Authentication
+                인증 방식
                 <select
                   id="data-source-rest-auth-type"
                   value={restApiForm.authType}
@@ -958,14 +959,14 @@ export default function DataSources() {
                   }
                   data-testid="data-source-rest-auth-type"
                 >
-                  <option value="none">None</option>
-                  <option value="bearer">Bearer token</option>
-                  <option value="api_key">API key header</option>
+                  <option value="none">사용 안 함</option>
+                  <option value="bearer">Bearer 토큰</option>
+                  <option value="api_key">API 키 헤더</option>
                 </select>
               </label>
               {restApiForm.authType === "bearer" && (
                 <label htmlFor="data-source-rest-bearer-token">
-                  Bearer token
+                  Bearer 토큰
                   <input
                     id="data-source-rest-bearer-token"
                     type="password"
@@ -974,18 +975,18 @@ export default function DataSources() {
                     onChange={(event) => setBearerToken(event.target.value)}
                     placeholder={
                       editing?.has_secrets && previousRestAuthType === "bearer"
-                        ? "Leave blank to keep saved token"
+                        ? "기존 토큰을 유지하려면 비워 두세요"
                         : "Bearer token"
                     }
                     data-testid="data-source-rest-bearer-token"
                   />
-                  <small>The saved token is encrypted and never returned by the API.</small>
+                  <small>저장된 토큰은 암호화되며 API에서 다시 반환하지 않습니다.</small>
                 </label>
               )}
               {restApiForm.authType === "api_key" && (
                 <div className="form-grid">
                   <label htmlFor="data-source-rest-api-key-header">
-                    API key header
+                    API 키 헤더
                     <input
                       id="data-source-rest-api-key-header"
                       value={restApiForm.apiKeyHeader}
@@ -1000,7 +1001,7 @@ export default function DataSources() {
                     />
                   </label>
                   <label htmlFor="data-source-rest-api-key">
-                    API key
+                    API 키
                     <input
                       id="data-source-rest-api-key"
                       type="password"
@@ -1009,7 +1010,7 @@ export default function DataSources() {
                       onChange={(event) => setApiKey(event.target.value)}
                       placeholder={
                         editing?.has_secrets && previousRestAuthType === "api_key"
-                          ? "Leave blank to keep saved API key"
+                          ? "기존 API 키를 유지하려면 비워 두세요"
                           : "API key"
                       }
                       data-testid="data-source-rest-api-key"
@@ -1018,7 +1019,7 @@ export default function DataSources() {
                 </div>
               )}
               <label htmlFor="data-source-rest-query-params">
-                Query parameters
+                쿼리 매개변수
                 <textarea
                   id="data-source-rest-query-params"
                   className="code-input"
@@ -1029,11 +1030,11 @@ export default function DataSources() {
                   spellCheck={false}
                   data-testid="data-source-rest-query-params"
                 />
-                <small>Optional non-secret JSON object appended to every REST request.</small>
+                <small>모든 REST 요청에 추가할 비밀 정보가 없는 JSON 객체를 입력합니다. (선택)</small>
               </label>
               <div className="form-grid">
                 <label htmlFor="data-source-rest-secret-query-name">
-                  Secret query parameter name
+                  비밀 쿼리 매개변수 이름
                   <input
                     id="data-source-rest-secret-query-name"
                     value={restApiForm.secretQueryParamName}
@@ -1049,7 +1050,7 @@ export default function DataSources() {
                   />
                 </label>
                 <label htmlFor="data-source-rest-secret-query-value">
-                  Secret query parameter value
+                  비밀 쿼리 매개변수 값
                   <input
                     id="data-source-rest-secret-query-value"
                     type="password"
@@ -1060,19 +1061,18 @@ export default function DataSources() {
                       editing?.has_secrets &&
                       previousSecretQueryParamName === restApiForm.secretQueryParamName &&
                       restApiForm.secretQueryParamName
-                        ? "Leave blank to keep saved value"
-                        : "Secret value"
+                        ? "저장된 값을 유지하려면 비워 두세요"
+                        : "비밀 값"
                     }
                     data-testid="data-source-rest-secret-query-value"
                   />
                 </label>
               </div>
               <small>
-                Stored encrypted and never returned by the API. If this key also exists in Query
-                parameters, its value is moved into secret storage on save.
+                암호화해 저장하며 API에서 반환하지 않습니다. 이 키가 쿼리 매개변수에도 있으면 저장 시 비밀 정보 저장소로 옮깁니다.
               </small>
               <label htmlFor="data-source-rest-pagination-mode">
-                Pagination
+                페이지 나누기
                 <select
                   id="data-source-rest-pagination-mode"
                   value={restApiForm.paginationMode}
@@ -1084,15 +1084,15 @@ export default function DataSources() {
                   }
                   data-testid="data-source-rest-pagination-mode"
                 >
-                  <option value="none">None</option>
-                  <option value="page_number">Page number</option>
+                  <option value="none">사용 안 함</option>
+                  <option value="page_number">페이지 번호</option>
                 </select>
               </label>
               {restApiForm.paginationMode === "page_number" && (
                 <>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-page-param">
-                      Page parameter
+                      페이지 번호 매개변수
                       <input
                         id="data-source-rest-page-param"
                         value={restApiForm.paginationPageParam}
@@ -1107,7 +1107,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-page-size-param">
-                      Page-size parameter
+                      페이지 크기 매개변수
                       <input
                         id="data-source-rest-page-size-param"
                         value={restApiForm.paginationPageSizeParam}
@@ -1124,7 +1124,7 @@ export default function DataSources() {
                   </div>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-page-size">
-                      Page size
+                      페이지 크기
                       <input
                         id="data-source-rest-page-size"
                         type="number"
@@ -1142,7 +1142,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-start-page">
-                      Start page
+                      시작 페이지
                       <input
                         id="data-source-rest-start-page"
                         type="number"
@@ -1161,7 +1161,7 @@ export default function DataSources() {
                   </div>
                   <div className="form-grid">
                     <label htmlFor="data-source-rest-total-count-path">
-                      Total count JSON path
+                      전체 건수 JSON 경로
                       <input
                         id="data-source-rest-total-count-path"
                         value={restApiForm.paginationTotalCountPath}
@@ -1176,7 +1176,7 @@ export default function DataSources() {
                       />
                     </label>
                     <label htmlFor="data-source-rest-max-pages">
-                      Max pages
+                      최대 페이지 수
                       <input
                         id="data-source-rest-max-pages"
                         type="number"
@@ -1195,15 +1195,15 @@ export default function DataSources() {
                     </label>
                   </div>
                   <small>
-                    Import requests pages until Total count is reached or a short page is returned.
-                    Preview and connection tests request only the first page.
+                    데이터 가져오기는 전체 건수에 도달하거나 더 짧은 페이지가 반환될 때까지 요청합니다.
+                    미리보기와 연결 검사는 첫 페이지만 조회합니다.
                   </small>
                 </>
               )}
             </>
           ) : (
             <label>
-              Configuration
+              연결 설정(JSON)
               <textarea
                 className="code-input"
                 value={config}
@@ -1211,29 +1211,29 @@ export default function DataSources() {
                 spellCheck={false}
                 data-testid="data-source-config"
               />
-              <small>Connection metadata is visible to project members. Do not put passwords in this JSON.</small>
+              <small>연결 설정 정보는 프로젝트 구성원이 볼 수 있습니다. 이 JSON에 암호를 입력하지 마세요.</small>
             </label>
           )}
           <div className="row-actions">
             <button className="btn" disabled={busy === "save"} data-testid="data-source-save">
-              {busy === "save" ? "Saving…" : "Save data source"}
+              {busy === "save" ? "저장 중…" : "데이터 소스 저장"}
             </button>
             <button className="btn secondary" type="button" onClick={resetForm}>
-              Cancel
+              취소
             </button>
           </div>
         </form>
       )}
       {loading ? (
-        <Loading label="Loading data sources" />
+        <Loading label="데이터 소스 불러오는 중" />
       ) : sources.length === 0 ? (
         <EmptyState
-          title="No connected data sources"
-          description="Add PostgreSQL, MySQL / MariaDB, Microsoft SQL Server, Oracle Database, or a REST API source, or use direct dataset upload to bring data into ModelFlow."
+          title="연결된 데이터 소스가 없습니다"
+          description="PostgreSQL·MySQL·MariaDB·SQL Server·Oracle·REST API를 연결하거나, 데이터셋 화면에서 파일을 직접 업로드할 수 있습니다."
           action={
             canWrite ? (
               <button className="btn" onClick={() => setShowForm(true)}>
-                Add data source
+                데이터 소스 추가
               </button>
             ) : undefined
           }
@@ -1243,7 +1243,7 @@ export default function DataSources() {
           <div className="catalog-summary" aria-live="polite">
             <span className="catalog-summary-count">{sources.length}</span>
             <span className="catalog-summary-label">
-              {sources.length === 1 ? "data source in this project" : "data sources in this project"}
+              {sources.length === 1 ? "개 데이터 소스" : "개 데이터 소스"}
             </span>
           </div>
           <div className="card-grid source-catalog-grid">
@@ -1265,12 +1265,12 @@ export default function DataSources() {
                   <div className="source-card-copy">
                     <div className="source-card-meta">
                       <span className="type-chip">{sqlSourceLabel(source.source_type)}</span>
-                      {!source.is_active ? <span className="type-chip is-muted">Inactive</span> : null}
+                      {!source.is_active ? <span className="type-chip is-muted">비활성</span> : null}
                     </div>
                     <h2>{source.name}</h2>
                   </div>
                 </div>
-                <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} />
+                <StatusBadge status={source.is_active ? source.last_test_status || "active" : "inactive"} label={operationalStatusLabel(source.is_active ? source.last_test_status || "active" : "inactive")} />
               </div>
               <dl className="key-values source-card-facts">
                 {Object.entries(source.config)
@@ -1282,7 +1282,7 @@ export default function DataSources() {
                     </div>
                   ))}
                 <div>
-                  <dt>Last tested</dt>
+                  <dt>최근 연결 검사</dt>
                   <dd>{formatDate(source.last_tested_at)}</dd>
                 </div>
               </dl>
@@ -1296,11 +1296,11 @@ export default function DataSources() {
               )}
               {(recentJobs[source.id] || []).length > 0 && (
                 <div className="source-recent-jobs" data-testid={`recent-imports-${source.id}`}>
-                  <span className="eyebrow">Recent imports</span>
+                  <span className="eyebrow">최근 데이터 가져오기</span>
                   <ul>
                     {(recentJobs[source.id] || []).slice(0, 3).map((job) => (
                       <li key={job.id}>
-                        <StatusBadge status={job.status} />
+                        <StatusBadge status={job.status} label={operationalStatusLabel(job.status)} />
                         <span className="source-job-id">#{job.id}</span>
                         <span className="muted source-job-query">{job.table_or_query.slice(0, 48)}</span>
                       </li>
@@ -1317,7 +1317,7 @@ export default function DataSources() {
                       disabled={busy === `test-${source.id}`}
                       data-testid={`test-connection-${source.id}`}
                     >
-                      {busy === `test-${source.id}` ? "Testing…" : "Test connection"}
+                      {busy === `test-${source.id}` ? "검사 중…" : "연결 검사"}
                     </button>
                   )}
                   {source.is_active &&
@@ -1327,7 +1327,7 @@ export default function DataSources() {
                       onClick={() => openImport(source)}
                       data-testid={`import-data-${source.id}`}
                     >
-                      Import data
+                      데이터 가져오기
                     </button>
                   )}
                   {!source.is_active && (
@@ -1337,11 +1337,11 @@ export default function DataSources() {
                       disabled={busy === `activate-${source.id}`}
                       data-testid={`activate-${source.id}`}
                     >
-                      {busy === `activate-${source.id}` ? "Activating…" : "Activate"}
+                      {busy === `activate-${source.id}` ? "활성화 중…" : "활성화"}
                     </button>
                   )}
                   <button className="btn link" onClick={() => editSource(source)} data-testid={`edit-${source.id}`}>
-                    Edit
+                    수정
                   </button>
                   {source.is_active && (
                     <button
@@ -1350,7 +1350,7 @@ export default function DataSources() {
                       disabled={busy === `deactivate-${source.id}`}
                       data-testid={`deactivate-${source.id}`}
                     >
-                      Deactivate
+                      비활성화
                     </button>
                   )}
                   <button
@@ -1359,7 +1359,7 @@ export default function DataSources() {
                     disabled={busy === `delete-${source.id}`}
                     data-testid={`delete-${source.id}`}
                   >
-                    Delete permanently
+                    영구 삭제
                   </button>
                 </div>
               )}
@@ -1367,19 +1367,19 @@ export default function DataSources() {
                 <div className="panel form source-import-panel" data-testid={`import-panel-${source.id}`}>
                   <div className="panel-title">
                     <div>
-                      <span className="eyebrow">Import</span>
+                      <span className="eyebrow">데이터 가져오기</span>
                       <h3>
                         {source.source_type === "rest_api"
-                          ? "Import from REST API"
-                          : `Import from ${sqlSourceLabel(source.source_type)}`}
+                          ? "REST API에서 데이터 가져오기"
+                          : `${sqlSourceLabel(source.source_type)}에서 데이터 가져오기`}
                       </h3>
                     </div>
                     <button className="btn link" type="button" onClick={closeImport}>
-                      Close
+                      닫기
                     </button>
                   </div>
                   {isSqlSourceType(source.source_type) && (
-                    <div className="row-actions" role="tablist" aria-label="Import mode">
+                    <div className="row-actions" role="tablist" aria-label="데이터 가져오기 방식">
                       <button
                         type="button"
                         className={importState.mode === "table" ? "btn" : "btn secondary"}
@@ -1387,7 +1387,7 @@ export default function DataSources() {
                         data-testid="import-mode-table"
                         disabled={importBusy}
                       >
-                        Table
+                        테이블
                       </button>
                       <button
                         type="button"
@@ -1396,12 +1396,12 @@ export default function DataSources() {
                         data-testid="import-mode-sql"
                         disabled={importBusy}
                       >
-                        SQL Query
+                        SQL 쿼리
                       </button>
                     </div>
                   )}
                   <label>
-                    Dataset name
+                    데이터셋 이름
                     <input
                       value={importState.datasetName}
                       onChange={(event) =>
@@ -1415,7 +1415,7 @@ export default function DataSources() {
                   {source.source_type === "rest_api" ? (
                     <>
                       <label>
-                        Resource path
+                        리소스 경로
                         <input
                           value={importState.resource}
                           onChange={(event) =>
@@ -1430,7 +1430,7 @@ export default function DataSources() {
                           disabled={importBusy}
                           data-testid="import-rest-resource"
                         />
-                        <small>Relative GET path under the configured Base URL.</small>
+                        <small>설정한 기본 URL 아래의 상대 GET 경로입니다.</small>
                       </label>
                       <div className="row-actions">
                         <button
@@ -1440,7 +1440,7 @@ export default function DataSources() {
                           disabled={importBusy || importState.previewLoading}
                           data-testid="import-rest-preview"
                         >
-                          {importState.previewLoading ? "Loading preview…" : "Preview response"}
+                          {importState.previewLoading ? "미리보기 불러오는 중…" : "응답 미리보기"}
                         </button>
                       </div>
                       {importState.previewError && <ErrorNotice message={importState.previewError} />}
@@ -1473,7 +1473,7 @@ export default function DataSources() {
                   ) : importState.mode === "table" ? (
                     <>
                       <label>
-                        {source.source_type === "mysql" ? "Database" : "Schema"}
+                        {source.source_type === "mysql" ? "데이터베이스" : "스키마"}
                         <select
                           value={importState.schema}
                           onChange={(event) =>
@@ -1486,9 +1486,9 @@ export default function DataSources() {
                           disabled={importState.schemasLoading || importBusy}
                           data-testid="import-schema"
                         >
-                          {importState.schemasLoading && <option value="">Loading schemas…</option>}
+                          {importState.schemasLoading && <option value="">스키마 불러오는 중…</option>}
                           {!importState.schemasLoading && importState.schemas.length === 0 && (
-                            <option value="">No schemas found</option>
+                            <option value="">스키마가 없습니다</option>
                           )}
                           {importState.schemas.map((schema) => (
                             <option key={schema} value={schema}>
@@ -1499,7 +1499,7 @@ export default function DataSources() {
                       </label>
                       {importState.schemasError && <ErrorNotice message={importState.schemasError} />}
                       <label>
-                        Table
+                        테이블
                         <select
                           value={importState.table}
                           onChange={(event) =>
@@ -1512,9 +1512,9 @@ export default function DataSources() {
                           disabled={importState.tablesLoading || !importState.schema || importBusy}
                           data-testid="import-table"
                         >
-                          {importState.tablesLoading && <option value="">Loading tables…</option>}
+                          {importState.tablesLoading && <option value="">테이블 불러오는 중…</option>}
                           {!importState.tablesLoading && importState.tables.length === 0 && (
-                            <option value="">No tables found</option>
+                            <option value="">테이블이 없습니다</option>
                           )}
                           {importState.tables.map((table) => (
                             <option key={table.name} value={table.name}>
@@ -1527,7 +1527,7 @@ export default function DataSources() {
                     </>
                   ) : (
                     <label>
-                      SQL Query
+                      SQL 쿼리
                       <textarea
                         className="code-input"
                         value={importState.sql}
@@ -1539,7 +1539,7 @@ export default function DataSources() {
                         placeholder={"SELECT *\nFROM schema.table\nWHERE ..."}
                         data-testid="import-sql"
                       />
-                      <small>Only read-only SELECT / WITH queries are supported.</small>
+                      <small>읽기 전용 SELECT / WITH 쿼리만 사용할 수 있습니다.</small>
                     </label>
                   )}
                   <div className="row-actions">
@@ -1551,25 +1551,25 @@ export default function DataSources() {
                       data-testid="import-submit"
                     >
                       {importState.submitting
-                        ? "Starting…"
+                        ? "시작 중…"
                         : importState.job?.status === "pending" || importState.job?.status === "running"
-                          ? "Importing…"
+                          ? "가져오는 중…"
                           : importState.job?.status === "failed"
-                            ? "Retry import"
-                            : "Start import"}
+                            ? "가져오기 재시도"
+                            : "가져오기 시작"}
                     </button>
                   </div>
                   {importState.job && (
                     <div className="source-import-status" data-testid="import-status">
                       <p>
                         {importState.job.status === "succeeded"
-                          ? `Import completed for “${importState.datasetName || "dataset"}”.`
+                          ? `“${importState.datasetName || "데이터셋"}” 가져오기를 완료했습니다.`
                           : importState.job.status === "failed"
-                            ? "Import failed."
-                            : `Importing ${importState.datasetName || "dataset"}…`}
+                            ? "데이터 가져오기에 실패했습니다."
+                            : `“${importState.datasetName || "데이터셋"}” 가져오는 중…`}
                       </p>
                       <p>
-                        Status: <StatusBadge status={importState.job.status} />
+                        상태: <StatusBadge status={importState.job.status} label={operationalStatusLabel(importState.job.status)} />
                       </p>
                       {importState.job.error_message && (
                         <ErrorNotice message={importState.job.error_message} />
@@ -1580,7 +1580,7 @@ export default function DataSources() {
                           to={`/projects/${projectId}/datasets/${importState.job.dataset_id}`}
                           data-testid="open-imported-dataset"
                         >
-                          Open dataset
+                          데이터셋 열기
                         </Link>
                       )}
                     </div>
