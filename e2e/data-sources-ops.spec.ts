@@ -229,7 +229,7 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   await expect(connectionUrlInput).toHaveAttribute("type", "password");
   await expect(connectionUrlInput).toHaveAttribute(
     "placeholder",
-    "Leave blank to keep saved connection URL",
+    "저장된 연결 URL을 유지하려면 비워 두세요",
   );
   await expect(page.getByText(/저장된 연결 URL은 표시하지 않습니다/i)).toBeVisible();
   await expect(page.getByTestId("data-source-host")).toHaveCount(0);
@@ -265,7 +265,7 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   const passwordInput = page.getByTestId("data-source-password");
   await expect(passwordInput).toHaveValue("");
   await expect(passwordInput).toHaveAttribute("type", "password");
-  await expect(passwordInput).toHaveAttribute("placeholder", "Leave blank to keep saved password");
+  await expect(passwordInput).toHaveAttribute("placeholder", "저장된 암호를 유지하려면 비워 두세요");
   await expect(page.getByTestId("data-source-connection-url")).toHaveCount(0);
 });
 
