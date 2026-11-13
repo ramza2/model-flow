@@ -22,9 +22,9 @@ test("pipeline builder form UX saves dataset load step", async ({ page }) => {
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -85,9 +85,9 @@ test("pipeline builder responsive columns and Copilot drawer fit viewport", asyn
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();

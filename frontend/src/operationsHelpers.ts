@@ -57,8 +57,8 @@ export function buildHomeNextActions(
   if (stats.failed > 0) {
     actions.push({
       id: "failed-jobs",
-      title: "Investigate failed training jobs",
-      description: `${stats.failed} failed job${stats.failed === 1 ? "" : "s"} need attention.`,
+      title: "실패한 모델 학습 확인",
+      description: `확인이 필요한 실패한 학습 작업 ${stats.failed}건`,
       to: `/projects/${projectId}/jobs`,
       attention: true,
     });
@@ -66,8 +66,8 @@ export function buildHomeNextActions(
   if (stats.attentionAlerts > 0) {
     actions.push({
       id: "alerts",
-      title: "Review alerts needing attention",
-      description: `${stats.attentionAlerts} warning/error/critical alert${stats.attentionAlerts === 1 ? "" : "s"} need review.`,
+      title: "주의가 필요한 알림 확인",
+      description: `경고·오류·심각 알림 ${stats.attentionAlerts}건을 확인하세요.`,
       to: `/projects/${projectId}/alerts`,
       attention: true,
     });
@@ -75,38 +75,38 @@ export function buildHomeNextActions(
   if (stats.datasets === 0) {
     actions.push({
       id: "add-dataset",
-      title: "Add a dataset",
-      description: "Upload CSV, JSON, or Parquet to start training.",
+      title: "데이터셋 추가",
+      description: "CSV·JSON·Parquet 파일을 업로드하여 학습을 시작하세요.",
       to: `/projects/${projectId}/datasets`,
     });
   } else if (stats.jobs === 0) {
     actions.push({
       id: "train",
-      title: "Train a model",
-      description: "Choose data, target, and algorithm.",
+      title: "모델 학습 시작",
+      description: "데이터·예측 목표·알고리즘을 선택하세요.",
       to: `/projects/${projectId}/jobs/new`,
     });
   } else if (stats.endpoints === 0) {
     actions.push({
       id: "registry",
-      title: "Register or deploy a model",
-      description: "Move from experiment results to serving.",
+      title: "모델 등록 또는 배포",
+      description: "실험 결과를 모델로 등록하고 실제 예측 서비스로 연결하세요.",
       to: `/projects/${projectId}/registry`,
     });
   }
   if (actions.length < 3) {
     actions.push({
       id: "overview",
-      title: "Open project overview",
-      description: "See data, build, models, serving, and alerts together.",
+      title: "프로젝트 개요 보기",
+      description: "데이터·학습·모델·배포·알림을 한눈에 확인하세요.",
       to: `/projects/${projectId}`,
     });
   }
   if (actions.length < 3) {
     actions.push({
       id: "monitoring",
-      title: "Review operations",
-      description: "Check service, data, and model health signals.",
+      title: "운영 상태 확인",
+      description: "서비스·데이터·모델 상태를 확인하세요.",
       to: `/projects/${projectId}/monitoring`,
     });
   }
@@ -131,25 +131,25 @@ export type OverviewSignals = {
 export function factualSignalLines(signals: OverviewSignals): string[] {
   const lines: string[] = [];
   if (signals.failedQualityChecks > 0) {
-    lines.push(`${signals.failedQualityChecks} failed quality check${signals.failedQualityChecks === 1 ? "" : "s"}`);
+    lines.push(`실패한 데이터 품질 검사 ${signals.failedQualityChecks}건`);
   } else if (signals.datasetCount > 0) {
-    lines.push("No failed quality checks");
+    lines.push("실패한 데이터 품질 검사 없음");
   }
   if (signals.activeJobs > 0) {
-    lines.push(`${signals.activeJobs} active training job${signals.activeJobs === 1 ? "" : "s"}`);
+    lines.push(`진행 중인 모델 학습 ${signals.activeJobs}건`);
   }
   if (signals.failedJobs > 0) {
-    lines.push(`${signals.failedJobs} failed training job${signals.failedJobs === 1 ? "" : "s"}`);
+    lines.push(`실패한 모델 학습 ${signals.failedJobs}건`);
   }
   lines.push(
-    `${signals.productionModels} production model${signals.productionModels === 1 ? "" : "s"}`,
+    `운영 중인 모델 ${signals.productionModels}개`,
   );
   if (signals.endpointCount > 0) {
-    lines.push(`${signals.readyEndpoints} / ${signals.endpointCount} deployments ready`);
+    lines.push(`배포 준비 완료 ${signals.readyEndpoints} / ${signals.endpointCount}개`);
   } else {
-    lines.push("0 deployments");
+    lines.push("등록된 배포 없음");
   }
-  lines.push(`${signals.openAlerts} open alert${signals.openAlerts === 1 ? "" : "s"}`);
+  lines.push(`미해결 알림 ${signals.openAlerts}건`);
   return lines;
 }
 

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { EmptyState, ErrorNotice, Loading, PageHeader, StatusBadge, formatDate } from "../components";
 import { useProject } from "../ProjectContext";
+import { operationalStatusLabel, projectRoleLabel } from "../uiTerminology";
 
 export default function Projects() {
   const { projects, loading, error } = useProject();
@@ -8,16 +9,16 @@ export default function Projects() {
   return (
     <div>
       <PageHeader
-        title="Projects"
-        description="Organize data, experiments, models, deployments, and collaborators."
-        actions={<Link className="btn" to="/projects/new">＋ New project</Link>}
+        title="프로젝트"
+        description="데이터·실험·모델·배포 및 협업자를 프로젝트별로 관리합니다."
+        actions={<Link className="btn" to="/projects/new">＋ 프로젝트 만들기</Link>}
       />
       <ErrorNotice message={error} />
-      {loading ? <Loading label="Loading projects" /> : projects.length === 0 ? (
+      {loading ? <Loading label="프로젝트 불러오는 중" /> : projects.length === 0 ? (
         <EmptyState
-          title="No projects yet"
-          description="Create a project to begin your machine learning workflow."
-          action={<Link className="btn" to="/projects/new">Create project</Link>}
+          title="등록된 프로젝트가 없습니다"
+          description="프로젝트를 만들어 머신러닝 작업을 시작하세요."
+          action={<Link className="btn" to="/projects/new">프로젝트 만들기</Link>}
         />
       ) : (
         <div className="card-grid">
@@ -25,12 +26,12 @@ export default function Projects() {
             <Link className="project-card" key={project.id} to={`/projects/${project.id}`}>
               <div className="project-card-top">
                 <span className="project-icon">{project.name.slice(0, 1).toUpperCase()}</span>
-                <StatusBadge status={project.is_active ? "active" : "inactive"} />
+                <StatusBadge status={project.is_active ? "active" : "inactive"} label={operationalStatusLabel(project.is_active ? "active" : "inactive")} />
               </div>
               <h2>{project.name}</h2>
-              <p>{project.description || "No description provided."}</p>
+              <p>{project.description || "프로젝트 설명이 없습니다."}</p>
               <footer>
-                <span>{project.role.replaceAll("_", " ")}</span>
+                <span>{projectRoleLabel(project.role)}</span>
                 <span>{formatDate(project.created_at)}</span>
               </footer>
             </Link>

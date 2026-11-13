@@ -43,7 +43,7 @@ async function login(page: Page) {
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible({
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible({
     timeout: 30_000,
   });
 }

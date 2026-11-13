@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { algorithmDescriptionKo, algorithmLabelKo, UI_HELP } from "./uiTerminology";
+import { algorithmDescriptionKo, algorithmLabelKo, operationalStatusLabel, projectRoleLabel, UI_HELP } from "./uiTerminology";
 
 describe("beginner training copy", () => {
   it("provides Korean-first labels and algorithm-specific guidance without changing ids", () => {
@@ -15,6 +15,14 @@ describe("beginner training copy", () => {
     expect(algorithmLabelKo("future_algorithm", "Future algorithm"))
       .toBe("Future algorithm");
     expect(algorithmDescriptionKo("future_algorithm")).toBe(UI_HELP.algorithm);
+  });
+
+  it("localizes project roles and statuses without changing persisted identifiers", () => {
+    expect(projectRoleLabel("PROJECT_ADMIN")).toBe("프로젝트 관리자");
+    expect(projectRoleLabel("VIEWER")).toBe("조회자");
+    expect(operationalStatusLabel("PRODUCTION")).toBe("운영 중");
+    expect(operationalStatusLabel("succeeded")).toBe("성공");
+    expect(projectRoleLabel("NEW_ROLE")).toBe("NEW ROLE");
   });
 
   it("explains what the seed does without claiming time-order shuffling", () => {

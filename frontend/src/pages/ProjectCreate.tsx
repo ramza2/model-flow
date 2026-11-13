@@ -25,7 +25,7 @@ export default function ProjectCreate() {
       selectProject(project.id);
       nav(`/projects/${project.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Project could not be created.");
+      setError(err instanceof Error ? err.message : "프로젝트를 만들지 못했습니다.");
     } finally {
       setBusy(false);
     }
@@ -33,27 +33,27 @@ export default function ProjectCreate() {
 
   return (
     <div>
-      <PageHeader title="Create project" description="Set up a secure workspace for your ML lifecycle." />
+      <PageHeader title="프로젝트 만들기" description="데이터·모델 학습·배포를 관리할 작업 공간을 만듭니다." />
       <ErrorNotice message={error} />
       <form className="form panel" onSubmit={onSubmit}>
         <label>
-          Name
+          프로젝트 이름
           <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} data-testid="project-name" />
         </label>
         <label>
-          Description
+          설명
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What will this project deliver?"
+            placeholder="이 프로젝트에서 진행할 작업을 설명해 주세요."
             data-testid="project-description"
           />
         </label>
         <div className="row-actions form-actions">
           <button className="btn" type="submit" disabled={busy} data-testid="project-submit">
-            {busy ? "Creating…" : "Create project"}
+            {busy ? "생성 중…" : "프로젝트 만들기"}
           </button>
-          <Link className="btn secondary" to="/projects">Cancel</Link>
+          <Link className="btn secondary" to="/projects">취소</Link>
         </div>
       </form>
     </div>

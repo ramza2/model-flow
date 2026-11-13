@@ -138,7 +138,7 @@ test("lag and rolling preparation preview and materialize", async ({ page, reque
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 
   await page.goto(`/projects/${projectId}/preparations/${preparationId}`);
   await expect(page.getByTestId("preparation-builder")).toBeVisible({ timeout: 30_000 });
