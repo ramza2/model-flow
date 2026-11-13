@@ -20,7 +20,7 @@ async function login(page: import("@playwright/test").Page) {
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 }
 
 test.describe.configure({ mode: "serial" });
@@ -28,7 +28,7 @@ test.describe.configure({ mode: "serial" });
 test("continued training UX wires Continue action and lineage", async ({ page, request }) => {
   const projectName = `e2e-continued-${Date.now()}`;
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();

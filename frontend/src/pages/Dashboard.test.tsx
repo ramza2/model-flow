@@ -45,12 +45,12 @@ describe("Dashboard", () => {
         </ProjectProvider>
       </MemoryRouter>,
     );
-    expect(screen.getByText(/Workspace home/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Create project/ })).toBeInTheDocument();
+    expect(screen.getByText(/작업 공간 홈/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /프로젝트 만들기/ })).toBeInTheDocument();
     expect(await screen.findByText("Iris")).toBeInTheDocument();
-    expect((await screen.findByText("Datasets")).closest(".stat")?.querySelector(".value")?.textContent).toBe("2");
-    expect((await screen.findByText("Unread alerts")).closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
-    expect(await screen.findByTestId("home-attention")).toHaveTextContent("1 alert needing attention");
+    expect((await screen.findByText("데이터셋")).closest(".stat")?.querySelector(".value")?.textContent).toBe("2");
+    expect((await screen.findByText("읽지 않은 알림")).closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
+    expect(await screen.findByTestId("home-attention")).toHaveTextContent("확인이 필요한 알림 1건");
     expect(screen.getByTestId("home-next-action-alerts")).toBeInTheDocument();
   });
 
@@ -75,7 +75,7 @@ describe("Dashboard", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText("Iris")).toBeInTheDocument();
-    expect((await screen.findByText("Unread alerts")).closest(".stat")?.querySelector(".value")?.textContent).toBe("17");
+    expect((await screen.findByText("읽지 않은 알림")).closest(".stat")?.querySelector(".value")?.textContent).toBe("17");
     expect(screen.queryByTestId("home-attention")).not.toBeInTheDocument();
     expect(screen.queryByTestId("home-next-action-alerts")).not.toBeInTheDocument();
   });
@@ -94,8 +94,8 @@ describe("Dashboard", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByText("Iris")).toBeInTheDocument();
-    expect((await screen.findByText("Unread alerts")).closest(".stat")?.querySelector(".value")?.textContent).toBe("3");
-    expect(await screen.findByTestId("home-attention")).toHaveTextContent("1 alert needing attention");
+    expect((await screen.findByText("읽지 않은 알림")).closest(".stat")?.querySelector(".value")?.textContent).toBe("3");
+    expect(await screen.findByTestId("home-attention")).toHaveTextContent("확인이 필요한 알림 1건");
     expect(screen.getByTestId("home-next-action-alerts")).toBeInTheDocument();
   });
 
@@ -122,11 +122,11 @@ describe("Dashboard", () => {
         </ProjectProvider>
       </MemoryRouter>,
     );
-    expect(await screen.findByTestId("home-attention")).toHaveTextContent("1 failed training job");
-    expect(screen.getByTestId("home-attention")).not.toHaveTextContent("needing attention");
+    expect(await screen.findByTestId("home-attention")).toHaveTextContent("실패한 모델 학습 1건");
+    expect(screen.getByTestId("home-attention")).not.toHaveTextContent("확인이 필요한 알림");
     expect(screen.getByTestId("home-next-action-failed-jobs")).toBeInTheDocument();
     expect(screen.queryByTestId("home-next-action-alerts")).not.toBeInTheDocument();
-    expect((await screen.findByText("Unread alerts")).closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
+    expect((await screen.findByText("읽지 않은 알림")).closest(".stat")?.querySelector(".value")?.textContent).toBe("1");
   });
 
   it("shows guided empty state when no project is selected", async () => {
@@ -144,6 +144,6 @@ describe("Dashboard", () => {
         </ProjectProvider>
       </MemoryRouter>,
     );
-    expect(await screen.findByText("Create your first project")).toBeInTheDocument();
+    expect(await screen.findByText("첫 프로젝트 만들기")).toBeInTheDocument();
   });
 });

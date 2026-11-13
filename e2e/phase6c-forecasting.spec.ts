@@ -40,16 +40,16 @@ test("forecasting training job succeeds with multi-horizon outputs", async ({ pa
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-description").fill("Phase 6-C forecasting E2E");
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
 
   await page.getByRole("link", { name: "데이터셋", exact: true }).click();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
+  await page.getByRole("button", { name: "↑ 데이터셋 업로드", exact: true }).click();
   await page.getByTestId("dataset-file").setInputFiles(csvPath);
   await page.getByTestId("dataset-upload").click();
   await expect(page.getByText(/phase6c-forecast-/i)).toBeVisible({ timeout: 30_000 });

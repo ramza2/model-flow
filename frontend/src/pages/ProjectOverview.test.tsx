@@ -110,17 +110,17 @@ describe("ProjectOverview", () => {
         </Routes>
       </MemoryRouter>,
     );
-    expect(await screen.findByTestId("overview-signals")).toHaveTextContent("No failed quality checks");
-    expect(screen.getByTestId("overview-signals")).toHaveTextContent("1 active training job");
-    expect(screen.getByTestId("overview-signals")).toHaveTextContent("1 production model");
-    expect(screen.getByTestId("overview-signals")).toHaveTextContent("1 / 1 deployments ready");
-    expect(screen.getByTestId("overview-signals")).toHaveTextContent("1 open alert");
+    expect(await screen.findByTestId("overview-signals")).toHaveTextContent("실패한 데이터 품질 검사 없음");
+    expect(screen.getByTestId("overview-signals")).toHaveTextContent("진행 중인 모델 학습 1건");
+    expect(screen.getByTestId("overview-signals")).toHaveTextContent("운영 중인 모델 1개");
+    expect(screen.getByTestId("overview-signals")).toHaveTextContent("배포 준비 완료 1 / 1개");
+    expect(screen.getByTestId("overview-signals")).toHaveTextContent("미해결 알림 1건");
     expect(screen.getByTestId("overview-data")).toBeInTheDocument();
     expect(screen.getByTestId("overview-build")).toBeInTheDocument();
     expect(screen.getByTestId("overview-models")).toBeInTheDocument();
     expect(screen.getByTestId("overview-serving")).toBeInTheDocument();
     expect(screen.getByText("Open alert")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Edit project" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "프로젝트 수정" })).toBeInTheDocument();
     expect(screen.getByTestId("overview-members")).toBeInTheDocument();
   });
 
@@ -134,7 +134,7 @@ describe("ProjectOverview", () => {
       </MemoryRouter>,
     );
     expect(await screen.findByTestId("overview-signals")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Edit project" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "프로젝트 수정" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("overview-members")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overview-danger")).not.toBeInTheDocument();
   });

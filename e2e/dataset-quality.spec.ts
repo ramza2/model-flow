@@ -19,11 +19,11 @@ async function login(page: import("@playwright/test").Page) {
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 }
 
 async function createProject(page: import("@playwright/test").Page, projectName: string) {
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -43,8 +43,8 @@ async function uploadDataset(
   const projectId = page.url().match(/projects\/(\d+)/)?.[1];
   expect(projectId).toBeTruthy();
   await page.goto(`/projects/${projectId}/datasets`);
-  await expect(page.getByRole("heading", { name: "Datasets", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "↑ Upload dataset", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "데이터셋", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "↑ 데이터셋 업로드", exact: true }).click();
   await expect(page.getByTestId("dataset-file")).toBeVisible();
   await page.getByTestId("dataset-file").setInputFiles(filePath);
   await page.getByTestId("dataset-upload").click();

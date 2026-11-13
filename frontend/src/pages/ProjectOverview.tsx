@@ -27,6 +27,7 @@ import {
   type OverviewSignals,
 } from "../operationsHelpers";
 import { userCanProject, useProject } from "../ProjectContext";
+import { alertDisplayCopy, jobStatusLabel, operationalStatusLabel, projectRoleLabel } from "../uiTerminology";
 
 type DataMetrics = {
   dataset_count: number;
@@ -89,7 +90,7 @@ export default function ProjectOverview() {
       setMembers(memberRows);
       selectProject(projectRow.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Project could not be loaded.");
+      setError(reason instanceof Error ? reason.message : "프로젝트를 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
@@ -136,10 +137,10 @@ export default function ProjectOverview() {
       });
       setProject(updated);
       setEditing(false);
-      setSuccess("Project details updated.");
+      setSuccess("프로젝트 정보가 수정됐습니다.");
       await refreshProjects();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Project could not be updated.");
+      setError(reason instanceof Error ? reason.message : "프로젝트를 수정하지 못했습니다.");
     }
   }
 
@@ -153,62 +154,62 @@ export default function ProjectOverview() {
         body: JSON.stringify({ email: memberEmail, role: memberRole }),
       });
       setMemberEmail("");
-      setSuccess("Project member added.");
+      setSuccess("프로젝트에 구성원을 추가했습니다.");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Member could not be added.");
+      setError(reason instanceof Error ? reason.message : "구성원을 추가하지 못했습니다.");
     }
   }
 
   async function removeMember(member: Membership) {
-    if (!confirmAction(`Remove ${member.email} from this project?`)) return;
+    if (!confirmAction(`이 프로젝트에서 ${member.email} 구성원을 제거하시겠습니까?`)) return;
     setError("");
     try {
       await api(`/projects/${projectId}/members/${member.user_id}`, { method: "DELETE" });
       setMembers((rows) => rows.filter((row) => row.id !== member.id));
-      setSuccess("Project member removed.");
+      setSuccess("프로젝트에서 구성원을 제거했습니다.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Member could not be removed.");
+      setError(reason instanceof Error ? reason.message : "구성원을 제거하지 못했습니다.");
     }
   }
 
   async function deleteProject() {
-    if (!project || !confirmAction(`Delete project “${project.name}”? Its data will no longer be accessible.`)) return;
+    if (!project || !confirmAction(`“${project.name}” 프로젝트를 삭제하시겠습니까? 이 프로젝트의 데이터에 더 이상 접근할 수 없습니다.`)) return;
     setError("");
     try {
       await api(`/projects/${project.id}`, { method: "DELETE" });
       await refreshProjects();
       navigate("/projects");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Project could not be deleted.");
+      setError(reason instanceof Error ? reason.message : "프로젝트를 삭제하지 못했습니다.");
     }
   }
 
   return (
     <div className="ops-page">
       <PageHeader
-        title={project?.name ?? "Project overview"}
-        description={project?.description || "Project lifecycle control center for data, build, models, serving, and alerts."}
-        actions={canManage ? <button className="btn secondary" onClick={() => setEditing(!editing)}>Edit project</button> : undefined}
+        title={project?.name ?? "프로젝트 개요"}
+        description={project?.description || "데이터·모델 학습·배포·알림 현황을 한곳에서 확인합니다."}
+        actions={canManage ? <button className="btn secondary" onClick={() => setEditing(!editing)}>프로젝트 수정</button> : undefined}
       />
       <ErrorNotice message={error} />
       <SuccessNotice message={success} />
-      {loading ? <Loading label="Loading project" /> : (
+      {loading ? <Loading label="프로젝트 불러오는 중" /> : (
         <>
           {editing && (
             <form className="panel form" onSubmit={saveProject} data-testid="project-edit-form">
-              <label>Name<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
-              <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+              <label>이름<input value={name} onChange={(event) => setName(event.target.value)} required /></label>
+              <label>설명<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
               <div className="row-actions">
-                <button className="btn">Save changes</button>
-                <button className="btn secondary" type="button" onClick={() => setEditing(false)}>Cancel</button>
+                <button className="btn">변경 사항 저장</button>
+                <button className="btn secondary" type="button" onClick={() => setEditing(false)}>취소</button>
               </div>
             </form>
           )}
 
           {signals && (
             <section className="panel ops-attention-panel" data-testid="overview-signals">
-              <span className="eyebrow">Lifecycle signals</span>
+              <span className="eyebrow">주요 운영 현황</span>
               <ul className="ops-signal-list">
                 {signalLines.map((line) => (
                   <li key={line}>{line}</li>
@@ -218,33 +219,33 @@ export default function ProjectOverview() {
           )}
 
           <div className="ops-lifecycle-grid">
-            <DetailSection eyebrow="Data" title="Datasets & quality" testId="overview-data">
-              {!dataMetrics ? <Loading label="Loading data signals" /> : (
+            <DetailSection eyebrow="데이터" title="데이터셋 및 품질" testId="overview-data">
+              {!dataMetrics ? <Loading label="데이터 현황 불러오는 중" /> : (
                 <dl className="key-values">
-                  <div><dt>Datasets</dt><dd>{dataMetrics.dataset_count}</dd></div>
-                  <div><dt>Versions</dt><dd>{dataMetrics.dataset_version_count}</dd></div>
-                  <div><dt>Failed quality checks</dt><dd>{dataMetrics.failed_quality_check_count}</dd></div>
+                  <div><dt>데이터셋</dt><dd>{dataMetrics.dataset_count}</dd></div>
+                  <div><dt>버전 수</dt><dd>{dataMetrics.dataset_version_count}</dd></div>
+                  <div><dt>실패한 품질 검사</dt><dd>{dataMetrics.failed_quality_check_count}</dd></div>
                   <div>
-                    <dt>Latest quality</dt>
+                    <dt>최근 품질 결과</dt>
                     <dd>{dataMetrics.latest_quality_status
-                      ? <StatusBadge status={dataMetrics.latest_quality_status} />
+                      ? <StatusBadge status={dataMetrics.latest_quality_status} label={operationalStatusLabel(dataMetrics.latest_quality_status)} />
                       : "—"}</dd>
                   </div>
                 </dl>
               )}
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/datasets`}>Open datasets</Link>
+                <Link to={`/projects/${projectId}/datasets`}>데이터셋 보기</Link>
               </div>
             </DetailSection>
 
-            <DetailSection eyebrow="Build" title="Training activity" testId="overview-build">
+            <DetailSection eyebrow="모델 개발" title="학습 현황" testId="overview-build">
               <dl className="key-values">
-                <div><dt>Training jobs</dt><dd>{signals?.jobCount ?? 0}</dd></div>
-                <div><dt>Active jobs</dt><dd>{signals?.activeJobs ?? 0}</dd></div>
-                <div><dt>Failed jobs</dt><dd>{signals?.failedJobs ?? 0}</dd></div>
+                <div><dt>모델 학습 작업</dt><dd>{signals?.jobCount ?? 0}</dd></div>
+                <div><dt>진행 중인 학습</dt><dd>{signals?.activeJobs ?? 0}</dd></div>
+                <div><dt>실패한 학습</dt><dd>{signals?.failedJobs ?? 0}</dd></div>
               </dl>
               {recentJobs.length === 0 ? (
-                <EmptyState title="No training jobs yet" description="Start training from a dataset when data is ready." />
+                <EmptyState title="학습 작업이 없습니다" description="준비된 데이터셋으로 모델 학습을 시작하세요." />
               ) : (
                 <div className="activity-list compact">
                   {recentJobs.map((job) => (
@@ -253,71 +254,71 @@ export default function ProjectOverview() {
                         <strong>{job.name}</strong>
                         <small>{job.algorithm}</small>
                       </div>
-                      <StatusBadge status={job.status} />
+                      <StatusBadge status={job.status} label={jobStatusLabel(job.status)} />
                     </Link>
                   ))}
                 </div>
               )}
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/jobs`}>Open training jobs</Link>
+                <Link to={`/projects/${projectId}/jobs`}>학습 작업 보기</Link>
               </div>
             </DetailSection>
 
-            <DetailSection eyebrow="Models" title="Registry lifecycle" testId="overview-models">
-              {!modelMetrics ? <Loading label="Loading model signals" /> : (
+            <DetailSection eyebrow="모델" title="모델 등록 및 승인 현황" testId="overview-models">
+              {!modelMetrics ? <Loading label="모델 현황 불러오는 중" /> : (
                 <>
                   <dl className="key-values">
-                    <div><dt>Model versions</dt><dd>{modelMetrics.model_version_count}</dd></div>
-                    <div><dt>Production</dt><dd>{modelMetrics.lifecycle_counts.PRODUCTION ?? 0}</dd></div>
+                    <div><dt>모델 버전</dt><dd>{modelMetrics.model_version_count}</dd></div>
+                    <div><dt>운영 모델</dt><dd>{modelMetrics.lifecycle_counts.PRODUCTION ?? 0}</dd></div>
                   </dl>
                   <div className="tag-list">
                     {Object.entries(modelMetrics.lifecycle_counts).map(([name, count]) => (
-                      <span key={name}>{name.replaceAll("_", " ")} · {count}</span>
+                      <span key={name}>{operationalStatusLabel(name)} · {count}</span>
                     ))}
                   </div>
                 </>
               )}
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/registry`}>Open registry</Link>
+                <Link to={`/projects/${projectId}/registry`}>모델 관리 보기</Link>
               </div>
             </DetailSection>
 
-            <DetailSection eyebrow="Serving" title="Deployments" testId="overview-serving">
-              {!modelMetrics ? <Loading label="Loading serving signals" /> : (
+            <DetailSection eyebrow="예측 서비스" title="모델 배포" testId="overview-serving">
+              {!modelMetrics ? <Loading label="배포 현황 불러오는 중" /> : (
                 <dl className="key-values">
-                  <div><dt>Deployments</dt><dd>{modelMetrics.endpoint_count}</dd></div>
-                  <div><dt>Ready</dt><dd>{modelMetrics.ready_endpoint_count} / {modelMetrics.endpoint_count}</dd></div>
-                  <div><dt>Total requests</dt><dd>{modelMetrics.total_requests.toLocaleString()}</dd></div>
-                  <div><dt>Total errors</dt><dd>{modelMetrics.total_errors.toLocaleString()}</dd></div>
+                  <div><dt>배포 수</dt><dd>{modelMetrics.endpoint_count}</dd></div>
+                  <div><dt>준비 완료</dt><dd>{modelMetrics.ready_endpoint_count} / {modelMetrics.endpoint_count}</dd></div>
+                  <div><dt>전체 예측 요청</dt><dd>{modelMetrics.total_requests.toLocaleString()}</dd></div>
+                  <div><dt>전체 오류</dt><dd>{modelMetrics.total_errors.toLocaleString()}</dd></div>
                 </dl>
               )}
               <div className="row-actions">
-                <Link to={`/projects/${projectId}/deployments`}>Open deployments</Link>
+                <Link to={`/projects/${projectId}/deployments`}>모델 배포 보기</Link>
               </div>
             </DetailSection>
           </div>
 
           <DetailSection
-            eyebrow="Alerts"
-            title="Open alerts"
+            eyebrow="알림"
+            title="미해결 알림"
             testId="overview-alerts"
-            actions={<Link to={`/projects/${projectId}/alerts`}>View all alerts</Link>}
+            actions={<Link to={`/projects/${projectId}/alerts`}>알림 전체 보기</Link>}
           >
             {openAlerts.length === 0 ? (
-              <p className="muted" data-testid="overview-alerts-empty">0 open alerts</p>
+              <p className="muted" data-testid="overview-alerts-empty">미해결 알림 없음</p>
             ) : (
               <div className="activity-list">
                 {openAlerts.slice(0, 3).map((alert) => (
                   <div key={alert.id} className="ops-alert-row">
                     <div>
                       <div className="row-actions">
-                        <StatusBadge status={alert.severity} />
-                        {!alert.is_read && <span className="unread-label">Unread</span>}
+                        <StatusBadge status={alert.severity} label={operationalStatusLabel(alert.severity)} />
+                        {!alert.is_read && <span className="unread-label">읽지 않음</span>}
                       </div>
-                      <strong>{alert.title}</strong>
+                      <strong>{alertDisplayCopy(alert.title, alert.message).title}</strong>
                       <small>{formatDate(alert.created_at)}</small>
                     </div>
-                    {alert.link_path ? <Link to={alert.link_path}>Open</Link> : null}
+                    {alert.link_path ? <Link to={alert.link_path}>열기</Link> : null}
                   </div>
                 ))}
               </div>
@@ -327,16 +328,16 @@ export default function ProjectOverview() {
           <section className="panel" data-testid="overview-next-actions">
             <div className="panel-title">
               <div>
-                <span className="eyebrow">Next actions</span>
-                <h2>Continue the lifecycle</h2>
+                <span className="eyebrow">다음 작업</span>
+                <h2>작업 이어서 진행하기</h2>
               </div>
             </div>
             <div className="row-actions">
-              {canWriteData && <Link className="btn" to={`/projects/${projectId}/datasets`}>Upload dataset</Link>}
-              {canTrain && <Link className="btn secondary" to={`/projects/${projectId}/jobs/new`}>Start training</Link>}
-              <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>View experiments</Link>
-              {canBuildPipeline && <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>Build pipeline</Link>}
-              <Link className="btn secondary" to={`/projects/${projectId}/monitoring`}>Open monitoring</Link>
+              {canWriteData && <Link className="btn" to={`/projects/${projectId}/datasets`}>데이터셋 업로드</Link>}
+              {canTrain && <Link className="btn secondary" to={`/projects/${projectId}/jobs/new`}>모델 학습 시작</Link>}
+              <Link className="btn secondary" to={`/projects/${projectId}/experiments`}>실험 비교 보기</Link>
+              {canBuildPipeline && <Link className="btn secondary" to={`/projects/${projectId}/pipelines`}>파이프라인 만들기</Link>}
+              <Link className="btn secondary" to={`/projects/${projectId}/monitoring`}>모니터링 보기</Link>
             </div>
           </section>
 
@@ -344,31 +345,31 @@ export default function ProjectOverview() {
             <section className="panel ops-secondary-panel" data-testid="overview-members">
               <div className="panel-title">
                 <div>
-                  <span className="eyebrow">Access</span>
-                  <h2>Project members</h2>
+                  <span className="eyebrow">접근 권한</span>
+                  <h2>프로젝트 구성원</h2>
                 </div>
-                <StatusBadge status={project?.role} />
+                <StatusBadge status={project?.role} label={projectRoleLabel(project?.role)} />
               </div>
               <form className="inline-form" onSubmit={addMember}>
-                <label>Email<input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} required placeholder="teammate@example.com" /></label>
-                <label>Role<select value={memberRole} onChange={(event) => setMemberRole(event.target.value as ProjectRole)}>
-                  <option value="VIEWER">Viewer</option>
-                  <option value="DATA_SCIENTIST">Data scientist</option>
-                  <option value="ML_ENGINEER">ML engineer</option>
-                  <option value="PROJECT_ADMIN">Project administrator</option>
+                <label>이메일<input type="email" value={memberEmail} onChange={(event) => setMemberEmail(event.target.value)} required placeholder="teammate@example.com" /></label>
+                <label>역할<select value={memberRole} onChange={(event) => setMemberRole(event.target.value as ProjectRole)}>
+                  <option value="VIEWER">조회자</option>
+                  <option value="DATA_SCIENTIST">데이터 분석가</option>
+                  <option value="ML_ENGINEER">ML 엔지니어</option>
+                  <option value="PROJECT_ADMIN">프로젝트 관리자</option>
                 </select></label>
-                <button className="btn">Add member</button>
+                <button className="btn">구성원 추가</button>
               </form>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>Member</th><th>Role</th><th>Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
+                  <thead><tr><th>구성원</th><th>역할</th><th>추가일</th><th><span className="sr-only">작업</span></th></tr></thead>
                   <tbody>
                     {members.map((member) => (
                       <tr key={member.id}>
                         <td><strong>{member.full_name || member.email}</strong><small className="table-subtitle">{member.email}</small></td>
-                        <td>{member.role.replaceAll("_", " ")}</td>
+                        <td>{projectRoleLabel(member.role)}</td>
                         <td>{formatDate(member.created_at)}</td>
-                        <td className="align-right"><button className="btn link danger-text" onClick={() => removeMember(member)} disabled={member.user_id === user?.id}>Remove</button></td>
+                        <td className="align-right"><button className="btn link danger-text" onClick={() => removeMember(member)} disabled={member.user_id === user?.id}>제거</button></td>
                       </tr>
                     ))}
                   </tbody>
@@ -379,8 +380,8 @@ export default function ProjectOverview() {
 
           {canManage && (
             <section className="panel danger-zone ops-secondary-panel" data-testid="overview-danger">
-              <div><h2>Delete project</h2><p>Remove this project from active use. Retained data follows system policy.</p></div>
-              <button className="btn danger" onClick={deleteProject}>Delete project</button>
+              <div><h2>프로젝트 삭제</h2><p>프로젝트를 사용 목록에서 제거합니다. 데이터 보관은 시스템 정책을 따릅니다.</p></div>
+              <button className="btn danger" onClick={deleteProject}>프로젝트 삭제</button>
             </section>
           )}
         </>

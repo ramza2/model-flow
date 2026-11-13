@@ -80,11 +80,11 @@ describe("operationsHelpers", () => {
       readyEndpoints: 1,
       openAlerts: 2,
     });
-    expect(lines).toContain("No failed quality checks");
-    expect(lines).toContain("1 active training job");
-    expect(lines).toContain("1 production model");
-    expect(lines).toContain("1 / 1 deployments ready");
-    expect(lines).toContain("2 open alerts");
+    expect(lines).toContain("실패한 데이터 품질 검사 없음");
+    expect(lines).toContain("진행 중인 모델 학습 1건");
+    expect(lines).toContain("운영 중인 모델 1개");
+    expect(lines).toContain("배포 준비 완료 1 / 1개");
+    expect(lines).toContain("미해결 알림 2건");
     expect(lines.some((line) => /healthy/i.test(line))).toBe(false);
   });
 

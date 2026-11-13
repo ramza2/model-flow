@@ -33,7 +33,7 @@ async function login(page: Page, email: string) {
   await page.getByTestId("login-email").fill(email);
   await page.getByTestId("login-password").fill(memberPassword);
   await page.getByTestId("login-submit").click();
-  const home = page.getByRole("heading", { name: /Workspace home/i });
+  const home = page.getByRole("heading", { name: /작업 공간 홈/ });
   const rateLimited = page.getByText(/Rate limit exceeded/i);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     if (await home.isVisible().catch(() => false)) {
@@ -94,8 +94,8 @@ test("viewer menus and project actions are read-only", async ({ page }) => {
   await expect(page.getByRole("link", { name: /감사 로그|Audit Logs/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/datasets`);
-  await expect(page.getByRole("heading", { name: "Datasets", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Upload dataset/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "데이터셋", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /데이터셋 업로드/ })).toHaveCount(0);
 
   await page.goto(`/projects/${projectAId}/pipelines`);
   await expect(page.getByRole("heading", { name: /^(Pipelines|파이프라인)$/ })).toBeVisible();

@@ -103,12 +103,25 @@ export const UI_HELP = {
     "요약은 사람이 읽기 쉬운 예측값이고, 원본 JSON은 API가 반환한 전체 응답입니다. 다중 출력 모델은 학습 때 지정한 예측 대상 이름을 그대로 표시합니다.",
 } as const;
 
+/** Project membership roles: labels only; never send these values to the API. */
+export function projectRoleLabel(value?: string | null): string {
+  const labels: Record<string, string> = {
+    VIEWER: "조회자",
+    DATA_SCIENTIST: "데이터 분석가",
+    ML_ENGINEER: "ML 엔지니어",
+    PROJECT_ADMIN: "프로젝트 관리자",
+  };
+  return labels[String(value || "").toUpperCase()] || (value ? value.replaceAll("_", " ") : "—");
+}
+
 /** Display-only operations labels. Never replace API values with these strings. */
 export function operationalStatusLabel(value?: string | null): string {
   const labels: Record<string, string> = {
     ok: "정상", healthy: "정상", unhealthy: "비정상", ready: "준비됨",
     warning: "경고", critical: "심각", error: "오류", watch: "주의", info: "안내", resolved: "해결 완료",
     succeeded: "성공", failed: "실패", active: "활성", inactive: "비활성",
+    passed: "통과", pass: "통과", approved: "승인됨", production: "운영 중",
+    pending_approval: "승인 대기", disabled: "비활성", enabled: "활성",
     legacy: "기본", advanced: "고급", pending: "대기", running: "진행 중",
   };
   return labels[String(value || "").toLowerCase()] || (value ? String(value).replaceAll("_", " ") : "—");

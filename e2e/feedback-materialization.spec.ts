@@ -35,7 +35,7 @@ test("feedback review page is reachable from project navigation", async ({ page,
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 
   await page.goto(`/projects/${projectId}/feedback`);
   await expect(page.getByTestId("feedback-review-page")).toBeVisible();
