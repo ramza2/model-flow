@@ -19,7 +19,7 @@ async function login(page: PlaywrightPage) {
   await page.getByTestId("login-email").fill(adminEmail);
   await page.getByTestId("login-password").fill(adminPassword);
   await page.getByTestId("login-submit").click();
-  await expect(page.getByRole("heading", { name: /Workspace home/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /작업 공간 홈/ })).toBeVisible();
 }
 
 async function createPostgresSource(
@@ -55,7 +55,7 @@ test("data source lifecycle activate deactivate and permanent delete", async ({ 
 
   await login(page);
 
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-description").fill("Data source operations E2E");
   await page.getByTestId("project-submit").click();
@@ -149,7 +149,7 @@ test("postgres import discovery UI when source credentials are available", async
   const sourceName = `pg-import-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -200,7 +200,7 @@ test("postgres DSN connection mode create edit and typed switch", async ({ page 
   const dsn = `postgresql://${sourceUser}:${sourcePassword}@${host}:${port}/${sourceDb}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -274,7 +274,7 @@ test("typed postgres form connection test shows error styling on refused connect
   const sourceName = `pg-bad-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -343,7 +343,7 @@ async function importMysqlFamilyCustomers(
   const datasetName = `customers-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -449,7 +449,7 @@ test("mssql import discovery UI when source credentials are available", async ({
   const datasetName = `customers-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -531,7 +531,7 @@ test("oracle import discovery UI when source credentials are available", async (
   const datasetName = `customers-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
@@ -582,7 +582,7 @@ test("REST API source test preview and import use the existing dataset lifecycle
   const datasetName = `rest-health-dataset-${Date.now()}`;
 
   await login(page);
-  await page.getByRole("link", { name: "Create project" }).click();
+  await page.getByRole("link", { name: "프로젝트 만들기" }).click();
   await page.getByTestId("project-name").fill(projectName);
   await page.getByTestId("project-submit").click();
   await expect(page.getByRole("heading", { name: projectName })).toBeVisible();

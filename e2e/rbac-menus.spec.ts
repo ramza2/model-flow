@@ -33,7 +33,7 @@ async function login(page: Page, email: string) {
   await page.getByTestId("login-email").fill(email);
   await page.getByTestId("login-password").fill(memberPassword);
   await page.getByTestId("login-submit").click();
-  const home = page.getByRole("heading", { name: /Workspace home/i });
+  const home = page.getByRole("heading", { name: /작업 공간 홈/ });
   const rateLimited = page.getByText(/Rate limit exceeded/i);
   for (let attempt = 0; attempt < 6; attempt += 1) {
     if (await home.isVisible().catch(() => false)) {
