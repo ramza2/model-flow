@@ -28,6 +28,12 @@ grep -q 'subdirectory_not_accessible' "$ROOT/scripts/ops/backup-daily.sh" \
   || { echo 'backup-daily.sh missing subdirectory access preflight' >&2; exit 1; }
 grep -q 'nested_mount' "$ROOT/scripts/ops/backup-daily.sh" \
   || { echo 'backup-daily.sh missing nested mount preflight' >&2; exit 1; }
+grep -q 'mount_check_failed' "$ROOT/scripts/ops/backup-daily.sh" \
+  || { echo 'backup-daily.sh missing findmnt fail-closed handling' >&2; exit 1; }
+if grep -n 'findmnt' "$ROOT/scripts/ops/backup-daily.sh" | grep -q '< <('; then
+  echo 'backup-daily.sh still uses process substitution for findmnt' >&2
+  exit 1
+fi
 grep -q 'SUDO_UID' "$ROOT/scripts/ops/fix-backup-ownership.sh" \
   || { echo 'ownership helper missing SUDO_UID handling' >&2; exit 1; }
 grep -q 'BACKUP_OWNERSHIP_SYMLINK_EXTERNAL' "$ROOT/scripts/ops/fix-backup-ownership.sh" \

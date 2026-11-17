@@ -205,6 +205,28 @@ grep -q '^RETENTION_REMOVE_SKIPPED=auto-20260901T030000Z-1234 reason=nested_moun
 sudo -n umount "$old/minio/mounted"
 rmdir "$old/minio/mounted" 2>/dev/null || /bin/rm -rf -- "$old/minio/mounted"
 
+# Preflight: findmnt execution failure must fail closed (not skip the mount check).
+mkdir -p "$FIXTURE/bin-findmnt"
+cat >"$FIXTURE/bin-findmnt/findmnt" <<'SH'
+#!/usr/bin/env bash
+echo 'findmnt: cannot read /proc/self/mountinfo' >&2
+exit 1
+SH
+chmod +x "$FIXTURE/bin-findmnt/findmnt"
+set +e
+PATH="$FIXTURE/bin-findmnt:$PATH" "${runner[@]}" --run --apply-retention
+findmnt_rc=$?
+set -e
+[[ "$findmnt_rc" -eq 78 ]] || {
+  echo "expected findmnt-failure retention-fail exit 78, got $findmnt_rc" >&2; exit 1
+}
+[[ -d "$old" && -f "$old/verified.ok" ]] || {
+  echo 'findmnt-failure candidate was altered' >&2; exit 1
+}
+findmnt_log="$(/usr/bin/find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
+grep -q '^RETENTION_REMOVE_SKIPPED=auto-20260901T030000Z-1234 reason=mount_check_failed$' "$findmnt_log"
+/bin/rm -f "$FIXTURE/bin-findmnt/findmnt"
+
 # Preflight: find access errors fail closed and leave the candidate untouched.
 mkdir -p "$FIXTURE/bin-find"
 cat >"$FIXTURE/bin-find/find" <<'SH'

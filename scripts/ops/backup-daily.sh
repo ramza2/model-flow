@@ -177,7 +177,7 @@ shopt -s nullglob
 # subdirs, nested mounts, or find errors leave the candidate tree untouched.
 retention_candidate_preflight() {
   local candidate="$1"
-  local errfile hit find_rc dirpath candidate_real mountpoint dirlist
+  local errfile hit find_rc dirpath candidate_real mountpoint dirlist mountlist findmnt_rc
   errfile="$(mktemp)"
 
   if [[ -L "$candidate" || ! -d "$candidate" ]]; then
@@ -196,16 +196,29 @@ retention_candidate_preflight() {
     rm -f -- "$errfile"
     return 1
   fi
+  # Capture findmnt status explicitly: process substitution would hide failures.
+  mountlist="$(mktemp)"
+  : >"$errfile"
+  set +e
+  findmnt -n -r -o TARGET >"$mountlist" 2>"$errfile"
+  findmnt_rc=$?
+  set -e
+  if [[ "$findmnt_rc" -ne 0 || -s "$errfile" ]]; then
+    echo "reason=mount_check_failed"
+    rm -f -- "$errfile" "$mountlist"
+    return 1
+  fi
   candidate_real="$(realpath -m -- "$candidate")"
   while IFS= read -r mountpoint; do
     case "$mountpoint" in
       "$candidate_real"/*)
         echo "reason=nested_mount"
-        rm -f -- "$errfile"
+        rm -f -- "$errfile" "$mountlist"
         return 1
         ;;
     esac
-  done < <(findmnt -n -r -o TARGET)
+  done <"$mountlist"
+  rm -f -- "$mountlist"
 
   set +e
   hit="$(find -P "$candidate" -xdev -type l -print -quit 2>"$errfile")"
