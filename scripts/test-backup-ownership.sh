@@ -8,12 +8,26 @@ grep -q -- '--user "${BACKUP_UID}:${BACKUP_GID}"' "$ROOT/scripts/backup.sh" \
   || { echo 'backup.sh missing host-user MinIO mirror' >&2; exit 1; }
 grep -q 'BACKUP_OWNERSHIP_ERROR' "$ROOT/scripts/backup.sh" \
   || { echo 'backup.sh missing ownership fail-closed check' >&2; exit 1; }
+if grep -n 'find -P "\$BACKUP_DIR"' "$ROOT/scripts/backup.sh" | grep -q '|| true'; then
+  echo 'backup.sh ownership find still swallows errors with || true' >&2
+  exit 1
+fi
+grep -q 'ownership_find_rc' "$ROOT/scripts/backup.sh" \
+  || { echo 'backup.sh missing ownership find fail-closed status check' >&2; exit 1; }
 grep -q 'RETENTION_FAIL_EXIT=78' "$ROOT/scripts/ops/backup-daily.sh" \
   || { echo 'backup-daily.sh missing retention fail exit code' >&2; exit 1; }
 grep -q 'retention_status=' "$ROOT/scripts/ops/backup-daily.sh" \
   || { echo 'backup-daily.sh missing retention_status recording' >&2; exit 1; }
 grep -q 'retention_candidate_preflight' "$ROOT/scripts/ops/backup-daily.sh" \
   || { echo 'backup-daily.sh missing retention preflight' >&2; exit 1; }
+grep -q -- '--one-file-system' "$ROOT/scripts/ops/backup-daily.sh" \
+  || { echo 'backup-daily.sh missing rm --one-file-system' >&2; exit 1; }
+grep -q 'partial_delete_quarantined' "$ROOT/scripts/ops/backup-daily.sh" \
+  || { echo 'backup-daily.sh missing quarantine-on-partial-delete path' >&2; exit 1; }
+grep -q 'subdirectory_not_accessible' "$ROOT/scripts/ops/backup-daily.sh" \
+  || { echo 'backup-daily.sh missing subdirectory access preflight' >&2; exit 1; }
+grep -q 'nested_mount' "$ROOT/scripts/ops/backup-daily.sh" \
+  || { echo 'backup-daily.sh missing nested mount preflight' >&2; exit 1; }
 grep -q 'SUDO_UID' "$ROOT/scripts/ops/fix-backup-ownership.sh" \
   || { echo 'ownership helper missing SUDO_UID handling' >&2; exit 1; }
 grep -q 'BACKUP_OWNERSHIP_SYMLINK_EXTERNAL' "$ROOT/scripts/ops/fix-backup-ownership.sh" \
@@ -216,5 +230,34 @@ set -e
 printf '%s\n' "$sudo_out" | grep -q "BACKUP_OWNERSHIP_TARGET_UID=${REAL_UID}"
 printf '%s\n' "$sudo_out" | grep -q "BACKUP_OWNERSHIP_TARGET_USER=${REAL_USER}"
 printf '%s\n' "$sudo_out" | grep -vq 'sudo chown -R'
+
+# backup.sh ownership scan must fail closed when find itself errors.
+mkdir -p "$FIXTURE/bin-backup-find" "$FIXTURE/fake-backup"
+cat >"$FIXTURE/bin-backup-find/find" <<'SH'
+#!/usr/bin/env bash
+echo 'find: Permission denied' >&2
+exit 1
+SH
+chmod +x "$FIXTURE/bin-backup-find/find"
+ownership_block="$(
+  sed -n '/# Fail closed if Docker still wrote root-owned paths/,/^fi$/p' \
+    "$ROOT/scripts/backup.sh"
+)"
+[[ -n "$ownership_block" ]] || {
+  echo 'failed to extract backup.sh ownership block' >&2; exit 1
+}
+set +e
+backup_find_out="$(
+  PATH="$FIXTURE/bin-backup-find:$PATH" \
+  BACKUP_DIR="$FIXTURE/fake-backup" \
+  BACKUP_UID="$(id -u)" \
+  bash -c "set -euo pipefail; $ownership_block" 2>&1
+)"
+backup_find_rc=$?
+set -e
+[[ "$backup_find_rc" -ne 0 ]] || {
+  echo 'backup.sh ownership find failure unexpectedly passed' >&2; exit 1
+}
+printf '%s\n' "$backup_find_out" | grep -q 'BACKUP_OWNERSHIP_ERROR: ownership scan failed'
 
 echo 'MODELFLOW_BACKUP_OWNERSHIP_TEST_PASS'

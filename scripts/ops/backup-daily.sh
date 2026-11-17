@@ -173,11 +173,11 @@ removed_count=0
 OPERATOR_UID="$(id -u)"
 shopt -s nullglob
 
-# Fail closed before any deletion: foreign ownership, symlinks, or find errors
-# must leave the candidate tree untouched (no partial deletes).
+# Fail closed before any deletion: foreign ownership, symlinks, inaccessible
+# subdirs, nested mounts, or find errors leave the candidate tree untouched.
 retention_candidate_preflight() {
   local candidate="$1"
-  local errfile hit
+  local errfile hit find_rc dirpath candidate_real mountpoint dirlist
   errfile="$(mktemp)"
 
   if [[ -L "$candidate" || ! -d "$candidate" ]]; then
@@ -185,15 +185,31 @@ retention_candidate_preflight() {
     rm -f -- "$errfile"
     return 1
   fi
-  if [[ ! -w "$candidate" ]]; then
+  if [[ ! -r "$candidate" || ! -x "$candidate" || ! -w "$candidate" ]]; then
     echo "reason=directory_not_writable"
     rm -f -- "$errfile"
     return 1
   fi
 
+  if ! command -v findmnt >/dev/null 2>&1; then
+    echo "reason=mount_check_unavailable"
+    rm -f -- "$errfile"
+    return 1
+  fi
+  candidate_real="$(realpath -m -- "$candidate")"
+  while IFS= read -r mountpoint; do
+    case "$mountpoint" in
+      "$candidate_real"/*)
+        echo "reason=nested_mount"
+        rm -f -- "$errfile"
+        return 1
+        ;;
+    esac
+  done < <(findmnt -n -r -o TARGET)
+
   set +e
   hit="$(find -P "$candidate" -xdev -type l -print -quit 2>"$errfile")"
-  local find_rc=$?
+  find_rc=$?
   set -e
   if [[ "$find_rc" -ne 0 || -s "$errfile" ]]; then
     echo "reason=find_error"
@@ -222,8 +238,51 @@ retention_candidate_preflight() {
     return 1
   fi
 
-  rm -f -- "$errfile"
+  # Every directory must be traversable and writable before we attempt rm -r.
+  dirlist="$(mktemp)"
+  : >"$errfile"
+  set +e
+  find -P "$candidate" -xdev -type d -print0 >"$dirlist" 2>"$errfile"
+  find_rc=$?
+  set -e
+  if [[ "$find_rc" -ne 0 || -s "$errfile" ]]; then
+    echo "reason=find_error"
+    rm -f -- "$errfile" "$dirlist"
+    return 1
+  fi
+  while IFS= read -r -d '' dirpath; do
+    if [[ ! -r "$dirpath" || ! -x "$dirpath" || ! -w "$dirpath" ]]; then
+      echo "reason=subdirectory_not_accessible"
+      rm -f -- "$errfile" "$dirlist"
+      return 1
+    fi
+  done <"$dirlist"
+
+  rm -f -- "$errfile" "$dirlist"
   return 0
+}
+
+# After a rename+rm attempt fails mid-delete, keep the incomplete tree quarantined
+# under a non-verified name. Never restore it as the original verified backup.
+retention_quarantine_incomplete() {
+  local pending="$1"
+  local name="$2"
+  local quarantine marker
+  if [[ ! -e "$pending" ]]; then
+    return 0
+  fi
+  quarantine="${AUTO_ROOT}/${name}.retention-incomplete-$$"
+  if [[ "$pending" != "$quarantine" ]]; then
+    if ! mv -- "$pending" "$quarantine" 2>/dev/null; then
+      quarantine="$pending"
+    fi
+  fi
+  marker="$quarantine/verified.ok"
+  if [[ -f "$marker" && ! -L "$marker" ]]; then
+    mv -- "$marker" "$quarantine/verified.ok.retention-incomplete" 2>/dev/null || \
+      rm -f -- "$marker" 2>/dev/null || true
+  fi
+  echo "RETENTION_QUARANTINED=${quarantine##*/}"
 }
 
 # Sorting exact-name, verified auto folders means the two newest successful
@@ -264,30 +323,24 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
         continue
       fi
       echo "RETENTION_REMOVE=$name"
-      # Move aside first so a mid-delete failure can be restored instead of leaving
-      # a half-removed verified tree in place.
-      pending="${candidate}.retention-pending-$$"
+      # Rename out of the verified auto-* namespace first. On mid-delete failure
+      # quarantine the incomplete tree — never restore it as a verified backup.
+      pending="${AUTO_ROOT}/${name}.retention-pending-$$"
       if ! mv -- "$candidate" "$pending"; then
         echo "RETENTION_REMOVE_FAILED=$name reason=rename_failed"
         ((RETENTION_FAIL_COUNT += 1)) || true
         continue
       fi
-      if rm -rf -- "$pending"; then
-        if [[ -e "$pending" || -e "$candidate" ]]; then
-          echo "RETENTION_REMOVE_FAILED=$name reason=still_present"
-          if [[ -e "$pending" && ! -e "$candidate" ]]; then
-            mv -- "$pending" "$candidate" 2>/dev/null || true
-          fi
-          ((RETENTION_FAIL_COUNT += 1)) || true
-        else
-          ((removed_count += 1)) || true
-          echo "RETENTION_REMOVED=$name"
-        fi
+      set +e
+      rm -rf --one-file-system -- "$pending"
+      rm_rc=$?
+      set -e
+      if [[ "$rm_rc" -eq 0 && ! -e "$pending" && ! -e "$candidate" ]]; then
+        ((removed_count += 1)) || true
+        echo "RETENTION_REMOVED=$name"
       else
-        echo "RETENTION_REMOVE_FAILED=$name reason=permission_or_rm_error"
-        if [[ -e "$pending" && ! -e "$candidate" ]]; then
-          mv -- "$pending" "$candidate" 2>/dev/null || true
-        fi
+        echo "RETENTION_REMOVE_FAILED=$name reason=partial_delete_quarantined"
+        retention_quarantine_incomplete "$pending" "$name"
         ((RETENTION_FAIL_COUNT += 1)) || true
       fi
     else

@@ -60,8 +60,23 @@ modelflow_compose_sh run --rm --no-deps \
   echo "host_gid=${BACKUP_GID}"
 } > "$BACKUP_DIR/metadata.txt"
 
-# Fail closed if Docker still wrote root-owned paths the operator cannot prune.
-foreign_owner="$(find "$BACKUP_DIR" ! -user "${BACKUP_UID}" -print -quit 2>/dev/null || true)"
+# Fail closed if Docker still wrote root-owned paths the operator cannot prune,
+# or if the ownership scan itself cannot complete.
+ownership_err="$(mktemp)"
+set +e
+foreign_owner="$(find -P "$BACKUP_DIR" ! -user "${BACKUP_UID}" -print -quit 2>"$ownership_err")"
+ownership_find_rc=$?
+set -e
+if [[ "$ownership_find_rc" -ne 0 || -s "$ownership_err" ]]; then
+  echo "BACKUP_OWNERSHIP_ERROR: ownership scan failed under ${BACKUP_DIR}" >&2
+  if [[ -s "$ownership_err" ]]; then
+    cat "$ownership_err" >&2 || true
+  fi
+  rm -f -- "$ownership_err"
+  echo "Re-run after fixing Docker --user support, or use scripts/ops/fix-backup-ownership.sh --check." >&2
+  exit 1
+fi
+rm -f -- "$ownership_err"
 if [[ -n "$foreign_owner" ]]; then
   echo "BACKUP_OWNERSHIP_ERROR: backup path not owned by uid ${BACKUP_UID}: ${foreign_owner}" >&2
   echo "Re-run after fixing Docker --user support, or use scripts/ops/fix-backup-ownership.sh --check." >&2

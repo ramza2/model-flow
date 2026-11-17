@@ -35,11 +35,13 @@ The post-GA administration enhancement adds **시스템 관리 → 환경 설정
   (for example Permission denied on older root-owned objects) are recorded as
   `status=SUCCESS` + `retention_status=FAILED` + exit `78`, never as a silent
   success and never by flipping archive verification to FAILED.
-- Before deleting an expired verified auto backup, retention runs an ownership
-  and access preflight. Foreign ownership, symlinks, find access errors, or
-  a non-writable tree cause that candidate to be **kept intact** (no partial
-  delete), with `RETENTION_REMOVE_SKIPPED=...`, `retention_status=FAILED`, and
-  exit `78`.
+- Before deleting an expired verified auto backup, retention runs an ownership,
+  subdirectory access/write, nested-mount, symlink, and find preflight.
+  Failures leave that candidate **untouched** with `RETENTION_REMOVE_SKIPPED=...`.
+  Deletes use `rm --one-file-system`. If rename+rm fails mid-delete, the
+  incomplete tree is **quarantined** (never restored as the original verified
+  backup) with `RETENTION_REMOVE_FAILED=... reason=partial_delete_quarantined`,
+  `retention_status=FAILED`, and exit `78`.
 - For existing root-owned auto backups, operators may run the limited helper
   `scripts/ops/fix-backup-ownership.sh --check` (dry-run) or `--apply`
   (chown only; never deletes; never follows or rewrites symlink targets;
