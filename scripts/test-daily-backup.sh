@@ -137,6 +137,41 @@ MOCK_BACKEND_HEALTH=unhealthy "${runner[@]}" --run --apply-retention
 MOCK_RETENTION_POLICY='enabled=1 days=invalid' "${runner[@]}" --run --apply-retention
 [[ -d "$old" ]] || { echo 'invalid policy deleted data' >&2; exit 1; }
 
+# Preflight: not-writable candidate must be kept intact (no partial delete).
+chmod a-w "$old"
+set +e
+"${runner[@]}" --run --apply-retention
+nowrite_rc=$?
+set -e
+[[ "$nowrite_rc" -eq 78 ]] || {
+  echo "expected not-writable retention-fail exit 78, got $nowrite_rc" >&2; exit 1
+}
+grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
+grep -q '^retention_status=FAILED$' "$FIXTURE/backups/auto/last-run.status"
+grep -q '^exit_code=78$' "$FIXTURE/backups/auto/last-run.status"
+[[ -d "$old" && -f "$old/verified.ok" ]] || {
+  echo 'not-writable candidate was altered during retention' >&2; exit 1
+}
+nowrite_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
+grep -q '^RETENTION_REMOVE_SKIPPED=auto-20260901T030000Z-1234 reason=directory_not_writable$' "$nowrite_log"
+chmod u+w "$old"
+
+# Preflight: symlink inside candidate blocks deletion and keeps the tree intact.
+ln -s /tmp/modelflow-retention-symlink-target "$old/evil.link"
+set +e
+"${runner[@]}" --run --apply-retention
+symlink_rc=$?
+set -e
+[[ "$symlink_rc" -eq 78 ]] || {
+  echo "expected symlink retention-fail exit 78, got $symlink_rc" >&2; exit 1
+}
+[[ -d "$old" && -L "$old/evil.link" && -f "$old/verified.ok" ]] || {
+  echo 'symlink candidate was partially deleted' >&2; exit 1
+}
+symlink_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
+grep -q '^RETENTION_REMOVE_SKIPPED=auto-20260901T030000Z-1234 reason=symlink_present$' "$symlink_log"
+/bin/rm -f "$old/evil.link"
+
 # Permission-denied cleanup must not hide a successful verified backup.
 stub_rm="$FIXTURE/bin/rm"
 cat >"$stub_rm" <<'SH'
@@ -166,7 +201,9 @@ grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status" \
 grep -q '^retention_status=FAILED$' "$FIXTURE/backups/auto/last-run.status" \
   || { echo 'retention failure not recorded separately' >&2; exit 1; }
 grep -q '^exit_code=78$' "$FIXTURE/backups/auto/last-run.status"
-[[ -d "$old" ]] || { echo 'failed retention unexpectedly deleted old backup' >&2; exit 1; }
+[[ -d "$old" && -f "$old/verified.ok" ]] || {
+  echo 'failed retention unexpectedly deleted or truncated old backup' >&2; exit 1
+}
 perm_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
 grep -q '^RETENTION_REMOVE_FAILED=auto-20260901T030000Z-1234' "$perm_log"
 grep -q '^BACKUP_DAILY_RETENTION_WARNING=cleanup_failed_after_successful_backup$' "$perm_log"
@@ -217,7 +254,9 @@ set -e
 [[ "$partial_rc" -eq 78 ]] || {
   echo "expected partial retention-fail exit 78, got $partial_rc" >&2; exit 1
 }
-[[ -d "$partial_a" ]] || { echo 'permission-blocked candidate deleted' >&2; exit 1; }
+[[ -d "$partial_a" && -f "$partial_a/verified.ok" ]] || {
+  echo 'permission-blocked candidate deleted or truncated' >&2; exit 1
+}
 [[ ! -e "$partial_b" ]] || { echo 'deletable candidate survived partial run' >&2; exit 1; }
 grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
 grep -q '^retention_status=FAILED$' "$FIXTURE/backups/auto/last-run.status"

@@ -170,7 +170,61 @@ echo "BACKUP_DAILY_RETENTION_ENABLED=$retention_enabled"
 now_epoch="$(date -u +%s)"
 expired_count=0
 removed_count=0
+OPERATOR_UID="$(id -u)"
 shopt -s nullglob
+
+# Fail closed before any deletion: foreign ownership, symlinks, or find errors
+# must leave the candidate tree untouched (no partial deletes).
+retention_candidate_preflight() {
+  local candidate="$1"
+  local errfile hit
+  errfile="$(mktemp)"
+
+  if [[ -L "$candidate" || ! -d "$candidate" ]]; then
+    echo "reason=not_a_safe_directory"
+    rm -f -- "$errfile"
+    return 1
+  fi
+  if [[ ! -w "$candidate" ]]; then
+    echo "reason=directory_not_writable"
+    rm -f -- "$errfile"
+    return 1
+  fi
+
+  set +e
+  hit="$(find -P "$candidate" -xdev -type l -print -quit 2>"$errfile")"
+  local find_rc=$?
+  set -e
+  if [[ "$find_rc" -ne 0 || -s "$errfile" ]]; then
+    echo "reason=find_error"
+    rm -f -- "$errfile"
+    return 1
+  fi
+  if [[ -n "$hit" ]]; then
+    echo "reason=symlink_present"
+    rm -f -- "$errfile"
+    return 1
+  fi
+
+  : >"$errfile"
+  set +e
+  hit="$(find -P "$candidate" -xdev ! -user "$OPERATOR_UID" -print -quit 2>"$errfile")"
+  find_rc=$?
+  set -e
+  if [[ "$find_rc" -ne 0 || -s "$errfile" ]]; then
+    echo "reason=find_error"
+    rm -f -- "$errfile"
+    return 1
+  fi
+  if [[ -n "$hit" ]]; then
+    echo "reason=foreign_ownership"
+    rm -f -- "$errfile"
+    return 1
+  fi
+
+  rm -f -- "$errfile"
+  return 0
+}
 
 # Sorting exact-name, verified auto folders means the two newest successful
 # backups remain protected even if the schedule has been broken for weeks.
@@ -199,10 +253,31 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
   if ((now_epoch - verified_epoch >= RETENTION_SECONDS)); then
     ((expired_count += 1)) || true
     if [[ "$RETENTION_APPLY" -eq 1 && "$retention_enabled" -eq 1 ]]; then
+      set +e
+      reason="$(retention_candidate_preflight "$candidate")"
+      preflight_rc=$?
+      set -e
+      if [[ "$preflight_rc" -ne 0 ]]; then
+        reason="${reason:-reason=preflight_failed}"
+        echo "RETENTION_REMOVE_SKIPPED=$name ${reason}"
+        ((RETENTION_FAIL_COUNT += 1)) || true
+        continue
+      fi
       echo "RETENTION_REMOVE=$name"
-      if rm -rf -- "$candidate"; then
-        if [[ -e "$candidate" ]]; then
+      # Move aside first so a mid-delete failure can be restored instead of leaving
+      # a half-removed verified tree in place.
+      pending="${candidate}.retention-pending-$$"
+      if ! mv -- "$candidate" "$pending"; then
+        echo "RETENTION_REMOVE_FAILED=$name reason=rename_failed"
+        ((RETENTION_FAIL_COUNT += 1)) || true
+        continue
+      fi
+      if rm -rf -- "$pending"; then
+        if [[ -e "$pending" || -e "$candidate" ]]; then
           echo "RETENTION_REMOVE_FAILED=$name reason=still_present"
+          if [[ -e "$pending" && ! -e "$candidate" ]]; then
+            mv -- "$pending" "$candidate" 2>/dev/null || true
+          fi
           ((RETENTION_FAIL_COUNT += 1)) || true
         else
           ((removed_count += 1)) || true
@@ -210,6 +285,9 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
         fi
       else
         echo "RETENTION_REMOVE_FAILED=$name reason=permission_or_rm_error"
+        if [[ -e "$pending" && ! -e "$candidate" ]]; then
+          mv -- "$pending" "$candidate" 2>/dev/null || true
+        fi
         ((RETENTION_FAIL_COUNT += 1)) || true
       fi
     else

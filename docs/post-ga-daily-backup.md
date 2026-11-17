@@ -35,9 +35,17 @@ The post-GA administration enhancement adds **시스템 관리 → 환경 설정
   (for example Permission denied on older root-owned objects) are recorded as
   `status=SUCCESS` + `retention_status=FAILED` + exit `78`, never as a silent
   success and never by flipping archive verification to FAILED.
+- Before deleting an expired verified auto backup, retention runs an ownership
+  and access preflight. Foreign ownership, symlinks, find access errors, or
+  a non-writable tree cause that candidate to be **kept intact** (no partial
+  delete), with `RETENTION_REMOVE_SKIPPED=...`, `retention_status=FAILED`, and
+  exit `78`.
 - For existing root-owned auto backups, operators may run the limited helper
   `scripts/ops/fix-backup-ownership.sh --check` (dry-run) or `--apply`
-  (chown only; never deletes; newest two verified auto backups are protected).
+  (chown only; never deletes; never follows or rewrites symlink targets;
+  find access errors fail closed; under sudo the target is the verified
+  non-root `SUDO_UID`/`SUDO_USER`; newest two verified auto backups are
+  protected).
 - Saving the policy does **not** delete anything immediately. It takes effect
   at the next successful scheduled backup. Lowering the age or re-enabling
   cleanup prompts the user to confirm potential future deletion.
