@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 FIXTURE_ROOT="$(mktemp -d -t modelflow-daily-backup-test.XXXXXX)"
 cleanup() {
-  [[ "$FIXTURE_ROOT" == /tmp/modelflow-daily-backup-test.* ]] && rm -rf -- "$FIXTURE_ROOT"
+  [[ "$FIXTURE_ROOT" == /tmp/modelflow-daily-backup-test.* ]] && /bin/rm -rf -- "$FIXTURE_ROOT"
 }
 trap cleanup EXIT
 
@@ -137,15 +137,90 @@ MOCK_BACKEND_HEALTH=unhealthy "${runner[@]}" --run --apply-retention
 MOCK_RETENTION_POLICY='enabled=1 days=invalid' "${runner[@]}" --run --apply-retention
 [[ -d "$old" ]] || { echo 'invalid policy deleted data' >&2; exit 1; }
 
-# Explicit retention only removes old, completed auto backups with known names.
+# Permission-denied cleanup must not hide a successful verified backup.
+stub_rm="$FIXTURE/bin/rm"
+cat >"$stub_rm" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  case "$arg" in
+    *auto-20260901T030000Z-1234*)
+      echo "rm: cannot remove '$arg': Permission denied" >&2
+      exit 1
+      ;;
+  esac
+done
+exec /bin/rm "$@"
+SH
+chmod +x "$stub_rm"
+
+set +e
 "${runner[@]}" --run --apply-retention
-[[ ! -e "$old" ]] || { echo 'expired verified auto backup not removed' >&2; exit 1; }
+rc=$?
+set -e
+[[ "$rc" -eq 78 ]] || {
+  echo "expected retention-fail exit 78, got $rc" >&2; exit 1
+}
+grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status" \
+  || { echo 'permission failure flipped backup status away from SUCCESS' >&2; exit 1; }
+grep -q '^retention_status=FAILED$' "$FIXTURE/backups/auto/last-run.status" \
+  || { echo 'retention failure not recorded separately' >&2; exit 1; }
+grep -q '^exit_code=78$' "$FIXTURE/backups/auto/last-run.status"
+[[ -d "$old" ]] || { echo 'failed retention unexpectedly deleted old backup' >&2; exit 1; }
+perm_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
+grep -q '^RETENTION_REMOVE_FAILED=auto-20260901T030000Z-1234' "$perm_log"
+grep -q '^BACKUP_DAILY_RETENTION_WARNING=cleanup_failed_after_successful_backup$' "$perm_log"
+verified_count="$(find "$FIXTURE/backups/auto" -mindepth 2 -maxdepth 2 -name verified.ok | wc -l)"
+[[ "$verified_count" -ge 2 ]] || {
+  echo 'verified marker missing after retention permission failure' >&2; exit 1
+}
+
+# Re-run after the permission blocker is removed: cleanup succeeds and backup stays SUCCESS.
+/bin/rm -f "$stub_rm"
+"${runner[@]}" --run --apply-retention
+[[ ! -e "$old" ]] || { echo 'expired verified auto backup not removed after re-run' >&2; exit 1; }
 [[ -d "$unverified" ]] || { echo 'unverified backup was removed' >&2; exit 1; }
 [[ -d "$manual" ]] || { echo 'manual predeploy backup was removed' >&2; exit 1; }
 grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
+grep -q '^retention_status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
+grep -q '^exit_code=0$' "$FIXTURE/backups/auto/last-run.status"
 latest_log="$(find "$FIXTURE/backups/auto" -type f -name backup.log | sort | tail -n 1)"
 test -f "$latest_log"
 grep -q '^RETENTION_PROTECTED=' "$latest_log"
 grep -qx 'BACKUP_DAILY_RETENTION_MIN_KEEP=2' "$latest_log"
+grep -qx 'BACKUP_DAILY_RETENTION_STATUS=SUCCESS' "$latest_log"
+
+# Partial deletion: one candidate fails, another succeeds; still warn and keep SUCCESS.
+partial_a="$FIXTURE/backups/auto/auto-20260801T030000Z-1111"
+partial_b="$FIXTURE/backups/auto/auto-20260815T030000Z-2222"
+mkdir -p "$partial_a" "$partial_b"
+touch "$partial_a/verified.ok" "$partial_b/verified.ok"
+touch -d '20 days ago' "$partial_a/verified.ok" "$partial_b/verified.ok"
+cat >"$stub_rm" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  case "$arg" in
+    *auto-20260801T030000Z-1111*)
+      echo "rm: cannot remove '$arg': Permission denied" >&2
+      exit 1
+      ;;
+  esac
+done
+exec /bin/rm "$@"
+SH
+chmod +x "$stub_rm"
+set +e
+"${runner[@]}" --run --apply-retention
+partial_rc=$?
+set -e
+[[ "$partial_rc" -eq 78 ]] || {
+  echo "expected partial retention-fail exit 78, got $partial_rc" >&2; exit 1
+}
+[[ -d "$partial_a" ]] || { echo 'permission-blocked candidate deleted' >&2; exit 1; }
+[[ ! -e "$partial_b" ]] || { echo 'deletable candidate survived partial run' >&2; exit 1; }
+grep -q '^status=SUCCESS$' "$FIXTURE/backups/auto/last-run.status"
+grep -q '^retention_status=FAILED$' "$FIXTURE/backups/auto/last-run.status"
+/bin/rm -f "$stub_rm"
 
 echo 'MODELFLOW_DAILY_BACKUP_SAFETY_TEST_PASS'

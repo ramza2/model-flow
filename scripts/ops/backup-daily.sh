@@ -10,6 +10,8 @@ BACKUP_ROOT="$ROOT/backups"
 AUTO_ROOT="$BACKUP_ROOT/auto"
 PROJECT="model-flow"
 RETENTION_MIN_KEEP=2
+# Distinct from backup creation failure so monitoring can warn without hiding archive success.
+RETENTION_FAIL_EXIT=78
 
 usage() {
   echo 'usage: backup-daily.sh --check | --run [--apply-retention]'
@@ -89,16 +91,21 @@ export BACKUP_DIR="$AUTO_ROOT/auto-$STAMP-$$"
 mkdir -p "$BACKUP_DIR"
 exec >>"$BACKUP_DIR/backup.log" 2>&1
 
+BACKUP_OK=0
+RETENTION_STATUS='NOT_REQUESTED'
+RETENTION_FAIL_COUNT=0
+
 record_status() {
   rc=$?
-  if [[ "$rc" == 0 ]]; then
+  if [[ "$BACKUP_OK" == 1 ]]; then
     status='SUCCESS'
   else
     status='FAILED'
   fi
-  printf 'status=%s\nfinished_at=%s\nexit_code=%s\n' \
-    "$status" "$(date -u +%Y%m%dT%H%M%SZ)" "$rc" >"$AUTO_ROOT/last-run.status"
-  echo "BACKUP_DAILY_$status exit_code=$rc"
+  printf 'status=%s\nretention_status=%s\nretention_fail_count=%s\nfinished_at=%s\nexit_code=%s\n' \
+    "$status" "$RETENTION_STATUS" "$RETENTION_FAIL_COUNT" \
+    "$(date -u +%Y%m%dT%H%M%SZ)" "$rc" >"$AUTO_ROOT/last-run.status"
+  echo "BACKUP_DAILY_$status exit_code=$rc retention_status=$RETENTION_STATUS"
 }
 trap record_status EXIT
 
@@ -118,6 +125,17 @@ done
 
 printf 'verified_at=%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" >"$BACKUP_DIR/verified.ok"
 echo 'BACKUP_DAILY_ARCHIVES_VERIFIED'
+BACKUP_OK=1
+
+finish_retention_skip() {
+  local reason="$1"
+  RETENTION_STATUS='SKIPPED'
+  echo "BACKUP_DAILY_RETENTION_SKIPPED=$reason"
+  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
+  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
+  echo "BACKUP_DAILY_RETENTION_STATUS=$RETENTION_STATUS"
+  exit 0
+}
 
 # This host runner never trusts browser-supplied filesystem paths. Read the
 # administrator-controlled policy through the identified production backend,
@@ -133,26 +151,17 @@ if [[ -n "$backend_cid" ]]; then
   backend_health="$(docker inspect --format '{{.State.Health.Status}}' "$backend_cid" 2>/dev/null || true)"
 fi
 if [[ "$backend_project" != "$PROJECT" || "$backend_service" != 'backend' || "$backend_health" != 'healthy' ]]; then
-  echo 'BACKUP_DAILY_RETENTION_SKIPPED=backend_identity_unavailable'
-  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
-  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
-  exit 0
+  finish_retention_skip 'backend_identity_unavailable'
 fi
 
 retention_policy="$("${COMPOSE[@]}" exec -T backend python -m app.services.backup_retention 2>/dev/null)" || retention_policy=''
 if [[ ! "$retention_policy" =~ ^enabled=([01])[[:space:]]days=([0-9]{1,3})$ ]]; then
-  echo 'BACKUP_DAILY_RETENTION_SKIPPED=policy_unavailable'
-  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
-  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
-  exit 0
+  finish_retention_skip 'policy_unavailable'
 fi
 retention_enabled="${BASH_REMATCH[1]}"
 retention_days="$((10#${BASH_REMATCH[2]}))"
 if (( retention_days < 7 || retention_days > 365 )); then
-  echo 'BACKUP_DAILY_RETENTION_SKIPPED=policy_invalid'
-  echo 'BACKUP_DAILY_RETENTION_APPLIED=0'
-  echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
-  exit 0
+  finish_retention_skip 'policy_invalid'
 fi
 RETENTION_SECONDS=$((retention_days * 24 * 60 * 60))
 echo "BACKUP_DAILY_RETENTION_DAYS=$retention_days"
@@ -160,6 +169,7 @@ echo "BACKUP_DAILY_RETENTION_ENABLED=$retention_enabled"
 
 now_epoch="$(date -u +%s)"
 expired_count=0
+removed_count=0
 shopt -s nullglob
 
 # Sorting exact-name, verified auto folders means the two newest successful
@@ -187,10 +197,21 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
   marker="$candidate/verified.ok"
   verified_epoch="$(stat -c '%Y' -- "$marker")"
   if ((now_epoch - verified_epoch >= RETENTION_SECONDS)); then
-    ((expired_count += 1))
+    ((expired_count += 1)) || true
     if [[ "$RETENTION_APPLY" -eq 1 && "$retention_enabled" -eq 1 ]]; then
       echo "RETENTION_REMOVE=$name"
-      rm -rf -- "$candidate"
+      if rm -rf -- "$candidate"; then
+        if [[ -e "$candidate" ]]; then
+          echo "RETENTION_REMOVE_FAILED=$name reason=still_present"
+          ((RETENTION_FAIL_COUNT += 1)) || true
+        else
+          ((removed_count += 1)) || true
+          echo "RETENTION_REMOVED=$name"
+        fi
+      else
+        echo "RETENTION_REMOVE_FAILED=$name reason=permission_or_rm_error"
+        ((RETENTION_FAIL_COUNT += 1)) || true
+      fi
     else
       echo "RETENTION_DRY_RUN_CANDIDATE=$name"
     fi
@@ -198,5 +219,23 @@ for (( i=0; i<${#verified_backups[@]}; i++ )); do
 done
 
 echo "BACKUP_DAILY_RETENTION_CANDIDATES=$expired_count"
+echo "BACKUP_DAILY_RETENTION_REMOVED=$removed_count"
+echo "BACKUP_DAILY_RETENTION_FAIL_COUNT=$RETENTION_FAIL_COUNT"
 echo "BACKUP_DAILY_RETENTION_APPLIED=$((RETENTION_APPLY * retention_enabled))"
 echo "BACKUP_DAILY_RETENTION_MIN_KEEP=$RETENTION_MIN_KEEP"
+
+if [[ "$RETENTION_APPLY" -eq 0 ]]; then
+  RETENTION_STATUS='DRY_RUN'
+elif [[ "$retention_enabled" -eq 0 ]]; then
+  RETENTION_STATUS='DISABLED'
+elif (( RETENTION_FAIL_COUNT > 0 )); then
+  RETENTION_STATUS='FAILED'
+  echo 'BACKUP_DAILY_RETENTION_WARNING=cleanup_failed_after_successful_backup'
+  echo "BACKUP_DAILY_RETENTION_STATUS=$RETENTION_STATUS"
+  echo 'BACKUP_DAILY_HINT=archives_verified_ok_but_retention_cleanup_failed'
+  exit "$RETENTION_FAIL_EXIT"
+else
+  RETENTION_STATUS='SUCCESS'
+fi
+echo "BACKUP_DAILY_RETENTION_STATUS=$RETENTION_STATUS"
+exit 0

@@ -59,7 +59,14 @@ def inspect_health(auto_root: Path, now: datetime | None = None) -> str:
             if key in fields:
                 return "STATUS_INVALID"
             fields[key] = value
-        if fields.get("status") != "SUCCESS" or fields.get("exit_code") != "0":
+        if fields.get("status") != "SUCCESS":
+            return "LAST_RUN_FAILED"
+        exit_code = fields.get("exit_code")
+        retention_status = fields.get("retention_status", "NOT_REQUESTED")
+        # Backup archives may succeed while retention cleanup fails (exit 78).
+        if exit_code not in {"0", "78"}:
+            return "LAST_RUN_FAILED"
+        if exit_code == "78" and retention_status != "FAILED":
             return "LAST_RUN_FAILED"
         finished = read_stamp(fields["finished_at"])
     except (OSError, UnicodeError, ValueError, KeyError):
@@ -84,6 +91,8 @@ def inspect_health(auto_root: Path, now: datetime | None = None) -> str:
                 continue
             verified = read_stamp(lines[0].removeprefix("verified_at="))
             if scheduled <= verified <= finished and finished - verified <= timedelta(minutes=5):
+                if exit_code == "78":
+                    return "RETENTION_CLEANUP_FAILED"
                 return "PASS"
     except (OSError, UnicodeError, ValueError):
         return "VERIFIED_MARKER_INVALID"
@@ -124,13 +133,19 @@ def send_failure_email(config: dict, reason: str, at: datetime) -> None:
     message = EmailMessage()
     message["From"] = config["sender"]
     message["To"] = config["recipient"]
-    message["Subject"] = (
-        "[ModelFlow] Backup alert TEST (no incident)"
-        if reason == "SMTP_TEST_ONLY"
-        else "[ModelFlow] Daily production backup FAILED"
-    )
-    header = ("ModelFlow backup alert delivery test; no incident has been detected.\n"
-              if reason == "SMTP_TEST_ONLY" else "ModelFlow backup verification failed.\n")
+    if reason == "SMTP_TEST_ONLY":
+        subject = "[ModelFlow] Backup alert TEST (no incident)"
+        header = "ModelFlow backup alert delivery test; no incident has been detected.\n"
+    elif reason == "RETENTION_CLEANUP_FAILED":
+        subject = "[ModelFlow] Daily backup retention cleanup FAILED"
+        header = (
+            "ModelFlow backup archives verified, but retention cleanup failed.\n"
+            "Fresh backup status=SUCCESS; investigate permission or root-owned files.\n"
+        )
+    else:
+        subject = "[ModelFlow] Daily production backup FAILED"
+        header = "ModelFlow backup verification failed.\n"
+    message["Subject"] = subject
     message.set_content(
         header +
         f"Check time (UTC): {at.astimezone(timezone.utc).isoformat()}\n"
