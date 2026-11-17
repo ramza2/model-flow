@@ -30,9 +30,15 @@ class BackupHealthTests(unittest.TestCase):
         )
         self.status("SUCCESS", "20261102T180005Z", "0")
 
-    def status(self, status, at, code):
+    def status(self, status, at, code, retention_status="NOT_REQUESTED"):
         (self.auto / "last-run.status").write_text(
-            f"status={status}\nfinished_at={at}\nexit_code={code}\n",
+            (
+                f"status={status}\n"
+                f"retention_status={retention_status}\n"
+                f"retention_fail_count=0\n"
+                f"finished_at={at}\n"
+                f"exit_code={code}\n"
+            ),
             encoding="utf-8",
         )
 
@@ -41,6 +47,16 @@ class BackupHealthTests(unittest.TestCase):
 
     def test_failed_run(self):
         self.status("FAILED", "20261102T180005Z", "12")
+        self.assertEqual("LAST_RUN_FAILED", health.inspect_health(self.auto, NOW))
+
+    def test_retention_cleanup_failed_after_successful_backup(self):
+        self.status("SUCCESS", "20261102T180005Z", "78", retention_status="FAILED")
+        self.assertEqual(
+            "RETENTION_CLEANUP_FAILED", health.inspect_health(self.auto, NOW)
+        )
+
+    def test_exit_78_without_retention_failed_is_rejected(self):
+        self.status("SUCCESS", "20261102T180005Z", "78", retention_status="SUCCESS")
         self.assertEqual("LAST_RUN_FAILED", health.inspect_health(self.auto, NOW))
 
     def test_previous_day_is_stale(self):

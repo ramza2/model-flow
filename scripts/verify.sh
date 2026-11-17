@@ -381,6 +381,13 @@ chmod +x ./scripts/test-lib-msys.sh
 ./scripts/test-lib-msys.sh
 pass "MSYS Docker path helper unit checks"
 
+info "0d) Daily backup ownership / retention safety unit checks"
+chmod +x ./scripts/test-daily-backup.sh ./scripts/test-backup-ownership.sh ./scripts/ops/fix-backup-ownership.sh
+./scripts/test-daily-backup.sh
+./scripts/test-backup-ownership.sh
+python3 ./scripts/test-backup-health.py
+pass "daily backup ownership and retention safety unit checks"
+
 info "1) Docker Compose config (active verify ports)"
 modelflow_compose config -q
 pass "compose config"

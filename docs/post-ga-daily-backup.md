@@ -30,6 +30,24 @@ The post-GA administration enhancement adds **시스템 관리 → 환경 설정
   invalid stored values or DB errors **skip cleanup** without causing the
   successful fresh backup to be marked failed. The private backup log contains
   `BACKUP_DAILY_RETENTION_SKIPPED=...`; investigate this signal if persistent.
+- MinIO mirror now runs as the invoking host user (`docker --user uid:gid`) so
+  new backup trees are not left root-owned. Retention deletion failures
+  (for example Permission denied on older root-owned objects) are recorded as
+  `status=SUCCESS` + `retention_status=FAILED` + exit `78`, never as a silent
+  success and never by flipping archive verification to FAILED.
+- Before deleting an expired verified auto backup, retention runs an ownership,
+  subdirectory access/write, nested-mount, symlink, and find preflight.
+  Failures leave that candidate **untouched** with `RETENTION_REMOVE_SKIPPED=...`.
+  Deletes use `rm --one-file-system`. If rename+rm fails mid-delete, the
+  incomplete tree is **quarantined** (never restored as the original verified
+  backup) with `RETENTION_REMOVE_FAILED=... reason=partial_delete_quarantined`,
+  `retention_status=FAILED`, and exit `78`.
+- For existing root-owned auto backups, operators may run the limited helper
+  `scripts/ops/fix-backup-ownership.sh --check` (dry-run) or `--apply`
+  (chown only; never deletes; never follows or rewrites symlink targets;
+  find access errors fail closed; under sudo the target is the verified
+  non-root `SUDO_UID`/`SUDO_USER`; newest two verified auto backups are
+  protected).
 - Saving the policy does **not** delete anything immediately. It takes effect
   at the next successful scheduled backup. Lowering the age or re-enabling
   cleanup prompts the user to confirm potential future deletion.
